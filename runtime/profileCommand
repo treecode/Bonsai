@@ -1,0 +1,1 @@
+CUDA_PROFILE_CSV=1 CUDA_PROFILE=1 CUDA_PROFILE_CONFIG=./profiler.conf CUDA_PROFILE_LOG=profLog.csv mpirun -np 2 ./main ~/inputData/plummer/plum1M.dumbp bla 0 0.0625 0 0.05 0.5
