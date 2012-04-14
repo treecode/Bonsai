@@ -1,8 +1,10 @@
 CUDA Runtime API version of the Bonsai
 
+
 How to quickly test the code:
 After compiling type:
 ./main model3_child_compact.tipsy bla 0 0.0625 10
+
 
 It should give something like:
 
