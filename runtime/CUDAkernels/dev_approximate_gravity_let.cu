@@ -473,14 +473,6 @@ __device__ bool split_node_grav_impbh(float4 nodeCOM, float4 groupCenter, float4
 }
 
 
-/* egaburov: this generates a wrrning
-  warning: object of type 'const volatile float4&' will not be accessed in void context 
-*/
-__device__ float4 get_float4(float4 const volatile &v)
-{
-  return make_float4(v.x, v.y, v.z, v.w);
-}
-
 
 #define TEXTURES
 #define OLDPREFIX
@@ -597,8 +589,8 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 	***/
 
         #ifndef TEXTURES
-          float4 nodeSize = get_float4(boxSizeInfo[node]);                   //Fetch the size of the box. Size.w = child info
-          float4 node_pos = get_float4(boxCenterInfo[node]);                 //Fetch the center of the box. center.w = opening info
+          float4 nodeSize = boxSizeInfo[node];                   //Fetch the size of the box. Size.w = child info
+          float4 node_pos = boxCenterInfo[node];                 //Fetch the center of the box. center.w = opening info
         #else
           float4 nodeSize =  tex1Dfetch(texNodeSize, node);
           float4 node_pos =  tex1Dfetch(texNodeCenter, node);
