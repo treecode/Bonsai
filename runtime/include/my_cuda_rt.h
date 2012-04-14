@@ -486,7 +486,11 @@ namespace my_dev {
       //This line correctly increases the memory location with number of bytes before casting
       host_ptr = (T*) ((char*)ParentHost_ptr +  allignOffset*sizeof(uint));
 
+#if 0 /* egaburov: to fix void* pointer arithmetic warrning */
       hDeviceMem   = (T*)(cudaMem + offset*sizeof(uint) + allignOffset*sizeof(uint));
+#else
+      hDeviceMem   = (T*)cudaMem + offset*sizeof(uint) + allignOffset*sizeof(uint);
+#endif
       DeviceMemPtr = (void*)(size_t)(hDeviceMem);
 
       hDeviceMem_flag = true;      
@@ -780,6 +784,9 @@ namespace my_dev {
       int      texOffset; //The possible extra offset when using textures and combined memory
       int      texSize;
       int      texIdx;
+#if 1 /* egaburov: to remove cannelDesc non-intialized warning */
+      kernelArg() : channelDesc((cudaChannelFormatDesc){0, 0, 0, 0}) {}
+#endif
     } kernelArg;        
     
     std::vector<kernelArg> kernelArguments;        
@@ -1045,7 +1052,9 @@ namespace my_dev {
       else
       {
         //Assign memory, has to be done EVERY kernel call otherwise things mess up!!
+#if 0   /* egaburov: to remove unused warning */
         const struct textureReference *texref = kernelArguments[arg].texture;
+#endif
          //Change the offsets if needed
         kernelArguments[arg].texOffset = offset;
         
