@@ -466,6 +466,9 @@ __device__ bool split_node_grav_impbh(float4 nodeCOM, float4 groupCenter, float4
   return (ds2 <= fabs(nodeCOM.w));
 }
 
+/* egaburov: this generates a warning
+   warning: object of type 'const volatile float4&' will not be accessed in void context 
+*/
 __device__ float4 get_float4(float4 const volatile &v)
 {
   return make_float4(v.x, v.y, v.z, v.w);
