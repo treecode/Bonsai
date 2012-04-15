@@ -4,7 +4,7 @@
 #include <cmath>
 
 
-#include <sys/time.h>
+//#include <sys/time.h>
 
 
 #include <stdio.h>
@@ -15,12 +15,14 @@
 #include <cassert>
 #include <vector>
 #include <cuda_runtime.h>
+#include <vector_functions.h>
 
 #include <iostream>
 
 //Some easy to use typedefs
 typedef float4 real4;
 typedef float real;
+#define make_real4 make_float4
 
 using namespace std;
 
@@ -500,7 +502,7 @@ namespace my_dev {
       assert(context_flag);
 //       assert(!hDeviceMem_flag);
       this->pinned_mem = pinned;      
-      this->flags = flags;
+      this->flags = (flags == 0) ? false : true;
       if (size > 0) cuda_free();
       size = n;
             
@@ -521,7 +523,7 @@ namespace my_dev {
 //       assert(!hDeviceMem_flag);
       
       this->pinned_mem = pinned;      
-      this->flags = flags;
+      this->flags = (flags == 0) ? false : true;
       if (size > 0) cuda_free();
       size = n;
       
@@ -785,7 +787,7 @@ namespace my_dev {
       int      texSize;
       int      texIdx;
 #if 1 /* egaburov: to remove cannelDesc non-intialized warning */
-      kernelArg() : channelDesc((cudaChannelFormatDesc){0, 0, 0, 0}) {}
+      kernelArg() : channelDesc(cudaCreateChannelDesc(0, 0, 0, 0, cudaChannelFormatKindNone)) {}
 #endif
     } kernelArg;        
     
@@ -1092,7 +1094,7 @@ namespace my_dev {
       {      
         //Calculate dynamic
         int ng = (items) / n_threads + 1;
-        nx = (int)sqrt(ng);
+        nx = (int)sqrt((double)ng);
         ny = (ng -1)/nx +  1; 
       }
       else
@@ -1101,7 +1103,7 @@ namespace my_dev {
         //2D grid if nessecary        
         if(blocks >= 65536)
         {
-          nx = (int)sqrt(blocks);
+          nx = (int)sqrt((double)blocks);
           ny = (blocks -1)/nx +  1;           
         }
         else
