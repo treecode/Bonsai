@@ -1,6 +1,11 @@
 #ifndef _OCTREE_H_
 #define _OCTREE_H_
 
+#ifdef WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#endif
 
 #define USE_CUDA
 
@@ -16,14 +21,15 @@
 #include "node_specs.h"
 #include <cmath>
 #include <algorithm>
-#include <sys/time.h>
+//#include <sys/time.h>
 #include <iostream>
 #include <fstream>
 
+#ifdef USE_MPI
 #include "mpi.h"
 
 #define PRINT_MPI_DEBUG
-
+#endif
 
 using namespace std;
 
@@ -295,6 +301,12 @@ protected:
 
   bool store_energy_flag;
   double tinit;
+
+  // accurate Win32 timing
+#ifdef WIN32
+  LARGE_INTEGER sysTimerFreq;
+  LARGE_INTEGER sysTimerAtStart;
+#endif
 
   // OpenCL context
 
@@ -602,7 +614,9 @@ public:
 
   octree(char **argv, const int device = 0, const float _theta = 0.75, const float eps = 0.05,
          string snapF = "", int snapI = -1,  float tempTimeStep = 1.0 / 16.0, int tempTend = 1000,
-         float killDistanceT = -1, int maxDistT = -1, int snapAdd = 0) {
+         float killDistanceT = -1, int maxDistT = -1, int snapAdd = 0) 
+  : procId(0), nProcs(1)
+  {
 
     devContext_flag = false;
     iter = 0;
@@ -630,13 +644,13 @@ public:
     tEnd     = tempTend;
 
     killDistance   = killDistanceT;
-    removeDistance = maxDistT;
+    removeDistance = (float)maxDistT;
     snapShotAdd    = snapAdd;
 
     //TODO!
-    inv_theta   = 1.0/_theta;
+    inv_theta   = 1.0f/_theta;
     eps2        = eps*eps;
-    eta         = 0.02;
+    eta         = 0.02f;
     theta       = _theta;
 
     nextSnapTime = 0;

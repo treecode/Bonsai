@@ -366,11 +366,11 @@ __device__ uint4 get_mask(int level) {
 
 /*
 __device__ uint2 get_imask(uint2 mask) {
-  return (uint2){0x3FFFFFFF ^ mask.x, 0xFFFFFFFF ^ mask.y};
+  return make_uint2(0x3FFFFFFF ^ mask.x, 0xFFFFFFFF ^ mask.y);
 }*/
 
 __device__ uint4 get_imask(uint4 mask) {
-  return (uint4){0x3FFFFFFF ^ mask.x, 0xFFFFFFFF ^ mask.y, 0xFFFFFFFF ^ mask.z, 0};
+  return make_uint4(0x3FFFFFFF ^ mask.x, 0xFFFFFFFF ^ mask.y, 0xFFFFFFFF ^ mask.z, 0);
 }
 
 
@@ -379,13 +379,13 @@ __device__ int4 get_crd(uint2 key) {
   int4 crd;
 
   crd.x = undilate3(key);
-  crd.y = undilate3((uint2){key.x >> 1, key.y >> 1});
-  crd.z = undilate3((uint2){key.x >> 2, key.y >> 2});
+  crd.y = undilate3(make_uint2(key.x >> 1, key.y >> 1));
+  crd.z = undilate3(make_uint2(key.x >> 2, key.y >> 2));
   
   return crd;
 }
 
-__device__ int cmp_uint2(uint2 a, uint2 b) {
+__device__ inline int cmp_uint2(uint2 a, uint2 b) {
   if      (a.x < b.x) return -1;
   else if (a.x > b.x) return +1;
   else {

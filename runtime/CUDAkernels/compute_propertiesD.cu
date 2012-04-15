@@ -141,8 +141,8 @@ extern "C" __global__ void compute_leaf(const int n_leafs,
   oct_q11 = oct_q22 = oct_q33 = 0.0;
   oct_q12 = oct_q13 = oct_q23 = 0.0;
   float3 r_min, r_max;
-  r_min = (float3){+1e10f, +1e10f, +1e10f};
-  r_max = (float3){-1e10f, -1e10f, -1e10f};
+  r_min = make_float3(+1e10f, +1e10f, +1e10f);
+  r_max = make_float3(-1e10f, -1e10f, -1e10f);
 
   //Loop over the children=>particles=>bodys
   //unroll increases register usage #pragma unroll 16
@@ -167,8 +167,8 @@ extern "C" __global__ void compute_leaf(const int n_leafs,
   mon.z *= im;
 
   double4 Q0, Q1;
-  Q0 = (double4){oct_q11, oct_q22, oct_q33, maxEps}; //Store max softening
-  Q1 = (double4){oct_q12, oct_q13, oct_q23, 0};
+  Q0 = make_double4(oct_q11, oct_q22, oct_q33, maxEps); //Store max softening
+  Q1 = make_double4(oct_q12, oct_q13, oct_q23, 0);
 
   //Store the leaf properties
   multipole[3*nodeID + 0] = mon;       //Monopole
@@ -176,8 +176,8 @@ extern "C" __global__ void compute_leaf(const int n_leafs,
   multipole[3*nodeID + 2] = Q1;        //Quadropole
 
   //Store the node boundaries
-  nodeLowerBounds[nodeID] = (float4){r_min.x, r_min.y, r_min.z, 0.0f};
-  nodeUpperBounds[nodeID] = (float4){r_max.x, r_max.y, r_max.z, 1.0f};  //4th parameter is set to 1 to indicate this is a leaf
+  nodeLowerBounds[nodeID] = make_float4(r_min.x, r_min.y, r_min.z, 0.0f);
+  nodeUpperBounds[nodeID] = make_float4(r_max.x, r_max.y, r_max.z, 1.0f);  //4th parameter is set to 1 to indicate this is a leaf
 
   //Global domain boundaries using reduction
 /*  sh_rmin[tid].x = r_min.x; sh_rmin[tid].y = r_min.y; sh_rmin[tid].z = r_min.z;
@@ -251,8 +251,8 @@ extern "C" __global__ void compute_non_leaf(const int curLevel,         //Level 
   oct_q12 = oct_q13 = oct_q23 = 0.0;
 
   float3 r_min, r_max;
-  r_min = (float3){+1e10f, +1e10f, +1e10f};
-  r_max = (float3){-1e10f, -1e10f, -1e10f};
+  r_min = make_float3(+1e10f, +1e10f, +1e10f);
+  r_max = make_float3(-1e10f, -1e10f, -1e10f);
 
   //Process the children (1 to 8)
   float maxEps = -100.0f;
@@ -270,8 +270,8 @@ extern "C" __global__ void compute_non_leaf(const int curLevel,         //Level 
   }
 
   //Save the bounds
-  nodeLowerBounds[nodeID] = (float4){r_min.x, r_min.y, r_min.z, 0.0f};
-  nodeUpperBounds[nodeID] = (float4){r_max.x, r_max.y, r_max.z, 0.0f}; //4th is set to 0 to indicate a non-leaf
+  nodeLowerBounds[nodeID] = make_float4(r_min.x, r_min.y, r_min.z, 0.0f);
+  nodeUpperBounds[nodeID] = make_float4(r_max.x, r_max.y, r_max.z, 0.0f); //4th is set to 0 to indicate a non-leaf
 
   //Regularize and store the results
   double4 mon = {posx, posy, posz, mass};
@@ -283,8 +283,8 @@ extern "C" __global__ void compute_non_leaf(const int curLevel,         //Level 
   mon.z *= im;
 
   double4 Q0, Q1;
-  Q0 = (double4){oct_q11, oct_q22, oct_q33, maxEps}; //store max Eps
-  Q1 = (double4){oct_q12, oct_q13, oct_q23, 0};
+  Q0 = make_double4(oct_q11, oct_q22, oct_q33, maxEps); //store max Eps
+  Q1 = make_double4(oct_q12, oct_q13, oct_q23, 0);
 
   multipole[3*nodeID + 0] = mon;        //Monopole
   multipole[3*nodeID + 1] = Q0;         //Quadropole1
@@ -333,10 +333,10 @@ extern "C" __global__ void compute_scaling(const int node_count,
   Q1.y = Q1.z; Q1.z = temp;
 
   //Convert the doubles to floats
-  float4 mon            = (float4){monD.x, monD.y, monD.z, monD.w};
+  float4 mon            = make_float4(monD.x, monD.y, monD.z, monD.w);
   multipoleF[3*idx + 0] = mon;
-  multipoleF[3*idx + 1] = (float4){Q0.x, Q0.y, Q0.z, Q0.w};        //Quadropole1
-  multipoleF[3*idx + 2] = (float4){Q1.x, Q1.y, Q1.z, Q1.w};        //Quadropole2
+  multipoleF[3*idx + 1] = make_float4(Q0.x, Q0.y, Q0.z, Q0.w);        //Quadropole1
+  multipoleF[3*idx + 2] = make_float4(Q1.x, Q1.y, Q1.z, Q1.w);        //Quadropole2
 
   float4 r_min, r_max;
   r_min = nodeLowerBounds[idx];
@@ -350,7 +350,7 @@ extern "C" __global__ void compute_scaling(const int node_count,
                 powf(fmaxf(fabs(mon.z-r_min.z), fabs(mon.z-r_max.z)), 2);
   size = sqrtf(size)*0.5;
   #else
-//  float3 size3  = (float3){fmaxf(fabs(mon.x-r_min.x), fabs(mon.x-r_max.x)),
+//  float3 size3  = make_float3(fmaxf(fabs(mon.x-r_min.x), fabs(mon.x-r_max.x)),
 //                          fmaxf(fabs(mon.y-r_min.y), fabs(mon.y-r_max.y)),
 //                          fmaxf(fabs(mon.z-r_min.z), fabs(mon.z-r_max.z))};
 //  float size    = fmaxf(size3.x, fmaxf(size3.y, size3.z));
@@ -365,16 +365,16 @@ extern "C" __global__ void compute_scaling(const int node_count,
   boxCenter.y = 0.5*(r_min.y + r_max.y);
   boxCenter.z = 0.5*(r_min.z + r_max.z);
 
-  float3 boxSize = (float3){fmaxf(fabs(boxCenter.x-r_min.x), fabs(boxCenter.x-r_max.x)),
+  float3 boxSize = make_float3(fmaxf(fabs(boxCenter.x-r_min.x), fabs(boxCenter.x-r_max.x)),
                           fmaxf(fabs(boxCenter.y-r_min.y), fabs(boxCenter.y-r_max.y)),
                           fmaxf(fabs(boxCenter.z-r_min.z), fabs(boxCenter.z-r_max.z))};
 
-//   float3 size3  = (float3){fmaxf(fabs(mon.x-r_min.x), fabs(mon.x-r_max.x)),
+//   float3 size3  = make_float3(fmaxf(fabs(mon.x-r_min.x), fabs(mon.x-r_max.x)),
 //                           fmaxf(fabs(mon.y-r_min.y), fabs(mon.y-r_max.y)),
 //                           fmaxf(fabs(mon.z-r_min.z), fabs(mon.z-r_max.z))};
 
   //Calculate distance between center of the box and the center of mass
-  float3 s3     = (float3){(boxCenter.x - mon.x), (boxCenter.y - mon.y), (boxCenter.z - mon.z)};
+  float3 s3     = make_float3((boxCenter.x - mon.x), (boxCenter.y - mon.y), (boxCenter.z - mon.z)};
   double s      = sqrt((s3.x*s3.x) + (s3.y*s3.y) + (s3.z*s3.z));
 
 //   if(idx < -10)
@@ -406,12 +406,12 @@ extern "C" __global__ void compute_scaling(const int node_count,
   boxCenter.y = 0.5*(r_min.y + r_max.y);
   boxCenter.z = 0.5*(r_min.z + r_max.z);
 
-  float3 boxSize = (float3){fmaxf(fabs(boxCenter.x-r_min.x), fabs(boxCenter.x-r_max.x)),
-                          fmaxf(fabs(boxCenter.y-r_min.y), fabs(boxCenter.y-r_max.y)),
-                          fmaxf(fabs(boxCenter.z-r_min.z), fabs(boxCenter.z-r_max.z))};
+  float3 boxSize = make_float3(fmaxf(fabs(boxCenter.x-r_min.x), fabs(boxCenter.x-r_max.x)),
+                               fmaxf(fabs(boxCenter.y-r_min.y), fabs(boxCenter.y-r_max.y)),
+                               fmaxf(fabs(boxCenter.z-r_min.z), fabs(boxCenter.z-r_max.z)));
 
   //Calculate distance between center of the box and the center of mass
-  float3 s3     = (float3){(boxCenter.x - mon.x), (boxCenter.y - mon.y), (boxCenter.z - mon.z)};
+  float3 s3     = make_float3((boxCenter.x - mon.x), (boxCenter.y - mon.y), (boxCenter.z - mon.z));
   double s      = sqrt((s3.x*s3.x) + (s3.y*s3.y) + (s3.z*s3.z));
 
   //Length of the box, note times 2 since we only computed half the distance before
@@ -619,8 +619,8 @@ extern "C" __global__ void setPHGroupData(const int n_groups,
   volatile float3 *sh_rmin = (float3*)&shmem [ 0];
   volatile float3 *sh_rmax = (float3*)&shmem[NCRIT];
 
-  float3 r_min = (float3){+1e10f, +1e10f, +1e10f};
-  float3 r_max = (float3){-1e10f, -1e10f, -1e10f};
+  float3 r_min = make_float3(+1e10f, +1e10f, +1e10f);
+  float3 r_max = make_float3(-1e10f, -1e10f, -1e10f);
 
   int start = group_list[bid].x;
   int end   = group_list[bid].y;
@@ -667,9 +667,9 @@ extern "C" __global__ void setPHGroupData(const int n_groups,
     grpCenter.y = 0.5*(r_min.y + r_max.y);
     grpCenter.z = 0.5*(r_min.z + r_max.z);
 
-    float3 grpSize = (float3){fmaxf(fabs(grpCenter.x-r_min.x), fabs(grpCenter.x-r_max.x)),
-                              fmaxf(fabs(grpCenter.y-r_min.y), fabs(grpCenter.y-r_max.y)),
-                              fmaxf(fabs(grpCenter.z-r_min.z), fabs(grpCenter.z-r_max.z))};
+    float3 grpSize = make_float3(fmaxf(fabs(grpCenter.x-r_min.x), fabs(grpCenter.x-r_max.x)),
+                                 fmaxf(fabs(grpCenter.y-r_min.y), fabs(grpCenter.y-r_max.y)),
+                                 fmaxf(fabs(grpCenter.z-r_min.z), fabs(grpCenter.z-r_max.z)));
 
     //Store the box size and opening criteria
     groupSizeInfo[bid].x = grpSize.x;

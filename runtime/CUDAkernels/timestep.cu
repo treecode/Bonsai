@@ -397,9 +397,9 @@ extern "C"  __global__ void compute_dt(const int n_bodies,
 
     j2 = min(n_bodies-1, idx + 1);
     rj = bodies_pos[j2];
-    dr = (float3){ri.x - rj.x,
-                  ri.y - rj.y,
-                  ri.z - rj.z};
+    dr = make_float3(ri.x - rj.x,
+                     ri.y - rj.y,
+                     ri.z - rj.z);
     if (idx != j2) {
       if (dr.x*dr.x + dr.y*dr.y + dr.z*dr.z < ds2) {
         ds2 = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
@@ -520,7 +520,7 @@ __device__ void compute_energyD(const int n_bodies,
   }
 
   // write result for this block to global mem
-  if (tid == 0) energy[blockIdx.x] = (float2){shDataKin[0], shDataPot[0] };
+  if (tid == 0) energy[blockIdx.x] = make_float2(shDataKin[0], shDataPot[0]);
 }
 
 extern "C" __global__ void compute_energy(const int n_bodies,
@@ -612,7 +612,7 @@ __device__ void compute_energy_doubleD(const int n_bodies,
 
 
   // write result for this block to global mem
-  if (tid == 0) energy[blockIdx.x] = (double2){shDDataKin[0], shDDataPot[0] };
+  if (tid == 0) energy[blockIdx.x] = make_double2(shDDataKin[0], shDDataPot[0]);
 
 }
 
