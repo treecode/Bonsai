@@ -8,7 +8,7 @@ void octree::allocateParticleMemory(tree_structure &tree)
   int n_bodies = tree.n;
   
   if(nProcs > 1)                //10% extra space, only in parallel when
-    n_bodies = n_bodies*1.1;    //number of particles can fluctuate
+    n_bodies = (int)(n_bodies*1.1f);    //number of particles can fluctuate
   
   //Particle properties
   tree.bodies_pos.cmalloc(n_bodies+1, true);   //+1 to set end pos, host mapped? TODO not needed right since we use Ppos
@@ -104,7 +104,7 @@ void octree::allocateParticleMemory(tree_structure &tree)
   if(mpiGetNProcs() > 1)
   {
 //    int remoteSize = (n_bodies*0.1) +  (n_bodies*0.1); //TODO some more realistic number
-    int remoteSize = (n_bodies*0.5); //TODO some more realistic number
+    int remoteSize = (int)(n_bodies*0.5); //TODO some more realistic number
     this->remoteTree.fullRemoteTree.cmalloc(remoteSize, true);    
   }
   
@@ -172,7 +172,7 @@ void octree::allocateTreePropMemory(tree_structure &tree)
   }
   else
   {    
-    n_nodes = n_nodes * 1.1; 
+    n_nodes = (int)(n_nodes * 1.1f); 
     tree.multipole.cmalloc(3*n_nodes, true); //host alloced
         
     tree.boxSizeInfo.cmalloc(n_nodes, true);     //host alloced
@@ -282,7 +282,7 @@ void octree::build (tree_structure &tree) {
     build_nodes.set_arg<int>(2, &offset);    
     build_nodes.execute();
                  
-    tree.level_list[level] = (uint2){offset, offset + validCount};
+    tree.level_list[level] = make_uint2(offset, offset + validCount);
     offset += validCount;
 
   } //end for lvl
@@ -290,7 +290,7 @@ void octree::build (tree_structure &tree) {
 
   //Put the last level + 1 index to 0,0 
   //so we dont need an extra if statement in the linking phase
-  tree.level_list[level] = (uint2){0, 0};
+  tree.level_list[level] = make_uint2(0, 0);
   tree.level_list.h2d();
     
   int n_nodes  = offset;
@@ -380,9 +380,9 @@ void octree::build (tree_structure &tree) {
   ///******   Start building the particle groups *******///////
 
   //Compute the box size, the max length of one of the sides of the rectangle
-  real size     = fmax(fabs(rMaxLocalTree.z - rMinLocalTree.z), 
-                  fmax(fabs(rMaxLocalTree.y - rMinLocalTree.y),
-                       fabs(rMaxLocalTree.x - rMinLocalTree.x)));
+  real size     = std::max(fabs(rMaxLocalTree.z - rMinLocalTree.z), 
+                           std::max(fabs(rMaxLocalTree.y - rMinLocalTree.y),
+                                    fabs(rMaxLocalTree.x - rMinLocalTree.x)));
   real dist     = ((rMaxLocalTree.z - rMinLocalTree.z) * (rMaxLocalTree.z - rMinLocalTree.z) + 
                    (rMaxLocalTree.y - rMinLocalTree.y) * (rMaxLocalTree.y - rMinLocalTree.y) +
                    (rMaxLocalTree.x - rMinLocalTree.x) * (rMaxLocalTree.x - rMinLocalTree.x));      

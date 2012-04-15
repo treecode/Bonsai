@@ -23,7 +23,7 @@ float octree::getDt()
 void octree::setTheta(float thetax)
 {
     theta = thetax; 
-    inv_theta   = 1.0/theta;    
+    inv_theta   = 1.0f/theta;    
 }
 
 float octree::getTheta()
@@ -33,12 +33,12 @@ float octree::getTheta()
 
 void octree::setTEnd(float tEndx)
 {
-    tEnd  = tEndx;  
+    tEnd = (int)tEndx;  
 }
 
 float octree::getTEnd()
 {
-  return tEnd;
+  return (float)tEnd;
 }
 
 void octree::setTime(float t_now)
@@ -53,12 +53,12 @@ float octree::getTime()
 
 float octree::getPot()
 {
-  return Epot;
+  return (float)Epot;
 }
 
 float octree::getKin()
 {
-  return Ekin;
+  return (float)Ekin;
 }
 
 //   void calcGravityOnParticles(real4 *bodyPositions, real4 *bodyVelocities, int *bodyIDs);

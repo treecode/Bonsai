@@ -18,8 +18,8 @@ extern "C" __global__ void boundaryReduction(const int n_particles,
   //const uint idx = bid * blockDim.x + tid;
 
   volatile __shared__ float3 shmem[512];
-  float3 r_min = (float3){+1e10f, +1e10f, +1e10f};
-  float3 r_max = (float3){-1e10f, -1e10f, -1e10f};
+  float3 r_min = make_float3(+1e10f, +1e10f, +1e10f);
+  float3 r_max = make_float3(-1e10f, -1e10f, -1e10f);
 
   volatile float3 *sh_rmin = (float3*)&shmem [ 0];
   volatile float3 *sh_rmax = (float3*)&shmem[256];
@@ -104,8 +104,8 @@ extern "C" __global__ void boundaryReductionGroups(const int n_groups,
   //const uint idx = bid * blockDim.x + tid;
 
   volatile __shared__ float3 shmem[512];
-  float3 r_min = (float3){+1e10f, +1e10f, +1e10f};
-  float3 r_max = (float3){-1e10f, -1e10f, -1e10f};
+  float3 r_min = make_float3(+1e10f, +1e10f, +1e10f);
+  float3 r_max = make_float3(-1e10f, -1e10f, -1e10f);
 
   volatile float3 *sh_rmin = (float3*)&shmem [ 0];
   volatile float3 *sh_rmax = (float3*)&shmem[256];
@@ -217,7 +217,7 @@ extern "C" __global__ void cl_build_key_list(uint2  *body_key,
    uint2 key = get_key(crd);
 
 
-  if (id == n_bodies) key = (uint2){0xFFFFFFFF, 0xFFFFFFFF};
+  if (id == n_bodies) key = make_uint2(0xFFFFFFFF, 0xFFFFFFFF);
 
   body_key[id] = key;
 
@@ -262,7 +262,7 @@ extern "C" __global__ void cl_build_key_list(uint4  *body_key,
    uint4 key = get_key(crd);
 
 
-  if (id == n_bodies) key = (uint4){0xFFFFFFFF, 0xFFFFFFFF, 0, 0};
+  if (id == n_bodies) key = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0, 0);
 
   body_key[id] = key;
 
@@ -303,7 +303,7 @@ extern "C" __global__ void build_phkey_list(uint4  *body_key,
 
   uint4 key_new = get_key(crd);
 
-  if (id == n_bodies) key_new = (uint4){0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF};
+  if (id == n_bodies) key_new = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
 
   body_key[id] = key_new;
 
@@ -408,7 +408,7 @@ extern "C" __global__ void build_phkey_list(uint2  *body_key,
   key_new.x = key & 0xFFFFFFFF;
   key_new.y = (key >> 32) & 0xFFFFFFFF;
 
-  if (id == n_bodies) key_new = (uint2){0xFFFFFFFF, 0xFFFFFFFF};
+  if (id == n_bodies) key_new = make_uint2(0xFFFFFFFF, 0xFFFFFFFF);
 
   body_key[id] = key_new;
 
@@ -432,7 +432,7 @@ extern "C" __global__ void cl_build_valid_list(int n_bodies,
   const uint4 key_I = {0xFFFFFFF2, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF}; //Ignore
   const uint4 key_E = {0xFFFFFFF3, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF}; //End
   const uint4 key_A = {0xFFFFFFF4, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF}; //Start and End
-//   const uint2 key_TEST = {0x0, 0x0}; //Start and End
+//   const uint2 key_TEST = make_uint2(0x0, 0x0); //Start and End
 
 //TODO clean this if we dont use it
   
@@ -461,7 +461,7 @@ extern "C" __global__ void cl_build_valid_list(int n_bodies,
     key_p = body_key[id+1];
   }
   else
-    key_p = (uint4){0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF};
+    key_p = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
 
 
   int valid0 = 0;
@@ -531,17 +531,17 @@ extern "C" __global__ void cl_build_nodes(uint level,
 
   uint4 key  = bodies_key[bi];
   uint4 mask = get_mask(level);
-  key = (uint4){key.x & mask.x, key.y & mask.y, key.z & mask.z, 0}; 
+  key = make_uint4(key.x & mask.x, key.y & mask.y, key.z & mask.z, 0); 
 
 
-  node_bodies[offset+id] = (uint2){bi | (level << BITLEVELS), bj};
+  node_bodies[offset+id] = make_uint2(bi | (level << BITLEVELS), bj);
   node_key   [offset+id] = key;
   n_children [offset+id] = 0;
   
   if ((int)level > (int)(LEVEL_MIN - 1)) 
     if (bj - bi <= NLEAF)                            //Leaf can only have NLEAF particles, if its more there will be a split
       for (int i = bi; i < bj; i++)
-        bodies_key[i] = (uint4){0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF}; //sets the key to FF to indicate the body is used
+        bodies_key[i] = make_uint4(0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF); //sets the key to FF to indicate the body is used
 
 }
 
@@ -594,7 +594,7 @@ extern "C" __global__ void cl_link_tree(int n_nodes,
   /********* accumulate children *****/
   
   uint4 mask = get_mask(level - 1);
-  key = (uint4){key.x & mask.x, key.y & mask.y,  key.z & mask.z, 0}; 
+  key = make_uint4(key.x & mask.x, key.y & mask.y,  key.z & mask.z, 0); 
 
   uint2 cij;
 
@@ -614,13 +614,13 @@ extern "C" __global__ void cl_link_tree(int n_nodes,
 //   parent_id_list[id] = ci;
 
   mask = get_imask(mask);
-  key = (uint4) {key.x | mask.x, key.y | mask.y, key.z | mask.z, 0 };
+  key = make_uint4(key.x | mask.x, key.y | mask.y, key.z | mask.z, 0);
   if (id > 0)   
     atomicAdd(&n_children[ci], (1 << 28));
 
   key = get_key(crd);
   mask = get_mask(level);
-  key = (uint4) {key.x & mask.x, key.y & mask.y, key.z & mask.z, 0}; 
+  key = make_uint4(key.x & mask.x, key.y & mask.y, key.z & mask.z, 0); 
 
   /********* store the 1st child *****/
 
@@ -813,7 +813,7 @@ extern "C" __global__ void store_group_list(int    n_particles,
 
   if(tid == 0)
   {
-     group_list[bid] = (uint2){start,end};
+     group_list[bid] = make_uint2(start,end);
   }
 }
 

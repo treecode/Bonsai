@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include "node_specs.h"
 
-__device__ int isinbox(real4 pos, double4 xlow, double4 xhigh)
+__device__ inline int isinbox(real4 pos, double4 xlow, double4 xhigh)
 {  
     if((pos.x < xlow.x)||(pos.x > xhigh.x))          
       return 0;
