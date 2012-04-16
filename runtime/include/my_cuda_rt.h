@@ -496,7 +496,8 @@ namespace my_dev {
       hDeviceMem_flag = true;      
     }
 
-    void cmalloc(int n, int flags = 0, bool pinned = false) { //,  int flags = 0) {
+    void cmalloc(int n, bool pinned = false, int flags = 0) 
+    {
       assert(context_flag);
 //       assert(!hDeviceMem_flag);
       this->pinned_mem = pinned;      
