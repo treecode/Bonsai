@@ -496,7 +496,7 @@ namespace my_dev {
       hDeviceMem_flag = true;      
     }
 
-    void cmalloc(int n, bool pinned = false,  int flags = 0) {
+    void cmalloc(int n, int flags = 0, bool pinned = false) { //,  int flags = 0) {
       assert(context_flag);
 //       assert(!hDeviceMem_flag);
       this->pinned_mem = pinned;      
@@ -505,11 +505,11 @@ namespace my_dev {
       size = n;
             
       if(pinned_mem){    
-        CU_SAFE_CALL(cudaMallocHost((void**)&host_ptr, size*sizeof(T)));}
+        CU_SAFE_CALL(cudaMallocHost((T**)&host_ptr, size*sizeof(T)));}
       else{
         host_ptr = (T*)malloc(size*sizeof(T));}
         
-      CU_SAFE_CALL(cudaMalloc((void**)&hDeviceMem, size*sizeof(T)));
+      CU_SAFE_CALL(cudaMalloc((T**)&hDeviceMem, size*sizeof(T)));
       increaseMemUsage(size*sizeof(T));
       DeviceMemPtr = (void*)(size_t)hDeviceMem;    
 
@@ -526,11 +526,11 @@ namespace my_dev {
       size = n;
       
       if(pinned_mem)      
-        cudaMallocHost((void**)&host_ptr, size*sizeof(T));
+        cudaMallocHost((T**)&host_ptr, size*sizeof(T));
       else
         host_ptr = (T*)calloc(size, sizeof(T));
       
-      CU_SAFE_CALL(cudaMalloc((void**)&hDeviceMem, size*sizeof(T)));           
+      CU_SAFE_CALL(cudaMalloc((T**)&hDeviceMem, size*sizeof(T)));           
       
       CU_SAFE_CALL(cudaMemset((void*)hDeviceMem, 0, size*sizeof(T)));     
       increaseMemUsage(size*sizeof(T));
@@ -556,7 +556,7 @@ namespace my_dev {
       {
         //No realloc function so do it by hand
         T *tmp_ptr;            
-        CU_SAFE_CALL(cudaMallocHost((void**)&tmp_ptr, n*sizeof(T)));        
+        CU_SAFE_CALL(cudaMallocHost((T**)&tmp_ptr, n*sizeof(T)));        
         //Copy old content to newly allocated mem
         int tmpSize = min(size,n);
                
@@ -575,7 +575,7 @@ namespace my_dev {
       //This version compared to the commented out one above, first allocates
       //new memory and then copies the old one in the new one and free's the old one
       T *hDeviceMemNew;
-      CU_SAFE_CALL(cudaMalloc((void**)&hDeviceMemNew, n*sizeof(T)));      
+      CU_SAFE_CALL(cudaMalloc((T**)&hDeviceMemNew, n*sizeof(T)));      
       increaseMemUsage(n*sizeof(T));    
       int nToCopy = min(size, n); //Do not copy more than we have memory
       CU_SAFE_CALL(cudaMemcpy(hDeviceMemNew, hDeviceMem, nToCopy*sizeof(T), cudaMemcpyDeviceToDevice ));
