@@ -786,8 +786,11 @@ namespace my_dev {
       int      texOffset; //The possible extra offset when using textures and combined memory
       int      texSize;
       int      texIdx;
-#if 1 /* egaburov: to remove cannelDesc non-intialized warning */
-      kernelArg() : channelDesc(cudaCreateChannelDesc(0, 0, 0, 0, cudaChannelFormatKindNone)) {}
+#if 1 /* egaburov/harrism: to remove various uninitialized use warnings */
+      kernelArg() : 
+        alignment(0), sizeoftyp(0), ptr(0), size(0), texture(0), 
+        channelDesc(cudaCreateChannelDesc(0, 0, 0, 0, cudaChannelFormatKindNone)),
+        texOffset(0), texSize(0), texIdx(0) {}
 #endif
     } kernelArg;        
     
