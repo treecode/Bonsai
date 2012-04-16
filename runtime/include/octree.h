@@ -27,9 +27,9 @@
 
 #ifdef USE_MPI
 #include "mpi.h"
+#endif
 
 #define PRINT_MPI_DEBUG
-#endif
 
 using namespace std;
 

@@ -9,7 +9,7 @@ void octree::mpiInit(int argc,char *argv[], int &procId, int &nProcs)
 #ifdef USE_MPI
     int  namelen;   
     char processor_name[MPI_MAX_PROCESSOR_NAME];
-    
+
     int mpiInitialized = 0;
     MPI_Initialized(&mpiInitialized);
     
@@ -19,10 +19,12 @@ void octree::mpiInit(int argc,char *argv[], int &procId, int &nProcs)
     MPI_Comm_size(MPI_COMM_WORLD, &nProcs);
     MPI_Comm_rank(MPI_COMM_WORLD, &procId);
     MPI_Get_processor_name(processor_name,&namelen);
+#else
+    char processor_name[] = "Default";
+#endif
 
-    #ifdef PRINT_MPI_DEBUG
-      fprintf(stderr, "Proc id: %d @ %s , total processes: %d (mpiInit) \n", procId, processor_name, nProcs);
-    #endif
+#ifdef PRINT_MPI_DEBUG
+    fprintf(stderr, "Proc id: %d @ %s , total processes: %d (mpiInit) \n", procId, processor_name, nProcs);
 #endif
 
     //Allocate memory for the used buffers
@@ -145,7 +147,7 @@ void octree::determine_sample_freq(int numberOfParticles)
 
     #ifdef PRINT_MPI_DEBUG
     if(procId == 0)
-      cout << "Total number of particles: " << tmp << endl;
+      cout << "Total number of particles: " << nTotalFreq << endl;
     #endif
    
     int maxsample = (int)(NMAXSAMPLE*0.8); // 0.8 is safety factor    
