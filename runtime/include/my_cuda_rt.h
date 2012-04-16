@@ -487,14 +487,13 @@ namespace my_dev {
       host_ptr = (T*) ((char*)ParentHost_ptr +  allignOffset*sizeof(uint));
 
       
-#if 1 /* egaburov: to fix void* pointer arithmetic warrning .  */
+#if 0 /* egaburov: to fix void* pointer arithmetic warrning .  */
+      //       hDeviceMem   = (T*)(cudaMem + offset*sizeof(uint) + allignOffset*sizeof(uint));
+#else
       /* jbedorf: fixed so address is correct, casting before adding gives a different
        * result. So divide by size of object */
-      //       hDeviceMem   = (T*)(cudaMem + offset*sizeof(uint) + allignOffset*sizeof(uint));
       hDeviceMem   = (T*)cudaMem + ((offset*sizeof(uint) + allignOffset*sizeof(uint)) / sizeof(T));
-#else
-      hDeviceMem   = (T*)cudaMem + offset*sizeof(uint) + allignOffset*sizeof(uint);
-      
+      //hDeviceMem   = (T*)cudaMem + offset*sizeof(uint) + allignOffset*sizeof(uint);      
 #endif
       DeviceMemPtr = (void*)(size_t)(hDeviceMem);
 
