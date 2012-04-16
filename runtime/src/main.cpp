@@ -15,7 +15,11 @@ www.castle.strw.leidenuniv.nl
 
 */
 
-
+#ifdef WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <Windows.h>
+#endif
 
 #include <iostream>
 #include <stdlib.h>
@@ -70,7 +74,7 @@ void read_dumbp_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
   #ifndef INDSOFT
      inputFile >> idummy >> positions.w;
      inputFile.seekg(0, ios::beg); //Reset file pointer
-     NTotal = 1 / positions.w;
+     NTotal = (int)(1 / positions.w);
   #else
      //Read the Ntotal from the file header
      inputFile >> NTotal >> NFirst >> NSecond >> NThird;
@@ -114,7 +118,7 @@ void read_dumbp_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
   
     if(bodyPositions.size() > perProc && procCntr != procs)
     { 
-      tree->ICSend(procCntr,  &bodyPositions[0], &bodyVelocities[0],  &bodiesIDs[0], bodyPositions.size());
+      tree->ICSend(procCntr,  &bodyPositions[0], &bodyVelocities[0],  &bodiesIDs[0], (int)bodyPositions.size());
       procCntr++;
       
       bodyPositions.clear();
@@ -236,7 +240,7 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
   
     if(bodyPositions.size() > perProc && procCntr != procs)
     { 
-      tree->ICSend(procCntr,  &bodyPositions[0], &bodyVelocities[0],  &bodiesIDs[0], bodyPositions.size());
+      tree->ICSend(procCntr,  &bodyPositions[0], &bodyVelocities[0],  &bodiesIDs[0], (int)bodyPositions.size());
       procCntr++;
       
       bodyPositions.clear();
@@ -356,7 +360,7 @@ void read_dumbp_file(vector<real4> &bodyPositions, vector<real4> &bodyVelocities
   }
 
   inputFile.close();
-  int n = bodyPositions.size();
+  int n = (int)bodyPositions.size();
   bodyPositions.resize(n-1);
 
   fprintf(stdout, "read %d bodies from dump file \n", n-1);
@@ -402,7 +406,7 @@ void read_dumbp_bd_file(vector<real4> &bodyPositions, vector<real4> &bodyVelocit
   }
 
   inputFile.close();
-  int n = bodyPositions.size();
+  int n = (int)bodyPositions.size();
   bodyPositions.resize(n-1);
 
   fprintf(stdout, "read %d bodies from dump file \n", n-1);
@@ -450,7 +454,7 @@ void read_bd_dumbp_file(vector<real4> &bodyPositions, vector<real4> &bodyVelocit
   }
 
   inputFile.close();
-  int n = bodyPositions.size();
+  int n = (int)bodyPositions.size();
   bodyPositions.resize(n-1);
 
   //Softening of one of the last stars
@@ -498,9 +502,9 @@ int main(int argc, char** argv)
   vector<real4> bodyVelocities;
   vector<int>   bodyIDs;
 
-  float eps      = 0.05;
-  float theta    = 0.75;
-  float timeStep = 1.0 / 16.0;
+  float eps      = 0.05f;
+  float theta    = 0.75f;
+  float timeStep = 1.0f / 16.0f;
   int  tEnd      = 1000;
   int devID      = 0;
 
@@ -541,16 +545,16 @@ int main(int argc, char** argv)
     devID = atoi(argv[3]);
   }
   if (argc > 4) {
-    timeStep = atof(argv[4]);
+    timeStep = (float)atof(argv[4]);
   }
   if (argc > 5) {
     tEnd = atoi(argv[5]);
   }
   if (argc > 6) {
-    eps = atof(argv[6]);
+    eps = (float)atof(argv[6]);
   }
   if (argc > 7) {
-    theta = atof(argv[7]);
+    theta = (float)atof(argv[7]);
   }
   if(argc > 8)
   {
@@ -561,10 +565,10 @@ int main(int argc, char** argv)
     snapshotIter = atoi(argv[9]);
   }
   if (argc > 10) {
-    killDistance = atof(argv[10]);
+    killDistance = (float)atof(argv[10]);
   }
   if (argc > 11) {
-    remoDistance = atof(argv[11]);
+    remoDistance = (float)atof(argv[11]);
   }
   if(argc > 12)
   {
@@ -597,7 +601,11 @@ int main(int argc, char** argv)
   if(gpu_prof_log){
     char tmp[50];
     sprintf(tmp,"process%d_%s",procId,gpu_prof_log);
+#ifdef WIN32
+    SetEnvironmentVariable("CUDA_PROFILE_LOG", tmp);
+#else
     setenv("CUDA_PROFILE_LOG",tmp,1);
+#endif
   }
       
   if(nProcs > 1)
@@ -644,7 +652,11 @@ int main(int argc, char** argv)
   
   tree->load_kernels();
 
+#ifdef USE_MPI
   MPI_Reduce(&mass,&totalMass,1, MPI_DOUBLE, MPI_SUM,0, MPI_COMM_WORLD);
+#else
+  totalMass = mass;
+#endif
   
   if(procId == 0)   cerr << "Combined Mass: "  << totalMass << "\tNTotal: " << NTotal << std::endl;
 
@@ -655,7 +667,7 @@ int main(int argc, char** argv)
   //over all available processes
   if(tree->nProcs > 1)
   {
-    tree->createDistribution(&bodyPositions[0], bodyPositions.size());  
+    tree->createDistribution(&bodyPositions[0], (int)bodyPositions.size());  
   }
 
   //Print the domain division
@@ -677,7 +689,7 @@ int main(int argc, char** argv)
 
   double t0 = tree->get_time();
 
-  tree->localTree.setN(bodyPositions.size());
+  tree->localTree.setN((int)bodyPositions.size());
   tree->allocateParticleMemory(tree->localTree);
 
   //Load data onto the device
@@ -735,7 +747,9 @@ int main(int argc, char** argv)
   
   logFile.close();
 
+#ifdef USE_MPI
   MPI_Finalize();
+#endif
 
   delete tree;
   tree = NULL;

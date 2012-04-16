@@ -161,7 +161,7 @@ void octree::iterate() {
   //Print time 0 snapshot
   if(snapshotIter > 0 )
   {
-      int time = t_current;
+      int time = (int)t_current;
       if((time >= nextSnapTime))
       {
         nextSnapTime += snapshotIter;
@@ -311,7 +311,7 @@ void octree::iterate() {
 
     if(snapshotIter > 0)
     {
-      int time = t_current;
+      int time = (int)t_current;
       if((time >= nextSnapTime))
       {
         nextSnapTime += snapshotIter;
@@ -390,7 +390,7 @@ void octree::predict(tree_structure &tree)
   t_current  = tnext[0];
   for (int i = 1; i < blockSize ; i++)
   {
-      t_current = fmin(t_current, tnext[i]);
+      t_current = std::min(t_current, tnext[i]);
   }
 
   tree.activeGrpList.zeroMem();      //Reset the active grps

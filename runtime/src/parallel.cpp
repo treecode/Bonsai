@@ -1,10 +1,15 @@
 #include "octree.h"
 
+#ifdef USE_MPI
+#include "mpi.h"
+#endif
+
 void octree::mpiInit(int argc,char *argv[], int &procId, int &nProcs)
 {
+#ifdef USE_MPI
     int  namelen;   
     char processor_name[MPI_MAX_PROCESSOR_NAME];
-    
+
     int mpiInitialized = 0;
     MPI_Initialized(&mpiInitialized);
     
@@ -14,11 +19,13 @@ void octree::mpiInit(int argc,char *argv[], int &procId, int &nProcs)
     MPI_Comm_size(MPI_COMM_WORLD, &nProcs);
     MPI_Comm_rank(MPI_COMM_WORLD, &procId);
     MPI_Get_processor_name(processor_name,&namelen);
+#else
+    char processor_name[] = "Default";
+#endif
 
-    #ifdef PRINT_MPI_DEBUG
-      fprintf(stderr, "Proc id: %d @ %s , total processes: %d (mpiInit) \n", procId, processor_name, nProcs);
-    #endif
-
+#ifdef PRINT_MPI_DEBUG
+    fprintf(stderr, "Proc id: %d @ %s , total processes: %d (mpiInit) \n", procId, processor_name, nProcs);
+#endif
 
     //Allocate memory for the used buffers
     domainRLow  = new double4[nProcs];
@@ -30,9 +37,9 @@ void octree::mpiInit(int argc,char *argv[], int &procId, int &nProcs)
     //Fill domainRX with constants so we can check if its initialized before
     for(int i=0; i < nProcs; i++)
     {
-      domainRLow[i] = domainRHigh[i] = (double4){1e10, 1e10, 1e10, 1e10};
+      domainRLow[i] = domainRHigh[i] = make_double4(1e10, 1e10, 1e10, 1e10);
       
-      domHistoryLow[i] = domHistoryHigh[i] = (int4){0,0,0,0};
+      domHistoryLow[i] = domHistoryHigh[i] = make_int4(0,0,0,0);
     }
     
     currentRLow  = new double4[nProcs];
@@ -51,7 +58,9 @@ void octree::mpiInit(int argc,char *argv[], int &procId, int &nProcs)
 
 //Utility functions
 void octree::mpiSync(){
+#ifdef USE_MPI
   MPI_Barrier(MPI_COMM_WORLD);
+#endif
 }
 
 int octree::mpiGetRank(){ 
@@ -64,16 +73,22 @@ int octree::mpiGetNProcs(){
 
 void octree::AllSum(double &value)
 {
+#ifdef USE_MPI
   double tmp = -1;
   MPI_Allreduce(&value,&tmp,1, MPI_DOUBLE, MPI_SUM,MPI_COMM_WORLD);
   value = tmp;
+#endif
 }
 
 int octree::SumOnRootRank(int &value)
 {
+#ifdef USE_MPI
   int temp;
   MPI_Reduce(&value,&temp,1, MPI_INT, MPI_SUM,0, MPI_COMM_WORLD);
   return temp;
+#else
+  return value;
+#endif
 }
 //end utility
 
@@ -120,20 +135,23 @@ void octree::createORB()
 void octree::determine_sample_freq(int numberOfParticles)
 {
     //Sum the number of particles on all processes
+#ifdef USE_MPI
     int tmp;
     MPI_Allreduce(&numberOfParticles,&tmp,1, MPI_INT, MPI_SUM,MPI_COMM_WORLD);
     
     nTotalFreq = tmp;
-    
+#else
+    nTotalFreq = numberOfParticles;
+#endif
     
 
     #ifdef PRINT_MPI_DEBUG
     if(procId == 0)
-      cout << "Total number of particles: " << tmp << endl;
+      cout << "Total number of particles: " << nTotalFreq << endl;
     #endif
    
     int maxsample = (int)(NMAXSAMPLE*0.8); // 0.8 is safety factor    
-    sampleFreq = (tmp+maxsample-1)/maxsample;
+    sampleFreq = (nTotalFreq+maxsample-1)/maxsample;
     
     fprintf(stderr,"Sample FREQ: %d \n", sampleFreq);
     
@@ -151,34 +169,37 @@ void octree::sendCurrentRadiusInfo(real4 &rmin, real4 &rmax)
   
   int nsample               = 0; //Place holder to just use same datastructure
   curProcState.nsample      = nsample;
-  curProcState.rmin         = (double4){rmin.x, rmin.y, rmin.z, rmin.w};
-  curProcState.rmax         = (double4){rmax.x, rmax.y, rmax.z, rmax.w};
+  curProcState.rmin         = make_double4(rmin.x, rmin.y, rmin.z, rmin.w);
+  curProcState.rmax         = make_double4(rmax.x, rmax.y, rmax.z, rmax.w);
   
+#ifdef USE_MPI
   //Get the number of sample particles and the domain size information
   MPI_Allgather(&curProcState, sizeof(sampleRadInfo), MPI_BYTE,  curSysState,
                 sizeof(sampleRadInfo), MPI_BYTE, MPI_COMM_WORLD);  
   mpiSync();
+#else
+  curSysState[0] = curProcState;
+#endif
 
-  rmin.x                 = currentRLow[0].x = curSysState[0].rmin.x;
-  rmin.y                 = currentRLow[0].y = curSysState[0].rmin.y;
-  rmin.z                 = currentRLow[0].z = curSysState[0].rmin.z;
-                           currentRLow[0].w = curSysState[0].rmin.w;
+  rmin.x                 = (real)(currentRLow[0].x = curSysState[0].rmin.x);
+  rmin.y                 = (real)(currentRLow[0].y = curSysState[0].rmin.y);
+  rmin.z                 = (real)(currentRLow[0].z = curSysState[0].rmin.z);
+                                  currentRLow[0].w = curSysState[0].rmin.w;
                            
-  rmax.x                 = currentRHigh[0].x = curSysState[0].rmax.x;
-  rmax.y                 = currentRHigh[0].y = curSysState[0].rmax.y;
-  rmax.z                 = currentRHigh[0].z = curSysState[0].rmax.z;  
-                           currentRHigh[0].w = curSysState[0].rmax.w;
+  rmax.x                 = (real)(currentRHigh[0].x = curSysState[0].rmax.x);
+  rmax.y                 = (real)(currentRHigh[0].y = curSysState[0].rmax.y);
+  rmax.z                 = (real)(currentRHigh[0].z = curSysState[0].rmax.z);  
+                                  currentRHigh[0].w = curSysState[0].rmax.w;
 
-  
   for(int i=1; i < nProcs; i++)
   {
-    rmin.x = fmin(rmin.x, curSysState[i].rmin.x);
-    rmin.y = fmin(rmin.y, curSysState[i].rmin.y);
-    rmin.z = fmin(rmin.z, curSysState[i].rmin.z);
+    rmin.x = std::min(rmin.x, (real)curSysState[i].rmin.x);
+    rmin.y = std::min(rmin.y, (real)curSysState[i].rmin.y);
+    rmin.z = std::min(rmin.z, (real)curSysState[i].rmin.z);
     
-    rmax.x = fmax(rmax.x, curSysState[i].rmax.x);
-    rmax.y = fmax(rmax.y, curSysState[i].rmax.y);
-    rmax.z = fmax(rmax.z, curSysState[i].rmax.z);    
+    rmax.x = std::max(rmax.x, (real)curSysState[i].rmax.x);
+    rmax.y = std::max(rmax.y, (real)curSysState[i].rmax.y);
+    rmax.z = std::max(rmax.z, (real)curSysState[i].rmax.z);    
     
     currentRLow[i].x = curSysState[i].rmin.x;
     currentRLow[i].y = curSysState[i].rmin.y;
@@ -200,36 +221,40 @@ void octree::sendSampleAndRadiusInfo(int nsample, real4 &rmin, real4 &rmax)
   sampleRadInfo curProcState;
   
   curProcState.nsample      = nsample;
-  curProcState.rmin         = (double4){rmin.x, rmin.y, rmin.z, rmin.w};
-  curProcState.rmax         = (double4){rmax.x, rmax.y, rmax.z, rmax.w};
+  curProcState.rmin         = make_double4(rmin.x, rmin.y, rmin.z, rmin.w);
+  curProcState.rmax         = make_double4(rmax.x, rmax.y, rmax.z, rmax.w);
   
   globalRmax            = 0;
   totalNumberOfSamples  = 0;
 
+#ifdef USE_MPI
   //Get the number of sample particles and the domain size information
   MPI_Allgather(&curProcState, sizeof(sampleRadInfo), MPI_BYTE,  curSysState,
                 sizeof(sampleRadInfo), MPI_BYTE, MPI_COMM_WORLD);  
+#else
+  curSysState[0] = curProcState;
+#endif
 
-  rmin.x                 =  curSysState[0].rmin.x;
-  rmin.y                 =  curSysState[0].rmin.y;
-  rmin.z                 =  curSysState[0].rmin.z;
+  rmin.x                 =  (real)curSysState[0].rmin.x;
+  rmin.y                 =  (real)curSysState[0].rmin.y;
+  rmin.z                 =  (real)curSysState[0].rmin.z;
                            
-  rmax.x                 =  curSysState[0].rmax.x;
-  rmax.y                 =  curSysState[0].rmax.y;
-  rmax.z                 =  curSysState[0].rmax.z;  
+  rmax.x                 =  (real)curSysState[0].rmax.x;
+  rmax.y                 =  (real)curSysState[0].rmax.y;
+  rmax.z                 =  (real)curSysState[0].rmax.z;  
 
   totalNumberOfSamples   = curSysState[0].nsample;
   
   
   for(int i=1; i < nProcs; i++)
   {
-    rmin.x = fmin(rmin.x, curSysState[i].rmin.x);
-    rmin.y = fmin(rmin.y, curSysState[i].rmin.y);
-    rmin.z = fmin(rmin.z, curSysState[i].rmin.z);
+    rmin.x = std::min(rmin.x, (real)curSysState[i].rmin.x);
+    rmin.y = std::min(rmin.y, (real)curSysState[i].rmin.y);
+    rmin.z = std::min(rmin.z, (real)curSysState[i].rmin.z);
     
-    rmax.x = fmax(rmax.x, curSysState[i].rmax.x);
-    rmax.y = fmax(rmax.y, curSysState[i].rmax.y);
-    rmax.z = fmax(rmax.z, curSysState[i].rmax.z);    
+    rmax.x = std::max(rmax.x, (real)curSysState[i].rmax.x);
+    rmax.y = std::max(rmax.y, (real)curSysState[i].rmax.y);
+    rmax.z = std::max(rmax.z, (real)curSysState[i].rmax.z);    
     
    
     totalNumberOfSamples   += curSysState[i].nsample;
@@ -268,9 +293,13 @@ void octree::gpu_collect_sample_particles(int nSample, real4 *sampleParticles)
   }
 
   //Collect sample particles
+#ifdef USE_MPI
   MPI_Gatherv(&sampleParticles[0], nSample*sizeof(real4), MPI_BYTE,
               &sampleArray[0], nReceiveCnts, nReceiveDpls, MPI_BYTE,
               0, MPI_COMM_WORLD);
+#else
+  std::copy(sampleParticles, sampleParticles + nSample, sampleArray.begin());
+#endif
               
   delete[] nReceiveCnts;
   delete[] nReceiveDpls;             
@@ -302,8 +331,13 @@ void octree::collect_sample_particles(real4 *bodies,
     int *nSampleValues = new int[nProcs];
     int *nReceiveCnts  = new int[nProcs];
     int *nReceiveDpls  = new int[nProcs];
+
+#ifdef USE_MPI
     MPI_Gather(&nsample, 1, MPI_INT, nSampleValues, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    
+#else
+    nSampleValues[0] = nsample;
+#endif
+
     //Increase the size of the result buffer if needed
     if(procId == 0)
     {
@@ -335,10 +369,12 @@ void octree::collect_sample_particles(real4 *bodies,
     }
 
     //Collect sample particles, note the MPI_IN_PLACE to prevent MPI errors
+#ifdef USE_MPI
     MPI_Gatherv((procId ? &sampleArray[0] : MPI_IN_PLACE), nsample*sizeof(real4), MPI_BYTE,
                 &sampleArray[0], nReceiveCnts, nReceiveDpls, MPI_BYTE,
                 0, MPI_COMM_WORLD);
- 
+#endif
+
     nsample = (nReceiveCnts[mpiGetNProcs()-1] +  nReceiveDpls[mpiGetNProcs()-1]) / sizeof(real4);
     
     //Find the maximum particle position
@@ -353,8 +389,12 @@ void octree::collect_sample_particles(real4 *bodies,
     }
     
     //Find the global maximum
+#ifdef USE_MPI
     MPI_Allreduce(&tmp, &rmax,1, MPI_DOUBLE, MPI_MAX,MPI_COMM_WORLD);
-    
+#else
+    rmax = tmp;
+#endif
+
     delete[] nSampleValues;
     delete[] nReceiveCnts;
     delete[] nReceiveDpls;
@@ -377,10 +417,12 @@ void octree::createDistribution(real4 *bodies, int n_bodies)
   //Processor 0 determines the division
   if(procId == 0)
     determine_division(nsample, sampleArray,nx, ny, nz, rmax,domainRLow, domainRHigh);
-  
+
+#ifdef USE_MPI
   //Now broadcast the results to all other processes
   MPI_Bcast(domainRLow,  sizeof(double4)*nProcs,MPI_BYTE,0,MPI_COMM_WORLD);
   MPI_Bcast(domainRHigh, sizeof(double4)*nProcs,MPI_BYTE,0,MPI_COMM_WORLD);
+#endif
 
   return;
 }
@@ -431,8 +473,12 @@ void octree::gpu_updateDomainDistribution(double timeLocal)
     double timeSum   = 0.0;
 
     //Sum the execution times
+#ifdef USE_MPI
     MPI_Allreduce( &timeLocal, &timeSum, 1,MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);  
-    
+#else
+    timeSum = timeLocal;
+#endif
+
     nrate = timeLocal / timeSum; 
     
     if(1)       //Don't fluctuate particles too much
@@ -448,7 +494,12 @@ void octree::gpu_updateDomainDistribution(double timeLocal)
       }
       
       double nrate2_sum = 0.0;
+#ifdef USE_MPI
       MPI_Allreduce( &nrate, &nrate2_sum, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+#else
+      nrate2_sum = nrate;
+#endif
+
       nrate /= nrate2_sum;        
     }
   #else
@@ -456,8 +507,8 @@ void octree::gpu_updateDomainDistribution(double timeLocal)
     nrate = (double)localTree.n / (double)nTotalFreq;    
   #endif
    
-  int    nsamp    = (nTotalFreq *0.001) + 1;  //Total number of sample particles, global
-  int nsamp_local = (nsamp*nrate) + 1;
+  int    nsamp    = (int)(nTotalFreq *0.001f) + 1;  //Total number of sample particles, global
+  int nsamp_local = (int)(nsamp*nrate) + 1;
   int nSamples    = nsamp_local;
   
   finalNRate      = localTree.n / nsamp_local;
@@ -515,9 +566,11 @@ void octree::gpu_updateDomainDistribution(double timeLocal)
 //   fprintf(stderr, "TIME4 (determ div ) %g \t %g \n", t5 - t4, t5-t1);
 
   //Now broadcast the results to all other processes
+#ifdef USE_MPI
   MPI_Bcast(domainRLow,  sizeof(double4)*nProcs,MPI_BYTE,0,MPI_COMM_WORLD);
   MPI_Bcast(domainRHigh, sizeof(double4)*nProcs,MPI_BYTE,0,MPI_COMM_WORLD);
-  
+#endif
+
 //   double t5 = get_time();
 //   fprintf(stderr, "TIME4 (determ div and bcast) %g \t %g \n", t5 - t4, t5-t1);
 //   fprintf(stderr, "TIME4 (Total sample part)  %g \n", t5-t1);       
@@ -888,6 +941,7 @@ int octree::MP_exchange_particle_with_overflow_check(int ibox,
                                                     int &nsend,
                                                     unsigned int &recvCount)
 {
+#ifdef USE_MPI
     MPI_Status status;
     int local_proc_id = procId;
     nsend = nparticles;
@@ -921,6 +975,7 @@ int octree::MP_exchange_particle_with_overflow_check(int ibox,
 //     int giret;
 //     MPI_Allreduce(&iret, &giret,1, MPI_INT, MPI_MAX,MPI_COMM_WORLD);
 //     return giret;
+#endif
     return 0;
 } 
 
@@ -1045,13 +1100,18 @@ int octree::exchange_particles_with_overflow_check(tree_structure &tree)
   totalsent = nbody - nparticles[myid];
 
   int tmp;
+#ifdef USE_MPI
   MPI_Reduce(&totalsent,&tmp,1, MPI_INT, MPI_SUM,0,MPI_COMM_WORLD);
+#else
+  tmp = totalsent;
+#endif
+
   if(procId == 0)
   {
     totalsent = tmp;
     cout << "Exchanged particles = " << totalsent << endl;
   }
-  
+
   if(iloc < nbody)
   {
       cerr << procId <<" exchange_particle error: particle in no box...iloc: " << iloc 
@@ -1065,7 +1125,7 @@ int octree::exchange_particles_with_overflow_check(tree_structure &tree)
   
   //Exchange the data with the other processors
   int ibend = -1;
-  int nsend;
+  int nsend = 0;
   int isource = 0;
   for(int ib=nproc-1;ib>0;ib--)
   {
@@ -1200,7 +1260,7 @@ void octree::gpuRedistributeParticles()
 
   //Check if the memory size, of the generalBuffer is large enough to store the exported particles
   int tempSize = localTree.generalBuffer1.get_size() - localTree.n;
-  int needSize = 1.01*(validCount*(sizeof(bodyStruct)/sizeof(int)));
+  int needSize = (int)(1.01f*(validCount*(sizeof(bodyStruct)/sizeof(int))));
 
   if(tempSize < needSize)
   {
@@ -1579,7 +1639,7 @@ void octree::essential_tree_exchange(vector<real4> &treeStructure, tree_structur
       
   //     double t1 = get_time();    
       create_local_essential_tree_count(bodies, multipole, nodeSizeInfo, nodeCenterInfo,
-                                  boxCenter, boxSize, currentRLow[ibox].w, node_begend.x, node_begend.y,
+                                  boxCenter, boxSize, (float)currentRLow[ibox].w, node_begend.x, node_begend.y,
                                   particleCount, nodeCount);    
   //     printf("LET count: %lg\n", get_time()-t1);   
       //Buffer that will contain all the data:
@@ -1602,7 +1662,7 @@ void octree::essential_tree_exchange(vector<real4> &treeStructure, tree_structur
       real4 *letDataBuffer = new real4[bufferSize];
           
       create_local_essential_tree_fill(bodies, velocities, multipole, nodeSizeInfo, nodeCenterInfo,
-                                  boxCenter, boxSize, currentRLow[ibox].w, node_begend.x, node_begend.y,
+                                  boxCenter, boxSize, (float)currentRLow[ibox].w, node_begend.x, node_begend.y,
                                   particleCount, nodeCount, letDataBuffer);        
                                   
   /*    
@@ -1616,10 +1676,10 @@ void octree::essential_tree_exchange(vector<real4> &treeStructure, tree_structur
       printf("Gewoon: %lg\n", get_time()-t1); */                                
                                   
       //Set the tree properties, before we exchange the data
-      letDataBuffer[0].x = particleCount;         //Number of particles in the LET
-      letDataBuffer[0].y = nodeCount;             //Number of nodes     in the LET
-      letDataBuffer[0].z = node_begend.x;         //First node on the level that indicates the start of the tree walk
-      letDataBuffer[0].w = node_begend.y;         //last node on the level that indicates the start of the tree walk
+      letDataBuffer[0].x = (float)particleCount;         //Number of particles in the LET
+      letDataBuffer[0].y = (float)nodeCount;             //Number of nodes     in the LET
+      letDataBuffer[0].z = (float)node_begend.x;         //First node on the level that indicates the start of the tree walk
+      letDataBuffer[0].w = (float)node_begend.y;         //last node on the level that indicates the start of the tree walk
 
       //Exchange the data of the tree structures  between the processes
       treeBuffers[recvTree] = MP_exchange_bhlist(ibox, isource, bufferSize, letDataBuffer);
@@ -1675,10 +1735,10 @@ void octree::essential_tree_exchange(vector<real4> &treeStructure, tree_structur
       idx += nodeCount;
       memcpy(&treeBuffers[PROCS][idx], &multipole[0],      sizeof(real4)*realNodeCount*3);   
       
-      treeBuffers[PROCS][0].x = particleCount;
-      treeBuffers[PROCS][0].y = nodeCount;
-      treeBuffers[PROCS][0].z = tree.level_list[level_start].x;
-      treeBuffers[PROCS][0].w = tree.level_list[level_start].y;  
+      treeBuffers[PROCS][0].x = (float)particleCount;
+      treeBuffers[PROCS][0].y = (float)nodeCount;
+      treeBuffers[PROCS][0].z = (float)tree.level_list[level_start].x;
+      treeBuffers[PROCS][0].w = (float)tree.level_list[level_start].y;  
       PROCS                   = PROCS + 1; //Signal that we added one more tree-structure
       mergeOwntree            = false;     //Set it to false incase we do not merge all trees at once, we only inlcude our own once
     }
@@ -1937,9 +1997,9 @@ bool split_node_grav_impbh(float4 nodeCOM, double4 boxCenter, double4 boxSize)
 #endif
 {
   //Compute the distance between the group and the cell
-  float3 dr = {fabs(boxCenter.x - nodeCOM.x) - (boxSize.x),
-               fabs(boxCenter.y - nodeCOM.y) - (boxSize.y),
-               fabs(boxCenter.z - nodeCOM.z) - (boxSize.z)};
+  float3 dr = make_float3(fabs((float)boxCenter.x - nodeCOM.x) - (float)boxSize.x,
+                          fabs((float)boxCenter.y - nodeCOM.y) - (float)boxSize.y,
+                          fabs((float)boxCenter.z - nodeCOM.z) - (float)boxSize.z);
 
   dr.x += fabs(dr.x); dr.x *= 0.5f;
   dr.y += fabs(dr.y); dr.y *= 0.5f;
@@ -1971,9 +2031,9 @@ bool split_node_grav_impbh(float4 nodeCOM, double4 boxCenter, double4 boxSize)
 #endif
 {
   //Compute the distance between the group and the cell
-  float3 dr = {fabs(boxCenter.x - nodeCenter.x) - (boxSize.x + nodeSize.x),
-               fabs(boxCenter.y - nodeCenter.y) - (boxSize.y + nodeSize.y),
-               fabs(boxCenter.z - nodeCenter.z) - (boxSize.z + nodeSize.z)};
+  float3 dr = make_float3(fabs((float)boxCenter.x - nodeCenter.x) - (float)(boxSize.x + nodeSize.x),
+                          fabs((float)boxCenter.y - nodeCenter.y) - (float)(boxSize.y + nodeSize.y),
+                          fabs((float)boxCenter.z - nodeCenter.z) - (float)(boxSize.z + nodeSize.z));
 
   dr.x += fabs(dr.x); dr.x *= 0.5f;
   dr.y += fabs(dr.y); dr.y *= 0.5f;
@@ -2462,6 +2522,7 @@ void octree::create_local_essential_tree_count(real4* bodies, real4* multipole, 
 real4* octree::MP_exchange_bhlist(int ibox, int isource, 
                                 int bufferSize, real4 *letDataBuffer)
 {
+#ifdef USE_MPI
     MPI_Status status;
     int nrecvlist;
     int nlist = bufferSize;
@@ -2479,12 +2540,16 @@ real4* octree::MP_exchange_bhlist(int ibox, int isource,
                  MPI_COMM_WORLD, &status);        
     
     return recvDataBuffer;             
+#else
+    return NULL;
+#endif
 } 
 
 
 
 void octree::ICSend(int destination, real4 *bodyPositions, real4 *bodyVelocities,  int *bodiesIDs, int toSend)
 {
+#ifdef USE_MPI
     //First send the number of particles, then the actual sample data
     MPI_Send(&toSend, 1, MPI_INT, destination, destination*2 , MPI_COMM_WORLD);
     
@@ -2496,10 +2561,12 @@ void octree::ICSend(int destination, real4 *bodyPositions, real4 *bodyVelocities
 /*    MPI_Send( (real*)&bodyPositions[0],  toSend*sizeof(real)*4, MPI_BYTE, destination, destination*2+1, MPI_COMM_WORLD);
     MPI_Send( (real*)&bodyVelocities[0], toSend*sizeof(real)*4, MPI_BYTE, destination, destination*2+2, MPI_COMM_WORLD);
     MPI_Send( (int *)&bodiesIDs[0],      toSend*sizeof(int),    MPI_BYTE, destination, destination*2+3, MPI_COMM_WORLD);*/
+#endif
 }
 
 void octree::ICRecv(int recvFrom, vector<real4> &bodyPositions, vector<real4> &bodyVelocities,  vector<int> &bodiesIDs)
 {
+#ifdef USE_MPI
    MPI_Status status;
    int nreceive;    
    int procId = mpiGetRank();
@@ -2515,4 +2582,5 @@ void octree::ICRecv(int recvFrom, vector<real4> &bodyPositions, vector<real4> &b
    MPI_Recv( (real*)&bodyPositions[0],  nreceive*sizeof(real)*4, MPI_BYTE, recvFrom, procId*2+1, MPI_COMM_WORLD,&status);
    MPI_Recv( (real*)&bodyVelocities[0], nreceive*sizeof(real)*4, MPI_BYTE, recvFrom, procId*2+2, MPI_COMM_WORLD,&status);
    MPI_Recv( (int *)&bodiesIDs[0],      nreceive*sizeof(int),    MPI_BYTE, recvFrom, procId*2+3, MPI_COMM_WORLD,&status);
+#endif
 }

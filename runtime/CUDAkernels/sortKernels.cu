@@ -7,7 +7,7 @@
 
 //Reorders data 
 
-extern __device__ int undilate3(uint2 key) ;
+//extern __device__ int undilate3(uint2 key) ;
 
 extern "C" __global__ void dataReorderR4(const int n_particles,
                                          real4 *source,
@@ -67,7 +67,7 @@ extern "C" __global__ void convertKey64to96(uint4 *keys,  uint4 *newKeys, const 
   if (idx >= N) return;
 
   uint4 temp = keys[idx];
-  newKeys[idx] = (uint4){temp.x, temp.y, temp.z, idx};
+  newKeys[idx] = make_uint4(temp.x, temp.y, temp.z, idx);
 }
 
 extern "C" __global__ void extractKeyAndPerm(uint4 *newKeys, uint4 *keys, uint *permutation, const int N)
@@ -82,7 +82,7 @@ extern "C" __global__ void extractKeyAndPerm(uint4 *newKeys, uint4 *keys, uint *
 
   uint4 temp = newKeys[idx];
   
-  keys[idx]        = (uint4){temp.x, temp.y, temp.z, temp.w};
+  keys[idx]        = make_uint4(temp.x, temp.y, temp.z, temp.w);
   permutation[idx] = temp.w;
 }
 

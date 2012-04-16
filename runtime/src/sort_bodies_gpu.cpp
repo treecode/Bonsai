@@ -16,19 +16,19 @@ void octree::getBoundaries(tree_structure &tree, real4 &r_min, real4 &r_max)
    
   devMemRMIN.d2h();     //Need to be defined and initialized somewhere outside this function
   devMemRMAX.d2h();     //Need to be defined and initialized somewhere outside this function
-  r_min = (real4){+1e10, +1e10, +1e10, +1e10}; 
-  r_max = (real4){-1e10, -1e10, -1e10, -1e10};   
+  r_min = make_real4(+1e10, +1e10, +1e10, +1e10); 
+  r_max = make_real4(-1e10, -1e10, -1e10, -1e10);   
   
   //Reduce the blocks, done on host since its
   //A faster and B we need the results anyway
   for (int i = 0; i < 120; i++) {    
-    r_min.x = fmin(r_min.x, devMemRMIN[i].x);
-    r_min.y = fmin(r_min.y, devMemRMIN[i].y);
-    r_min.z = fmin(r_min.z, devMemRMIN[i].z);
+    r_min.x = std::min(r_min.x, devMemRMIN[i].x);
+    r_min.y = std::min(r_min.y, devMemRMIN[i].y);
+    r_min.z = std::min(r_min.z, devMemRMIN[i].z);
     
-    r_max.x = fmax(r_max.x, devMemRMAX[i].x);
-    r_max.y = fmax(r_max.y, devMemRMAX[i].y);
-    r_max.z = fmax(r_max.z, devMemRMAX[i].z);    
+    r_max.x = std::max(r_max.x, devMemRMAX[i].x);
+    r_max.y = std::max(r_max.y, devMemRMAX[i].y);
+    r_max.z = std::max(r_max.z, devMemRMAX[i].z);    
 //     printf("%f\t%f\t%f\t || \t%f\t%f\t%f\n", rMIN[i].x,rMIN[i].y,rMIN[i].z,rMAX[i].x,rMAX[i].y,rMAX[i].z);    
   }
   
@@ -55,19 +55,19 @@ void octree::getBoundariesGroups(tree_structure &tree, real4 &r_min, real4 &r_ma
    
   devMemRMIN.d2h();     //Need to be defined and initialized somewhere outside this function
   devMemRMAX.d2h();     //Need to be defined and initialized somewhere outside this function
-  r_min = (real4){+1e10, +1e10, +1e10, +1e10}; 
-  r_max = (real4){-1e10, -1e10, -1e10, -1e10};   
+  r_min = make_real4(+1e10f, +1e10f, +1e10f, +1e10f); 
+  r_max = make_real4(-1e10f, -1e10f, -1e10f, -1e10f);   
   
   //Reduce the blocks, done on host since its
   //A faster and B we need the results anyway
   for (int i = 0; i < 120; i++) {    
-    r_min.x = fmin(r_min.x, devMemRMIN[i].x);
-    r_min.y = fmin(r_min.y, devMemRMIN[i].y);
-    r_min.z = fmin(r_min.z, devMemRMIN[i].z);
+    r_min.x = std::min(r_min.x, devMemRMIN[i].x);
+    r_min.y = std::min(r_min.y, devMemRMIN[i].y);
+    r_min.z = std::min(r_min.z, devMemRMIN[i].z);
     
-    r_max.x = fmax(r_max.x, devMemRMAX[i].x);
-    r_max.y = fmax(r_max.y, devMemRMAX[i].y);
-    r_max.z = fmax(r_max.z, devMemRMAX[i].z);    
+    r_max.x = std::max(r_max.x, devMemRMAX[i].x);
+    r_max.y = std::max(r_max.y, devMemRMAX[i].y);
+    r_max.z = std::max(r_max.z, devMemRMAX[i].z);    
   }
   
   printf("Found group boundarys before increase, number of groups %d : \n", tree.n_groups);
@@ -80,13 +80,13 @@ void octree::getBoundariesGroups(tree_structure &tree, real4 &r_min, real4 &r_ma
   
   //Note that we have to check the sign to move the border in the right
   //direction
-  r_min.x = (r_min.x < 0) ? r_min.x * smallFac2 : r_min.x * smallFac1;
-  r_min.y = (r_min.y < 0) ? r_min.y * smallFac2 : r_min.y * smallFac1;
-  r_min.z = (r_min.z < 0) ? r_min.z * smallFac2 : r_min.z * smallFac1;
+  r_min.x = (float)((r_min.x < 0) ? r_min.x * smallFac2 : r_min.x * smallFac1);
+  r_min.y = (float)((r_min.y < 0) ? r_min.y * smallFac2 : r_min.y * smallFac1);
+  r_min.z = (float)((r_min.z < 0) ? r_min.z * smallFac2 : r_min.z * smallFac1);
 
-  r_max.x = (r_max.x < 0) ? r_max.x * smallFac1 : r_max.x * smallFac2;
-  r_max.y = (r_max.y < 0) ? r_max.y * smallFac1 : r_max.y * smallFac2;
-  r_max.z = (r_max.z < 0) ? r_max.z * smallFac1 : r_max.z * smallFac2;
+  r_max.x = (float)((r_max.x < 0) ? r_max.x * smallFac1 : r_max.x * smallFac2);
+  r_max.y = (float)((r_max.y < 0) ? r_max.y * smallFac1 : r_max.y * smallFac2);
+  r_max.z = (float)((r_max.z < 0) ? r_max.z * smallFac1 : r_max.z * smallFac2);
   
 
   rMinLocalTreeGroups = r_min;
@@ -121,17 +121,17 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
   r_max = rMaxGlobal;
   
   //Compute the boundarys of the tree  
-  real size     = 1.001*fmax(r_max.z - r_min.z,
-                        fmax(r_max.y - r_min.y, r_max.x - r_min.x));
+  real size     = 1.001f*std::max(r_max.z - r_min.z,
+                         std::max(r_max.y - r_min.y, r_max.x - r_min.x));
   
-  tree.corner   = (real4){0.5*(r_min.x + r_max.x) - 0.5*size,
-                          0.5*(r_min.y + r_max.y) - 0.5*size,
-                          0.5*(r_min.z + r_max.z) - 0.5*size, size}; 
+  tree.corner   = make_real4(0.5f*(r_min.x + r_max.x) - 0.5f*size,
+                             0.5f*(r_min.y + r_max.y) - 0.5f*size,
+                             0.5f*(r_min.z + r_max.z) - 0.5f*size, size); 
        
   tree.domain_fac   = size/(1 << MAXLEVELS);
   
   
-  float idomain_fac = 1.0/tree.domain_fac;
+  float idomain_fac = 1.0f/tree.domain_fac;
   float domain_fac  = tree.domain_fac;
   
   tree.corner.w = domain_fac;  

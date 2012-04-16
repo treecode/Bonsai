@@ -51,7 +51,7 @@ void octree::load_kernels() {
   {  
     //Strip the executable name, to get the path name
     std::string temp(execPath);
-    int idx = temp.find_last_of("/\\");
+    int idx = (int)temp.find_last_of("/\\");
     pathName.assign(temp.substr(0, idx+1));
   }
   
@@ -577,7 +577,7 @@ void  octree::gpuSort(my_dev::context &devContext,
   //Dimensions for the kernels that shuffle and extract data
   const int blockSize = 256;
   int ng = (N)/blockSize + 1;
-  int nx = (int)sqrt(ng);
+  int nx = (int)sqrt((double)ng);
   int ny = (ng-1)/nx + 1;
 
   vector<size_t> localWork(2), globalWork(2);

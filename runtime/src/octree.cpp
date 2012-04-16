@@ -1,5 +1,9 @@
 #include "octree.h"
 
+#ifndef WIN32
+#include <sys/time.h>
+#endif
+
 /*********************************/
 /*********************************/
 /*********************************/
@@ -9,11 +13,24 @@ void octree::set_src_directory(string src_dir) {
 }   
 
 double octree::get_time() {
+#ifdef WIN32
+  if (sysTimerFreq.QuadPart == 0)
+  {
+    return -1.0;
+  }
+  else
+  {
+    LARGE_INTEGER c;
+    QueryPerformanceCounter(&c);
+    return static_cast<double>( (double)(c.QuadPart - sysTimerAtStart.QuadPart) / sysTimerFreq.QuadPart );
+  }
+#else
   struct timeval Tvalue;
   struct timezone dummy;
   
   gettimeofday(&Tvalue,&dummy);
   return ((double) Tvalue.tv_sec +1.e-6*((double) Tvalue.tv_usec));
+#endif
 }
 
 
@@ -307,7 +324,7 @@ void octree::write_dumbp_snapshot_parallel(real4 *bodyPositions, real4 *bodyVelo
                             extVelocities[i].z << endl;
                           #endif
       }
-      particleCount += extPositions.size();
+      particleCount += (int)extPositions.size();
     }
     
     for(int i=0; i < n ; i++)
@@ -470,9 +487,9 @@ uint2 octree::get_key(int3 crd) {
 
 int3 octree::get_crd(uint2 key) {
 
-  int3 crd = {undilate3(key),
-	      undilate3((uint2){key.x >> 1, key.y >> 1}),
-	      undilate3((uint2){key.x >> 2, key.y >> 2})};
+  int3 crd = make_int3(undilate3(key),
+	                   undilate3(make_uint2(key.x >> 1, key.y >> 1)),
+	                   undilate3(make_uint2(key.x >> 2, key.y >> 2)));
 
   return crd;
 }
@@ -508,7 +525,7 @@ uint2 octree::get_mask(int level) {
 }
 
 uint2 octree::get_imask(uint2 mask) {
-  return (uint2){0x3FFFFFFF ^ mask.x, 0xFFFFFFFF ^ mask.y};
+  return make_uint2(0x3FFFFFFF ^ mask.x, 0xFFFFFFFF ^ mask.y);
 }
 
 /*********************************/

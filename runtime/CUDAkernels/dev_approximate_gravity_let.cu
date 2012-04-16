@@ -324,7 +324,7 @@ __device__ float4 get_D04(float ds2) {
   float ids3 = ids *ids2;
   float ids5 = ids3*ids2;
   float ids7 = ids5*ids2;
-  return (float4){ids, -ids3, +3.0f*ids5, -15.0f*ids7};
+  return make_float4(ids, -ids3, +3.0f*ids5, -15.0f*ids7);
 }  // 9 flops
 
 #endif
@@ -741,9 +741,9 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
           #endif
 
  	  node_mon0[tid] = monopole.w;
- 	  node_mon1[tid] = (float3){monopole.x,  monopole.y,  monopole.z};
- 	  node_oct0[tid] = (float3){octopole0.x, octopole0.y, octopole0.z};
- 	  node_oct1[tid] = (float3){octopole1.x, octopole1.y, octopole1.z};
+ 	  node_mon1[tid] = make_float3(monopole.x,  monopole.y,  monopole.z);
+ 	  node_oct0[tid] = make_float3(octopole0.x, octopole0.y, octopole0.z);
+ 	  node_oct1[tid] = make_float3(octopole1.x, octopole1.y, octopole1.z);
 
           #ifdef INDSOFT
             float temp          = node_eps[tid]; //Backup value in the shmem into register
@@ -870,7 +870,7 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 
 	    float4 posj  = body_pos[body_list[n_direct + tid]];
 	    sh_mass[tid] = posj.w;
-	    sh_pos [tid] = (float3){posj.x, posj.y, posj.z};
+	    sh_pos [tid] = make_float3(posj.x, posj.y, posj.z);
 	    sh_jid [tid] = body_list[n_direct + tid];
 
             #ifdef INDSOFT
@@ -957,9 +957,9 @@ if(n_approx > 0)
     #endif
 
     node_mon0[tid] = monopole.w;
-    node_mon1[tid] = (float3){monopole.x,  monopole.y,  monopole.z};
-    node_oct0[tid] = (float3){octopole0.x, octopole0.y, octopole0.z};
-    node_oct1[tid] = (float3){octopole1.x, octopole1.y, octopole1.z};
+    node_mon1[tid] = make_float3(monopole.x,  monopole.y,  monopole.z);
+    node_oct0[tid] = make_float3(octopole0.x, octopole0.y, octopole0.z);
+    node_oct1[tid] = make_float3(octopole1.x, octopole1.y, octopole1.z);
 
     #ifdef INDSOFT
       node_eps[tid]  = octopole0.w;
@@ -968,9 +968,9 @@ if(n_approx > 0)
   } else {
     //Set non-active memory locations to zero
     node_mon0[tid] = 0.0f;
-    node_mon1[tid] = (float3){1.0e10f, 1.0e10f, 1.0e10f};
-    node_oct0[tid] = (float3){0.0f, 0.0f, 0.0f};
-    node_oct1[tid] = (float3){0.0f, 0.0f, 0.0f};
+    node_mon1[tid] = make_float3(1.0e10f, 1.0e10f, 1.0e10f);
+    node_oct0[tid] = make_float3(0.0f, 0.0f, 0.0f);
+    node_oct1[tid] = make_float3(0.0f, 0.0f, 0.0f);
 
     #ifdef INDSOFT
       node_eps[tid]  = 0.01f;
@@ -1011,7 +1011,7 @@ if(n_direct > 0)
   if (tid < n_direct) {
     float4 posj = body_pos[direct[tid]];
     sh_mass[tid] = posj.w;
-    sh_pos [tid] = (float3){posj.x, posj.y, posj.z};
+    sh_pos [tid] = make_float3(posj.x, posj.y, posj.z);
     sh_jid [tid] = direct[tid];
 
     #ifdef INDSOFT
@@ -1019,7 +1019,7 @@ if(n_direct > 0)
     #endif
   } else {
     sh_mass[tid] = 0.0f;
-    sh_pos [tid] = (float3){1.0e10f, 1.0e10f, 1.0e10f};
+    sh_pos [tid] = make_float3(1.0e10f, 1.0e10f, 1.0e10f);
     sh_jid [tid] = -1;
 
     #ifdef INDSOFT
@@ -1053,7 +1053,7 @@ if(n_direct > 0)
   **** --> reduce data between threads
   ***/
   sh_pot[tid] = acc_i.w;
-  sh_acc[tid] = (float3){acc_i.x, acc_i.y, acc_i.z};
+  sh_acc[tid] = make_float3(acc_i.x, acc_i.y, acc_i.z);
   sh_ds2[tid] = ds2_min;
   sh_ngb[tid] = ngb;
   __syncthreads();

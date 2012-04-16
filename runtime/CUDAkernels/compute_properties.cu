@@ -108,14 +108,14 @@ extern "C" __global__ void compute_leaf(const int n_leafs,
   //Variables holding properties and intermediate answers
   float4 p;
   float2 mass, posx, posy, posz;
-  mass = posx = posy = posz = (float2){0.0f, 0.0f};
+  mass = posx = posy = posz = make_float2(0.0f, 0.0f);
   float2 oct_q11, oct_q22, oct_q33;
   float2 oct_q12, oct_q13, oct_q23;
-  oct_q11 = oct_q22 = oct_q33 = (float2){0.0f, 0.0f};
-  oct_q12 = oct_q13 = oct_q23 = (float2){0.0f, 0.0f};
+  oct_q11 = oct_q22 = oct_q33 = make_float2(0.0f, 0.0f);
+  oct_q12 = oct_q13 = oct_q23 = make_float2(0.0f, 0.0f);
   float3 r_min, r_max;
-  r_min = (float3){+1e10f, +1e10f, +1e10f}; 
-  r_max = (float3){-1e10f, -1e10f, -1e10f}; 
+  r_min = make_float3(+1e10f, +1e10f, +1e10f); 
+  r_max = make_float3(-1e10f, -1e10f, -1e10f); 
 
   //Loop over the children=>particles=>bodys
   //unroll increases register usage #pragma unroll 16
@@ -139,8 +139,8 @@ extern "C" __global__ void compute_leaf(const int n_leafs,
   mon.z *= im;
 
   float4 Q0, Q1;
-  Q0   = (float4){ds_regularise(oct_q11).x, ds_regularise(oct_q22).x, ds_regularise(oct_q33).x, maxEps};
-  Q1   = (float4){ds_regularise(oct_q12).x, ds_regularise(oct_q13).x, ds_regularise(oct_q23).x, 0.0f};
+  Q0   = make_float4(ds_regularise(oct_q11).x, ds_regularise(oct_q22).x, ds_regularise(oct_q33).x, maxEps);
+  Q1   = make_float4(ds_regularise(oct_q12).x, ds_regularise(oct_q13).x, ds_regularise(oct_q23).x, 0.0f);
 
   //Store the node properties
   multipole[3*nodeID + 0] = mon;       //Monopole
@@ -148,8 +148,8 @@ extern "C" __global__ void compute_leaf(const int n_leafs,
   multipole[3*nodeID + 2] = Q1;        //Quadropole
 
   //TODO why is this required again?
-  nodeLowerBounds[nodeID] = (float4){r_min.x, r_min.y, r_min.z, 0.0f};
-  nodeUpperBounds[nodeID] = (float4){r_max.x, r_max.y, r_max.z, 1.0f};  //4th parameter is set to 1 to indicate this is a leaf
+  nodeLowerBounds[nodeID] = make_float4(r_min.x, r_min.y, r_min.z, 0.0f);
+  nodeUpperBounds[nodeID] = make_float4(r_max.x, r_max.y, r_max.z, 1.0f);  //4th parameter is set to 1 to indicate this is a leaf
 
   //Global domain boundaries using reduction
   sh_rmin[tid].x = r_min.x; sh_rmin[tid].y = r_min.y; sh_rmin[tid].z = r_min.z;
@@ -210,14 +210,14 @@ extern "C" __global__ void compute_non_leaf(const int curLevel,         //Level 
 
   //Variables
   float2 mass, posx, posy, posz;
-  mass = posx = posy = posz = (float2){0.0f, 0.0f};
+  mass = posx = posy = posz = make_float2(0.0f, 0.0f);
   float2 oct_q11, oct_q22, oct_q33;
   float2 oct_q12, oct_q13, oct_q23;
-  oct_q11 = oct_q22 = oct_q33 = (float2){0.0f, 0.0f};
-  oct_q12 = oct_q13 = oct_q23 = (float2){0.0f, 0.0f};
+  oct_q11 = oct_q22 = oct_q33 = make_float2(0.0f, 0.0f);
+  oct_q12 = oct_q13 = oct_q23 = make_float2(0.0f, 0.0f);
   float3 r_min, r_max;
-  r_min = (float3){+1e10f, +1e10f, +1e10f}; 
-  r_max = (float3){-1e10f, -1e10f, -1e10f}; 
+  r_min = make_float3(+1e10f, +1e10f, +1e10f); 
+  r_max = make_float3(-1e10f, -1e10f, -1e10f); 
 
   float maxEps = 0;
   //Process the children (1 to 8)
@@ -235,8 +235,8 @@ extern "C" __global__ void compute_non_leaf(const int curLevel,         //Level 
   }
 
   //Save the bounds 
-  nodeLowerBounds[nodeID] = (float4){r_min.x, r_min.y, r_min.z, 0.0f};
-  nodeUpperBounds[nodeID] = (float4){r_max.x, r_max.y, r_max.z, 0.0f}; //4th is set to 0 to indicate a non-leaf
+  nodeLowerBounds[nodeID] = make_float4(r_min.x, r_min.y, r_min.z, 0.0f);
+  nodeUpperBounds[nodeID] = make_float4(r_max.x, r_max.y, r_max.z, 0.0f); //4th is set to 0 to indicate a non-leaf
 
   //Regularize and store the results
   float4 mon = {ds_regularise(posx).x, ds_regularise(posy).x, ds_regularise(posz).x, ds_regularise(mass).x};  
@@ -246,8 +246,8 @@ extern "C" __global__ void compute_non_leaf(const int curLevel,         //Level 
   mon.z *= im;
 
   float4 Q0, Q1;
-  Q0   = (float4){ds_regularise(oct_q11).x, ds_regularise(oct_q22).x, ds_regularise(oct_q33).x, maxEps};
-  Q1   = (float4){ds_regularise(oct_q12).x, ds_regularise(oct_q13).x, ds_regularise(oct_q23).x, 0.0f};
+  Q0   = make_float4(ds_regularise(oct_q11).x, ds_regularise(oct_q22).x, ds_regularise(oct_q33).x, maxEps);
+  Q1   = make_float4(ds_regularise(oct_q12).x, ds_regularise(oct_q13).x, ds_regularise(oct_q23).x, 0.0f);
 
   multipole[3*nodeID + 0] = mon;        //Monopole
   multipole[3*nodeID + 1] = Q0;         //Quadropole1
@@ -310,12 +310,12 @@ extern "C" __global__ void compute_scaling(const int node_count,
   boxCenter.y = 0.5*(r_min.y + r_max.y);
   boxCenter.z = 0.5*(r_min.z + r_max.z);
 
-  float3 boxSize = (float3){fmaxf(fabs(boxCenter.x-r_min.x), fabs(boxCenter.x-r_max.x)),
-                          fmaxf(fabs(boxCenter.y-r_min.y), fabs(boxCenter.y-r_max.y)),
-                          fmaxf(fabs(boxCenter.z-r_min.z), fabs(boxCenter.z-r_max.z))};
+  float3 boxSize = make_float3(fmaxf(fabs(boxCenter.x-r_min.x), fabs(boxCenter.x-r_max.x)),
+                               fmaxf(fabs(boxCenter.y-r_min.y), fabs(boxCenter.y-r_max.y)),
+                               fmaxf(fabs(boxCenter.z-r_min.z), fabs(boxCenter.z-r_max.z)));
 
   //Calculate distance between center of the box and the center of mass
-  float3 s3     = (float3){(boxCenter.x - mon.x), (boxCenter.y - mon.y), (boxCenter.z - mon.z)};
+  float3 s3     = make_float3((boxCenter.x - mon.x), (boxCenter.y - mon.y), (boxCenter.z - mon.z));
   double s      = sqrt((s3.x*s3.x) + (s3.y*s3.y) + (s3.z*s3.z));
 
   //Length of the box, note times 2 since we only computed half the distance before
@@ -352,9 +352,9 @@ extern "C" __global__ void compute_scaling(const int node_count,
   boxCenterInfo[idx].w = cellOp;
 
  /* //Determine the size of the node based on the center of mass and the bounds of the node                                                                   
-  float3 size3  = (float3){fmaxf(fabs(mon.x-r_min.x), fabs(mon.x-r_max.x)),                                                                                  
-                          fmaxf(fabs(mon.y-r_min.y), fabs(mon.y-r_max.y)),                                                                                  
-                          fmaxf(fabs(mon.z-r_min.z), fabs(mon.z-r_max.z))};                                                                                 
+  float3 size3  = make_float3(fmaxf(fabs(mon.x-r_min.x), fabs(mon.x-r_max.x)),                                                                                  
+                              fmaxf(fabs(mon.y-r_min.y), fabs(mon.y-r_max.y)),                                                                                  
+                              fmaxf(fabs(mon.z-r_min.z), fabs(mon.z-r_max.z)));
   float size    = fmaxf(size3.x, fmaxf(size3.y, size3.z));                                                                                                     
 
   //Box properties
@@ -363,12 +363,12 @@ extern "C" __global__ void compute_scaling(const int node_count,
   boxCenter.y = 0.5*(r_min.y + r_max.y);
   boxCenter.z = 0.5*(r_min.z + r_max.z);
 
-  float3 boxSize3 = (float3){fmaxf(fabs(boxCenter.x-r_min.x), fabs(boxCenter.x-r_max.x)),                                                                                  
-                          fmaxf(fabs(boxCenter.y-r_min.y), fabs(boxCenter.y-r_max.y)),                                                                                  
-                          fmaxf(fabs(boxCenter.z-r_min.z), fabs(boxCenter.z-r_max.z))};                    
+  float3 boxSize3 = make_float3(fmaxf(fabs(boxCenter.x-r_min.x), fabs(boxCenter.x-r_max.x)),                                                                                  
+                                fmaxf(fabs(boxCenter.y-r_min.y), fabs(boxCenter.y-r_max.y)),                                                                                  
+                                fmaxf(fabs(boxCenter.z-r_min.z), fabs(boxCenter.z-r_max.z)));                    
   
   //Calculate distance between center of the box and the center of mass
-//   float3 s3     = (float3){(boxCenter.x - mon.x), (boxCenter.y - mon.y), (boxCenter.z - mon.z)};    
+//   float3 s3     = make_float3((boxCenter.x - mon.x), (boxCenter.y - mon.y), (boxCenter.z - mon.z));    
 //   double s      = sqrt((s3.x*s3.x) + (s3.y*s3.y) + (s3.z*s3.z));
 
   //BH: l/theta + s < d
