@@ -615,7 +615,7 @@ public:
   octree(char **argv, const int device = 0, const float _theta = 0.75, const float eps = 0.05,
          string snapF = "", int snapI = -1,  float tempTimeStep = 1.0 / 16.0, int tempTend = 1000,
          float killDistanceT = -1, int maxDistT = -1, int snapAdd = 0) 
-  : procId(0), nProcs(1)
+  : procId(0), nProcs(1), thisPartLETExTime(0)
   {
 
     devContext_flag = false;
@@ -664,6 +664,13 @@ public:
     execStream = NULL;
     
     prevDurStep = -1;   //Set it to negative so we know its the first step
+
+#ifdef WIN32
+    // initialize windows timer
+    QueryPerformanceFrequency(&sysTimerFreq);
+    QueryPerformanceCounter(&sysTimerAtStart);
+#endif
+
   }
   ~octree() {    
     delete[] domainRLow;

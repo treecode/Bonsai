@@ -22,7 +22,7 @@ double octree::get_time() {
   {
     LARGE_INTEGER c;
     QueryPerformanceCounter(&c);
-    return static_cast<double>( (c.QuadPart - sysTimerAtStart.QuadPart) * 1000000 / sysTimerFreq.QuadPart );
+    return static_cast<double>( (double)(c.QuadPart - sysTimerAtStart.QuadPart) / sysTimerFreq.QuadPart );
   }
 #else
   struct timeval Tvalue;
