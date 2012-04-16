@@ -1215,7 +1215,7 @@ namespace my_dev {
 
 //       fprintf(stderr,"Waiting on kernel: %s to finish... ", hKernelName );
       CU_SAFE_CALL(cudaLaunch(hKernelName));  
-      CU_SAFE_CALL(cudaDeviceSynchronize());
+//      CU_SAFE_CALL(cudaDeviceSynchronize());
 //       fprintf(stderr,"finished \n");
       
     }
