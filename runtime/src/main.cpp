@@ -118,7 +118,7 @@ void read_dumbp_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
   
     if(bodyPositions.size() > perProc && procCntr != procs)
     { 
-      tree->ICSend(procCntr,  &bodyPositions[0], &bodyVelocities[0],  &bodiesIDs[0], bodyPositions.size());
+      tree->ICSend(procCntr,  &bodyPositions[0], &bodyVelocities[0],  &bodiesIDs[0], (int)bodyPositions.size());
       procCntr++;
       
       bodyPositions.clear();
@@ -240,7 +240,7 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
   
     if(bodyPositions.size() > perProc && procCntr != procs)
     { 
-      tree->ICSend(procCntr,  &bodyPositions[0], &bodyVelocities[0],  &bodiesIDs[0], bodyPositions.size());
+      tree->ICSend(procCntr,  &bodyPositions[0], &bodyVelocities[0],  &bodiesIDs[0], (int)bodyPositions.size());
       procCntr++;
       
       bodyPositions.clear();
@@ -360,7 +360,7 @@ void read_dumbp_file(vector<real4> &bodyPositions, vector<real4> &bodyVelocities
   }
 
   inputFile.close();
-  int n = bodyPositions.size();
+  int n = (int)bodyPositions.size();
   bodyPositions.resize(n-1);
 
   fprintf(stdout, "read %d bodies from dump file \n", n-1);
@@ -406,7 +406,7 @@ void read_dumbp_bd_file(vector<real4> &bodyPositions, vector<real4> &bodyVelocit
   }
 
   inputFile.close();
-  int n = bodyPositions.size();
+  int n = (int)bodyPositions.size();
   bodyPositions.resize(n-1);
 
   fprintf(stdout, "read %d bodies from dump file \n", n-1);
@@ -454,7 +454,7 @@ void read_bd_dumbp_file(vector<real4> &bodyPositions, vector<real4> &bodyVelocit
   }
 
   inputFile.close();
-  int n = bodyPositions.size();
+  int n = (int)bodyPositions.size();
   bodyPositions.resize(n-1);
 
   //Softening of one of the last stars
@@ -667,7 +667,7 @@ int main(int argc, char** argv)
   //over all available processes
   if(tree->nProcs > 1)
   {
-    tree->createDistribution(&bodyPositions[0], bodyPositions.size());  
+    tree->createDistribution(&bodyPositions[0], (int)bodyPositions.size());  
   }
 
   //Print the domain division
@@ -689,7 +689,7 @@ int main(int argc, char** argv)
 
   double t0 = tree->get_time();
 
-  tree->localTree.setN(bodyPositions.size());
+  tree->localTree.setN((int)bodyPositions.size());
   tree->allocateParticleMemory(tree->localTree);
 
   //Load data onto the device

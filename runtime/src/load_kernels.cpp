@@ -51,7 +51,7 @@ void octree::load_kernels() {
   {  
     //Strip the executable name, to get the path name
     std::string temp(execPath);
-    int idx = temp.find_last_of("/\\");
+    int idx = (int)temp.find_last_of("/\\");
     pathName.assign(temp.substr(0, idx+1));
   }
   

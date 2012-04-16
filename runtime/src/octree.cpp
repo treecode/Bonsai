@@ -324,7 +324,7 @@ void octree::write_dumbp_snapshot_parallel(real4 *bodyPositions, real4 *bodyVelo
                             extVelocities[i].z << endl;
                           #endif
       }
-      particleCount += extPositions.size();
+      particleCount += (int)extPositions.size();
     }
     
     for(int i=0; i < n ; i++)

@@ -23,6 +23,7 @@
 typedef float4 real4;
 typedef float real;
 #define make_real4 make_float4
+typedef unsigned int uint;
 
 using namespace std;
 
@@ -181,7 +182,7 @@ namespace my_dev {
       //Create the context for this device handle
       //CU_SAFE_CALL(cuCtxCreate(&hContext, ctxCreateFlags, hDevice));
       
-      int res = cudaSetDevice(dev);
+      int res = cudaSetDevice((int)dev);
       if(res != cudaSuccess)
       {
        printf("failed (error #: %d), now trying all devices starting at 0 \n", res);
@@ -212,7 +213,7 @@ namespace my_dev {
       }
       
       cudaDeviceProp deviceProp;                                                                                                     
-      CU_SAFE_CALL(cudaGetDeviceProperties(&deviceProp, dev));
+      CU_SAFE_CALL(cudaGetDeviceProperties(&deviceProp, (int)dev));
       //Get the number of multiprocessors of the device
       multiProcessorCount = deviceProp.multiProcessorCount;
       
@@ -751,7 +752,7 @@ namespace my_dev {
       temp.texSize      = texSize;
       
       textures.push_back(temp);
-      return textures.size()-1;
+      return (int)(textures.size()-1);
     }
 
 
@@ -1162,8 +1163,8 @@ namespace my_dev {
       dim3 blockDim; 
       hGlobalWork.resize(3);
       hLocalWork.resize(3);
-      gridDim.x = hGlobalWork[0]; gridDim.y = hGlobalWork[1]; gridDim.z = 0;
-      blockDim.x = hLocalWork[0]; blockDim.y = hLocalWork[1]; blockDim.z = hLocalWork[2];
+      gridDim.x = (uint)hGlobalWork[0]; gridDim.y = (uint)hGlobalWork[1]; gridDim.z = 0;
+      blockDim.x = (uint)hLocalWork[0]; blockDim.y = (uint)hLocalWork[1]; blockDim.z = (uint)hLocalWork[2];
       
       computeSharedMemorySize();
       CU_SAFE_CALL(cudaConfigureCall(gridDim,
@@ -1195,8 +1196,8 @@ namespace my_dev {
       dim3 blockDim; 
       hGlobalWork.resize(3);
       hLocalWork.resize(3);
-      gridDim.x = hGlobalWork[0]; gridDim.y = hGlobalWork[1]; gridDim.z = 1;
-      blockDim.x = hLocalWork[0]; blockDim.y = hLocalWork[1]; blockDim.z = hLocalWork[2];
+      gridDim.x = (uint)hGlobalWork[0]; gridDim.y = (uint)hGlobalWork[1]; gridDim.z = 1;
+      blockDim.x = (uint)hLocalWork[0]; blockDim.y = (uint)hLocalWork[1]; blockDim.z = (uint)hLocalWork[2];
       
       
 //       printWorkSize();
