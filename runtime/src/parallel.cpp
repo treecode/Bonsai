@@ -1125,7 +1125,7 @@ int octree::exchange_particles_with_overflow_check(tree_structure &tree)
   
   //Exchange the data with the other processors
   int ibend = -1;
-  int nsend;
+  int nsend = 0;
   int isource = 0;
   for(int ib=nproc-1;ib>0;ib--)
   {
