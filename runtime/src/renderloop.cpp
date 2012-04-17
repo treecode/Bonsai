@@ -173,7 +173,7 @@ private:
     //m_tree->localTree.bodies_vel.d2h();
     //m_tree->localTree.bodies_ids.d2h();
 
-    m_renderer.setPositions((float*)&m_tree->localTree.bodies_pos[0], m_tree->localTree.n_active_particles);
+    m_renderer.setPositions((float*)&m_tree->localTree.bodies_pos[0], m_tree->localTree.n);
   }
 
   octree *m_tree;
