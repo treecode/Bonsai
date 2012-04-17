@@ -278,7 +278,7 @@ protected:
    //Simulation properties
   int   iter;
   float t_current, t_previous;
-  int   snapshotIter;
+  int   snapshotIter;   
   string snapshotFile;
   int nextSnapTime;
 
@@ -461,6 +461,28 @@ public:
   void setActiveGrpsFunc(tree_structure &tree);
 
   void iterate();
+
+  struct IterationData {
+      IterationData() : Nact_since_last_tree_rebuild(0),
+          totalGravTime(0), lastGravTime(0), totalBuildTime(0),
+          lastBuildTime(0), totalDomTime(0), lastDomTime(0),
+          totalWaitTime(0), lastWaitTime(0), startTime(0) {}
+
+      int    Nact_since_last_tree_rebuild;
+      double totalGravTime;
+      double lastGravTime;
+      double totalBuildTime;
+      double lastBuildTime;
+      double totalDomTime;
+      double lastDomTime;
+      double totalWaitTime;
+      double lastWaitTime;
+      double startTime;
+  };
+
+  void iterate_setup(IterationData &idata); 
+  void iterate_teardown(IterationData &idata); 
+  bool iterate_once(IterationData &idata); 
 
   //Subfunctions of iterate, should probally be private TODO
   void predict(tree_structure &tree);

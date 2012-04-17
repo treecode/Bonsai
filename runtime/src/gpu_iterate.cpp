@@ -109,77 +109,10 @@ void octree::makeLET()
 
 }
 
+// returns true if this iteration is the last (t_current >= t_end), false otherwise
+bool octree::iterate_once(IterationData &idata) {
+    double t1 = 0;
 
-void octree::iterate() {
-
-  int Nact_since_last_tree_rebuild = 0;
-  real4 r_min, r_max;
-  
-  if(execStream == NULL)
-    execStream = new my_dev::dev_stream(0);
-  
-  letRunning = false;
-  
-  double totalGravTime = 0;
-  double lastGravTime  = 0;
-  double totalBuildTime = 0;
-  double lastBuildTime  = 0;  
-  double totalDomTime = 0;
-  double lastDomTime  = 0;  
-  double totalWaitTime = 0;
-  double lastWaitTime  = 0;    
-    
-  double t1;
-
-  //Initial prediction/acceleration to setup the system
-  //Will be at time 0
-  //predict localtree
-  predict(this->localTree);
-  this->getBoundaries(localTree, r_min, r_max);
-  //Build the tree using the predicted positions  
-  //Compute the (new) node properties
-  compute_properties(this->localTree);
-  
-  t1 = get_time();
-   
-  //Approximate gravity
-//   devContext.startTiming();
-  approximate_gravity(this->localTree);
-//   devContext.stopTiming("Approximation", 4);
-
-  if(nProcs > 1)  makeLET();
-
-  execStream->sync();  
-
-  
-  lastGravTime   = get_time() - t1;
-  totalGravTime += lastGravTime;
-  
-  correct(this->localTree);
-  compute_energies(this->localTree);
-
-  //Print time 0 snapshot
-  if(snapshotIter > 0 )
-  {
-      int time = (int)t_current;
-      if((time >= nextSnapTime))
-      {
-        nextSnapTime += snapshotIter;
-        string fileName; fileName.resize(256);
-        sprintf(&fileName[0], "%s_%06d", snapshotFile.c_str(), time + snapShotAdd);
-
-        localTree.bodies_pos.d2h();
-        localTree.bodies_vel.d2h();
-        localTree.bodies_ids.d2h();
-
-        write_dumbp_snapshot_parallel(&localTree.bodies_pos[0], &localTree.bodies_vel[0],
-                                      &localTree.bodies_ids[0], localTree.n, fileName.c_str()) ;
-      }
-  }
-
-  double t0 = get_time();
-  for(int i=0; i < 10000000; i++) //Large number, limit
-  {
     printf("At the start of iterate:\n");
 
     //predict localtree
@@ -205,7 +138,7 @@ void octree::iterate() {
           t1 = get_time();
           
           devContext.startTiming();
-          gpu_updateDomainDistribution(lastGravTime);          
+          gpu_updateDomainDistribution(idata.lastGravTime);          
           devContext.stopTiming("DomainUpdate", 6);
           
           devContext.startTiming();
@@ -214,8 +147,8 @@ void octree::iterate() {
           
           needDomainUpdate = false;
           
-          lastDomTime   = get_time() - t1;
-          totalDomTime += lastDomTime;          
+          idata.lastDomTime   = get_time() - t1;
+          idata.totalDomTime += idata.lastDomTime;          
         }
         else
         {
@@ -259,10 +192,10 @@ void octree::iterate() {
       devContext.startTiming();
       setActiveGrpsFunc(this->localTree);
       devContext.stopTiming("setActiveGrpsFunc", 10);      
-      Nact_since_last_tree_rebuild = 0;
+      idata.Nact_since_last_tree_rebuild = 0;
       
-      lastBuildTime   = get_time() - t1;
-      totalBuildTime += lastBuildTime;  
+      idata.lastBuildTime   = get_time() - t1;
+      idata.totalBuildTime += idata.lastBuildTime;  
     }
     else
     {
@@ -282,12 +215,12 @@ void octree::iterate() {
     
     execStream->sync();
     
-    lastGravTime   = get_time() - t1;
+    idata.lastGravTime   = get_time() - t1;
 //     totalGravTime += lastGravTime;
-    totalGravTime += lastGravTime - thisPartLETExTime;
+    idata.totalGravTime += idata.lastGravTime - thisPartLETExTime;
 //     lastGravTime -= thisPartLETExTime;
     
-    fprintf(stderr,"APPTIME [%d]: Iter: %d\t%g \n", procId, iter, lastGravTime);
+    fprintf(stderr,"APPTIME [%d]: Iter: %d\t%g \n", procId, iter, idata.lastGravTime);
     
     //Corrector
     devContext.startTiming();
@@ -298,16 +231,15 @@ void octree::iterate() {
     devContext.startTiming();
     mpiSync();
     devContext.stopTiming("Unbalance", 12);
-    lastWaitTime  += get_time() - t1;
-    totalWaitTime += lastWaitTime;
+    idata.lastWaitTime  += get_time() - t1;
+    idata.totalWaitTime += idata.lastWaitTime;
     
-    Nact_since_last_tree_rebuild += this->localTree.n_active_particles;
+    idata.Nact_since_last_tree_rebuild += this->localTree.n_active_particles;
 
     //Compute energies
     devContext.startTiming();
     double de = compute_energies(this->localTree); de=de;
     devContext.stopTiming("Energy", 7);
-        
 
     if(snapshotIter > 0)
     {
@@ -327,14 +259,15 @@ void octree::iterate() {
       }
     }
 
-  //  checkMergingDistance(this->localTree, iter, de);    
+    //  checkMergingDistance(this->localTree, iter, de);    
 
     if(t_current >= tEnd)
     {
       compute_energies(this->localTree);
-      cout << " Finished: "  << t_current << "  > "  << tEnd << " loop alone took: " << get_time() -t0 <<  endl;
+      double totalTime = get_time() - idata.startTime;
+      cout << " Finished: "  << t_current << "  > "  << tEnd << " loop alone took: " << totalTime <<  endl;
       fprintf(stderr,"TIME [%02d] TOTAL: %g\t GRAV: %g\tBUILD: %g\tCOMM: %g\t WAIT: %g\n", 
-              procId, get_time() -t0, totalGravTime, totalBuildTime, totalDomTime, lastWaitTime);      
+              procId, totalTime, idata.totalGravTime, idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime);      
      
       my_dev::base_mem::printMemUsage();
 
@@ -344,26 +277,102 @@ void octree::iterate() {
         execStream = NULL;
       }
       
-      return;
+      return true;
     }
     
     
-    if((iter % 50) == 0)
+    /*if((iter % 50) == 0)
     {
-//       if(removeDistance > 0) checkRemovalDistance(this->localTree);
+      if(removeDistance > 0) checkRemovalDistance(this->localTree);
     }
+    */
 
-    iter++;
-    
-  } //end for i
+    return false;
+}
+
+void octree::iterate_setup(IterationData &idata) {
+  real4 r_min, r_max;
   
-  fprintf(stderr,"TOTAL GRAV TIME [%d ] \t %g \n", procId, totalGravTime);
+  if(execStream == NULL)
+    execStream = new my_dev::dev_stream(0);
+  
+  letRunning = false;
+     
+  double t1;
+
+  //Initial prediction/acceleration to setup the system
+  //Will be at time 0
+  //predict localtree
+  predict(this->localTree);
+  this->getBoundaries(localTree, r_min, r_max);
+  //Build the tree using the predicted positions  
+  //Compute the (new) node properties
+  compute_properties(this->localTree);
+  
+  t1 = get_time();
+   
+  //Approximate gravity
+//   devContext.startTiming();
+  approximate_gravity(this->localTree);
+//   devContext.stopTiming("Approximation", 4);
+
+  if(nProcs > 1)  makeLET();
+
+  execStream->sync();  
+
+  
+  idata.lastGravTime   = get_time() - t1;
+  idata.totalGravTime += idata.lastGravTime;
+  
+  correct(this->localTree);
+  compute_energies(this->localTree);
+
+  //Print time 0 snapshot
+  if(snapshotIter > 0 )
+  {
+      int time = (int)t_current;
+      if((time >= nextSnapTime))
+      {
+        nextSnapTime += snapshotIter;
+        string fileName; fileName.resize(256);
+        sprintf(&fileName[0], "%s_%06d", snapshotFile.c_str(), time + snapShotAdd);
+
+        localTree.bodies_pos.d2h();
+        localTree.bodies_vel.d2h();
+        localTree.bodies_ids.d2h();
+
+        write_dumbp_snapshot_parallel(&localTree.bodies_pos[0], &localTree.bodies_vel[0],
+                                      &localTree.bodies_ids[0], localTree.n, fileName.c_str()) ;
+      }
+  }
+
+  idata.startTime = get_time();
+}
+
+void octree::iterate_teardown(IterationData &idata) {
+  fprintf(stderr,"TOTAL GRAV TIME [%d ] \t %g \n", procId, idata.totalGravTime);
   
   if(execStream != NULL)
   {
     delete execStream;
     execStream = NULL;
   }
+}
+
+void octree::iterate() {
+  IterationData idata;
+  iterate_setup(idata);
+
+  for(int i=0; i < 10000000; i++) //Large number, limit
+  {
+    if (true == iterate_once(idata))
+        break;
+
+    iter++;
+    
+  } //end for i
+  
+  iterate_teardown(idata);
   
 } //end iterate
 

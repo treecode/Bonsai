@@ -34,6 +34,7 @@ set (CCFILES
   src/octree.cpp
   src/parallel.cpp
   src/sort_bodies_gpu.cpp
+  src/renderloop.cpp
   )
 
 set (HFILES
