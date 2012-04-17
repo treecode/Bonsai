@@ -50,6 +50,7 @@ set (HFILES
   include/node_specs.h
   include/octree.h
   include/tipsydefs.h
+  include/vector_math.h
   )
 
 set (CUFILES
