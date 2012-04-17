@@ -689,6 +689,8 @@ public:
     
     prevDurStep = -1;   //Set it to negative so we know its the first step
 
+    my_dev::base_mem::printMemUsage();   
+
 #ifdef WIN32
     // initialize windows timer
     QueryPerformanceFrequency(&sysTimerFreq);
