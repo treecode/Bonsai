@@ -28,8 +28,11 @@ www.castle.strw.leidenuniv.nl
 
 using namespace std;
 
-
 #include "octree.h"
+
+#ifdef USE_OPENGL
+#include "renderloop.h"
+#endif
 
 void read_dumbp_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyVelocities,  vector<int> &bodiesIDs,  float eps2,
                      string fileName, int rank, int procs, int &NTotal2, int &NFirst, int &NSecond, int &NThird, octree *tree)  
@@ -583,7 +586,6 @@ int main(int argc, char** argv)
   cout << "Kill distance: \t"      << killDistance     << "\t\tRemove dist: \t"   << remoDistance << endl;
   cout << "Snapshot Addition: \t"  << snapShotAdd << endl;
 
-
   int NTotal, NFirst, NSecond, NThird;
   NTotal = NFirst = NSecond = NThird = 0;
 
@@ -741,7 +743,11 @@ int main(int argc, char** argv)
   tree->compute_properties(tree->localTree);
   
   //Start the integration
-  tree->iterate();
+#ifdef USE_OPENGL
+  octree::IterationData idata;
+  initAppRenderer(argc, argv, tree, idata);
+#else
+  tree->iterate(); 
 
   printf("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
   
@@ -753,6 +759,6 @@ int main(int argc, char** argv)
 
   delete tree;
   tree = NULL;
-
+#endif
   return 0;
 }
