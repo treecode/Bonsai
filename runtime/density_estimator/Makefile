@@ -6,7 +6,7 @@ F90 = gfortran
 OMPFLAGS  = -fopenmp
 OMPFLAGS += -D_GLIBCXX_PARALLEL
 
-OFLAGS = -O4 -g -Wall
+OFLAGS = -O3 -g -Wall
 # OMPFLAGS=
 
 CXXFLAGS =  -fPIC $(OFLAGS) -Wstrict-aliasing=2 $(OMPFLAGS)
