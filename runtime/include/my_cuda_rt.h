@@ -6,6 +6,11 @@
 
 //#include <sys/time.h>
 
+#if defined(_WIN32) && !defined(_WIN64)
+  //Only use this on 32bit Windows builds  
+  #include <typeinfo.h>
+#endif
+
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -995,6 +1000,20 @@ namespace my_dev {
       
       tempArg.texSize   = -1;
       tempArg.texOffset = -1;
+
+      /* jbedorf, on 32bit Windows float4 reports as being 
+       * 4 byte aligned while it should be 16 byte. Force this
+       * by manually setting alignment if the template argument
+       * is a float4 . Note this is a first version work-around
+       * for testing.
+      */
+      #if defined(_WIN32) && !defined(_WIN64)
+        if(typeid(T) == typeid(float4&))
+        {
+          tempArg.alignment = 16;
+        }
+      #endif
+
       kernelArguments[arg] = tempArg;
  
       return;
