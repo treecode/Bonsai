@@ -31,6 +31,7 @@ int main(int argc, char * argv[])
   double ngb_mean2 = 0;
 
   int imax = 0;
+  fprintf(stdout, "%d\n", nbody);
   for (int i = 0; i < nbody; i++)
   {
     std::vector<Particle> &ptcl = Node::ptcl;
@@ -56,7 +57,7 @@ int main(int argc, char * argv[])
     ngb_max = std::max(ngb_max, p.nnb);
     ngb_mean  += p.nnb;
     ngb_mean2 += p.nnb*p.nnb;
-    fprintf(stdout, " %d %g \n", p.ID, p.density);
+    fprintf(stdout, " %d  %g %g %g   %g \n", p.ID, p.pos.x, p.pos.y, p.pos.z, p.density);
 
   }
   ngb_mean  *= 1.0/(float)nbody;
