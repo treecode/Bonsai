@@ -56,8 +56,10 @@ protected: // data
     float m_spriteSize;
 
     unsigned int m_vertexShader;
+    unsigned int m_vertexShaderPoints;
     unsigned int m_pixelShader;
-    unsigned int m_program;
+    unsigned int m_programPoints;
+    unsigned int m_programSprites;
     unsigned int m_texture;
     unsigned int m_pbo;
     unsigned int m_vboColor;
