@@ -31,7 +31,9 @@ int main(int argc, char * argv[])
   double ngb_mean2 = 0;
 
   int imax = 0;
+#if 0
   fprintf(stdout, "%d\n", nbody);
+#endif
   for (int i = 0; i < nbody; i++)
   {
     std::vector<Particle> &ptcl = Node::ptcl;
