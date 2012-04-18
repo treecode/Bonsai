@@ -1319,4 +1319,18 @@ inline __device__ __host__ float4 smoothstep(float4 a, float4 b, float4 x)
 	return (y*y*(make_float4(3.0f) - (make_float4(2.0f)*y)));
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// comparison
+////////////////////////////////////////////////////////////////////////////////
+
+inline __device__ __host__ bool operator<=(float3 a, float3 b)
+{
+  return (a.x <= b.x) && (a.y <= b.y) && (a.z <= b.z);
+}
+
+inline __device__ __host__ bool operator>=(float3 a, float3 b)
+{
+  return (a.x >= b.x) && (a.y >= b.y) && (a.z >= b.z);
+}
+
 #endif

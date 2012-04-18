@@ -23,23 +23,67 @@
 #include "render_particles.h"
 #include "vector_math.h"
 
+void drawWireBox(float3 boxMin, float3 boxMax) {
+  glLineWidth(1.0);
+  glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);  
+  glColor3f(0.0, 1.0, 0.0);
+  glBegin(GL_QUADS);
+    // Front Face
+    glNormal3f( 0.0, 0.0, 1.0);
+    glTexCoord2f(0.0, 0.0); glVertex3f(boxMin.x, boxMin.y, boxMax.z);
+    glTexCoord2f(1.0, 0.0); glVertex3f(boxMax.x, boxMin.y, boxMax.z);
+    glTexCoord2f(1.0, 1.0); glVertex3f(boxMax.x, boxMax.y, boxMax.z);
+    glTexCoord2f(0.0, 1.0); glVertex3f(boxMin.x, boxMax.y, boxMax.z);
+    // Back Face
+    glNormal3f( 0.0, 0.0,-1.0);
+    glTexCoord2f(0.0, 0.0); glVertex3f(boxMax.x, boxMin.y, boxMin.z);
+    glTexCoord2f(1.0, 0.0); glVertex3f(boxMin.x, boxMin.y, boxMin.z);
+    glTexCoord2f(1.0, 1.0); glVertex3f(boxMin.x, boxMax.y, boxMin.z);
+    glTexCoord2f(0.0, 1.0); glVertex3f(boxMax.x, boxMax.y, boxMin.z);
+    // Top Face
+    glNormal3f( 0.0, 1.0, 0.0);
+    glTexCoord2f(0.0, 0.0); glVertex3f(boxMin.x, boxMax.y, boxMax.z);
+    glTexCoord2f(1.0, 0.0); glVertex3f(boxMax.x, boxMax.y, boxMax.z);
+    glTexCoord2f(1.0, 1.0); glVertex3f(boxMax.x, boxMax.y, boxMin.z);
+    glTexCoord2f(0.0, 1.0); glVertex3f(boxMin.x, boxMax.y, boxMin.z);
+    // Bottom Face
+    glNormal3f( 0.0,-1.0, 0.0);
+    glTexCoord2f(0.0, 0.0); glVertex3f(boxMax.x, boxMin.y, boxMin.z);
+    glTexCoord2f(1.0, 0.0); glVertex3f(boxMin.x, boxMin.y, boxMin.z);
+    glTexCoord2f(1.0, 1.0); glVertex3f(boxMin.x, boxMin.y, boxMax.z);
+    glTexCoord2f(0.0, 1.0); glVertex3f(boxMax.x, boxMin.y, boxMax.z);
+    // Right face
+    glNormal3f( 1.0, 0.0, 0.0);
+    glTexCoord2f(0.0, 0.0); glVertex3f(boxMax.x, boxMin.y, boxMax.z);
+    glTexCoord2f(1.0, 0.0); glVertex3f(boxMax.x, boxMin.y, boxMin.z);
+    glTexCoord2f(1.0, 1.0); glVertex3f(boxMax.x, boxMax.y, boxMin.z);
+    glTexCoord2f(0.0, 1.0); glVertex3f(boxMax.x, boxMax.y, boxMax.z);
+    // Left Face
+    glNormal3f(-1.0, 0.0, 0.0);
+    glTexCoord2f(0.0, 0.0); glVertex3f(boxMin.x, boxMin.y, boxMin.z);
+    glTexCoord2f(1.0, 0.0); glVertex3f(boxMin.x, boxMin.y, boxMax.z);
+    glTexCoord2f(1.0, 1.0); glVertex3f(boxMin.x, boxMax.y, boxMax.z);
+    glTexCoord2f(0.0, 1.0); glVertex3f(boxMin.x, boxMax.y, boxMin.z);
+  glEnd();
+  glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);  
+}
+  
+
 class BonsaiDemo
 {
 public:
   BonsaiDemo(octree *tree, octree::IterationData &idata) 
     : m_tree(tree), m_idata(idata), iterationsRemaining(true),
-      m_displayMode(ParticleRenderer::PARTICLE_POINTS),
+      m_displayMode(ParticleRenderer::PARTICLE_SPRITES),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.1f),
-      m_paused(false)
+      m_paused(false), m_displayBoxes(false)
   {
     m_windowDims = make_int2(720, 480);
     m_cameraTrans = make_float3(0, -2, -100);
     m_cameraTransLag = m_cameraTrans;
     m_cameraRot   = make_float3(0, 0, 0);
     m_cameraRotLag = m_cameraRot;
-
-    fitCamera();
-    
+            
     float color[4] = { 0.8f, 0.7f, 0.95f, 1.0f};
     m_renderer.setBaseColor(color);
     m_renderer.setPointSize(0.00001f);
@@ -59,15 +103,16 @@ public:
       cycleDisplayMode();
   }
 
-  void togglePause() {
-    m_paused = !m_paused;
-  }
+  void togglePause() { m_paused = !m_paused; }
+  void toggleBoxes() { m_displayBoxes = !m_displayBoxes; }
 
   void step() { 
     if (!m_paused && iterationsRemaining)
       iterationsRemaining = !m_tree->iterate_once(m_idata); 
+    if (!iterationsRemaining)
+      printf("No iterations Remaining!\n");
   }
-  
+
   void display() { 
     getBodyData();
 
@@ -82,6 +127,13 @@ public:
       glTranslatef(m_cameraTransLag.x, m_cameraTransLag.y, m_cameraTransLag.z);
       glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
       glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
+    }
+
+    if (m_displayBoxes) {
+      float3 boxMin = make_float3(m_tree->rMinLocalTree);
+      float3 boxMax = make_float3(m_tree->rMaxLocalTree);
+
+      drawWireBox(boxMin, boxMax);
     }
 
     m_renderer.display(m_displayMode);
@@ -122,8 +174,8 @@ public:
     }
     else if (m_buttonState & 2) {
       // middle = translate
-      m_cameraTrans.x += dx / 100.0f;
-      m_cameraTrans.y -= dy / 100.0f;
+      m_cameraTrans.x += dx / 10.0f;
+      m_cameraTrans.y -= dy / 10.0f;
     }
     else if (m_buttonState & 1) {
       // left = rotate
@@ -137,34 +189,30 @@ public:
 
   void reshape(int w, int h) {
     m_windowDims = make_int2(w, h);
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    gluPerspective(60.0, (float) m_windowDims.x / (float) m_windowDims.y, 0.1, 10000.0);
-
+    fitCamera();
     glMatrixMode(GL_MODELVIEW);
     glViewport(0, 0, m_windowDims.x, m_windowDims.y);
   }
 
   void fitCamera() {
-    // MJH: todo: figure out why I need these large fudge constants
-    // just computing the distance using radius / sin(fov/2) should be enough!
     float3 boxMin = make_float3(m_tree->rMinLocalTree);
     float3 boxMax = make_float3(m_tree->rMaxLocalTree);
 
     const float pi = 3.1415926f;
     float3 center = 0.5f * (boxMin + boxMax);
     float radius = std::max(length(boxMax), length(boxMin));
-    const float fovRads = (m_windowDims.y / (float)m_windowDims.x) * pi / 3.0f ; // 60 degrees
+    const float fovRads = (m_windowDims.x / (float)m_windowDims.y) * pi / 3.0f ; // 60 degrees
 
     float distanceToCenter = radius / sinf(0.5f * fovRads);
     
-    m_cameraTrans = center + 20.0f * make_float3(0, 0, - distanceToCenter);
-
-    m_cameraRot = make_float3(0, 0, 0);
+    m_cameraTrans = center + make_float3(0, 0, - distanceToCenter);
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    gluPerspective(60.0, (float) m_windowDims.x / (float) m_windowDims.y, 0.005 * radius, 50 * distanceToCenter);
+    gluPerspective(60.0, 
+                   (float) m_windowDims.x / (float) m_windowDims.y, 
+                   0.0001 * distanceToCenter, 
+                   4 * (radius + distanceToCenter));
   }
 
 private:
@@ -195,6 +243,7 @@ private:
   const float m_inertia;
 
   bool m_paused;
+  bool m_displayBoxes;
 };
 
 BonsaiDemo *theDemo = NULL;
@@ -250,6 +299,10 @@ void key(unsigned char key, int /*x*/, int /*y*/)
   case 'p':
   case 'P':
     theDemo->cycleDisplayMode();
+    break;
+  case 'b':
+  case 'B':
+    theDemo->toggleBoxes();
     break;
   case 'd':
   case 'D':
