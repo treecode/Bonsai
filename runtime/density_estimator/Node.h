@@ -35,7 +35,9 @@ inline void interact(Particle &ip, Particle &jp, const float r2)
   const float hinv = ip.get_hinv();
   const float r    = std::sqrt(r2);
   const float q    = r * hinv;
-  ip.density += jp.mass * Wkernel(q);
+  const float hinv3 = hinv*hinv*hinv;
+
+  ip.density += jp.mass * Wkernel(q) * hinv3;
 }
 
 struct Node{
