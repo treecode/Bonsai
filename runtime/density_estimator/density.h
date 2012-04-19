@@ -94,7 +94,7 @@ struct Density
 #endif /* SLOW */
 
   const double t1 = wtime();
-  fprintf(stderr, " -- Density done in %g sec \n",  t1 - t0);
+  fprintf(stderr, " -- Density done in %g sec [ %g ptcl/sec ]\n",  t1 - t0, Nuse/(t1 - t0));
 
   };
 };
