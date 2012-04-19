@@ -10,9 +10,7 @@ CUDA_TK  = /usr/local/cuda
 # OFLAGS = -O0 -g -Wall 
 OFLAGS = -O3 -g -Wall -fopenmp 
 # OFLAGS = -O3  -Wall -fopenmp 
-CXXFLAGS =  -fPIC $(OFLAGS) -I$(CUDA_TK)/include 
-
-
+CXXFLAGS =  -fPIC $(OFLAGS) -I$(CUDA_TK)/include  -Wstrict-aliasing=2
 
 
 # NVCC      = $(CUDA_TK)/bin/nvcc  --device-emulation
