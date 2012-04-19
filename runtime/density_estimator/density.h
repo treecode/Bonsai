@@ -16,7 +16,7 @@ struct Density
 
   Particle::Vector density;
   Boundary BBox;  /* bounding box */
-  
+
   struct cmp_particle_key 
   {
     bool operator () (const Particle &a, const Particle &b)
@@ -40,7 +40,7 @@ struct Density
     std::vector<Particle> &ptcl = Node::ptcl;
     ptcl.reserve(Nuse);
     const int Nin = ptcl_in.size();
-    const float fac = std::min(1.0f, (float)Nin/(float)Nuse);
+    const float fac = std::max(1.0f, (float)Nin/(float)Nuse);
 
 
     /* import particles and compute the Bounding Box */
@@ -70,31 +70,31 @@ struct Density
 
 #if 1  /* if h's are not know this set-up estimated range */
     const float volume = rsize*rsize*rsize;
-		root.set_init_h(float(32), volume);
+    root.set_init_h(float(32), volume);
 #endif
     root.make_boundary();
 
 #ifdef SLOW
 
 #pragma omp parallel for
-	for(int i=0; i<nbody; i++)
-		ptcl[i] << root;
+    for(int i=0; i<nbody; i++)
+      ptcl[i] << root;
 #else /* FAST */
 
 #ifdef _OPENMP
-	std::vector<Node *> group_list;
-	root.find_group_Node(2000, group_list);
+    std::vector<Node *> group_list;
+    root.find_group_Node(2000, group_list);
 #pragma omp parallel for schedule(dynamic)
-	for(int i=0; i<(int)group_list.size(); i++)
-		*group_list[i] << root;
+    for(int i=0; i<(int)group_list.size(); i++)
+      *group_list[i] << root;
 #else
-	root << root;
+    root << root;
 #endif /* _OPENMP */
 
 #endif /* SLOW */
 
-  const double t1 = wtime();
-  fprintf(stderr, " -- Density done in %g sec [ %g ptcl/sec ]\n",  t1 - t0, Nuse/(t1 - t0));
+    const double t1 = wtime();
+    fprintf(stderr, " -- Density done in %g sec [ %g ptcl/sec ]\n",  t1 - t0, Nuse/(t1 - t0));
 
   };
 };
