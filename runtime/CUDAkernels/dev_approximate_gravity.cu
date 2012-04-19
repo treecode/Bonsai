@@ -734,6 +734,9 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
  	  node_oct0[tid] = make_float3(octopole0.x, octopole0.y, octopole0.z);
  	  node_oct1[tid] = make_float3(octopole1.x, octopole1.y, octopole1.z);
 
+          //float darkMatterMass = octopole1.w;
+          //float stellarMass = monopole.w - darkMatterMass;
+
           #ifdef INDSOFT
             float temp          = node_eps[tid]; //Backup value in the shmem into register
             node_eps[tid]       = octopole0.w;

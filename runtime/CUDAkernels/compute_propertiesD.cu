@@ -101,7 +101,8 @@ extern "C" __global__ void compute_leaf(const int n_leafs,
                                             real4 *nodeUpperBounds,
 //                                             float3 *lowerBounds,
 //                                             float3 *upperBounds,
-                                            real4  *body_vel) {
+                                            real4  *body_vel,
+                                            uint *body_id) {
 
   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   const uint tid = threadIdx.x;
@@ -144,6 +145,8 @@ extern "C" __global__ void compute_leaf(const int n_leafs,
   r_min = make_float3(+1e10f, +1e10f, +1e10f);
   r_max = make_float3(-1e10f, -1e10f, -1e10f);
 
+  float darkMatterMass = 0.0f;
+
   //Loop over the children=>particles=>bodys
   //unroll increases register usage #pragma unroll 16
   float maxEps = -100.0f;
@@ -156,6 +159,9 @@ extern "C" __global__ void compute_leaf(const int n_leafs,
     compute_monopole(mass, posx, posy, posz, p);
     compute_quadropole(oct_q11, oct_q22, oct_q33, oct_q12, oct_q13, oct_q23, p);
     compute_bounds(r_min, r_max, p);
+
+    if(body_id[i] >= 200000000)
+      darkMatterMass += p.w;
   }
 
   double4 mon = {posx, posy, posz, mass};
@@ -166,9 +172,12 @@ extern "C" __global__ void compute_leaf(const int n_leafs,
   mon.y *= im;
   mon.z *= im;
 
+  //jbedorf, store darkMatterMass in Q1.w
+  //stellar mass is mon.w-darkMatterMass
+
   double4 Q0, Q1;
   Q0 = make_double4(oct_q11, oct_q22, oct_q33, maxEps); //Store max softening
-  Q1 = make_double4(oct_q12, oct_q13, oct_q23, 0);
+  Q1 = make_double4(oct_q12, oct_q13, oct_q23, darkMatterMass);
 
   //Store the leaf properties
   multipole[3*nodeID + 0] = mon;       //Monopole
@@ -253,7 +262,8 @@ extern "C" __global__ void compute_non_leaf(const int curLevel,         //Level 
   float3 r_min, r_max;
   r_min = make_float3(+1e10f, +1e10f, +1e10f);
   r_max = make_float3(-1e10f, -1e10f, -1e10f);
-
+  
+  float darkMatterMass = 0.0f;
   //Process the children (1 to 8)
   float maxEps = -100.0f;
   for(int i=firstChild; i < firstChild+nChildren; i++)
@@ -262,6 +272,8 @@ extern "C" __global__ void compute_non_leaf(const int curLevel,         //Level 
     double4 tmon = multipole[3*i + 0];
 
     maxEps = max(multipole[3*i + 1].w, maxEps);
+
+    darkMatterMass += multipole[3*i + 2].w;
 
     compute_monopole_node(mass, posx, posy, posz, tmon);
     compute_quadropole_node(oct_q11, oct_q22, oct_q33, oct_q12, oct_q13, oct_q23,
@@ -284,7 +296,7 @@ extern "C" __global__ void compute_non_leaf(const int curLevel,         //Level 
 
   double4 Q0, Q1;
   Q0 = make_double4(oct_q11, oct_q22, oct_q33, maxEps); //store max Eps
-  Q1 = make_double4(oct_q12, oct_q13, oct_q23, 0);
+  Q1 = make_double4(oct_q12, oct_q13, oct_q23, darkMatterMass);
 
   multipole[3*nodeID + 0] = mon;        //Monopole
   multipole[3*nodeID + 1] = Q0;         //Quadropole1

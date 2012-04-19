@@ -185,6 +185,8 @@ void octree::compute_properties_double(tree_structure &tree) {
   propsLeafD.set_arg<cl_mem>(5, tree.nodeLowerBounds.p());
   propsLeafD.set_arg<cl_mem>(6, tree.nodeUpperBounds.p());
   propsLeafD.set_arg<cl_mem>(7, tree.bodies_Pvel.p());  //Velocity to get max eps
+  propsLeafD.set_arg<cl_mem>(8, tree.bodies_ids.p());  //Ids to distinguish DM and stars
+
   
   propsLeafD.setWork(tree.n_leafs, 128);
   printf("PropsLeaf: "); propsLeafD.printWorkSize();
