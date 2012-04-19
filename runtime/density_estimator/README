@@ -3,10 +3,10 @@
   See density.cpp as example
    $ make 
    $ gzip -cd ngb_fast.gz | ./density > ngb_fast.dens
-      -- Density done in 0.039413 sec 
- 
+      -- Density done in 0.040385 sec [ 2.47503e+06 ptcl/sec ]
+
    $ gzip -cd ngb_slow.gz | ./density > ngb_slow.dens
-      -- Density done in 0.056072 sec 
+      -- Density done in 0.0576272 sec [ 1.77937e+06 ptcl/sec ]
 
 Timings done on i7 2600K, 3.5GHz with 4 omp threads and ~100k particles
 
