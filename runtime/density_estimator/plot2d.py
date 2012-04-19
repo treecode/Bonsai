@@ -64,7 +64,7 @@ for line in data:
     w.append(math.log10(wcrd))
 
 print len(w)
-plot2D(x,y,w, xlim=[-300, 300], ylim=[-300,300])
+plot2D(x,y,w, xlim=[-100, 100], ylim=[-100,100])
 
 
 

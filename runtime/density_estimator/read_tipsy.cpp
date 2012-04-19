@@ -31,9 +31,9 @@ int main(int argc, char * argv[])
 
   Node::allocate(nbody, nbody);
   const int Ndesired = 100000;
-#if 0
+#if 1
   const int N = std::min(Ndesired, (int)ptcl_star.size());
-  Density density(ptcl_star, N);
+  Density density(ptcl_star, N,128);
 #else
   const int N = std::min(Ndesired, (int)ptcl_dm.size());
   Density density(ptcl_dm, N, 64);
