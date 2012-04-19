@@ -2,16 +2,15 @@
 
 Bonsai V2: A parallel GPU N-body gravitational Tree-code
 
-By:
+(c) 2010-2012:
 Jeroen Bedorf
 Evghenii Gaburov
 Simon Portegies Zwart
 
 Leiden Observatory, Leiden University
 
-www.castle.strw.leidenuniv.nl
-
-
+http://castle.strw.leidenuniv.nl
+http://github.com/treecode/Bonsai
 
 */
 
