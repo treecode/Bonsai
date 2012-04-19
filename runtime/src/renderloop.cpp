@@ -69,8 +69,6 @@ void drawWireBox(float3 boxMin, float3 boxMax) {
   glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);  
 }
 
-
-
 class BonsaiDemo
 {
 public:
@@ -159,9 +157,31 @@ public:
     //m_renderer.display(m_displayMode);
 	m_renderer.render();
 
+<<<<<<< HEAD
     if (m_displayBoxes) {
       glEnable(GL_DEPTH_TEST);
       displayOctree();  
+=======
+      drawWireBox(boxMin, boxMax);
+      
+      m_tree->localTree.boxCenterInfo.d2h();
+      m_tree->localTree.boxSizeInfo.d2h();
+      m_tree->localTree.node_level_list.d2h(); //Should not be needed is created on host
+      
+      for(uint i=0; i < m_tree->localTree.node_level_list[6]; i++)
+      {
+          float3 boxMin, boxMax;
+          boxMin.x = m_tree->localTree.boxCenterInfo[i].x-m_tree->localTree.boxSizeInfo[i].x;
+          boxMin.y = m_tree->localTree.boxCenterInfo[i].y-m_tree->localTree.boxSizeInfo[i].y;
+          boxMin.z = m_tree->localTree.boxCenterInfo[i].z-m_tree->localTree.boxSizeInfo[i].z;
+
+          boxMax.x = m_tree->localTree.boxCenterInfo[i].x+m_tree->localTree.boxSizeInfo[i].x;
+          boxMax.y = m_tree->localTree.boxCenterInfo[i].y+m_tree->localTree.boxSizeInfo[i].y;
+          boxMax.z = m_tree->localTree.boxCenterInfo[i].z+m_tree->localTree.boxSizeInfo[i].z;
+        drawWireBox(boxMin, boxMax);
+      }
+      
+>>>>>>> Made dm and stellar mass available during tree-walk, and tree-visualization
     }
 
 	if (m_displaySliders) {
