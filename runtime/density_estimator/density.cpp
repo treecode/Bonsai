@@ -8,21 +8,21 @@ int main(int argc, char * argv[])
 {
   Particle::Vector ptcl;
 
-	int idum, nbody;
-	std::cin >> idum >> nbody;
+  int idum, nbody;
+  std::cin >> idum >> nbody;
 
   std::vector<int> nnb(nbody);
   ptcl.reserve(nbody);
 
-	for(int i=0; i<nbody; i++){
-		float h;
+  for(int i=0; i<nbody; i++){
+    float h;
     vec3 pos;
-		std::cin >> pos >> h >> nnb[i];
+    std::cin >> pos >> h >> nnb[i];
     ptcl.push_back(Particle(i, pos, 1.0, 2.0*h));
-	}
+  }
   fprintf(stderr, "nbody= %d \n", nbody);
 
-	Node::allocate(nbody, nbody);
+  Node::allocate(nbody, nbody);
   Density density(ptcl, nbody);
 
   int ngb_min = nbody;
@@ -54,7 +54,7 @@ int main(int argc, char * argv[])
 #endif
       imax++;
     }
-            
+
     ngb_min = std::min(ngb_min, p.nnb);
     ngb_max = std::max(ngb_max, p.nnb);
     ngb_mean  += p.nnb;
