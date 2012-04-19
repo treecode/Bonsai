@@ -68,64 +68,6 @@ void drawWireBox(float3 boxMin, float3 boxMax) {
   glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);  
 }
 
-void drawWireBoxTreenode(float4 boxCenter, float4 boxSize) {
-  
-  float3 boxMin, boxMax;
-  boxMin.x = boxCenter.x-boxSize.x;
-  boxMin.y = boxCenter.y-boxSize.y;
-  boxMin.z = boxCenter.z-boxSize.z;
-
-  boxMax.x = boxCenter.x+boxSize.x;
-  boxMax.y = boxCenter.y+boxSize.y;
-  boxMax.z = boxCenter.z+boxSize.z;
-  
- 
-  glLineWidth(1.0);
-  glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);  
-  glColor3f(0.0, 1.0, 0.0);
-  glBegin(GL_QUADS);
-    // Front Face
-    glNormal3f( 0.0, 0.0, 1.0);
-    glTexCoord2f(0.0, 0.0); glVertex3f(boxMin.x, boxMin.y, boxMax.z);
-    glTexCoord2f(1.0, 0.0); glVertex3f(boxMax.x, boxMin.y, boxMax.z);
-    glTexCoord2f(1.0, 1.0); glVertex3f(boxMax.x, boxMax.y, boxMax.z);
-    glTexCoord2f(0.0, 1.0); glVertex3f(boxMin.x, boxMax.y, boxMax.z);
-    // Back Face
-    glNormal3f( 0.0, 0.0,-1.0);
-    glTexCoord2f(0.0, 0.0); glVertex3f(boxMax.x, boxMin.y, boxMin.z);
-    glTexCoord2f(1.0, 0.0); glVertex3f(boxMin.x, boxMin.y, boxMin.z);
-    glTexCoord2f(1.0, 1.0); glVertex3f(boxMin.x, boxMax.y, boxMin.z);
-    glTexCoord2f(0.0, 1.0); glVertex3f(boxMax.x, boxMax.y, boxMin.z);
-    // Top Face
-    glNormal3f( 0.0, 1.0, 0.0);
-    glTexCoord2f(0.0, 0.0); glVertex3f(boxMin.x, boxMax.y, boxMax.z);
-    glTexCoord2f(1.0, 0.0); glVertex3f(boxMax.x, boxMax.y, boxMax.z);
-    glTexCoord2f(1.0, 1.0); glVertex3f(boxMax.x, boxMax.y, boxMin.z);
-    glTexCoord2f(0.0, 1.0); glVertex3f(boxMin.x, boxMax.y, boxMin.z);
-    // Bottom Face
-    glNormal3f( 0.0,-1.0, 0.0);
-    glTexCoord2f(0.0, 0.0); glVertex3f(boxMax.x, boxMin.y, boxMin.z);
-    glTexCoord2f(1.0, 0.0); glVertex3f(boxMin.x, boxMin.y, boxMin.z);
-    glTexCoord2f(1.0, 1.0); glVertex3f(boxMin.x, boxMin.y, boxMax.z);
-    glTexCoord2f(0.0, 1.0); glVertex3f(boxMax.x, boxMin.y, boxMax.z);
-    // Right face
-    glNormal3f( 1.0, 0.0, 0.0);
-    glTexCoord2f(0.0, 0.0); glVertex3f(boxMax.x, boxMin.y, boxMax.z);
-    glTexCoord2f(1.0, 0.0); glVertex3f(boxMax.x, boxMin.y, boxMin.z);
-    glTexCoord2f(1.0, 1.0); glVertex3f(boxMax.x, boxMax.y, boxMin.z);
-    glTexCoord2f(0.0, 1.0); glVertex3f(boxMax.x, boxMax.y, boxMax.z);
-    // Left Face
-    glNormal3f(-1.0, 0.0, 0.0);
-    glTexCoord2f(0.0, 0.0); glVertex3f(boxMin.x, boxMin.y, boxMin.z);
-    glTexCoord2f(1.0, 0.0); glVertex3f(boxMin.x, boxMin.y, boxMax.z);
-    glTexCoord2f(1.0, 1.0); glVertex3f(boxMin.x, boxMax.y, boxMax.z);
-    glTexCoord2f(0.0, 1.0); glVertex3f(boxMin.x, boxMax.y, boxMin.z);
-  glEnd();
-  glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);  
-}
-
-
-
 
 
 class BonsaiDemo
@@ -198,7 +140,12 @@ public:
       m_tree->localTree.boxSizeInfo.d2h();
       m_tree->localTree.node_level_list.d2h(); //Should not be needed is created on host
       
-      for(uint i=0; i < m_tree->localTree.node_level_list[6]; i++)
+      
+      uint drawUpToLevel = 6;
+      
+      drawUpToLevel = min(drawUpToLevel, m_tree->localTree.n_levels);
+      
+      for(uint i=0; i < m_tree->localTree.node_level_list[drawUpToLevel]; i++)
       {
           float3 boxMin, boxMax;
           boxMin.x = m_tree->localTree.boxCenterInfo[i].x-m_tree->localTree.boxSizeInfo[i].x;
