@@ -284,7 +284,8 @@ const char pixelShader[] =
   "    vec4 color2 = gl_SecondaryColor;                                   \n"
   "    vec4 color = (0.6 + 0.4 * gl_Color) * texture2D(splatTexture, gl_TexCoord[0].st); \n"
   "    gl_FragColor =                                                     \n"
-  "         color * color2;\n"//mix(vec4(0.1, 0.0, 0.0, color.w), color2, color.w);\n"
+  "         color;\n"//mix(vec4(0.1, 0.0, 0.0, color.w), color2, color.w);\n"
+  "    gl_FragColor = color * color2;                                      \n"
   "}                                                                      \n"
 };
 
