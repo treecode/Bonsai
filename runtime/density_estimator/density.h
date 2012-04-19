@@ -33,13 +33,15 @@ struct Density
     }
   };
 
-  Density(const Particle::Vector &ptcl_in, const int Nuse)
+  Density(const Particle::Vector &ptcl_in, const int Nuse, const int Nngb = 32)
   {
     const double t0 = wtime();
 
     std::vector<Particle> &ptcl = Node::ptcl;
     ptcl.reserve(Nuse);
     const int Nin = ptcl_in.size();
+    assert(Nuse <= Nin);
+
     const float fac = std::max(1.0f, (float)Nin/(float)Nuse);
 
 
@@ -70,7 +72,7 @@ struct Density
 
 #if 1  /* if h's are not know this set-up estimated range */
     const float volume = rsize*rsize*rsize;
-    root.set_init_h(float(32), volume);
+    root.set_init_h(float(Nngb), volume);
 #endif
     root.make_boundary();
 

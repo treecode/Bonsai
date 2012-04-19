@@ -47,8 +47,8 @@ y = []
 w = []
 
 data = sys.stdin.readlines();
-zcrd_min = -0.5
-zcrd_max = +0.5
+zcrd_min = -1
+zcrd_max = +1
 for line in data:
 
   wrd = line.split();
@@ -58,13 +58,13 @@ for line in data:
   zcrd = float(wrd[3]);
   wcrd = float(wrd[4]);
 
-  if ycrd > zcrd_min and ycrd < zcrd_max:
+  if zcrd > zcrd_min and zcrd < zcrd_max:
     x.append(xcrd)
-    y.append(zcrd)
+    y.append(ycrd)
     w.append(math.log10(wcrd))
 
 print len(w)
-plot2D(x,y,w, xlim=[-100, 100], ylim=[-100,100])
+plot2D(x,y,w, xlim=[-300, 300], ylim=[-300,300])
 
 
 

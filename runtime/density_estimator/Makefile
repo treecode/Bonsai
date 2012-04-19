@@ -19,14 +19,21 @@ SRCPATH = ./
 SRC = density.cpp
 OBJ = $(SRC:%.cpp=%.o)
 
-PROG = density
+SRC1 = read_tipsy.cpp
+OBJ1 = $(SRC1:%.cpp=%.o)
+
+PROG  = density
+PROG1 = read_tipsy
 
 RM = /bin/rm
 
-all:	  $(PROG)
+all:	  $(PROG) $(PROG1)
 
 
 $(PROG): $(OBJ) 
+	$(LD) $(LDFLAGS) $^ -o $@ $(OMPFLAGS)
+
+$(PROG1): $(OBJ1)
 	$(LD) $(LDFLAGS) $^ -o $@ $(OMPFLAGS)
 
 %.o: $(SRCPATH)/%.cpp
@@ -34,9 +41,10 @@ $(PROG): $(OBJ)
 
 
 clean:
-	/bin/rm -rf *.o $(PROG) 
+	/bin/rm -rf *.o $(PROG)  $(PROG1)
 
 $(OBJ): boundary.h  density.h  memalign_allocator.h  morton_key.h  Node.h  Particle.h  vector3.h  wtime.h
+$(OBJ1): boundary.h  density.h  memalign_allocator.h  morton_key.h  Node.h  Particle.h  vector3.h  wtime.h read_tipsy.h
 
 build_tree.ptx: $(CUDAKERNELSPATH)/support_kernels.cu $(INCLUDEPATH)/node_specs.h
 compute_properties.ptx: $(CUDAKERNELSPATH)/support_kernels.cu $(INCLUDEPATH)/node_specs.h
