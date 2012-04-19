@@ -81,7 +81,7 @@ public:
     m_windowDims = make_int2(720, 480);
     m_cameraTrans = make_float3(0, -2, -100);
     m_cameraTransLag = m_cameraTrans;
-    m_cameraRot   = make_float3(0, 0, 0);
+    m_cameraRot = make_float3(0, 0, 0);
     m_cameraRotLag = m_cameraRot;
             
     float color[4] = { 0.8f, 0.7f, 0.95f, 1.0f};
@@ -99,8 +99,8 @@ public:
     m_displayMode = (ParticleRenderer::DisplayMode)
       ((m_displayMode + 1) % ParticleRenderer::PARTICLE_NUM_MODES);
     // MJH todo: add body color support and remove this
-    if (ParticleRenderer::PARTICLE_SPRITES_COLOR == m_displayMode)
-      cycleDisplayMode();
+    //if (ParticleRenderer::PARTICLE_SPRITES_COLOR == m_displayMode)
+    //  cycleDisplayMode();
   }
 
   void togglePause() { m_paused = !m_paused; }
@@ -218,10 +218,27 @@ public:
 private:
   void getBodyData() {
     m_tree->localTree.bodies_pos.d2h();
+    m_tree->localTree.bodies_ids.d2h();
     //m_tree->localTree.bodies_vel.d2h();
-    //m_tree->localTree.bodies_ids.d2h();
 
-    m_renderer.setPositions((float*)&m_tree->localTree.bodies_pos[0], m_tree->localTree.n);
+    int n = m_tree->localTree.n;
+
+    float4 darkMatterColor = make_float4(1.0f, 0.0f, 0.0f, 1.0f);
+    float4 starColor =       make_float4(0.0f, 0.0f, 1.0f, 1.0f);
+
+    float4 *colors = new float4[n];
+
+    for (int i = 0; i < n; i++) {
+      int id = m_tree->localTree.bodies_ids[i];
+      if (id >= 0 && id < 100000000) colors[i] = make_float4(0, 0, 0, 0); // dust -- not used yet
+      else if (id >= 100000000 && id < 200000000) colors[i] = darkMatterColor;
+      else colors[i] = starColor;
+    }
+
+    m_renderer.setPositions((float*)&m_tree->localTree.bodies_pos[0], n);
+    m_renderer.setColors((float*)colors, n);
+
+    delete [] colors;
   }
 
   octree *m_tree;
