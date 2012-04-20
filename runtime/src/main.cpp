@@ -505,6 +505,7 @@ int main(int argc, char** argv)
 #ifdef USE_OPENGL
   octree::IterationData idata;
   initAppRenderer(argc, argv, tree, idata);
+  printf("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);  
 #else
   tree->iterate(); 
 

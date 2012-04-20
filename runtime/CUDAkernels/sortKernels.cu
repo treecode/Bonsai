@@ -86,6 +86,27 @@ extern "C" __global__ void extractKeyAndPerm(uint4 *newKeys, uint4 *keys, uint *
   permutation[idx] = temp.w;
 }
 
+extern "C" __global__ void dataReorderCombined(const int N, uint4 *keyAndPerm,
+                                      real4 *source1, real4* destination1,
+                                      real4 *source2, real4* destination2) {
+  const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
+  const int tid = threadIdx.y * blockDim.x + threadIdx.x;
+  const int dim =  blockDim.x * blockDim.y;
+  
+  int idx = bid * dim + tid;
+  if (idx >= N) return;
+
+  int newIndex      = keyAndPerm[idx].w;
+  destination1[idx] = source1[newIndex];
+  destination2[idx] = source2[newIndex];  
+//   destination1[idx] = source1[newIndex];  
+//   destination1[idx] = source1[newIndex];  
+//   destination1[idx] = source1[newIndex];    
+}
+
+
+
+
 
 //Extract 1 of the 4 items of an uint4 key and move it into a 32bit array
 extern "C" __global__ void extractInt(uint4 *keys,  uint *simpleKeys, const int N, int keyIdx)

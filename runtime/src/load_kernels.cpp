@@ -72,7 +72,7 @@ void octree::load_kernels() {
   dataReorderR4.setContext(devContext);
   dataReorderF2.setContext(devContext);
   dataReorderI1.setContext(devContext);
-  
+  dataReorderCombined.setContext(devContext);
   
 #ifdef USE_CUDA
   compactCount.load_source("./scanKernels.ptx", pathName.c_str());
@@ -116,6 +116,9 @@ void octree::load_kernels() {
 
   dataReorderI1.load_source("./sortKernels.ptx", pathName.c_str());
   dataReorderI1.create("dataReorderI1");        
+  
+  dataReorderCombined.load_source("./sortKernels.ptx", pathName.c_str());
+  dataReorderCombined.create("dataReorderCombined");    
   
 #else
   compactCount.load_source("scanKernels.cl", "OpenCLKernels");

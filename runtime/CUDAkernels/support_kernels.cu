@@ -7,25 +7,6 @@
 #include <stdio.h>
 
 
-
-/*
-
-int3 gives problems with memory copies
-therefor im using int4
-Wrong type for attribute nocapture                                                                     
-void (i64, i8*, <unrecognized-type>, i32)* @llvm.memcpy.i64                                            
-Argument value does not match function argument type!                                                  
-void %2                                                                                                
- <unrecognized-type>Broken module found, compilation aborted!                                          
-Aborted   
-
-typedef struct int3
-{
-  int x,y,z;
-} int3;
-*/
-
-
 __device__ int undilate3(uint2 key) {
   int x, value = 0;
   
@@ -91,6 +72,7 @@ __device__ uint2 dilate3(int value) {
 } 
 
 #if 0
+//Morton order
 __device__ uint2 get_key(int4 crd) {
   uint2 key, key1;
   key  = dilate3(crd.x);
@@ -107,76 +89,6 @@ __device__ uint2 get_key(int4 crd) {
 }
 
 #else
-
-#if 0
-__device__ uint4 get_key(int4 crd)
-{
-  const int bits = 20;  //20 to make it same number as morton order
-  int i,xi, yi, zi;
-  int mask;
-  int key;
-    
-  //0= 000, 1=001, 2=011, 3=010, 4=110, 5=111, 6=101, 7=100
-  //000=0=0, 001=1=1, 011=3=2, 010=2=3, 110=6=4, 111=7=5, 101=5=6, 100=4=7
-  const int C[8] = {0, 1, 7, 6, 3, 2, 4, 5};
-    
-  int temp;
-    
-  mask = 1 << (bits - 1);
-  key  = 0;
-
-  uint4 key_new;
-    
-  for(i = 0; i < bits; i++, mask >>= 1)
-  {
-    xi = (crd.x & mask) ? 1 : 0;
-    yi = (crd.y & mask) ? 1 : 0;
-    zi = (crd.z & mask) ? 1 : 0;        
-
-    int index = (xi << 2) + (yi << 1) + zi;
-
-      
-    if(index == 0)
-    {
-      temp = crd.z; crd.z = crd.y; crd.y = temp;
-    }
-    else  if(index == 1 || index == 5)
-    {
-      temp = crd.x; crd.x = crd.y; crd.y = temp;
-    }
-    else  if(index == 4 || index == 6)
-    {
-      crd.x = (crd.x) ^ (-1);
-      crd.z = (crd.z) ^ (-1);
-    }
-    else  if(index == 7 || index == 3)
-    {
-      temp = (crd.x) ^ (-1);         
-      crd.x = (crd.y) ^ (-1);
-      crd.y = temp;
-    }
-    else
-    {
-      temp = (crd.z) ^ (-1);         
-      crd.z = (crd.y) ^ (-1);
-      crd.y = temp;          
-    }   
-
-    key = (key << 3) + C[index];
-
-    if(i == 9)
-    {
-      key_new.x = key;
-      key = 0;
-    }
-  } //end for
-
-   key_new.y = key;
-
-  return key_new;
-}
-#else
-
 
 __device__ uint4 get_key(int4 crd)
 {
@@ -252,92 +164,6 @@ __device__ uint4 get_key(int4 crd)
 #endif
 
 
-#if 0
-__device__ uint2 get_key(int4 crd)
-{
-  const int bits = 20;  //20 to make it same number as morton order
-  int i,xi, yi, zi;
-  int mask;
-  long key;
-    
-  //0= 000, 1=001, 2=011, 3=010, 4=110, 5=111, 6=101, 7=100
-  //000=0=0, 001=1=1, 011=3=2, 010=2=3, 110=6=4, 111=7=5, 101=5=6, 100=4=7
-  const int C[8] = {0, 1, 7, 6, 3, 2, 4, 5};
-    
-  int temp;
-    
-  mask = 1 << (bits - 1);
-  key  = 0;
-    
-  for(i = 0; i < bits; i++, mask >>= 1)
-  {
-    xi = (crd.x & mask) ? 1 : 0;
-    yi = (crd.y & mask) ? 1 : 0;
-    zi = (crd.z & mask) ? 1 : 0;        
-
-    int index = (xi << 2) + (yi << 1) + zi;
-
-      
-    if(index == 0)
-    {
-      temp = crd.z; crd.z = crd.y; crd.y = temp;
-    }
-    else  if(index == 1 || index == 5)
-    {
-      temp = crd.x; crd.x = crd.y; crd.y = temp;
-    }
-    else  if(index == 4 || index == 6)
-    {
-      crd.x = (crd.x) ^ (-1);
-      crd.z = (crd.z) ^ (-1);
-    }
-    else  if(index == 7 || index == 3)
-    {
-      temp = (crd.x) ^ (-1);         
-      crd.x = (crd.y) ^ (-1);
-      crd.y = temp;
-    }
-    else
-    {
-      temp = (crd.z) ^ (-1);         
-      crd.z = (crd.y) ^ (-1);
-      crd.y = temp;          
-    }   
-
-    key = (key << 3) + C[index];
-  }
-  
-
-  uint2 key_new;
-//   key_new.x = key & 0xFFFFFFFF;
-//   key_new.y = (key >> 32) & 0xFFFFFFFF;
-  key_new.y = key         & 0xFFFFFFFF;
-  key_new.x = (key >> 32) & 0xFFFFFFFF;
-
-
-  return key_new;
-}
-#endif
-
-#endif
-
-/*
-__device__ uint2 get_mask(int level) {
-  int mask_levels = 3*max(MAXLEVELS - level, 0);
-  uint2 mask = {0x3FFFFFFF, 0xFFFFFFFF};
-  
-  if (mask_levels > 30) {
-    mask.y = 0;
-    mask.x = (mask.x >> (mask_levels - 30)) << (mask_levels - 30);
-  } else {
-    mask.y = (mask.y >> mask_levels) << mask_levels;
-  }
-  
-  return mask;
-}*/
-
-
-
 __device__ uint4 get_mask(int level) {
   int mask_levels = 3*max(MAXLEVELS - level, 0);
   uint4 mask = {0x3FFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,0xFFFFFFFF};
@@ -355,18 +181,8 @@ __device__ uint4 get_mask(int level) {
     mask.z = (mask.z >> mask_levels) << mask_levels;
   }
 
-// if(threadIdx.x == 0 && blockIdx.x == 0)
-// {
-//   printf("ON DEV TEST: lvl: %d mlvl: %d x: %d y: %d z: %d \n", level, mask_levels, mask.x, mask.y, mask.z);
-// }
-//   
   return mask;
 }
-
-/*
-__device__ uint2 get_imask(uint2 mask) {
-  return make_uint2(0x3FFFFFFF ^ mask.x, 0xFFFFFFFF ^ mask.y);
-}*/
 
 __device__ uint4 get_imask(uint4 mask) {
   return make_uint4(0x3FFFFFFF ^ mask.x, 0xFFFFFFFF ^ mask.y, 0xFFFFFFFF ^ mask.z, 0);
@@ -409,26 +225,6 @@ __device__ int cmp_uint4(uint4 a, uint4 b) {
 } //end x, function
 
 
-#if 0
-//Binary search of the key within certain bounds (cij.x, cij.y)
-__device__ int find_key(uint2 key, uint2 cij, uint2 *keys) {
-  int l = cij.x;
-  int r = cij.y - 1;
-  while (r - l > 1) {
-    int m = (r + l) >> 1;
-    int cmp = cmp_uint2(keys[m], key);
-    if (cmp == -1) {
-      l = m;
-    } else { 
-      r = m;
-    }
-  }
-  if (cmp_uint2(keys[l], key) >= 0) return l;
-
-  return r;
-}
-#endif
-
 //Binary search of the key within certain bounds (cij.x, cij.y)
 __device__ int find_key(uint4 key, uint2 cij, uint4 *keys) {
   int l = cij.x;
@@ -463,18 +259,9 @@ __device__ float2 ds_regularise(float2 a){
   return a;
 }
 
-// __device__ void sh_MinMax(int i, int j, volatile float3 *sh_rmin, volatile  float3 *sh_rmax)
-// {
-//       sh_rmin[i].x  = fminf(sh_rmin[i].x, sh_rmin[j].x);
-//       sh_rmin[i].y  = fminf(sh_rmin[i].y, sh_rmin[j].y);
-//       sh_rmin[i].z  = fminf(sh_rmin[i].z, sh_rmin[j].z);
-//       sh_rmax[i].x  = fmaxf(sh_rmax[i].x, sh_rmax[j].x);
-//       sh_rmax[i].y  = fmaxf(sh_rmax[i].y, sh_rmax[j].y);
-//       sh_rmax[i].z  = fmaxf(sh_rmax[i].z, sh_rmax[j].z);
-// }
 
-
-__device__ void sh_MinMax(int i, int j, float3 *r_min, float3 *r_max, volatile float3 *sh_rmin, volatile  float3 *sh_rmax)
+__device__ void sh_MinMax(int i, int j, float3 *r_min, float3 *r_max, 
+                          volatile float3 *sh_rmin, volatile  float3 *sh_rmax)
 {
   sh_rmin[i].x  = (*r_min).x = fminf((*r_min).x, sh_rmin[j].x);
   sh_rmin[i].y  = (*r_min).y = fminf((*r_min).y, sh_rmin[j].y);

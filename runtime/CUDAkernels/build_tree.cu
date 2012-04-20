@@ -212,7 +212,10 @@ extern "C" __global__ void cl_build_key_list(uint4  *body_key,
    uint4 key = get_key(crd);
 
 
+//   if (id == n_bodies) key = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0, 0);
   if (id == n_bodies) key = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0, 0);
+
+  key.w = id;
 
   body_key[id] = key;
 
