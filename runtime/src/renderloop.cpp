@@ -79,12 +79,12 @@ public:
 	  m_displayMode(SmokeRenderer::VOLUMETRIC),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.1f),
       m_paused(false),
-	  m_displayBoxes(false), 
-	  m_displaySliders(false),
-	  m_enableGlow(true),
-	  m_displayLightBuffer(false),
+  	  m_displayBoxes(false), 
+	    m_displaySliders(false),
+	    m_enableGlow(true),
+	    m_displayLightBuffer(false),
       m_octreeDisplayLevel(3),
-	  m_fov(60.0f)
+	    m_fov(60.0f)
   {
     m_windowDims = make_int2(1024, 768);
     m_cameraTrans = make_float3(0, -2, -100);
@@ -451,11 +451,11 @@ void key(unsigned char key, int /*x*/, int /*y*/)
     theDemo->incrementOctreeDisplayLevel(+1);
     break;
   case 'h':
-	theDemo->toggleSliders();
-	break;
+  	theDemo->toggleSliders();
+	  break;
   case 'g':
-	theDemo->toggleGlow();
-	break;
+	  theDemo->toggleGlow();
+	  break;
   }
 
   glutPostRedisplay();
