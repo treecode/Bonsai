@@ -63,7 +63,7 @@ void octree::compute_properties(tree_structure &tree) {
 
   
   propsLeafD.setWork(tree.n_leafs, 128);
-  LOG("PropsLeaf: "); propsLeafD.printWorkSize();
+  printf("PropsLeaf: "); propsLeafD.printWorkSize();
   propsLeafD.execute(); 
    
   
@@ -88,7 +88,7 @@ void octree::compute_properties(tree_structure &tree) {
         
         propsNonLeafD.setWork(totalOnThisLevel, 128);
         
-        LOG("PropsNonLeaf, nodes on level %d : %d (start: %d end: %d) , config: \t", i, totalOnThisLevel,
+        printf("PropsNonLeaf, nodes on level %d : %d (start: %d end: %d) , config: \t", i, totalOnThisLevel,
                tree.node_level_list[i-1], tree.node_level_list[i]); 
         propsNonLeafD.printWorkSize();
       }      
@@ -111,7 +111,7 @@ void octree::compute_properties(tree_structure &tree) {
   propsScalingD.set_arg<cl_mem>(9, tree.node_bodies.p());
   
   propsScalingD.setWork(tree.n_nodes, 128);
-  LOG("propsScaling: \t "); propsScalingD.printWorkSize();
+  printf("propsScaling: \t "); propsScalingD.printWorkSize();
   propsScalingD.execute();   
 
 
@@ -143,10 +143,8 @@ void octree::compute_properties(tree_structure &tree) {
   #endif
   
   //Get the local domain boundary based on group positions and sizes
-  if(nProcs > 1)
-  {
-    real4 r_min, r_max;
-    getBoundariesGroups(tree, r_min, r_max); 
-  }
+  if(nProcs
+  real4 r_min, r_max;
+  getBoundariesGroups(tree, r_min, r_max); 
 
 }

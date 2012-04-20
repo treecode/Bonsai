@@ -5,7 +5,6 @@ void octree::getBoundaries(tree_structure &tree, real4 &r_min, real4 &r_max)
 
   //Start reduction to get the boundary's of the system
   boundaryReduction.set_arg<int>(0, &tree.n);
-//   boundaryReduction.set_arg<cl_mem>(1, tree.bodies_pos.p());
   boundaryReduction.set_arg<cl_mem>(1, tree.bodies_Ppos.p());
   boundaryReduction.set_arg<cl_mem>(2, devMemRMIN.p());
   boundaryReduction.set_arg<cl_mem>(3, devMemRMAX.p());
@@ -41,7 +40,6 @@ void octree::getBoundaries(tree_structure &tree, real4 &r_min, real4 &r_max)
 
 void octree::getBoundariesGroups(tree_structure &tree, real4 &r_min, real4 &r_max)
 {
-
   //Start reduction to get the boundary's of the system
   boundaryReductionGroups.set_arg<int>(0, &tree.n_groups);
   boundaryReductionGroups.set_arg<cl_mem>(1, tree.groupCenterInfo.p());
@@ -150,7 +148,6 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
   build_key_list.setWork(tree.n, 128); //128 threads per block
   build_key_list.execute();  
   
- 
   //Call the GPUSort function, since we made it general 
   //into a uint4 so we can extend the tree to 96bit key
   //we have to convert to 64bit key to a 96bit for sorting
