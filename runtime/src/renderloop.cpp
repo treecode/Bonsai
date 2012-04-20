@@ -144,7 +144,7 @@ public:
       
       drawUpToLevel = min(drawUpToLevel, m_tree->localTree.n_levels);
       
-      for(uint i=0; i < m_tree->localTree.node_level_list[drawUpToLevel]; i++)
+      for(uint i=0; i < m_tree->localTree.level_list[drawUpToLevel].y; i++)
       {
         float3 boxMin, boxMax;
         boxMin.x = m_tree->localTree.boxCenterInfo[i].x-m_tree->localTree.boxSizeInfo[i].x;
