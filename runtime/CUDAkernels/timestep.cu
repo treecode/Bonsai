@@ -6,11 +6,6 @@
 
 #include "node_specs.h"
 
-// #include "support_kernels.cu"
-
-// extern __device__ int undilate3(uint2 key) ;
-// extern __device__ uint2 dilate3(int value) ;
-
 
 //Reduce function to get the minimum timestep
 __device__ void get_TnextD(const int n_bodies,
@@ -123,64 +118,6 @@ extern "C" __global__ void get_nactive(const int n_bodies,
   get_nactiveD(n_bodies, valid, tnact, sdataInt);
 }
 
-#if 0
-
-extern "C" __global__ void predict_particles(const int n_bodies,
-                                             float tc,
-                                             float tp,
-                                             real4 *pos,
-                                             real4 *vel,
-                                             real4 *acc,
-                                             float2 *time,
-                                             uint  *body2grouplist,
-                                             uint  *valid_list){                                          
-  const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
-  const uint tid = threadIdx.x;
-  const uint idx = bid * blockDim.x + tid;
-
-
-  if (idx >= n_bodies) return;
-
-  float4 p = pos [idx];
-  float4 v = vel [idx];
-  float4 a = acc [idx];
-  float tb = time[idx].x;
-  float te = time[idx].y;
-
-  float dt_cb  = tc - tb;
-  float dt_pb  = tp - tb;
-
-  v.x -= a.x*dt_pb;
-  v.y -= a.y*dt_pb;
-  v.z -= a.z*dt_pb;
-
-  p.x -= (v.x*dt_pb + a.x*dt_pb*dt_pb*0.5f);
-  p.y -= (v.y*dt_pb + a.y*dt_pb*dt_pb*0.5f);
-  p.z -= (v.z*dt_pb + a.z*dt_pb*dt_pb*0.5f);
-
-  p.x += (v.x*dt_cb + a.x*dt_cb*dt_cb*0.5f);
-  p.y += (v.y*dt_cb + a.y*dt_cb*dt_cb*0.5f);
-  p.z += (v.z*dt_cb + a.z*dt_cb*dt_cb*0.5f);
-
-  v.x += a.x*dt_cb;
-  v.y += a.y*dt_cb;
-  v.z += a.z*dt_cb;
-
-  pos[idx] = p;
-  vel[idx] = v;
-
-  //Set the group to active if the time current = time end of
-  //this particle. Can be that multiple particles write to the 
-  //same location but the net result is the same 
-  int grpID = body2grouplist[idx];
-  if(tc == te)
-  {
-    valid_list[grpID] = grpID | (1 << 31); 
-  }
-}
-#endif
-
-#if 1
 extern "C" __global__ void predict_particles(const int n_bodies,
                                              float tc,
                                              float tp,
@@ -229,7 +166,6 @@ extern "C" __global__ void predict_particles(const int n_bodies,
     valid_list[grpID] = grpID | (1 << 31); 
   }
 }
-#endif
 
 
 extern "C"  __global__ void setActiveGroups(const int n_bodies,                                                                                             
@@ -256,7 +192,7 @@ extern "C"  __global__ void setActiveGroups(const int n_bodies,
                                                                                                                                                             
 }     
 
-#if 1
+
 extern "C" __global__ void correct_particles(const int n_bodies,
                                              float tc,
                                              float2 *time,                                                                              
@@ -301,50 +237,10 @@ extern "C" __global__ void correct_particles(const int n_bodies,
   vel [idx] = v;
   acc0[idx] = a1; 
 
-//   time[idx] = (float2){tc, tc + dt};
-
+  //   time[idx] = (float2){tc, tc + dt};
 }
-#endif
-
-#if 0
-extern "C" __global__ void correct_particles(const int n_bodies,
-                                             float tc,
-                                             float2 *time,                                                                              
-                                             uint   *active_list,
-                                             real4 *vel,
-                                             real4 *acc0,
-                                             real4 *acc1) {
-  const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
-  const int tid =  threadIdx.y * blockDim.x + threadIdx.x;
-  const int dim =  blockDim.x * blockDim.y;
-
-  int idx = bid * dim + tid;
-  if (idx >= n_bodies) return;
-
-  //Check if particle is set to active during approx grav
-  if (active_list[idx] != 1) return;
 
 
-  float4 v  = vel [idx];
-  float4 a0 = acc0[idx];
-  float4 a1 = acc1[idx];
-  float  tb = time[idx].x;
-
-  float dt_cb = tc - tb;
-
-  v.x -= a0.x * dt_cb;
-  v.y -= a0.y * dt_cb;
-  v.z -= a0.z * dt_cb;
-
-  dt_cb *= 0.5f;
-  v.x += (a0.x + a1.x)*dt_cb;
-  v.y += (a0.y + a1.y)*dt_cb;
-  v.z += (a0.z + a1.z)*dt_cb;
-
-  vel [idx] = v;
-  acc0[idx] = a1;
-}
-#endif
 
 extern "C"  __global__ void compute_dt(const int n_bodies,
                                        float    tc,
@@ -445,96 +341,6 @@ extern "C"  __global__ void compute_dt(const int n_bodies,
 }
 
 
-//Reduce function to get the energy of the system in single precision
-__device__ void compute_energyD(const int n_bodies,
-                                            real4 *pos,
-                                            real4 *vel,
-                                            real4 *acc,
-                                            float2 *energy, volatile float *shDataKin) {
-    
-  // perform first level of reduction,
-  // reading from global memory, writing to shared memory
-  const int blockSize   = blockDim.x;
-  unsigned int tid      = threadIdx.x;
-  unsigned int i        = blockIdx.x*(blockSize*2) + threadIdx.x;
-  unsigned int gridSize = blockSize*2*gridDim.x;
-
-  volatile float *shDataPot = (float*)&shDataKin [blockSize];   
-  float eKin, ePot;
-  shDataKin[tid] = eKin = 0;   //Stores Ekin
-  shDataPot[tid] = ePot = 0;   //Stores Epot
-
-  real4 temp;
-  // we reduce multiple elements per thread.  The number is determined by the
-  // number of active thread blocks (via gridSize).  More blocks will result
-  // in a larger gridSize and therefore fewer elements per thread
-  while (i < n_bodies) {
-    if (i             < n_bodies) 
-    {
-      //Ekin
-      temp  = vel[i];       
-      eKin += pos[i].w*0.5*(temp.x*temp.x + temp.y*temp.y + temp.z*temp.z);
-
-      //Epot
-      ePot += pos[i].w*0.5*acc[i].w;
-    }
-
-    if (i + blockSize < n_bodies)
-    {
-      temp = vel[i + blockSize];       
-      eKin += pos[i + blockSize].w*0.5*(temp.x*temp.x + temp.y*temp.y + temp.z*temp.z);
-
-      //Epot
-      ePot += pos[i + blockSize].w*0.5*acc[i + blockSize].w;
-    }
-
-    i += gridSize;
-  }
-  shDataKin[tid] = eKin;
-  shDataPot[tid] = ePot;
-
-  __syncthreads();
-
-  // do reduction in shared mem
-  if (blockSize >= 512) { if (tid < 256) {
-    shDataPot[tid] = ePot = ePot + shDataPot[tid + 256]; 
-    shDataKin[tid] = eKin = eKin + shDataKin[tid + 256];   } __syncthreads(); }
-  if (blockSize >= 256) { if (tid < 128) {
-    shDataPot[tid] = ePot = ePot + shDataPot[tid + 128]; 
-    shDataKin[tid] = eKin = eKin + shDataKin[tid + 128];   } __syncthreads(); }
-  if (blockSize >= 128) { if (tid <  64) {
-    shDataPot[tid] = ePot = ePot + shDataPot[tid + 64]; 
-    shDataKin[tid] = eKin = eKin + shDataKin[tid + 64];   } __syncthreads(); }
-
-
-#ifndef __DEVICE_EMULATION__
-  if (tid < 32)
-#endif
-    {    
-      if (blockSize >=  64) {shDataKin[tid] = eKin = eKin + shDataKin[tid + 32]; shDataPot[tid] = ePot = ePot + shDataPot[tid + 32];  EMUSYNC; }
-      if (blockSize >=  32) {shDataKin[tid] = eKin = eKin + shDataKin[tid + 16]; shDataPot[tid] = ePot = ePot + shDataPot[tid + 16];  EMUSYNC; }
-      if (blockSize >=  16) {shDataKin[tid] = eKin = eKin + shDataKin[tid +  8]; shDataPot[tid] = ePot = ePot + shDataPot[tid +  8];  EMUSYNC; }
-      if (blockSize >=   8) {shDataKin[tid] = eKin = eKin + shDataKin[tid +  4]; shDataPot[tid] = ePot = ePot + shDataPot[tid +  4];  EMUSYNC; }
-      if (blockSize >=   4) {shDataKin[tid] = eKin = eKin + shDataKin[tid +  2]; shDataPot[tid] = ePot = ePot + shDataPot[tid +  2];  EMUSYNC; }
-      if (blockSize >=   2) {shDataKin[tid] = eKin = eKin + shDataKin[tid +  1]; shDataPot[tid] = ePot = ePot + shDataPot[tid +  1];  EMUSYNC; }
-  }
-
-  // write result for this block to global mem
-  if (tid == 0) energy[blockIdx.x] = make_float2(shDataKin[0], shDataPot[0]);
-}
-
-extern "C" __global__ void compute_energy(const int n_bodies,
-                                            real4 *pos,
-                                            real4 *vel,
-                                            real4 *acc,
-                                            float2 *energy) {
-
-  extern __shared__ float shDataKin[];
-  compute_energyD(n_bodies, pos, vel, acc, energy,shDataKin);
-}
-
-
-
 
 //Reduce function to get the energy of the system in double precision
 __device__ void compute_energy_doubleD(const int n_bodies,
@@ -627,29 +433,5 @@ extern "C" __global__ void compute_energy_double(const int n_bodies,
   compute_energy_doubleD(n_bodies, pos, vel, acc, energy, shDDataKin);
 }
 
-extern "C"  __global__  void distanceCheck(const int n_bodies,                                                                                              
-                              real4 *pos,                                                                                                                   
-                              int   *ids,                                                                                                                   
-                              real4 *out,                                                                                                                   
-                              const int numberOfBH,                                                                                                         
-                              real4 *vel)                                                                                                                   
-{                                                                                                                                                           
-  const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;                                                                                                   
-  const int tid =  threadIdx.y * blockDim.x + threadIdx.x;                                                                                                  
-  const int dim =  blockDim.x * blockDim.y;                                                                                                                 
-                                                                                                                                                            
-  int idx = bid * dim + tid;                                                                                                                                
-  if (idx >= n_bodies) return;                                                                                                                              
-                                                                                                                                                            
-  int partID = ids[idx];                                                                                                                                    
-                                                                                                                                                            
-  if(partID < numberOfBH)                                                                                                                                   
-  {                                                                                                                                                         
-    real4 curPos = pos[idx];                                                                                                                                
-    //curPos.w     = partID;                                                                                                                                
-    out[partID*2+0]  = curPos;                                                                                                                              
-    out[partID*2+1]  = vel[idx];                                                                                                                            
-  }                                                                                                                                                         
-                                                                                                                                                                                                                                                                                                                  
-}     
+
 

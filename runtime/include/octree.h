@@ -23,7 +23,6 @@
 #include "node_specs.h"
 #include <cmath>
 #include <algorithm>
-//#include <sys/time.h>
 #include <iostream>
 #include <fstream>
 
@@ -141,10 +140,8 @@ class tree_structure
                                            //remaining (n_nodes-n_leafs) are indices of non-leafs
     my_dev::dev_mem<uint>  group_list;     //The id's of nodes that form a group
     my_dev::dev_mem<uint>  node_level_list; //List containing start and end idxs in (leafNode idx) for each level
-    my_dev::dev_mem<uint>  body2group_list; //Contains per particle to which group it belongs TESTING TODO
-//     my_dev::dev_mem<uint4> group_data;      //Contains copies of the node_data of nodes that form the groups, has to
-                                            //be copies since for parallel version the node_data can contain data
-                                            //from the remove tree instead of the local tree
+    my_dev::dev_mem<uint>  body2group_list; //Contains per particle to which group it belongs
+
     my_dev::dev_mem<uint2>  group_list_test;     //The group to particle relation
 
     //Variables used for properties
@@ -280,11 +277,11 @@ protected:
   int nBlocksForTreeWalk;
 
    //Simulation properties
-  int   iter;
-  float t_current, t_previous;
-  int   snapshotIter;   
-  string snapshotFile;
-  int nextSnapTime;
+  int           iter;
+  float         t_current, t_previous;
+  int           snapshotIter;   
+  string        snapshotFile;
+  int           nextSnapTime;
 
   int   NTotal, NFirst, NSecond, NThird, snapShotAdd;
   float killDistance;
@@ -303,7 +300,7 @@ protected:
   double Epot, Epot0, Epot1;
   double Etot, Etot0, Etot1;
 
-  bool store_energy_flag;
+  bool   store_energy_flag;
   double tinit;
 
   // accurate Win32 timing
@@ -313,7 +310,6 @@ protected:
 #endif
 
   // OpenCL context
-
   my_dev::context devContext;
   bool devContext_flag;
   
@@ -322,7 +318,6 @@ protected:
 
 
   // scan & sort algorithm
-
   my_dev::kernel  compactCount, exScanBlock, compactMove, splitMove;
   my_dev::kernel  sortCount, sortMove;
   my_dev::kernel  extractInt, fillSequence, reOrderKeysValues;
@@ -330,9 +325,9 @@ protected:
   my_dev::kernel  dataReorderR4;
   my_dev::kernel  dataReorderF2;
   my_dev::kernel  dataReorderI1;
+  my_dev::kernel  dataReorderCombined;
 
   // tree construction kernels
-
   my_dev::kernel  build_key_list;
   my_dev::kernel  build_valid_list;
   my_dev::kernel  build_nodes;
@@ -418,49 +413,49 @@ public:
    tree_structure remoteTree;
 
 
-  //TODO jb made these functions public for testing
-  void set_context(bool disable_timing = false);
-  void set_context(std::ofstream &log, bool disable_timing = false);
-  void set_context2();
+   //jb made these functions public for testing
+   void set_context(bool disable_timing = false);
+   void set_context(std::ofstream &log, bool disable_timing = false);
+   void set_context2();
 
-  int getAllignmentOffset(int n);
-  int getTextureAllignmentOffset(int n, int size);
+   int getAllignmentOffset(int n);
+   int getTextureAllignmentOffset(int n, int size);
 
-  //GPU kernels and functions
-  void load_kernels();
-  void gpuCompact(my_dev::context&, my_dev::dev_mem<uint> &srcValues,
-                  my_dev::dev_mem<uint> &output, int N, int *validCount);
-  void gpuSplit(my_dev::context&, my_dev::dev_mem<uint> &srcValues,
-                  my_dev::dev_mem<uint> &output, int N, int *validCount);
-  void gpuSort(my_dev::context &devContext,
-                       my_dev::dev_mem<uint4> &srcValues,
-                       my_dev::dev_mem<uint4> &output,
-                       my_dev::dev_mem<uint4> &buffer,
-                       int N, int numberOfBits, int subItems,
-                       tree_structure &tree);
+   //GPU kernels and functions
+   void load_kernels();
+   void gpuCompact(my_dev::context&, my_dev::dev_mem<uint> &srcValues,
+                   my_dev::dev_mem<uint> &output, int N, int *validCount);
+   void gpuSplit(my_dev::context&, my_dev::dev_mem<uint> &srcValues,
+                 my_dev::dev_mem<uint> &output, int N, int *validCount);
+   void gpuSort(my_dev::context &devContext,
+                my_dev::dev_mem<uint4> &srcValues,
+                my_dev::dev_mem<uint4> &output,
+                my_dev::dev_mem<uint4> &buffer,
+                int N, int numberOfBits, int subItems,
+                tree_structure &tree);
 
-  void gpuSort_32b(my_dev::context &devContext,
+   void gpuSort_32b(my_dev::context &devContext,
                     my_dev::dev_mem<uint> &srcKeys,     my_dev::dev_mem<uint> &srcValues,
                     my_dev::dev_mem<int>  &keysOutput,  my_dev::dev_mem<uint> &keysAPing,
                     my_dev::dev_mem<uint> &valuesOutput,my_dev::dev_mem<uint> &valuesAPing,
-                   int N, int numberOfBits);
-  //end TODO
+                    int N, int numberOfBits);
 
-  void desort_bodies(tree_structure &tree);
-  void sort_bodies(tree_structure &tree, bool doDomainUpdate);
-  void getBoundaries(tree_structure &tree, real4 &r_min, real4 &r_max);
-  void getBoundariesGroups(tree_structure &tree, real4 &r_min, real4 &r_max);  
 
-  void allocateParticleMemory(tree_structure &tree);
-  void allocateTreePropMemory(tree_structure &tree);
-  void reallocateParticleMemory(tree_structure &tree);
+    void desort_bodies(tree_structure &tree);
+    void sort_bodies(tree_structure &tree, bool doDomainUpdate);
+    void getBoundaries(tree_structure &tree, real4 &r_min, real4 &r_max);
+    void getBoundariesGroups(tree_structure &tree, real4 &r_min, real4 &r_max);  
 
-  void build(tree_structure &tree);
-  void compute_properties (tree_structure &tree);
-  void compute_properties_double(tree_structure &tree);
-  void setActiveGrpsFunc(tree_structure &tree);
+    void allocateParticleMemory(tree_structure &tree);
+    void allocateTreePropMemory(tree_structure &tree);
+    void reallocateParticleMemory(tree_structure &tree);
 
-  void iterate();
+    void build(tree_structure &tree);
+    void compute_properties (tree_structure &tree);
+    void compute_properties_double(tree_structure &tree);
+    void setActiveGrpsFunc(tree_structure &tree);
+
+    void iterate();
 
   struct IterationData {
       IterationData() : Nact_since_last_tree_rebuild(0),
@@ -484,7 +479,7 @@ public:
   void iterate_teardown(IterationData &idata); 
   bool iterate_once(IterationData &idata); 
 
-  //Subfunctions of iterate, should probally be private TODO
+  //Subfunctions of iterate, should probally be private 
   void predict(tree_structure &tree);
   void approximate_gravity(tree_structure &tree);
   void correct(tree_structure &tree);
@@ -495,7 +490,8 @@ public:
 
   //Parallel version functions
   //Approximate for LET
-  void approximate_gravity_let(tree_structure &tree, tree_structure &remoteTree, int bufferSize, bool doActivePart);
+  void approximate_gravity_let(tree_structure &tree, tree_structure &remoteTree, 
+                               int bufferSize, bool doActivePart);
 
   //Parallel version functions
   int procId, nProcs;   //Proccess ID in the mpi stack, number of processors in the commm world
@@ -540,8 +536,8 @@ public:
 
   //Utility
   void mpiSync();
-  int mpiGetRank();
-  int mpiGetNProcs();
+  int  mpiGetRank();
+  int  mpiGetNProcs();
   void AllSum(double &value);
   int  SumOnRootRank(int &value);
 
@@ -569,7 +565,9 @@ public:
   void gpu_collect_sample_particles(int nSample, real4 *sampleParticles);
   void gpu_updateDomainDistribution(double timeLocal);
   void gpu_updateDomainOnly();
-  int  gpu_exchange_particles_with_overflow_check(tree_structure &tree, bodyStruct *particlesToSend, my_dev::dev_mem<uint> &extractList, int nToSend);
+  int  gpu_exchange_particles_with_overflow_check(tree_structure &tree,
+                                                  bodyStruct *particlesToSend, 
+                                                  my_dev::dev_mem<uint> &extractList, int nToSend);
   void gpuRedistributeParticles();
 
   int  exchange_particles_with_overflow_check(tree_structure &localTree);
@@ -585,17 +583,23 @@ public:
                                               unsigned int &recvCount);
 
    //Local Essential Tree related functions
-  void essential_tree_exchange(vector<real4> &LETParticles,  tree_structure &tree, tree_structure &remoteTree);
-  void create_local_essential_tree(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
-                                    double4 boxCenter, double4 boxSize, float group_eps, int start, int end,
-                                    vector<real4> &particles,    vector<real4> &multipoleData,
-                                    vector<real4> &nodeSizeData, vector<real4> &nodeCenterData);
-  void create_local_essential_tree_count(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
-                                    double4 boxCenter, double4 boxSize, float group_eps, int start, int end,
-                                    int &particleCount, int &nodeCount);
-  void create_local_essential_tree_fill(real4* bodies, real4* velocities, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
-                                    double4 boxCenter, double4 boxSize,  float group_eps, int start, int end,
-                                    int particleCount, int nodeCount, real4 *dataBuffer);
+  void essential_tree_exchange(vector<real4> &LETParticles,
+                               tree_structure &tree, tree_structure &remoteTree);
+  void create_local_essential_tree(real4* bodies, real4* multipole,
+                                   real4* nodeSizeInfo, real4* nodeCenterInfo,
+                                   double4 boxCenter, double4 boxSize, float group_eps, int start, int end,
+                                   vector<real4> &particles,    vector<real4> &multipoleData,
+                                   vector<real4> &nodeSizeData, vector<real4> &nodeCenterData);
+  void create_local_essential_tree_count(real4* bodies, real4* multipole,
+                                         real4* nodeSizeInfo, real4* nodeCenterInfo,
+                                         double4 boxCenter, double4 boxSize, 
+                                         float group_eps, int start, int end,
+                                         int &particleCount, int &nodeCount);
+  void create_local_essential_tree_fill(real4* bodies, real4* velocities,
+                                        real4* multipole, real4* nodeSizeInfo,
+                                        real4* nodeCenterInfo, double4 boxCenter, 
+                                        double4 boxSize,  float group_eps, int start,
+                                        int end, int particleCount, int nodeCount, real4 *dataBuffer);
 
   real4* MP_exchange_bhlist(int ibox, int isource,
                                 int bufferSize, real4 *letDataBuffer);
@@ -653,10 +657,8 @@ public:
     mpiInit(argc, argv, procId, nProcs);
 
 //    devID = device;
-    //devID = procId % nProcs;
-//     devID = 1;
     devID = procId % getNumberOfCUDADevices();
-//      devID = 1;
+
     cerr << "Preset device : "  << devID << "\t" << device << "\t" << nProcs <<endl;
 
     snapshotIter = snapI;
@@ -669,7 +671,7 @@ public:
     removeDistance = (float)maxDistT;
     snapShotAdd    = snapAdd;
 
-    //TODO!
+    //Theta, time-stepping
     inv_theta   = 1.0f/_theta;
     eps2        = eps*eps;
     eta         = 0.02f;

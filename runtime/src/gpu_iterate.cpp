@@ -159,12 +159,15 @@ bool octree::iterate_once(IterationData &idata) {
     correct(this->localTree);
     devContext.stopTiming("Correct", 8);
     
-    t1 = get_time();
-    devContext.startTiming();
-    mpiSync();
-    devContext.stopTiming("Unbalance", 12);
-    idata.lastWaitTime  += get_time() - t1;
-    idata.totalWaitTime += idata.lastWaitTime;
+    if(nProcs > 1)
+    {
+      t1 = get_time();
+      devContext.startTiming();
+      mpiSync();
+      devContext.stopTiming("Unbalance", 12);
+      idata.lastWaitTime  += get_time() - t1;
+      idata.totalWaitTime += idata.lastWaitTime;
+    }
     
     idata.Nact_since_last_tree_rebuild += this->localTree.n_active_particles;
 
@@ -191,15 +194,11 @@ bool octree::iterate_once(IterationData &idata) {
       }
     }
 
-    //  checkMergingDistance(this->localTree, iter, de);    
-
     if(t_current >= tEnd)
     {
       compute_energies(this->localTree);
       double totalTime = get_time() - idata.startTime;
       cout << " Finished: "  << t_current << "  > "  << tEnd << " loop alone took: " << totalTime <<  endl;
-      fprintf(stderr,"TIME [%02d] TOTAL: %g\t GRAV: %g\tBUILD: %g\tCOMM: %g\t WAIT: %g\n", 
-              procId, totalTime, idata.totalGravTime, idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime);      
      
       my_dev::base_mem::printMemUsage();
 
@@ -277,7 +276,10 @@ void octree::iterate_setup(IterationData &idata) {
 }
 
 void octree::iterate_teardown(IterationData &idata) {
-  fprintf(stderr,"TOTAL GRAV TIME [%d ] \t %g \n", procId, idata.totalGravTime);
+  double totalTime = get_time() - idata.startTime;
+  fprintf(stderr,"TIME [%02d] TOTAL: %g\t GRAV: %g\tBUILD: %g\tCOMM: %g\t WAIT: %g\n", 
+                  procId, totalTime, idata.totalGravTime, idata.totalBuildTime, 
+                  idata.totalDomTime, idata.lastWaitTime);     
   
   if(execStream != NULL)
   {
@@ -392,8 +394,6 @@ void octree::approximate_gravity(tree_structure &tree)
   //Reset the active particles
   tree.activePartlist.zeroMem();
 
-//   int grpOffset = 0;
-
   //Set the kernel parameters, many!
   approxGrav.set_arg<int>(0,    &tree.n_active_groups);
   approxGrav.set_arg<int>(1,    &tree.n);
@@ -421,16 +421,8 @@ void octree::approximate_gravity(tree_structure &tree)
   approxGrav.set_arg<real4>(19, tree.multipole, 4, "texMultipole");
   approxGrav.set_arg<real4>(20, tree.bodies_Ppos, 4, "texBody");
     
-  
-//   set_arg(unsigned int arg, my_dev::dev_mem<T> &memobj, int adSize,
-//                  const struct textureReference *texref, int offset = -1, int mem_size = -1) 
-//   approxGrav.set_arg<real4>(17, tree.boxSizeInfo, 4, "texNodeSize");
-//   approxGrav.set_arg<real4>(18, tree.boxCenterInfo, 4, "texNodeCenter");
-//   approxGrav.set_arg<real4>(19, tree.multipole, 4, "texMultipole");
-//   approxGrav.set_arg<real4>(20, tree.bodies_Ppos, 4, "texBody");
-  
+ 
   approxGrav.setWork(-1, NTHREAD, nBlocksForTreeWalk);
-//   approxGrav.setWork(-1, NTHREAD, 1);    
   approxGrav.execute(execStream->s());  //First half
 
   //Print interaction statistics
@@ -465,45 +457,10 @@ void octree::approximate_gravity(tree_structure &tree)
     cout << "Interaction at (rank= " << mpiGetRank() << " ) iter: " << iter << "\tdirect: " << directSum << "\tappr: " << apprSum << "\t";
     cout << "avg dir: " << directSum / tree.n << "\tavg appr: " << apprSum / tree.n << "\tMaxdir: " << maxDir << "\tmaxAppr: " << maxAppr <<  endl;
     cout << "sigma dir: " << sqrt((directSum2  - directSum)/ tree.n) << "\tsigma appr: " << std::sqrt((apprSum2 - apprSum) / tree.n)  <<  endl;    
-//  exit(0);
-    #if 0
-      //Histogram of number of interactions
-      const int bins = 256;
-      const int jump = 15;
-      int histoIDX[bins+1];
-      for(int i=0; i < bins; i++)
-        histoIDX[i] = 0;
-      
-      for(int i=0; i < tree.n; i++)
-      {
-          int idx = tree.interactions[i].x / jump;
-          if(idx >= bins)
-            idx = bins;
-          histoIDX[idx]++;  
-      }
-      for(int i=0; i < bins; i++)
-      {
-        if(histoIDX[i] == 0)
-          fprintf(stderr, "HISTO %d\t-\n", i*jump, histoIDX[i]);
-        else
-          fprintf(stderr, "HISTO %d\t%d\n", i*jump, histoIDX[i]);
-      }     
-    #endif
   #endif
   
   CU_SAFE_CALL(clFinish(0));
   
-  #if 0
-  tree.bodies_acc1.d2h();
-  
-  for(int i=0; i < tree.n; i++)
-  {
-      fprintf(stderr, "%d\t Acc: %f %f %f %f \n", 
-              i, tree.bodies_acc1[i].x,tree.bodies_acc1[i].y,
-              tree.bodies_acc1[i].w,tree.bodies_acc1[i].z);
-  }
-  #endif
-
   if(mpiGetNProcs() == 1) //Only do it here if there is only one process
   {
     
@@ -513,9 +470,6 @@ void octree::approximate_gravity(tree_structure &tree)
     getNActive.set_arg<cl_mem>(2, this->nactive.p());
     getNActive.set_arg<int>(3,    NULL, 128); //Dynamic shared memory , equal to number of threads
     getNActive.setWork(-1, 128,   NBLOCK_REDUCE);
-    
-//     CU_SAFE_CALL(cuCtxSynchronize()); //Synchronize all streams, makes sure that the approx stream is finished
-    CU_SAFE_CALL(clFinish(0));
     getNActive.execute();
     
     //Reduce the last parts on the host
@@ -655,8 +609,6 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
     getNActive.set_arg<cl_mem>(2, this->nactive.p());
     getNActive.set_arg<int>(3, NULL, 128); //Dynamic shared memory , equal to number of threads
     getNActive.setWork(-1, 128, NBLOCK_REDUCE);
-    
-//     CU_SAFE_CALL(cuCtxSynchronize()); //Syncrhonize all streams, ensures that the approx streams are finished
     CU_SAFE_CALL(clFinish(0));
     getNActive.execute();
     
@@ -685,7 +637,6 @@ void octree::correct(tree_structure &tree)
   correctParticles.set_arg<cl_mem>(7, tree.bodies_pos.p());
   correctParticles.set_arg<cl_mem>(8, tree.bodies_Ppos.p());
   correctParticles.set_arg<cl_mem>(9, tree.bodies_Pvel.p());
-     
 
   correctParticles.setWork(tree.n, 128);
   correctParticles.execute();
@@ -709,70 +660,6 @@ void octree::correct(tree_structure &tree)
   computeDt.execute();
   clFinish(devContext.get_command_queue());
 }
-
-int octree::checkMergingDistance(tree_structure &tree, int iter, double dE)
-{                                                                                                                                                       
-  //Allocate memory to store the current positions                                                                                                          
-  //of the blackholes  
-  
-  float starSoftening = 0.0;
-  
-  int nBH = NThird+1;   
-  
-  if(NThird == 1)                                                                                                                                              
-   return 0;                                                                                                                                                
-                                                                                                                                                            
-  my_dev::dev_mem<real4>  bhDistance(devContext, nBH*2);                                                                                                    
-  bhDistance.zeroMem();                                                                                                                                     
-                                                                                                                                                            
-                                                                                                                                                            
-                                                                                                                                                            
-  distanceCheck.set_arg<int>(0,    &tree.n);                                                                                                                
-  distanceCheck.set_arg<cl_mem>(1, tree.bodies_pos.p());                                                                                                    
-  distanceCheck.set_arg<cl_mem>(2, tree.bodies_ids.p());                                                                                                    
-  distanceCheck.set_arg<cl_mem>(3, bhDistance.p());                                                                                                         
-  distanceCheck.set_arg<cl_mem>(4, &nBH);        //Number of black holes                                                                                    
-  distanceCheck.set_arg<cl_mem>(5, tree.bodies_vel.p());                                                                                                    
-                                                                                                                                                            
-  distanceCheck.setWork(tree.n, 128);                                                                                                                       
-  distanceCheck.execute();                                                                                                                                  
-                                                                                                                                                            
-  bhDistance.d2h();                                                                                                                                         
-                                                                                                                                                            
-  //Calculate the distance between the black-holes                                                                                                          
-  //Simple N*N loop                                                                                                                                         
-//  for(int i=1; i < nBH; i++)                                                                                                                              
-//  {                                                                                                                                                       
-  //  for(int j=1; j < nBH; j++)                                                                                                                            
-    {                                                                                                                                                       
-      int i=1; int j=2;                                                                                                                                     
-      if(i != j)                                                                                                                                            
-      {                                                                                                                                                     
-        real4 posi = bhDistance[i*2+0];                                                                                                                     
-        real4 posj = bhDistance[j*2+0];                                                                                                                     
-                                                                                                                                                            
-        real4 veli = bhDistance[i*2+1];                                                                                                                     
-        real4 velj = bhDistance[j*2+1];                                                                                                                     
-                                                                                                                                                            
-        real4 r;                                                                                                                                            
-        r.x = (posi.x-posj.x); r.y = (posi.y-posj.y);r.z = (posi.z-posj.z);                                                                                 
-                                                                                                                                                            
-        float dist = (r.x*r.x) + (r.y*r.y) + (r.z*r.z);                                                                                                     
-        dist = sqrt(dist);                                                                                                                                  
-                                                                                                                                                            
-        //cerr << "BH_Distance: " << dist << " bh mass: " << posi.w << " and: " << posj.w << "\t kill distance: " << starSoftening*2 << endl;               
-        cerr << (iter-1) << "\t"  <<  posi.x << "\t" << posi.y << "\t" << posi.z << "\t" <<  posj.x << "\t" << posj.y << "\t" << posj.z << "\t" << dist << "\t" << starSoftening;                                                                                                                                       
-        cerr << "\t" <<  veli.x << "\t" << veli.y << "\t" << veli.z << "\t" <<  velj.x << "\t" << velj.y << "\t" << velj.z << "\t" << dE <<  "\t" << de_max <<                
-               "\t" << t_current << "\t" << "BHDIST" << endl;                                                                                                                   
-                                                                                                                                                            
-        //Some test here to see if they are close enough,
-        //use softening of the star particles
-       if(dist < (starSoftening))
-          return 1; 
-      }
-    }                                                                                                                                                       
-  return 0;                                                                                                                                                 
-}    
 
 
 void octree::checkRemovalDistance(tree_structure &tree)                                                                                                     
@@ -874,10 +761,6 @@ void octree::checkRemovalDistance(tree_structure &tree)
      
 
 
-
-
-
-#if 1
  //Double precision
 double octree::compute_energies(tree_structure &tree)
 {
@@ -975,80 +858,3 @@ double octree::compute_energies(tree_structure &tree)
 
   return de;
 }
-#endif
-
-#if 0
-//Single precision version
-void octree::compute_energies(tree_structure &tree)
-{
-  Ekin = 0.0; Epot = 0.0;
-
- /* double hEkin = 0.0;
-  double hEpot = 0.0;
-
-  tree.bodies_pos.d2h();
-  tree.bodies_vel.d2h();
-  tree.bodies_acc0.d2h();
-  for (int i = 0; i < tree.n; i++) {
-    float4 vel = tree.bodies_vel[i];
-    hEkin += tree.bodies_pos[i].w*0.5*(vel.x*vel.x +
-                               vel.y*vel.y +
-                               vel.z*vel.z);
-    hEpot += tree.bodies_pos[i].w*0.5*tree.bodies_acc0[i].w;
-  }
-  double hEtot = hEpot + hEkin;
-  LOG("Energy (on host): Etot = %.10lg Ekin = %.10lg Epot = %.10lg \n", hEtot, hEkin, hEpot);
-  */
-
-  //float2 energy : x is kinetic energy, y is potential energy
-  int blockSize = NBLOCK_REDUCE ;
-//   my_dev::dev_mem<float2>  energy(devContext, blockSize);
-  my_dev::dev_mem<float2>  energy(devContext);
-  energy.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                      tree.generalBuffer1.get_flags(), 
-                      tree.generalBuffer1.get_devMem(),
-                      &tree.generalBuffer1[0], 0,  
-                      blockSize, getAllignmentOffset(0));    
-                      
-  computeEnergy.set_arg<int>(0,    &tree.n);
-  computeEnergy.set_arg<cl_mem>(1, tree.bodies_pos.p());
-  computeEnergy.set_arg<cl_mem>(2, tree.bodies_vel.p());
-  computeEnergy.set_arg<cl_mem>(3, tree.bodies_acc0.p());
-  computeEnergy.set_arg<cl_mem>(4, energy.p());
-  computeEnergy.set_arg<float>(5, NULL, 2*128); //Dynamic shared memory
-
-  computeEnergy.setWork(-1, 128, blockSize);
-  computeEnergy.execute();
-
-  //Reduce the last parts on the host
-  energy.d2h();
-  Ekin = energy[0].x;
-  Epot = energy[0].y;
-  for (int i = 1; i < blockSize ; i++)
-  {
-      Ekin += energy[i].x;
-      Epot += energy[i].y;
-  }
-
-  Etot = Epot + Ekin;
-
-  if (store_energy_flag) {
-    Ekin0 = Ekin;
-    Epot0 = Epot;
-    Etot0 = Etot;
-    Ekin1 = Ekin;
-    Epot1 = Epot;
-    Etot1 = Etot;
-    tinit = get_time();
-    store_energy_flag = false;
-  }
-  double de = (Etot - Etot0)/Etot0;
-  double dde = (Etot - Etot1)/Etot1;
-  Ekin1 = Ekin;
-  Epot1 = Epot;
-  Etot1 = Etot;
-  LOG("iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg d(de)= %lg t_sim= %lg sec\n",
-          iter, this->t_current, Etot, Ekin, Epot, de, dde, get_time() - tinit);
-
-}
-#endif

@@ -255,7 +255,7 @@ void octree::build (tree_structure &tree) {
 
   /********** build  list of keys ********/
   
-  build_key_list.execute();  
+//   build_key_list.execute();  
   
   /******  build the levels *********/
   
