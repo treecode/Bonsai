@@ -77,7 +77,8 @@ public:
     : m_tree(tree), m_idata(idata), iterationsRemaining(true),
       m_displayMode(ParticleRenderer::PARTICLE_SPRITES),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.1f),
-      m_paused(false), m_displayBoxes(false)
+      m_paused(false), m_displayBoxes(false), 
+      m_octreeDisplayLevel(3)
   {
     m_windowDims = make_int2(720, 480);
     m_cameraTrans = make_float3(0, -2, -100);
@@ -106,6 +107,10 @@ public:
 
   void togglePause() { m_paused = !m_paused; }
   void toggleBoxes() { m_displayBoxes = !m_displayBoxes; }
+  void incrementOctreeDisplayLevel(int inc) { 
+    m_octreeDisplayLevel += inc;
+    m_octreeDisplayLevel = std::max(0, std::min(m_octreeDisplayLevel, 30));
+  }
 
   void step() { 
     if (!m_paused && iterationsRemaining)
@@ -139,12 +144,10 @@ public:
       m_tree->localTree.boxCenterInfo.d2h();
       m_tree->localTree.boxSizeInfo.d2h();
       m_tree->localTree.node_level_list.d2h(); //Should not be needed is created on host
+           
+      int displayLevel = min(m_octreeDisplayLevel, m_tree->localTree.n_levels);
       
-      uint drawUpToLevel = 6;
-      
-      drawUpToLevel = min(drawUpToLevel, m_tree->localTree.n_levels);
-      
-      for(uint i=0; i < m_tree->localTree.node_level_list[drawUpToLevel]; i++)
+      for(uint i=0; i < m_tree->localTree.level_list[displayLevel].y; i++)
       {
         float3 boxMin, boxMax;
         boxMin.x = m_tree->localTree.boxCenterInfo[i].x-m_tree->localTree.boxSizeInfo[i].x;
@@ -270,6 +273,7 @@ private:
 
   ParticleRenderer m_renderer;
   ParticleRenderer::DisplayMode m_displayMode; 
+  int m_octreeDisplayLevel;
 
   // view params
   int m_ox; // = 0
@@ -351,6 +355,13 @@ void key(unsigned char key, int /*x*/, int /*y*/)
   case 'f':
   case 'F':
     theDemo->fitCamera();
+    break;
+  case ',':
+  case '<':
+    theDemo->incrementOctreeDisplayLevel(-1);
+    break;
+  case '.':
+    theDemo->incrementOctreeDisplayLevel(+1);
     break;
   }
 
