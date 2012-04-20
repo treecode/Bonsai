@@ -67,7 +67,8 @@ void drawWireBox(float3 boxMin, float3 boxMax) {
   glEnd();
   glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);  
 }
-  
+
+
 
 class BonsaiDemo
 {
@@ -76,7 +77,8 @@ public:
     : m_tree(tree), m_idata(idata), iterationsRemaining(true),
       m_displayMode(ParticleRenderer::PARTICLE_SPRITES),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.1f),
-      m_paused(false), m_displayBoxes(false)
+      m_paused(false), m_displayBoxes(false), 
+      m_octreeDisplayLevel(3)
   {
     m_windowDims = make_int2(720, 480);
     m_cameraTrans = make_float3(0, -2, -100);
@@ -105,6 +107,10 @@ public:
 
   void togglePause() { m_paused = !m_paused; }
   void toggleBoxes() { m_displayBoxes = !m_displayBoxes; }
+  void incrementOctreeDisplayLevel(int inc) { 
+    m_octreeDisplayLevel += inc;
+    m_octreeDisplayLevel = std::max(0, std::min(m_octreeDisplayLevel, 30));
+  }
 
   void step() { 
     if (!m_paused && iterationsRemaining)
@@ -130,10 +136,7 @@ public:
     }
 
     if (m_displayBoxes) {
-      float3 boxMin = make_float3(m_tree->rMinLocalTree);
-      float3 boxMax = make_float3(m_tree->rMaxLocalTree);
-
-      drawWireBox(boxMin, boxMax);
+      displayOctree();  
     }
 
     m_renderer.display(m_displayMode);
@@ -241,12 +244,39 @@ private:
     delete [] colors;
   }
 
+  void displayOctree() {
+    float3 boxMin = make_float3(m_tree->rMinLocalTree);
+    float3 boxMax = make_float3(m_tree->rMaxLocalTree);
+
+    drawWireBox(boxMin, boxMax);
+      
+    m_tree->localTree.boxCenterInfo.d2h();
+    m_tree->localTree.boxSizeInfo.d2h();
+    m_tree->localTree.node_level_list.d2h(); //Should not be needed is created on host
+           
+    int displayLevel = min(m_octreeDisplayLevel, m_tree->localTree.n_levels);
+      
+    for(uint i=0; i < m_tree->localTree.level_list[displayLevel].y; i++)
+    {
+      float3 boxMin, boxMax;
+      boxMin.x = m_tree->localTree.boxCenterInfo[i].x-m_tree->localTree.boxSizeInfo[i].x;
+      boxMin.y = m_tree->localTree.boxCenterInfo[i].y-m_tree->localTree.boxSizeInfo[i].y;
+      boxMin.z = m_tree->localTree.boxCenterInfo[i].z-m_tree->localTree.boxSizeInfo[i].z;
+
+      boxMax.x = m_tree->localTree.boxCenterInfo[i].x+m_tree->localTree.boxSizeInfo[i].x;
+      boxMax.y = m_tree->localTree.boxCenterInfo[i].y+m_tree->localTree.boxSizeInfo[i].y;
+      boxMax.z = m_tree->localTree.boxCenterInfo[i].z+m_tree->localTree.boxSizeInfo[i].z;
+      drawWireBox(boxMin, boxMax);
+    }
+  }
+
   octree *m_tree;
   octree::IterationData &m_idata;
   bool iterationsRemaining;
 
   ParticleRenderer m_renderer;
   ParticleRenderer::DisplayMode m_displayMode; 
+  int m_octreeDisplayLevel;
 
   // view params
   int m_ox; // = 0
@@ -328,6 +358,14 @@ void key(unsigned char key, int /*x*/, int /*y*/)
   case 'f':
   case 'F':
     theDemo->fitCamera();
+    break;
+  case ',':
+  case '<':
+    theDemo->incrementOctreeDisplayLevel(-1);
+    break;
+  case '.':
+  case '>':
+    theDemo->incrementOctreeDisplayLevel(+1);
     break;
   }
 
