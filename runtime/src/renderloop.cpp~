@@ -116,6 +116,7 @@ public:
     if (!m_paused && iterationsRemaining)
     {
       iterationsRemaining = !m_tree->iterate_once(m_idata); 
+      m_tree->iter++;
     }
     if (!iterationsRemaining)
       printf("No iterations Remaining!\n");

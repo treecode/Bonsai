@@ -392,7 +392,8 @@ void octree::build (tree_structure &tree) {
                        
   fprintf(stderr,"Box max size: %f en max dist: %f \t %f en %f  \n", size, dist, sqrt(dist), maxDist);
   
-
+  //maxDist = 50;
+  
   validList.zeroMem();
   //The newest group creation method!
   define_groups.set_arg<int>(0, &tree.n);  

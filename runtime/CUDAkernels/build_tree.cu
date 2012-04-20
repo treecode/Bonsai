@@ -182,49 +182,6 @@ extern "C" __global__ void boundaryReductionGroups(const int n_groups,
 
 //#define EXACT_KEY
 
-
-#if 0
-extern "C" __global__ void cl_build_key_list(uint2  *body_key,
-                                            real4  *body_pos,
-                                            int   n_bodies,
-                                            real4  corner) {
-  
-  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
-  uint tid = threadIdx.x;
-  uint id  = bid * blockDim.x + tid;
-  
-  if (id > n_bodies) return;
-
-  real4 pos = body_pos[id];
-  int4 crd;
-  
-  real domain_fac = corner.w;
-  
-  #ifndef EXACT_KEY
-    crd.x = (int)roundf(__fdividef((pos.x - corner.x), domain_fac));
-    crd.y = (int)roundf(__fdividef((pos.y - corner.y) , domain_fac));
-    crd.z = (int)roundf(__fdividef((pos.z - corner.z) , domain_fac));
-  #else            
-    crd.x = (int)((pos.x - corner.x) / domain_fac);
-    crd.y = (int)((pos.y - corner.y) / domain_fac);
-    crd.z = (int)((pos.z - corner.z) / domain_fac);
-  #endif
-
-//   crd.x = (int)((pos.x - corner.x) / domain_fac + 0.5);
-//   crd.y = (int)((pos.y - corner.y) / domain_fac + 0.5);
-//   crd.z = (int)((pos.z - corner.z) / domain_fac + 0.5);
-
-   uint2 key = get_key(crd);
-
-
-  if (id == n_bodies) key = make_uint2(0xFFFFFFFF, 0xFFFFFFFF);
-
-  body_key[id] = key;
-
-}
-
-#endif
-
 extern "C" __global__ void cl_build_key_list(uint4  *body_key,
                                             real4  *body_pos,
                                             int   n_bodies,
@@ -252,13 +209,6 @@ extern "C" __global__ void cl_build_key_list(uint4  *body_key,
     crd.z = (int)((pos.z - corner.z) / domain_fac);
   #endif
 
-//   crd.x = (int)((pos.x - corner.x) / domain_fac + 0.5);
-//   crd.y = (int)((pos.y - corner.y) / domain_fac + 0.5);
-//   crd.z = (int)((pos.z - corner.z) / domain_fac + 0.5);
-
-
-
-
    uint4 key = get_key(crd);
 
 
@@ -268,154 +218,7 @@ extern "C" __global__ void cl_build_key_list(uint4  *body_key,
 
 }
 
-                
-#if 1
-extern "C" __global__ void build_phkey_list(uint4  *body_key,
-                                            real4  *body_pos,
-                                            int    n_bodies,
-                                            real4  corner,
-                                            uint   *reorder) {
- 
-  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
-  uint tid = threadIdx.x;
-  uint id  = bid * blockDim.x + tid;
-  
-  if (id > n_bodies) return;
-
-  real4 pos = body_pos[id];
-//   real4 pos = body_pos[reorder[id]];
-  int4 crd;
-  
-  real domain_fac = corner.w;
-  
-  //Get the integer position, will be used for the key calculation
-  #if 1
-    crd.x = (int)roundf(__fdividef((pos.x - corner.x), domain_fac));
-    crd.y = (int)roundf(__fdividef((pos.y - corner.y) , domain_fac));
-    crd.z = (int)roundf(__fdividef((pos.z - corner.z) , domain_fac));
-  #else
-            
-    crd.x = (int)((pos.x - corner.x) / domain_fac);
-    crd.y = (int)((pos.y - corner.y) / domain_fac);
-    crd.z = (int)((pos.z - corner.z) / domain_fac);
-  #endif
-
-
-  uint4 key_new = get_key(crd);
-
-  if (id == n_bodies) key_new = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
-
-  body_key[id] = key_new;
-
-}
-#else
-
-extern "C" __global__ void build_phkey_list(uint2  *body_key,
-                                            real4  *body_pos,
-                                            int   n_bodies,
-                                            real4  corner) {
- 
-  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
-  uint tid = threadIdx.x;
-  uint id  = bid * blockDim.x + tid;
-  
-  if (id > n_bodies) return;
-
-  real4 pos = body_pos[id];
-  int4 crd;
-  
-  real domain_fac = corner.w;
-  
-  //Get the integer position, will be used for the key calculation
-  #ifndef EXACT_KEY
-    crd.x = (int)roundf(__fdividef((pos.x - corner.x), domain_fac));
-    crd.y = (int)roundf(__fdividef((pos.y - corner.y) , domain_fac));
-    crd.z = (int)roundf(__fdividef((pos.z - corner.z) , domain_fac));
-  #else            
-    crd.x = (int)((pos.x - corner.x) / domain_fac);
-    crd.y = (int)((pos.y - corner.y) / domain_fac);
-    crd.z = (int)((pos.z - corner.z) / domain_fac);
-  #endif
-
-  
-  const int bits = 18;
-  int i,xi, yi, zi;
-  int mask;
-  long key;
     
-  //0= 000, 1=001, 2=011, 3=010, 4=110, 5=111, 6=101, 7=100
-  //000=0=0, 001=1=1, 011=3=2, 010=2=3, 110=6=4, 111=7=5, 101=5=6, 100=4=7
-  const int C[8] = {0, 1, 7, 6, 3, 2, 4, 5};
-    
-  int temp;
-    
-  mask = 1 << (bits - 1);
-  key  = 0;
-    
-    
-    for(i = 0; i < bits; i++, mask >>= 1)
-      {
-        xi = (crd.x & mask) ? 1 : 0;
-        yi = (crd.y & mask) ? 1 : 0;
-        zi = (crd.z & mask) ? 1 : 0;        
-               
-        if(xi == 0 && yi == 0 && zi == 0)
-        {
-          temp = crd.z; crd.z = crd.y; crd.y = temp;
-        }
-        else  if(xi == 0 && yi == 0 && zi == 1)
-        {
-          temp = crd.x; crd.x = crd.y; crd.y = temp;
-        }
-        else  if(xi == 1 && yi == 0 && zi == 1)
-        {
-          temp = crd.x; crd.x = crd.y; crd.y = temp;
-        }
-        else  if(xi == 1 && yi == 0 && zi == 0)
-        {
-          crd.x = (crd.x) ^ (-1);
-          crd.z = (crd.z) ^ (-1);
-        }
-        else  if(xi == 1 && yi == 1 && zi == 0)
-        {
-         crd.x = (crd.x) ^ (-1);
-         crd.z = (crd.z) ^ (-1);
-        }
-        else  if(xi == 1 && yi == 1 && zi == 1)
-        {
-         temp = (crd.x) ^ (-1);         
-         crd.x = (crd.y) ^ (-1);
-         crd.y = temp;
-        }
-        else  if(xi == 0 && yi == 1 && zi == 1)
-        {
-         temp = (crd.x) ^ (-1);         
-         crd.x = (crd.y) ^ (-1);
-         crd.y = temp;
-        }
-        else
-        {
-         temp = (crd.z) ^ (-1);         
-         crd.z = (crd.y) ^ (-1);
-         crd.y = temp;          
-        }
-        
-        int index = (xi << 2) + (yi << 1) + zi;
-        key = (key << 3) + C[index];
-      }
-
-  uint2 key_new;
-  key_new.x = key & 0xFFFFFFFF;
-  key_new.y = (key >> 32) & 0xFFFFFFFF;
-
-  if (id == n_bodies) key_new = make_uint2(0xFFFFFFFF, 0xFFFFFFFF);
-
-  body_key[id] = key_new;
-
-}
-
-
-#endif         
   
 
 extern "C" __global__ void cl_build_valid_list(int n_bodies,
@@ -428,13 +231,6 @@ extern "C" __global__ void cl_build_valid_list(int n_bodies,
   const uint tid = threadIdx.x;
   const uint id  = bid * blockDim.x + tid;
   const uint4 key_F = {0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF};
-  const uint4 key_B = {0xFFFFFFF1, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF}; //A border, valid0 will become 1
-  const uint4 key_I = {0xFFFFFFF2, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF}; //Ignore
-  const uint4 key_E = {0xFFFFFFF3, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF}; //End
-  const uint4 key_A = {0xFFFFFFF4, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF}; //Start and End
-//   const uint2 key_TEST = make_uint2(0x0, 0x0); //Start and End
-
-//TODO clean this if we dont use it
   
   if (id >= n_bodies) return;   // >=   since the last particle is extra boudnary particle
   
@@ -442,11 +238,9 @@ extern "C" __global__ void cl_build_valid_list(int n_bodies,
   mask.x = mask.x | ((uint)1 << 30) | ((uint)1 << 31);
 
   uint4 key_m;
-
   uint4 key_c    = body_key[id];
-
-
   uint4 key_p;
+
   if (id == 0)
   {
     key_m = key_F;
@@ -467,20 +261,7 @@ extern "C" __global__ void cl_build_valid_list(int n_bodies,
   int valid0 = 0;
   int valid1 = 0;
 
-  if (cmp_uint4(key_c, key_A) == 0) {
-    valid0 = 1; //Set a border
-    valid1 = 1; //Set a border
-  }
-  else if (cmp_uint4(key_c, key_B) == 0) {
-    valid0 = 1; //Set a border
-  }
-  else if (cmp_uint4(key_c, key_E) == 0) {
-    valid1 = 1; //Set a border
-  }
-  else if (cmp_uint4(key_c, key_I) == 0) {
-    //Do nothing
-  }
-  else if (cmp_uint4(key_c, key_F) != 0) {
+  if (cmp_uint4(key_c, key_F) != 0) {
     key_c.x = key_c.x & mask.x;
     key_c.y = key_c.y & mask.y;
     key_c.z = key_c.z & mask.z;
@@ -512,12 +293,10 @@ extern "C" __global__ void cl_build_nodes(uint level,
                              uint  compact_list_len,
                              uint offset,
                              uint *compact_list,
-//                              uint *compact_list_end,
                              uint4 *bodies_key,
                              uint4 *node_key,
                              uint  *n_children,
                              uint2 *node_bodies){
-//                              uint  *testValidList) {
 
   uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   uint tid = threadIdx.x;
@@ -556,7 +335,6 @@ extern "C" __global__ void cl_link_tree(int n_nodes,
                             real4 *bodies_pos,
                             real4 corner,
                             uint2 *level_list,           //TODO could make this constant if it proves usefull
-//                             uint* parent_id_list,
                             uint* valid_list,
                             uint4 *node_keys,
                             uint4 *bodies_key,
@@ -611,7 +389,7 @@ extern "C" __global__ void cl_link_tree(int n_nodes,
     ci = 0;
 
   //ci now points to the node that is the parent, was used in previous group method
-//   parent_id_list[id] = ci;
+  //parent_id_list[id] = ci;
 
   mask = get_imask(mask);
   key = make_uint4(key.x | mask.x, key.y | mask.y, key.z | mask.z, 0);
@@ -638,7 +416,7 @@ extern "C" __global__ void cl_link_tree(int n_nodes,
     if ((bj - bi) <= NLEAF)    
       valid = id | (uint)(1 << 31);   //Distinguish leaves and nodes
 
- valid_list[id] = valid; 
+ valid_list[id] = valid; //If valid its a leaf otherwise a node
 }
 
 //Determines which level of node starts at which offset
@@ -648,7 +426,6 @@ extern "C" __global__ void build_level_list(const int n_nodes,
                                             uint2 *node_bodies,                                      
                                             uint* valid_list)
 {
-
   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   const uint tid = threadIdx.x;
   const uint id  = bid * blockDim.x + tid;
@@ -697,37 +474,6 @@ extern "C" __global__ void build_level_list(const int n_nodes,
 //Finds nodes/leafs that will become groups
 //After executions valid_list contains the 
 //valid nodes/leafs that form groups
-extern "C" __global__ void build_group_list(int n_nodes,
-                                            uint* parent_id_list,
-                                            uint2 *node_bodies,
-                                            uint* valid_list)
-{
-
-  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
-  uint tid = threadIdx.x;
-  uint id  = bid * blockDim.x + tid;
-  
-  if (id >= n_nodes) return;
-
-  uint2 bij          = node_bodies[id];
-  int ownChildren    =  bij.y - (bij.x & ILEVELMASK);
-  
-
-  bij  = node_bodies[parent_id_list[id]];  
-  int parentChildren    =  bij.y - (bij.x & ILEVELMASK);
-
-
-  //group if nchild <= NCRIT AND parent_nchild > NCRIT
-  //if((ownChildren <= NCRIT) && (parentChildren > NCRIT))
-  if((ownChildren <= NCRIT) && (parentChildren > NCRIT))
-    valid_list[id] = id | (uint)(1 << 31);  //Group
-  else
-    valid_list[id] = id | (0 << 31);  //Not a group
-}
-
-//Finds nodes/leafs that will become groups
-//After executions valid_list contains the 
-//valid nodes/leafs that form groups
 extern "C" __global__ void build_group_list2(int    n_particles,
                                              uint  *validList,
                                              real4  *bodies_pos,
@@ -736,10 +482,6 @@ extern "C" __global__ void build_group_list2(int    n_particles,
   uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   uint tid = threadIdx.x;
   uint idx = bid * blockDim.x + tid;
-
-  //TODO use shared mem ffor the positions
-//since we use them multiple times?
-
 
   //Note that we do not include the final particle
   //Since there is no reason to check it
@@ -774,9 +516,6 @@ extern "C" __global__ void build_group_list2(int    n_particles,
   int validStart = ((idx     % NCRIT) == 0);
   int validEnd   = (((idx+1) % NCRIT) == 0);
 
-//   const int DIST = 1;
-//   const float DIST = 44;
-
   //The extra possible split(s) if the distance between two particles is too large
   if(dsPlus > DIST) validEnd     = 1;
   if(dsMin  > DIST) validStart   = 1;
@@ -790,7 +529,9 @@ extern "C" __global__ void build_group_list2(int    n_particles,
   validList[2*idx + 1] = (idx+1) | (uint)(validEnd   << 31);    
 }
 
-   
+ 
+//Store per particle the group id it belongs to
+//and the start and end particle number of the groups  
 extern "C" __global__ void store_group_list(int    n_particles,
                                             int n_groups,
                                             uint  *validList,
@@ -817,56 +558,5 @@ extern "C" __global__ void store_group_list(int    n_particles,
   }
 }
 
-extern "C" __global__ void expandLeafList(int n_leafs,
-                                          uint  *leaf2NodeIdx,
-                                          uint2 *node_bodies,
-                                          uint  *leafPart2Body)
-{
-  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
-  uint tid = threadIdx.x;
-  uint idx = bid * blockDim.x + tid;
-
-
-  if(bid >= n_leafs) return;
-
-  uint2 bij  =  node_bodies[leaf2NodeIdx[bid]];
-  uint bi    =  bij.x & ILEVELMASK;
-  uint bj    =  bij.y;
-
-  //Write the particle id at the correct location, only if we are 
-  //below the end particle id
-  if(bi+tid < bj)
-  {
-    leafPart2Body[idx] = idx;
-  }
-}
-    
-
-//Assign a grp id to each particle of that grp to 
-//create particle -> group relation using the
-//group -> particle relation
-extern "C" __global__ void  build_body2group_list(const int n_groups,
-                                  uint *group_list,
-                                  uint2 *node_bodies,
-                                  uint  *body2group_list)
-{
-  const int bid = gridDim.x   * blockIdx.y + blockIdx.x;
-  const int tid = threadIdx.x;
-
-  if (bid >= n_groups) return;
-
-  const int nodeID = group_list[bid];
-
-  uint2 bij          = node_bodies[nodeID];
-
-  const uint firstChild = bij.x & ILEVELMASK;
-  const uint nChildren  = bij.y - (bij.x & ILEVELMASK);
-
-  int idx = firstChild+tid;
-
-  //Save the group id for this particle
-  if (tid < nChildren) 
-    body2group_list[idx] = bid;  
-}
 
 

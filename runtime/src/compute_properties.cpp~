@@ -143,10 +143,8 @@ void octree::compute_properties(tree_structure &tree) {
   #endif
   
   //Get the local domain boundary based on group positions and sizes
-  if(nProcs > 1)
-  {
-    real4 r_min, r_max;
-    getBoundariesGroups(tree, r_min, r_max); 
-  }
+  if(nProcs
+  real4 r_min, r_max;
+  getBoundariesGroups(tree, r_min, r_max); 
 
 }

@@ -211,8 +211,6 @@ bool octree::iterate_once(IterationData &idata) {
       
       return true;
     }
-    
-  iter++;
 
   return false;
 }
@@ -295,7 +293,7 @@ void octree::iterate() {
     if (true == iterate_once(idata))
         break;
 
-
+    iter++;
     
   } //end for i
   

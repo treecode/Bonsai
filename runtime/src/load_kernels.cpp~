@@ -173,7 +173,10 @@ void octree::load_kernels() {
   boundaryReductionGroups.create("boundaryReductionGroups");
   build_body2group_list.create("build_body2group_list");
   store_groups.create("store_group_list");
-
+  expand_leaflist.create("expandLeafList");
+  
+  build_phkey_list.create("build_phkey_list");
+  
 #else
   build_key_list.load_source("build_tree.cl", "");
   build_valid_list.load_source("build_tree.cl", "");

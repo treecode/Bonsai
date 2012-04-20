@@ -232,7 +232,6 @@ __device__ uint4 get_key(int4 crd)
 
     key = (key << 3) + C[index];
 
-// Hier gebleven, zorgen dat juiste bits op juiste plek komen
     if(i == 19)
     {
       key_new.y = key;

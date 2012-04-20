@@ -338,17 +338,13 @@ protected:
   my_dev::kernel  define_groups;
   my_dev::kernel  build_level_list;
   my_dev::kernel  store_groups;
-  my_dev::kernel  expand_leaflist;
 
   my_dev::kernel  boundaryReduction;
   my_dev::kernel  boundaryReductionGroups;
   my_dev::kernel  build_body2group_list;
 
-  my_dev::kernel  build_phkey_list;
-
 
   // tree properties kernels
-  my_dev::kernel  propsNonLeaf, propsLeaf, propsScaling;
   my_dev::kernel  propsNonLeafD, propsLeafD, propsScalingD;
 
   my_dev::kernel  copyNodeDataToGroupData;

@@ -5,7 +5,6 @@ void octree::getBoundaries(tree_structure &tree, real4 &r_min, real4 &r_max)
 
   //Start reduction to get the boundary's of the system
   boundaryReduction.set_arg<int>(0, &tree.n);
-//   boundaryReduction.set_arg<cl_mem>(1, tree.bodies_pos.p());
   boundaryReduction.set_arg<cl_mem>(1, tree.bodies_Ppos.p());
   boundaryReduction.set_arg<cl_mem>(2, devMemRMIN.p());
   boundaryReduction.set_arg<cl_mem>(3, devMemRMAX.p());
@@ -29,7 +28,6 @@ void octree::getBoundaries(tree_structure &tree, real4 &r_min, real4 &r_max)
     r_max.x = std::max(r_max.x, devMemRMAX[i].x);
     r_max.y = std::max(r_max.y, devMemRMAX[i].y);
     r_max.z = std::max(r_max.z, devMemRMAX[i].z);    
-//     printf("%f\t%f\t%f\t || \t%f\t%f\t%f\n", rMIN[i].x,rMIN[i].y,rMIN[i].z,rMAX[i].x,rMAX[i].y,rMAX[i].z);    
   }
   
   rMinLocalTree = r_min;
@@ -41,7 +39,6 @@ void octree::getBoundaries(tree_structure &tree, real4 &r_min, real4 &r_max)
 
 void octree::getBoundariesGroups(tree_structure &tree, real4 &r_min, real4 &r_max)
 {
-
   //Start reduction to get the boundary's of the system
   boundaryReductionGroups.set_arg<int>(0, &tree.n_groups);
   boundaryReductionGroups.set_arg<cl_mem>(1, tree.groupCenterInfo.p());
@@ -139,7 +136,6 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
   printf("Corner: %f %f %f idomain fac: %f domain_fac: %f\n", 
          tree.corner.x, tree.corner.y, tree.corner.z, idomain_fac, domain_fac);
   printf("domain fac: %f idomain_fac: %f size: %f MAXLEVELS: %d \n", domain_fac, idomain_fac, size, MAXLEVELS);
- // printf("Test: %f and %f \n", size, tree.domain_fac*(1 << MAXLEVELS));
   
   //Compute the keys
   build_key_list.set_arg<cl_mem>(0,   tree.bodies_key.p());
@@ -150,7 +146,6 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
   build_key_list.setWork(tree.n, 128); //128 threads per block
   build_key_list.execute();  
   
- 
   //Call the GPUSort function, since we made it general 
   //into a uint4 so we can extend the tree to 96bit key
   //we have to convert to 64bit key to a 96bit for sorting
