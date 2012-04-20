@@ -599,11 +599,13 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 #endif
 
 
-#pragma unroll
+#if 1
+#pragma unroll 16
           for (int i = 0; i < DIMx; i++)
             acc_i = add_acc(acc_i, pos_i, node_mon0[offs + i], node_mon1[offs+i], eps2);
           apprCount += DIMx;
           __syncthreads();
+#endif
         }
         __syncthreads();
 #endif
@@ -712,13 +714,15 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
             sh_jid [tid] = body_list[n_direct + tid];  /* we need this to distinghuis between DM and *-particles */
 
             __syncthreads();
-#pragma unroll
+#if 1
+#pragma unroll 16
             for (int j = 0; j < DIMx; j++)
               acc_i = add_acc(acc_i, pos_i, sh_mass[offs + j], sh_pos[offs + j], eps2);
 #if 0
             direCount += DIMx;
 #endif
             __syncthreads();
+#endif
           }
 
         }
