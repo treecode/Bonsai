@@ -332,7 +332,6 @@ __device__ bool split_node_grav_impbh(
 
 #define TEXTURES
 #define OLDPREFIX
-#define DOGRAV
 
 
 template<int DIM2, int SHIFT>
@@ -355,8 +354,6 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
     real4 *body_vel) {
 
   float4 acc_i = {0.0f, 0.0f, 0.0f, 0.0f};
-  ngb = -1;
-  float ds2_min = 1.0e10f;
 
 
   /*********** set necessary thread constants **********/
@@ -377,8 +374,10 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 
   float  *node_mon0 = (float* )&nodes    [DIM];   //  4*DIM,  5*DIM,  1*DIM
   float3 *node_mon1 = (float3*)&node_mon0[DIM];   //  5*DIM,  8*DIM,  3*DIM
+#if 0
   float3 *node_oct0 = (float3*)&node_mon1[DIM];   //  8*DIM, 11*DIM,  3*DIM
   float3 *node_oct1 = (float3*)&node_oct0[DIM];   // 11*DIM, 14*DIM,  3*DIM
+#endif
 
   int    *body_list = (int*   )&nodes    [  DIM]; //  4*DIM,  8*DIM,  4*DIM
   float  *sh_mass   = (float* )&body_list[4*DIM]; //  8*DIM,  9*DIM,  1*DIM
@@ -521,7 +520,10 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
           if((n_stack1 - c_stack0) >= (LMEM_STACK_SIZE << SHIFT))
           {
             //We overwrote our current stack
-            apprCount = -1; return acc_i;	 
+#if 0
+            apprCount = -1; 
+#endif
+            return acc_i;	 
           }
         }
 
@@ -598,7 +600,9 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 #pragma unroll
           for (int i = 0; i < DIMx; i++)
             acc_i = add_acc(acc_i, pos_i, node_mon0[offs + i], node_mon1[offs+i], eps2);
+#if 0
           apprCount += DIMx;
+#endif
           __syncthreads();
         }
         __syncthreads();
@@ -731,7 +735,10 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
         if((n_stack1 - c_stack0) >= (LMEM_STACK_SIZE << SHIFT))
         {
           //We overwrote our current stack
-          apprCount = -1; return acc_i;	 
+#if 0
+          apprCount = -1; 
+#endif
+          return acc_i;	 
         }
       }
       __syncthreads();
@@ -778,7 +785,9 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 #pragma unroll
     for (int i = 0; i < DIMx; i++)
       acc_i = add_acc(acc_i, pos_i, node_mon0[offs + i], node_mon1[offs+i],eps2);
+#if 0
     apprCount += DIMx;
+#endif
 
     __syncthreads();
   } //if n_approx > 0
