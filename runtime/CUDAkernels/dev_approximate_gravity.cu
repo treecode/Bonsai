@@ -1,7 +1,38 @@
-// #include "support_kernels.cu"
+  // #include "support_kernels.cu"
 #include <stdio.h>
 
 #include "node_specs.h"
+
+#ifdef WIN32
+#define M_PI        3.14159265358979323846264338328
+#endif
+
+__forceinline__ __device__ float Wkernel(const float q)
+{
+  const float sigma = 8.0f/M_PI;
+
+  const float qm = 1.0f - q;
+  const float f1 = sigma * (1.0f + (-6.0f)*q*q*qm);
+  const float f2 = sigma * 2.0f*qm*qm*qm;
+
+  return fmaxf(0.0f, fminf(f1, f2));
+}
+
+__forceinline__ __device__ float interact(
+    const float3 ipos,
+    const float  h,
+    const float  hinv,
+    const float3 jpos,
+    const float  jmass)
+{
+  const float3 dr = make_float3(jpos.x - ipos.x, jpos.y - ipos.y, jpos.z - ipos.z);
+  const float  r2 = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
+  if (r2 >= h*h) return 0.0f;
+  const float q  = sqrtf(r2) * hinv;
+  const float hinv3 = hinv*hinv*hinv;
+
+  return jmass * Wkernel(q) * hinv3;
+}
 
 
 /***
@@ -734,179 +765,196 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
  	  node_oct0[tid] = make_float3(octopole0.x, octopole0.y, octopole0.z);
  	  node_oct1[tid] = make_float3(octopole1.x, octopole1.y, octopole1.z);
 
-          //float darkMatterMass = octopole1.w;
-          //float stellarMass = monopole.w - darkMatterMass;
+#if 0
+    const float f_dm   = 0.0f;
+    const float f_star = 1.0f
+    const float darkMatterMass = f_dm   * octopole1.w;
+    /* eg: we need to be careful with the line below to avoid truncation error due to 
+       subtraction of two large numbers, monopole.w and darkMatterMass both could be
+       very large.
+       Instead, we can use octopole1.w to be stellar mass, and DM mass to be 
+       monopole.w, then we add the two together to get total mass, but this will
+       require more changes to the kernel */
+    const float    stellarMass = f_star * (monopole.w - darkMatterMass);
+    const float hinv = 1.0f/hi;   /* eg: this can be precomputing to avoid division */
+    density += interact(
+        make_float3(pos_i.x, pos_i.y, pos_i.z), h, hinv,
+        make_float3(monopole.x, monople.y, monopole.z), darkMatterMass + stellarMass);
+    /* eg: the interact function still calls sqrtf(f), which invloves 1 div and 1 rsqrtf,
+       so ideally we would like to take advantage of rsqrtf in add_acc, and then we only
+       do 1 div */
+#endif
 
-          #ifdef INDSOFT
-            float temp          = node_eps[tid]; //Backup value in the shmem into register
-            node_eps[tid]       = octopole0.w;
-          #endif
+#ifdef INDSOFT
+    float temp          = node_eps[tid]; //Backup value in the shmem into register
+    node_eps[tid]       = octopole0.w;
+#endif
 
-	  __syncthreads();
+    __syncthreads();
 #pragma unroll
-	  for (int i = 0; i < DIMx; i++)
-          {
-            apprCount++;
+    for (int i = 0; i < DIMx; i++)
+    {
+      apprCount++;
 #ifdef DOGRAV
-            #ifdef INDSOFT
-              acc_i = add_acc(acc_i, pos_i,
-                              node_mon0[offs + i], node_mon1[offs + i],
-                              node_oct0[offs + i], node_oct1[offs + i], node_eps[offs + i], eps2);
+#ifdef INDSOFT
+      acc_i = add_acc(acc_i, pos_i,
+          node_mon0[offs + i], node_mon1[offs + i],
+          node_oct0[offs + i], node_oct1[offs + i], node_eps[offs + i], eps2);
 
-            #else
-              acc_i = add_acc(acc_i, pos_i,
-                              node_mon0[offs + i], node_mon1[offs + i],
-                              node_oct0[offs + i], node_oct1[offs + i], eps2);
-            #endif
+#else
+      acc_i = add_acc(acc_i, pos_i,
+          node_mon0[offs + i], node_mon1[offs + i],
+          node_oct0[offs + i], node_oct1[offs + i], eps2);
+#endif
 
 #endif
-          }
- 	  __syncthreads();
-          #ifdef INDSOFT
-             node_eps[tid] = temp; //Restore original value in shmem
-             __syncthreads();
-          #endif
- 	}
-	__syncthreads();
+    }
+    __syncthreads();
+#ifdef INDSOFT
+    node_eps[tid] = temp; //Restore original value in shmem
+    __syncthreads();
+#endif
+  }
+  __syncthreads();
 #endif
 
 #if 1
-	/***********************************/
-	/******       DIRECT          ******/
-	/***********************************/
+  /***********************************/
+  /******       DIRECT          ******/
+  /***********************************/
 
-        int *sh_body = &approx[DIM];
+  int *sh_body = &approx[DIM];
 
-        flag         = split && leaf && use_node;                                //flag = split + leaf + use_node
-        int  jbody   = node_data & BODYMASK;                                     //the first body in the leaf
-        int  nbody   = (((node_data & INVBMASK) >> LEAFBIT)+1) & BTEST(flag);    //number of bodies in the leaf masked with the flag
+  flag         = split && leaf && use_node;                                //flag = split + leaf + use_node
+  int  jbody   = node_data & BODYMASK;                                     //the first body in the leaf
+  int  nbody   = (((node_data & INVBMASK) >> LEAFBIT)+1) & BTEST(flag);    //number of bodies in the leaf masked with the flag
 
-        body_list[tid] = direct[tid];                                            //copy list of bodies from previous pass to body_list
-        sh_body  [tid] = jbody;                                                  //store the leafs first body id into shared memory
+  body_list[tid] = direct[tid];                                            //copy list of bodies from previous pass to body_list
+  sh_body  [tid] = jbody;                                                  //store the leafs first body id into shared memory
 
-        // step 1
-        #ifdef OLDPREFIX
-          calc_prefix<DIM2>(prefix0, tid, flag);
-        #else
-          inclusive_scan_block<ADDOP<int>, int>(prefix0, (int)flag, tid);       // inclusive scan on flags to construct array
-        #endif
-
-        if (flag) prefix1[prefix0[tid] - 1] = tid;                             //with tidś whose leaves have to be opened
-          __syncthreads();                                                      //thread barrier, make sure all warps completed the job
-
-        // step 2
-        #ifdef OLDPREFIX
-          int n_bodies  = calc_prefix<DIM2>(prefix0, tid, nbody);
-        #else
-          inclusive_scan_block<ADDOP<int>, int>(prefix0, nbody, tid);        // inclusive scan to compute memory offset for each body
-          int n_bodies = prefix0[blockDim.x - 1];                            //Total number of bides extract from the leaves
-          __syncthreads();                                                   // thread barrier to make sure that warps completed their jobs
-        #endif
-
-	direct [tid]  = prefix0[tid];                                       //Store a copy of inclusive scan in direct
-	prefix0[tid] -= nbody;                                              //convert inclusive int oexclusive scan
-	prefix0[tid] += 1;                                                  //add unity, since later prefix0[tid] == 0 used to check barrier
-
-	int nl_pre = 0;                                                     //Number of leaves that have already been processed
-
-        #define NJMAX (DIM*4)
-	while (n_bodies > 0) {
-	  int nb    = min(n_bodies, NJMAX - n_direct);                    //Make sure number of bides to be extracted does not exceed
-                                                                          //the amount of allocated shared memory
-
-          // step 0                                                      //nullify part of the body_list that will be filled with bodies
-	  for (int i = n_direct; i < n_direct + nb; i += DIM){           //from the leaves that are being processed
-            body_list[i + tid] = 0;
-          }
-	  __syncthreads();
-
-          //step 1:
-	  if (flag && (direct[tid] <= nb) && (prefix0[tid] > 0))        //make sure that the thread indeed carries a leaf
-	    body_list[n_direct + prefix0[tid] - 1] = 1;                 //whose bodies will be extracted
-	  __syncthreads();
-
-          //step 2:
-         #ifdef OLDPREFIX
-            int nl = calc_prefix<DIM2>(nb, &body_list[n_direct], tid);
-          #else
-            int nl = inclusive_scan_array<ADDOP<int>, int>              // inclusive scan to compute number of leaves to process
-                            (&body_list[n_direct], nb, tid);            // to make sure that there is enough shared memory for bodies
-          #endif
-	  nb = direct[prefix1[nl_pre + nl - 1]];                        // number of bodies stored in these leaves
-
-	  // step 3:
-	  for (int i = n_direct; i < n_direct + nb; i += DIM) {          //segmented fill of the body_list
-	    int j = prefix1[nl_pre + body_list[i + tid] - 1];            // compute the first body in shared j-body array
-	    body_list[i + tid] = (i + tid - n_direct) -                 //add to the index of the first j-body in a child
-                                 (prefix0[j] - 1) + sh_body[j];         //the index of the first child in body_list array
-	  }
-	  __syncthreads();
-
-
-         /**************************************************
-          *  example of what is accomplished in steps 0-4   *
-          *       ---------------------------               *
-          * step 0: body_list = 000000000000000000000       *
-          * step 1: body_list = 100010001000000100100       *
-          * step 2: body_list = 111122223333333444555       *
-          * step 3: body_list = 012301230123456012012       *
-          *         assuming that sh_body[j] = 0            *
-         ***************************************************/
-
-	  n_bodies     -= nb;                                   //subtract from n_bodies number of bodies that have been extracted
-   	  nl_pre       += nl;                                   //increase the number of leaves that where processed
-	  direct [tid] -= nb;                                   //subtract the number of extracted bodies in this pass
- 	  prefix0[tid] = max(prefix0[tid] - nb, 0);             //same here, but do not let the number be negative (GT200 bug!?)
-	  n_direct     += nb;                                  //increase the number of bodies to be procssed
-
-	  while(n_direct >= DIM) {
-	    n_direct -= DIM;
-
-
-	    float4 posj  = body_pos[body_list[n_direct + tid]];
-//             float4 posj  = tex1Dfetch(texBody, body_list[n_direct + tid]);
-	    sh_mass[tid] = posj.w;
-	    sh_pos [tid] = make_float3(posj.x, posj.y, posj.z);
-	    sh_jid [tid] = body_list[n_direct + tid];
-
-            #ifdef INDSOFT
-              float   temp = sh_eps [tid];        //Store the value from Shmem into a register
-              sh_eps [tid] = body_vel[body_list[n_direct + tid]].w;  //Load the softening
-            #endif
-	    __syncthreads();
-#pragma unroll
-	    for (int j = 0; j < DIMx; j++)
-            {
-              int selfGrav = (body_i != sh_jid[offs + j]);
-// 	      if (body_i != sh_jid[offs + j]) //If statement replaced by multiplication
-              {
-		float ds2 =  1.0e10f;
-                direCount++;
-#ifdef DOGRAV
-                #ifdef INDSOFT
-                  acc_i = add_acc(acc_i, pos_i, sh_mass[offs + j], sh_pos[offs + j], sh_eps[offs + j], ds2, eps2, selfGrav);
-                #else
-                  acc_i = add_acc(acc_i, pos_i, sh_mass[offs + j], sh_pos[offs + j], ds2, eps2, selfGrav);
-                #endif
+  // step 1
+#ifdef OLDPREFIX
+  calc_prefix<DIM2>(prefix0, tid, flag);
+#else
+  inclusive_scan_block<ADDOP<int>, int>(prefix0, (int)flag, tid);       // inclusive scan on flags to construct array
 #endif
-                ds2 += selfGrav*1.0e10f;
-		if (ds2 < ds2_min) {
-		  ngb     = sh_jid[offs + j];
-		  ds2_min = ds2;
-		}
-	      }
-	    }
-            #ifdef INDSOFT
-              //Restore the shmem value after all threads have used it
-              __syncthreads();
-              sh_eps[tid] = temp;
-            #endif
-	    __syncthreads();
-	  }
 
-	}
-	direct[tid] = body_list[tid];
-	__syncthreads();
+  if (flag) prefix1[prefix0[tid] - 1] = tid;                             //with tidś whose leaves have to be opened
+  __syncthreads();                                                      //thread barrier, make sure all warps completed the job
+
+  // step 2
+#ifdef OLDPREFIX
+  int n_bodies  = calc_prefix<DIM2>(prefix0, tid, nbody);
+#else
+  inclusive_scan_block<ADDOP<int>, int>(prefix0, nbody, tid);        // inclusive scan to compute memory offset for each body
+  int n_bodies = prefix0[blockDim.x - 1];                            //Total number of bides extract from the leaves
+  __syncthreads();                                                   // thread barrier to make sure that warps completed their jobs
+#endif
+
+  direct [tid]  = prefix0[tid];                                       //Store a copy of inclusive scan in direct
+  prefix0[tid] -= nbody;                                              //convert inclusive int oexclusive scan
+  prefix0[tid] += 1;                                                  //add unity, since later prefix0[tid] == 0 used to check barrier
+
+  int nl_pre = 0;                                                     //Number of leaves that have already been processed
+
+#define NJMAX (DIM*4)
+  while (n_bodies > 0) {
+    int nb    = min(n_bodies, NJMAX - n_direct);                    //Make sure number of bides to be extracted does not exceed
+    //the amount of allocated shared memory
+
+    // step 0                                                      //nullify part of the body_list that will be filled with bodies
+    for (int i = n_direct; i < n_direct + nb; i += DIM){           //from the leaves that are being processed
+      body_list[i + tid] = 0;
+    }
+    __syncthreads();
+
+    //step 1:
+    if (flag && (direct[tid] <= nb) && (prefix0[tid] > 0))        //make sure that the thread indeed carries a leaf
+      body_list[n_direct + prefix0[tid] - 1] = 1;                 //whose bodies will be extracted
+    __syncthreads();
+
+    //step 2:
+#ifdef OLDPREFIX
+    int nl = calc_prefix<DIM2>(nb, &body_list[n_direct], tid);
+#else
+    int nl = inclusive_scan_array<ADDOP<int>, int>              // inclusive scan to compute number of leaves to process
+      (&body_list[n_direct], nb, tid);            // to make sure that there is enough shared memory for bodies
+#endif
+    nb = direct[prefix1[nl_pre + nl - 1]];                        // number of bodies stored in these leaves
+
+    // step 3:
+    for (int i = n_direct; i < n_direct + nb; i += DIM) {          //segmented fill of the body_list
+      int j = prefix1[nl_pre + body_list[i + tid] - 1];            // compute the first body in shared j-body array
+      body_list[i + tid] = (i + tid - n_direct) -                 //add to the index of the first j-body in a child
+        (prefix0[j] - 1) + sh_body[j];         //the index of the first child in body_list array
+    }
+    __syncthreads();
+
+
+    /**************************************************
+     *  example of what is accomplished in steps 0-4   *
+     *       ---------------------------               *
+     * step 0: body_list = 000000000000000000000       *
+     * step 1: body_list = 100010001000000100100       *
+     * step 2: body_list = 111122223333333444555       *
+     * step 3: body_list = 012301230123456012012       *
+     *         assuming that sh_body[j] = 0            *
+     ***************************************************/
+
+    n_bodies     -= nb;                                   //subtract from n_bodies number of bodies that have been extracted
+    nl_pre       += nl;                                   //increase the number of leaves that where processed
+    direct [tid] -= nb;                                   //subtract the number of extracted bodies in this pass
+    prefix0[tid] = max(prefix0[tid] - nb, 0);             //same here, but do not let the number be negative (GT200 bug!?)
+    n_direct     += nb;                                  //increase the number of bodies to be procssed
+
+    while(n_direct >= DIM) {
+      n_direct -= DIM;
+
+
+      float4 posj  = body_pos[body_list[n_direct + tid]];
+      //             float4 posj  = tex1Dfetch(texBody, body_list[n_direct + tid]);
+      sh_mass[tid] = posj.w;
+      sh_pos [tid] = make_float3(posj.x, posj.y, posj.z);
+      sh_jid [tid] = body_list[n_direct + tid];
+
+#ifdef INDSOFT
+      float   temp = sh_eps [tid];        //Store the value from Shmem into a register
+      sh_eps [tid] = body_vel[body_list[n_direct + tid]].w;  //Load the softening
+#endif
+      __syncthreads();
+#pragma unroll
+      for (int j = 0; j < DIMx; j++)
+      {
+        int selfGrav = (body_i != sh_jid[offs + j]);
+        // 	      if (body_i != sh_jid[offs + j]) //If statement replaced by multiplication
+        {
+          float ds2 =  1.0e10f;
+          direCount++;
+#ifdef DOGRAV
+#ifdef INDSOFT
+          acc_i = add_acc(acc_i, pos_i, sh_mass[offs + j], sh_pos[offs + j], sh_eps[offs + j], ds2, eps2, selfGrav);
+#else
+          acc_i = add_acc(acc_i, pos_i, sh_mass[offs + j], sh_pos[offs + j], ds2, eps2, selfGrav);
+#endif
+#endif
+          ds2 += selfGrav*1.0e10f;
+          if (ds2 < ds2_min) {
+            ngb     = sh_jid[offs + j];
+            ds2_min = ds2;
+          }
+        }
+      }
+#ifdef INDSOFT
+      //Restore the shmem value after all threads have used it
+      __syncthreads();
+      sh_eps[tid] = temp;
+#endif
+      __syncthreads();
+    }
+
+  }
+  direct[tid] = body_list[tid];
+  __syncthreads();
 #endif
       } //end lvl
 
@@ -918,15 +966,15 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
         if((n_stack1 - c_stack0) >= (LMEM_STACK_SIZE << SHIFT))
         {
           //We overwrote our current stack
-	  apprCount = -1; return acc_i;	 
-	}
+          apprCount = -1; return acc_i;	 
+        }
       }
       __syncthreads();
 
 
       /***
-      **** --> copy nodes1 to nodes0: done by reassigning the pointers
-      ***/
+       **** --> copy nodes1 to nodes0: done by reassigning the pointers
+       ***/
       n_nodes0    = n_nodes1;
 
       n_stack_pre = n_stack0;
@@ -938,30 +986,30 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 
   if(n_approx > 0)
   {
-    #ifdef INDSOFT
-      float temp = node_eps[tid];
-    #endif
+#ifdef INDSOFT
+    float temp = node_eps[tid];
+#endif
 
     if (tid < n_approx) {
       int address      = (approx[tid] << 1) + approx[tid];
-      #ifndef TEXTURES
-        float4 monopole  = multipole_data[address    ];
-        float4 octopole0 = multipole_data[address + 1];
-        float4 octopole1 = multipole_data[address + 2];
-      #else
-        float4 monopole  = tex1Dfetch(texMultipole, address);
-        float4 octopole0 = tex1Dfetch(texMultipole, address + 1);
-        float4 octopole1 = tex1Dfetch(texMultipole, address + 2);
-      #endif
+#ifndef TEXTURES
+      float4 monopole  = multipole_data[address    ];
+      float4 octopole0 = multipole_data[address + 1];
+      float4 octopole1 = multipole_data[address + 2];
+#else
+      float4 monopole  = tex1Dfetch(texMultipole, address);
+      float4 octopole0 = tex1Dfetch(texMultipole, address + 1);
+      float4 octopole1 = tex1Dfetch(texMultipole, address + 2);
+#endif
 
       node_mon0[tid] = monopole.w;
       node_mon1[tid] = make_float3(monopole.x,  monopole.y,  monopole.z);
       node_oct0[tid] = make_float3(octopole0.x, octopole0.y, octopole0.z);
       node_oct1[tid] = make_float3(octopole1.x, octopole1.y, octopole1.z);
 
-      #ifdef INDSOFT
-        node_eps[tid]  = octopole0.w;
-      #endif
+#ifdef INDSOFT
+      node_eps[tid]  = octopole0.w;
+#endif
 
     } else {
       //Set non-active memory locations to zero
@@ -970,34 +1018,34 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
       node_oct0[tid] = make_float3(0.0f, 0.0f, 0.0f);
       node_oct1[tid] = make_float3(0.0f, 0.0f, 0.0f);
 
-      #ifdef INDSOFT
-        node_eps[tid]  = 0.01f;
-      #endif
+#ifdef INDSOFT
+      node_eps[tid]  = 0.01f;
+#endif
     }
     __syncthreads();
-  #pragma unroll
+#pragma unroll
     for (int i = 0; i < DIMx; i++)
     {
       apprCount++;
-  #ifdef DOGRAV
-      #ifdef INDSOFT
-        acc_i = add_acc(acc_i, pos_i,
-                        node_mon0[offs + i], node_mon1[offs + i],
-                        node_oct0[offs + i], node_oct1[offs + i], node_eps[offs + i], eps2);
+#ifdef DOGRAV
+#ifdef INDSOFT
+      acc_i = add_acc(acc_i, pos_i,
+          node_mon0[offs + i], node_mon1[offs + i],
+          node_oct0[offs + i], node_oct1[offs + i], node_eps[offs + i], eps2);
 
-      #else
-        acc_i = add_acc(acc_i, pos_i,
-                        node_mon0[offs + i], node_mon1[offs + i],
-                        node_oct0[offs + i], node_oct1[offs + i], eps2);
-      #endif
-  #endif
+#else
+      acc_i = add_acc(acc_i, pos_i,
+          node_mon0[offs + i], node_mon1[offs + i],
+          node_oct0[offs + i], node_oct1[offs + i], eps2);
+#endif
+#endif
     }
 
     __syncthreads();
-    #ifdef INDSOFT
-      node_eps[tid]  = temp;
-      __syncthreads();
-    #endif
+#ifdef INDSOFT
+    node_eps[tid]  = temp;
+    __syncthreads();
+#endif
   } //if n_approx > 0
 
   if(n_direct > 0)
@@ -1006,38 +1054,38 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 
       float4 posj = body_pos[direct[tid]];
 
-  //     float4 posj  = tex1Dfetch(texBody, direct[tid]);
+      //     float4 posj  = tex1Dfetch(texBody, direct[tid]);
       sh_mass[tid] = posj.w;
       sh_pos [tid] = make_float3(posj.x, posj.y, posj.z);
       sh_jid [tid] = direct[tid];
 
-      #ifdef INDSOFT
-        sh_eps [tid] = body_vel[direct[tid]].w;
-      #endif
+#ifdef INDSOFT
+      sh_eps [tid] = body_vel[direct[tid]].w;
+#endif
     } else {
       sh_mass[tid] = 0.0f;
       sh_pos [tid] = make_float3(1.0e10f, 1.0e10f, 1.0e10f);
       sh_jid [tid] = -1;
 
-      #ifdef INDSOFT
-        sh_eps [tid] = 0.01f;
-      #endif
+#ifdef INDSOFT
+      sh_eps [tid] = 0.01f;
+#endif
     }
 
     __syncthreads();
-  #pragma unroll
+#pragma unroll
     for (int j = 0; j < DIMx; j++) {
       if ((sh_jid[offs + j] >= 0)) {
         int selfGrav = (body_i != sh_jid[offs + j]);
         float ds2 =  1.0e10f;
         direCount++;
-  #ifdef DOGRAV
-        #ifdef INDSOFT
-          acc_i = add_acc(acc_i, pos_i, sh_mass[offs + j], sh_pos[offs + j], sh_eps[offs + j], ds2, eps2, selfGrav);
-        #else
-          acc_i = add_acc(acc_i, pos_i, sh_mass[offs + j], sh_pos[offs + j], ds2, eps2, selfGrav);
-        #endif
-  #endif
+#ifdef DOGRAV
+#ifdef INDSOFT
+        acc_i = add_acc(acc_i, pos_i, sh_mass[offs + j], sh_pos[offs + j], sh_eps[offs + j], ds2, eps2, selfGrav);
+#else
+        acc_i = add_acc(acc_i, pos_i, sh_mass[offs + j], sh_pos[offs + j], ds2, eps2, selfGrav);
+#endif
+#endif
         ds2 += selfGrav*1.0e10f;
         if (ds2 < ds2_min) {
           ngb     = sh_jid[offs + j];
@@ -1049,8 +1097,8 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
   }
 
   /***
-  **** --> reduce data between threads
-  ***/
+   **** --> reduce data between threads
+   ***/
   sh_pot[tid] = acc_i.w;
   sh_acc[tid] = make_float3(acc_i.x, acc_i.y, acc_i.z);
   sh_ds2[tid] = ds2_min;
@@ -1066,8 +1114,8 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
       acc_i.y += sh_acc[idx].y;
       acc_i.z += sh_acc[idx].z;
       if (sh_ds2[idx] < ds2_min) {
-	ds2_min = sh_ds2[idx];
-	ngb     = sh_ngb[idx];
+        ds2_min = sh_ds2[idx];
+        ngb     = sh_ngb[idx];
       }
     }
   }
@@ -1082,11 +1130,11 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 
 
   if (ty == 0) {
-  #pragma unroll
+#pragma unroll
     for (int i = 1; i < DIMy; i++){
-        int idx = (i << DIM2x) + tx;
-        direCount  += sh_ds2[idx];
-        apprCount  += sh_ngb[idx];
+      int idx = (i << DIM2x) + tx;
+      direCount  += sh_ds2[idx];
+      apprCount  += sh_ngb[idx];
     }
   }
   __syncthreads();
@@ -1095,189 +1143,189 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 }
 
 
-extern "C" __global__ void
+  extern "C" __global__ void
 __launch_bounds__(NTHREAD)
-dev_approximate_gravity(const int n_active_groups,
-                        int    n_bodies,
-                        float eps2,
-                        uint2 node_begend,
-                        int    *active_groups,
-                        real4  *body_pos,
-                        real4  *multipole_data,
-                        float4 *acc_out,
-                        int    *ngb_out,
-                        int    *active_inout,
-                        int2   *interactions,
-                        float4  *boxSizeInfo,
-                        float4  *groupSizeInfo,
-                        float4  *boxCenterInfo,
-                        float4  *groupCenterInfo,
-                        real4   *body_vel,
-                        int     *MEM_BUF) {
-//                                                    int     grpOffset){
+  dev_approximate_gravity(const int n_active_groups,
+      int    n_bodies,
+      float eps2,
+      uint2 node_begend,
+      int    *active_groups,
+      real4  *body_pos,
+      real4  *multipole_data,
+      float4 *acc_out,
+      int    *ngb_out,
+      int    *active_inout,
+      int2   *interactions,
+      float4  *boxSizeInfo,
+      float4  *groupSizeInfo,
+      float4  *boxCenterInfo,
+      float4  *groupCenterInfo,
+      real4   *body_vel,
+      int     *MEM_BUF) {
+    //                                                    int     grpOffset){
 
 
-  const int blockDim2 = NTHREAD2;
-   __shared__ int shmem[15*(1 << blockDim2)];
-//    __shared__ int shmem[24*(1 << blockDim2)]; is possible on FERMI
-//    int             lmem[LMEM_STACK_SIZE];
+    const int blockDim2 = NTHREAD2;
+    __shared__ int shmem[15*(1 << blockDim2)];
+    //    __shared__ int shmem[24*(1 << blockDim2)]; is possible on FERMI
+    //    int             lmem[LMEM_STACK_SIZE];
 
 
 
-  /*********** check if this block is linked to a leaf **********/
+    /*********** check if this block is linked to a leaf **********/
 
-  int bid = gridDim.x * blockIdx.y + blockIdx.x;
+    int bid = gridDim.x * blockIdx.y + blockIdx.x;
 
-  while(true)
-  {
-
-    if(threadIdx.x == 0)
+    while(true)
     {
-      bid         = atomicAdd(&active_inout[n_bodies], 1);
-      shmem[0]    = bid;
-    }
-  __syncthreads();
 
-  bid   = shmem[0];
-
-  if (bid >= n_active_groups) return;
-
-
-  int tid = threadIdx.y * blockDim.x + threadIdx.x;
-
-  int grpOffset = 0;
-
-//   volatile int *lmem = &MEM_BUF[blockIdx.x*LMEM_STACK_SIZE*blockDim.x + threadIdx.x*LMEM_STACK_SIZE];
-//   int *lmem = &MEM_BUF[blockIdx.x*LMEM_STACK_SIZE*blockDim.x + threadIdx.x*LMEM_STACK_SIZE];
-   int *lmem = &MEM_BUF[blockIdx.x*LMEM_STACK_SIZE*blockDim.x];
-
-
-  /*********** set necessary thread constants **********/
-
-  real4 curGroupSize    = groupSizeInfo[active_groups[bid + grpOffset]];
-  int   groupData       = __float_as_int(curGroupSize.w);
-  uint body_i           =   groupData & CRITMASK;
-  uint nb_i             = ((groupData & INVCMASK) >> CRITBIT) + 1;
-
-  real4 group_pos       = groupCenterInfo[active_groups[bid + grpOffset]];
-
-//   if(tid == 0)
-//   printf("[%f %f %f %f ] \n [%f %f %f %f ] %d %d \n",
-//           curGroupSize.x, curGroupSize.y, curGroupSize.z, curGroupSize.w,
-//           group_pos.x, group_pos.y, group_pos.z, group_pos.w, body_i, nb_i);
-
-
-  int DIM2x = 0;
-  while (((nb_i - 1) >> DIM2x) > 0) DIM2x++;
-
-  DIM2x     = max(DIM2x,4);
-  int DIM2y = blockDim2 - DIM2x;
-
-  int tx = tid & ((1 << DIM2x) - 1);
-  int ty = tid >> DIM2x;
-
-  body_i += tx%nb_i;
-
-  //float4 pos_i = tex1Dfetch(bodies_pos_ref, body_i);   // texture read: 4 floats
-
-
-  float4 pos_i = body_pos[body_i];
-
-
-  int ngb_i;
-
-  float4 acc_i = {0.0f, 0.0f, 0.0f, 0.0f};
-
-  #ifdef INDSOFT
-    eps2 = body_vel[body_i].w;
-    float group_eps = eps2;
-
-    volatile float *reduc = (float*) &shmem[0];
-    reduc[threadIdx.x] = eps2;
-
-    //Find the maximum softening value for the particles in this group
-    __syncthreads();
-    // do reduction in shared mem
-    if(blockDim.x >= 512) if (tid < 256) {reduc[threadIdx.x] = group_eps = fmaxf(group_eps, reduc[threadIdx.x + 256]);} __syncthreads();
-    if(blockDim.x >= 256) if (tid < 128) {reduc[threadIdx.x] = group_eps = fmaxf(group_eps, reduc[threadIdx.x + 128]);} __syncthreads();
-    if(blockDim.x >= 128) if (tid < 64)  {reduc[threadIdx.x] = group_eps = fmaxf(group_eps, reduc[threadIdx.x + 64]);} __syncthreads();
-    if(blockDim.x >= 64) if (tid < 32) { reduc[threadIdx.x] = group_eps = fmaxf(group_eps, reduc[threadIdx.x + 32]);}
-    if(blockDim.x >= 32) if (tid < 16) { reduc[threadIdx.x] = group_eps = fmaxf(group_eps, reduc[threadIdx.x + 16]);}
-
-    if(tid < 8)
-    {
-      reduc[threadIdx.x] = group_eps = fmaxf(group_eps, reduc[threadIdx.x + 8]);
-      reduc[threadIdx.x] = group_eps = fmaxf(group_eps, reduc[threadIdx.x + 4]);
-      reduc[threadIdx.x] = group_eps = fmaxf(group_eps, reduc[threadIdx.x + 2]);
-      reduc[threadIdx.x] = group_eps = fmaxf(group_eps, reduc[threadIdx.x + 1]);
-    }
-    __syncthreads();
-
-    group_eps = reduc[0];
-  #else
-    float group_eps  = 0;
-  #endif
-
-  int apprCount = 0;
-  int direCount = 0;
-
-
-  acc_i = approximate_gravity<blockDim2, 0>( DIM2x, DIM2y, tid, tx, ty,
-                                          body_i, pos_i, group_pos,
-                                          eps2, node_begend,
-                                          multipole_data, body_pos,
-                                          shmem, lmem, ngb_i, apprCount, direCount, boxSizeInfo, curGroupSize, boxCenterInfo,
-                                         group_eps, body_vel);
-  if(apprCount < 0)
-  {
-
-    //Try to get access to the big stack, only one block per time is allowed
-    if(threadIdx.x == 0)
-    {
-      int res = atomicExch(&active_inout[n_bodies+1], 1); //If the old value (res) is 0 we can go otherwise sleep
-      int waitCounter  = 0;
-      while(res != 0)
+      if(threadIdx.x == 0)
       {
-          //Sleep
-          for(int i=0; i < (1024); i++)
-          {
-                  waitCounter += 1;
-          }
-          //Test again
-          shmem[0] = waitCounter;
-          res = atomicExch(&active_inout[n_bodies+1], 1); 
+        bid         = atomicAdd(&active_inout[n_bodies], 1);
+        shmem[0]    = bid;
       }
-    }
+      __syncthreads();
 
-    __syncthreads();
+      bid   = shmem[0];
 
-    lmem = &MEM_BUF[gridDim.x*LMEM_STACK_SIZE*blockDim.x];    //Use the extra large buffer
-    apprCount = direCount = 0;
-    acc_i = approximate_gravity<blockDim2, 8>( DIM2x, DIM2y, tid, tx, ty,
-                                            body_i, pos_i, group_pos,
-                                            eps2, node_begend,
-                                            multipole_data, body_pos,
-                                            shmem, lmem, ngb_i, apprCount, direCount, boxSizeInfo, curGroupSize, boxCenterInfo,
-                                          group_eps, body_vel);
-
-    lmem = &MEM_BUF[blockIdx.x*LMEM_STACK_SIZE*blockDim.x]; //Back to normal location
-
-    if(threadIdx.x == 0)
-    {
-            atomicExch(&active_inout[n_bodies+1], 0); //Release the lock
-    }
-  }//end if apprCount < 0
-
-  if (tid < nb_i) {
-      acc_out     [body_i] = acc_i;
-      ngb_out     [body_i] = ngb_i;
-      active_inout[body_i] = 1;
-      interactions[body_i].x = apprCount;
-      interactions[body_i].y = direCount ;
-    }
+      if (bid >= n_active_groups) return;
 
 
-  }     //end while
-}
+      int tid = threadIdx.y * blockDim.x + threadIdx.x;
+
+      int grpOffset = 0;
+
+      //   volatile int *lmem = &MEM_BUF[blockIdx.x*LMEM_STACK_SIZE*blockDim.x + threadIdx.x*LMEM_STACK_SIZE];
+      //   int *lmem = &MEM_BUF[blockIdx.x*LMEM_STACK_SIZE*blockDim.x + threadIdx.x*LMEM_STACK_SIZE];
+      int *lmem = &MEM_BUF[blockIdx.x*LMEM_STACK_SIZE*blockDim.x];
+
+
+      /*********** set necessary thread constants **********/
+
+      real4 curGroupSize    = groupSizeInfo[active_groups[bid + grpOffset]];
+      int   groupData       = __float_as_int(curGroupSize.w);
+      uint body_i           =   groupData & CRITMASK;
+      uint nb_i             = ((groupData & INVCMASK) >> CRITBIT) + 1;
+
+      real4 group_pos       = groupCenterInfo[active_groups[bid + grpOffset]];
+
+      //   if(tid == 0)
+      //   printf("[%f %f %f %f ] \n [%f %f %f %f ] %d %d \n",
+      //           curGroupSize.x, curGroupSize.y, curGroupSize.z, curGroupSize.w,
+      //           group_pos.x, group_pos.y, group_pos.z, group_pos.w, body_i, nb_i);
+
+
+      int DIM2x = 0;
+      while (((nb_i - 1) >> DIM2x) > 0) DIM2x++;
+
+      DIM2x     = max(DIM2x,4);
+      int DIM2y = blockDim2 - DIM2x;
+
+      int tx = tid & ((1 << DIM2x) - 1);
+      int ty = tid >> DIM2x;
+
+      body_i += tx%nb_i;
+
+      //float4 pos_i = tex1Dfetch(bodies_pos_ref, body_i);   // texture read: 4 floats
+
+
+      float4 pos_i = body_pos[body_i];
+
+
+      int ngb_i;
+
+      float4 acc_i = {0.0f, 0.0f, 0.0f, 0.0f};
+
+#ifdef INDSOFT
+      eps2 = body_vel[body_i].w;
+      float group_eps = eps2;
+
+      volatile float *reduc = (float*) &shmem[0];
+      reduc[threadIdx.x] = eps2;
+
+      //Find the maximum softening value for the particles in this group
+      __syncthreads();
+      // do reduction in shared mem
+      if(blockDim.x >= 512) if (tid < 256) {reduc[threadIdx.x] = group_eps = fmaxf(group_eps, reduc[threadIdx.x + 256]);} __syncthreads();
+      if(blockDim.x >= 256) if (tid < 128) {reduc[threadIdx.x] = group_eps = fmaxf(group_eps, reduc[threadIdx.x + 128]);} __syncthreads();
+      if(blockDim.x >= 128) if (tid < 64)  {reduc[threadIdx.x] = group_eps = fmaxf(group_eps, reduc[threadIdx.x + 64]);} __syncthreads();
+      if(blockDim.x >= 64) if (tid < 32) { reduc[threadIdx.x] = group_eps = fmaxf(group_eps, reduc[threadIdx.x + 32]);}
+      if(blockDim.x >= 32) if (tid < 16) { reduc[threadIdx.x] = group_eps = fmaxf(group_eps, reduc[threadIdx.x + 16]);}
+
+      if(tid < 8)
+      {
+        reduc[threadIdx.x] = group_eps = fmaxf(group_eps, reduc[threadIdx.x + 8]);
+        reduc[threadIdx.x] = group_eps = fmaxf(group_eps, reduc[threadIdx.x + 4]);
+        reduc[threadIdx.x] = group_eps = fmaxf(group_eps, reduc[threadIdx.x + 2]);
+        reduc[threadIdx.x] = group_eps = fmaxf(group_eps, reduc[threadIdx.x + 1]);
+      }
+      __syncthreads();
+
+      group_eps = reduc[0];
+#else
+      float group_eps  = 0;
+#endif
+
+      int apprCount = 0;
+      int direCount = 0;
+
+
+      acc_i = approximate_gravity<blockDim2, 0>( DIM2x, DIM2y, tid, tx, ty,
+          body_i, pos_i, group_pos,
+          eps2, node_begend,
+          multipole_data, body_pos,
+          shmem, lmem, ngb_i, apprCount, direCount, boxSizeInfo, curGroupSize, boxCenterInfo,
+          group_eps, body_vel);
+      if(apprCount < 0)
+      {
+
+        //Try to get access to the big stack, only one block per time is allowed
+        if(threadIdx.x == 0)
+        {
+          int res = atomicExch(&active_inout[n_bodies+1], 1); //If the old value (res) is 0 we can go otherwise sleep
+          int waitCounter  = 0;
+          while(res != 0)
+          {
+            //Sleep
+            for(int i=0; i < (1024); i++)
+            {
+              waitCounter += 1;
+            }
+            //Test again
+            shmem[0] = waitCounter;
+            res = atomicExch(&active_inout[n_bodies+1], 1); 
+          }
+        }
+
+        __syncthreads();
+
+        lmem = &MEM_BUF[gridDim.x*LMEM_STACK_SIZE*blockDim.x];    //Use the extra large buffer
+        apprCount = direCount = 0;
+        acc_i = approximate_gravity<blockDim2, 8>( DIM2x, DIM2y, tid, tx, ty,
+            body_i, pos_i, group_pos,
+            eps2, node_begend,
+            multipole_data, body_pos,
+            shmem, lmem, ngb_i, apprCount, direCount, boxSizeInfo, curGroupSize, boxCenterInfo,
+            group_eps, body_vel);
+
+        lmem = &MEM_BUF[blockIdx.x*LMEM_STACK_SIZE*blockDim.x]; //Back to normal location
+
+        if(threadIdx.x == 0)
+        {
+          atomicExch(&active_inout[n_bodies+1], 0); //Release the lock
+        }
+      }//end if apprCount < 0
+
+      if (tid < nb_i) {
+        acc_out     [body_i] = acc_i;
+        ngb_out     [body_i] = ngb_i;
+        active_inout[body_i] = 1;
+        interactions[body_i].x = apprCount;
+        interactions[body_i].y = direCount ;
+      }
+
+
+    }     //end while
+  }
 
 

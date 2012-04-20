@@ -269,6 +269,7 @@ private:
       drawWireBox(boxMin, boxMax);
     }
   }
+
   octree *m_tree;
   octree::IterationData &m_idata;
   bool iterationsRemaining;
