@@ -520,9 +520,7 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
           if((n_stack1 - c_stack0) >= (LMEM_STACK_SIZE << SHIFT))
           {
             //We overwrote our current stack
-#if 0
             apprCount = -1; 
-#endif
             return acc_i;	 
           }
         }
@@ -600,9 +598,7 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 #pragma unroll
           for (int i = 0; i < DIMx; i++)
             acc_i = add_acc(acc_i, pos_i, node_mon0[offs + i], node_mon1[offs+i], eps2);
-#if 0
           apprCount += DIMx;
-#endif
           __syncthreads();
         }
         __syncthreads();
@@ -735,9 +731,7 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
         if((n_stack1 - c_stack0) >= (LMEM_STACK_SIZE << SHIFT))
         {
           //We overwrote our current stack
-#if 0
           apprCount = -1; 
-#endif
           return acc_i;	 
         }
       }
@@ -785,9 +779,7 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 #pragma unroll
     for (int i = 0; i < DIMx; i++)
       acc_i = add_acc(acc_i, pos_i, node_mon0[offs + i], node_mon1[offs+i],eps2);
-#if 0
     apprCount += DIMx;
-#endif
 
     __syncthreads();
   } //if n_approx > 0
@@ -841,7 +833,8 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 
 
   //Sum the interaction counters
-#if 0
+  float  *sh_ds2 = (float*)&sh_acc[DIM];
+  int    *sh_ngb = (int*  )&sh_ds2[DIM];
   sh_ds2[tid] = direCount;
   sh_ngb[tid] = apprCount;
 
@@ -857,7 +850,6 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
     }
   }
   __syncthreads();
-#endif
 
   return acc_i;
 }
