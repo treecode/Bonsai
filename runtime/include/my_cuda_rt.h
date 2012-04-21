@@ -742,6 +742,8 @@ namespace my_dev {
     
     void *  get_devMem() {return (void*)hDeviceMem;}
     void* d() {return (void*)hDeviceMem;}
+    
+    T* raw_p() {return  hDeviceMem;}
 
     void*   p() {return &hDeviceMem;}
     void*   a(int offset)
