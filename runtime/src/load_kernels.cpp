@@ -1,5 +1,20 @@
 #include "octree.h"
 
+// #define USE_THRUST
+
+
+#ifdef USE_THRUST
+  extern "C" void thrust_sort_32b(my_dev::context &devContext, 
+                      my_dev::dev_mem<uint> &srcKeys,     my_dev::dev_mem<uint> &srcValues,
+                      my_dev::dev_mem<int>  &keysOutput,  my_dev::dev_mem<uint> &keysAPing,
+                      my_dev::dev_mem<uint> &valuesOutput,my_dev::dev_mem<uint> &valuesAPing,
+                      int N, int numberOfBits);
+  extern "C" void thrust_gpuCompact(my_dev::context &devContext, 
+                        my_dev::dev_mem<uint> &srcValues,
+                        my_dev::dev_mem<uint> &output,                        
+                        int N, int *validCount);
+#endif
+
 void octree::set_context( bool disable_timing) {
   
   devContext.create(disable_timing);
@@ -318,6 +333,14 @@ void octree::gpuCompact(my_dev::context &devContext,
                         int N, int *validCount)
 {
 
+
+// thrust_gpuCompact(devContext, 
+//                   srcValues,
+//                   output,                        
+//                   N, validCount);
+
+
+  
   // In the next step we associate the GPU memory with the Kernel arguments
   
 //   my_dev::dev_mem<uint> counts(devContext, 512), countx(devContext, 512);
@@ -378,6 +401,7 @@ void octree::gpuCompact(my_dev::context &devContext,
   this->devMemCountsx.d2h();
   *validCount = this->devMemCountsx[0];
   //printf("Total number of valid items: %d \n", countx[0]);
+ 
  
 
 }
@@ -555,18 +579,29 @@ void  octree::gpuSort(my_dev::context &devContext,
   extractInt.execute();
   fillSequence.execute();
   
+  //TODO Jb, uhh why copy? this is allready on host?
   simpleKeys.d2h();
   permutation.d2h();
   
-
-  //Now sort the first 32bit keys
-  //Using 32bit sort with key and value seperated    
-  gpuSort_32b(devContext, 
+  
+  
+  #ifdef USE_THRUST
+  
+  thrust_sort_32b(devContext, 
                    simpleKeys, permutation,
                    output32b, simpleKeys,
                    valuesOutput,permutation,
                    N, 32);
-
+  
+  #else
+    //Now sort the first 32bit keys
+    //Using 32bit sort with key and value seperated    
+    gpuSort_32b(devContext, 
+                    simpleKeys, permutation,
+                    output32b, simpleKeys,
+                    valuesOutput,permutation,
+                    N, 32);
+  #endif  
 
   //Now reorder the main keys
   //Use output as the new output/src value thing buffer
@@ -596,14 +631,26 @@ void  octree::gpuSort(my_dev::context &devContext,
   extractInt.execute();
   
   fillSequence.execute();
+  
+  #ifdef USE_THRUST
+  
+    thrust_sort_32b(devContext, 
+                    simpleKeys, permutation,
+                    output32b, simpleKeys,
+                    valuesOutput,permutation,
+                    N, 32);
+  
+  #else
+    //Now sort the 2nd 32bit keys
+    //Using 32bit sort with key and value seperated    
+    gpuSort_32b(devContext, 
+                    simpleKeys, permutation,
+                    output32b, simpleKeys,
+                    valuesOutput,permutation,
+                    N, 32);
+  #endif   
 
-  //Now sort the 2nd 32bit keys
-  //Using 32bit sort with key and value seperated    
-  gpuSort_32b(devContext, 
-                   simpleKeys, permutation,
-                   output32b, simpleKeys,
-                   valuesOutput,permutation,
-                   N, 32);
+
                    
   reOrderKeysValues.execute();
   
@@ -634,15 +681,37 @@ void  octree::gpuSort(my_dev::context &devContext,
   fillSequence.execute();
   //Now sort the 32bit keys
   //Using int2 with key and value combined
+  
+  
+  #ifdef USE_THRUST
+  
+    thrust_sort_32b(devContext, 
+                    simpleKeys, permutation,
+                    output32b, simpleKeys,
+                    valuesOutput,permutation,
+                    N, 32);
+  
+  #else
+    //Now sort the 2nd 32bit keys
+    //Using 32bit sort with key and value seperated    
+    gpuSort_32b(devContext, 
+                    simpleKeys, permutation,
+                    output32b, simpleKeys,
+                    valuesOutput,permutation,
+                    N, 32);
+  #endif   
+  
+  
+  
   //See sortArray4
   //Using key and value in a seperate array
   //Now sort the 2nd 32bit keys
   //Using 32bit sort with key and value seperated    
-  gpuSort_32b(devContext, 
-              simpleKeys, permutation,
-              output32b, simpleKeys,
-              valuesOutput,permutation,
-              N, 32);  
+//   gpuSort_32b(devContext, 
+//               simpleKeys, permutation,
+//               output32b, simpleKeys,
+//               valuesOutput,permutation,
+//               N, 32);  
 
   reOrderKeysValues.execute();
 }
