@@ -517,6 +517,7 @@ int main(int argc, char** argv)
   float  killDistance   = -1.0;
   float  remoDistance   = -1.0;
   int    snapShotAdd    =  0;
+  int rebuild_tree_rate = 5;
 
 
    if (argc <= 1) {
@@ -533,6 +534,7 @@ int main(int argc, char** argv)
     cout << "\t-[Killlll distance  (-1 to disable, is also default)]\n";
     cout << "\t-[Particle removal distance  (-1 to disable, is also default)]\n";
     cout << "\t-[Value to add to the snapshot value (0 is default)] \n";
+    cout << "\t-[Rebuild tree every # steps (2 is default)] \n";
 
     exit(0);
   }
@@ -576,6 +578,10 @@ int main(int argc, char** argv)
   {
     snapShotAdd = atoi(argv[12]);
   }
+  if(argc > 13)
+  {
+    rebuild_tree_rate = atoi(argv[13]);
+  }
   
   cout << "Used settings: \n";
   cout << "Theta: \t\t"             << theta        << "\t\teps: \t\t"          << eps << endl;
@@ -584,12 +590,13 @@ int main(int argc, char** argv)
   cout << "Input file: \t"        << fileName     << "\t\tdevID: \t\t"        << devID << endl;
   cout << "Kill distance: \t"      << killDistance     << "\t\tRemove dist: \t"   << remoDistance << endl;
   cout << "Snapshot Addition: \t"  << snapShotAdd << endl;
+  cout << "Rebuild tree every " << rebuild_tree_rate << " timestep\n";
 
   int NTotal, NFirst, NSecond, NThird;
   NTotal = NFirst = NSecond = NThird = 0;
 
   //Creat the octree class and set the properties
-  octree *tree = new octree(argv, devID, theta, eps, snapshotFile, snapshotIter,  timeStep, tEnd, killDistance, (int)remoDistance, snapShotAdd);
+  octree *tree = new octree(argv, devID, theta, eps, snapshotFile, snapshotIter,  timeStep, tEnd, killDistance, (int)remoDistance, snapShotAdd, rebuild_tree_rate);
                             
                             
   //Get parallel processing information  
