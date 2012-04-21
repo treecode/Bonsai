@@ -24,20 +24,20 @@ extern "C" __global__ void dataReorderR4(const int n_particles,
    destination[idx] = source[newIndex];  
 }
 
-extern "C" __global__ void dataReorderF2(const int n_particles,
-                                         float2 *source,
-                                         float2 *destination,
-                                         uint  *permutation) {
-  const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
-  const int tid = threadIdx.y * blockDim.x + threadIdx.x;
-  const int dim =  blockDim.x * blockDim.y;
-  
-  int idx = bid * dim + tid;
-  if (idx >= n_particles) return;
-
-  int newIndex = permutation[idx];
-  destination[idx] = source[newIndex];  
-}
+// extern "C" __global__ void dataReorderF2(const int n_particles,
+//                                          float2 *source,
+//                                          float2 *destination,
+//                                          uint  *permutation) {
+//   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
+//   const int tid = threadIdx.y * blockDim.x + threadIdx.x;
+//   const int dim =  blockDim.x * blockDim.y;
+//   
+//   int idx = bid * dim + tid;
+//   if (idx >= n_particles) return;
+// 
+//   int newIndex = permutation[idx];
+//   destination[idx] = source[newIndex];  
+// }
 
 extern "C" __global__ void dataReorderI1(const int n_particles,
                                          int *source,
@@ -88,7 +88,8 @@ extern "C" __global__ void extractKeyAndPerm(uint4 *newKeys, uint4 *keys, uint *
 
 extern "C" __global__ void dataReorderCombined(const int N, uint4 *keyAndPerm,
                                       real4 *source1, real4* destination1,
-                                      real4 *source2, real4* destination2) {
+                                      real4 *source2, real4* destination2,
+                                      real4 *source3, real4* destination3) {
   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
   const int tid = threadIdx.y * blockDim.x + threadIdx.x;
   const int dim =  blockDim.x * blockDim.y;
@@ -99,11 +100,87 @@ extern "C" __global__ void dataReorderCombined(const int N, uint4 *keyAndPerm,
   int newIndex      = keyAndPerm[idx].w;
   destination1[idx] = source1[newIndex];
   destination2[idx] = source2[newIndex];  
-//   destination1[idx] = source1[newIndex];  
+  destination3[idx] = source3[newIndex];  
 //   destination1[idx] = source1[newIndex];  
 //   destination1[idx] = source1[newIndex];    
 }
 
+extern "C" __global__ void dataReorderCombined2(const int N, uint4 *keyAndPerm,
+                                      real4 *source1, real4* destination1,
+                                      real4 *source2, real4* destination2,
+                                      real4 *source3, real4* destination3) {
+
+  const int blockSize   = blockDim.x;
+  unsigned int idx        = blockIdx.x*(blockSize*2) + threadIdx.x;
+  unsigned int gridSize = blockSize*2*gridDim.x;
+  
+
+  while (idx < N)
+  {
+    if (idx             < N)
+    {
+      int newIndex      = keyAndPerm[idx].w;
+      destination1[idx] = source1[newIndex];
+      destination2[idx] = source2[newIndex];  
+      destination3[idx] = source3[newIndex]; 
+    }
+    if (idx + blockSize < N)
+    {
+      int newIndex      = keyAndPerm[idx + blockSize].w;
+      destination1[idx + blockSize] = source1[newIndex];
+      destination2[idx + blockSize] = source2[newIndex];  
+      destination3[idx + blockSize] = source3[newIndex]; 
+    }
+    idx += gridSize;
+  }
+}
+
+extern "C" __global__ void dataReorderCombined3(const int N, uint4 *keyAndPerm,
+                                      real4 *source1, real4* destination1,
+                                      real4 *source2, real4* destination2,
+                                      real4 *source3, real4* destination3) {
+
+  const int blockSize   = blockDim.x;
+  unsigned int idx        = blockIdx.x*(blockSize) + threadIdx.x;
+  unsigned int gridSize = blockSize*gridDim.x;
+  
+
+  while (idx < N)
+  {
+    if (idx             < N)
+    {
+      int newIndex      = keyAndPerm[idx].w;
+      destination1[idx] = source1[newIndex];
+      destination2[idx] = source2[newIndex];  
+      destination3[idx] = source3[newIndex]; 
+    }
+    idx += gridSize;
+  }
+}
+
+
+
+
+
+
+
+
+
+
+extern "C" __global__ void dataReorderF2(const int N, uint4 *keyAndPerm,
+                                         float2 *source1, float2 *destination1,
+                                         int    *source2, int *destination2) {
+  const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
+  const int tid = threadIdx.y * blockDim.x + threadIdx.x;
+  const int dim =  blockDim.x * blockDim.y;
+  
+  int idx = bid * dim + tid;
+  if (idx >= N) return;
+
+  int newIndex      = keyAndPerm[idx].w;
+  destination1[idx] = source1[newIndex];
+  destination2[idx] = source2[newIndex];  
+}
 
 
 
