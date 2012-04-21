@@ -9,7 +9,6 @@ static double de_max = 0;
 static double dde_max = 0;  
 
 
-#define GRAVITY_VS_BUILD_STEPS 5
 
 void octree::makeLET()
 {
@@ -59,7 +58,8 @@ bool octree::iterate_once(IterationData &idata) {
     {      
       if(nProcs > 1)
       { 
-       if(iter % GRAVITY_VS_BUILD_STEPS == 0) 
+       if(iter % rebuild_tree_rate == 0) 
+//        if(0)
 //        if(1)
         {     
           //If we do a redistribution we _always_ have to do 
@@ -101,7 +101,7 @@ bool octree::iterate_once(IterationData &idata) {
    // bool rebuild_tree = Nact_since_last_tree_rebuild > 4*this->localTree.n;   
     bool rebuild_tree = true;
 
-    rebuild_tree = ((iter % GRAVITY_VS_BUILD_STEPS) == 0);    
+    rebuild_tree = ((iter % rebuild_tree_rate) == 0);    
     if(rebuild_tree)
     {
       t1 = get_time();
@@ -211,7 +211,17 @@ bool octree::iterate_once(IterationData &idata) {
       return true;
     }
     
+<<<<<<< HEAD
   iter++;
+=======
+   
+    iter++; 
+    /*if((iter % 50) == 0)
+    {
+      if(removeDistance > 0) checkRemovalDistance(this->localTree);
+    }
+    */
+>>>>>>> added a runtime Rebuild tree parameter. Can be changed at runtime, see ./main help
 
   return false;
 }
@@ -295,7 +305,16 @@ void octree::iterate() {
   for(int i=0; i < 10000000; i++) //Large number, limit
   {
     if (true == iterate_once(idata))
+<<<<<<< HEAD
         break;    
+=======
+        break;
+
+#if 0
+    iter++;
+#endif
+    
+>>>>>>> added a runtime Rebuild tree parameter. Can be changed at runtime, see ./main help
   } //end for i
   
   iterate_teardown(idata);
