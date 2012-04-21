@@ -346,7 +346,6 @@ void octree::predict(tree_structure &tree)
 
   predictParticles.setWork(tree.n, 128);
   predictParticles.execute();
-  clFinish(devContext.get_command_queue());
   
   //Compact the valid list to get a list of valid groups
   gpuCompact(devContext, tree.activeGrpList, tree.active_group_list,
@@ -372,7 +371,6 @@ void octree::setActiveGrpsFunc(tree_structure &tree)
 
   setActiveGrps.setWork(tree.n, 128);
   setActiveGrps.execute();
-  clFinish(devContext.get_command_queue());
 
   //Compact the valid list to get a list of valid groups
   gpuCompact(devContext, tree.activeGrpList, tree.active_group_list,
@@ -641,7 +639,7 @@ void octree::correct(tree_structure &tree)
 
   correctParticles.setWork(tree.n, 128);
   correctParticles.execute();
-  clFinish(devContext.get_command_queue());
+//   clFinish(devContext.get_command_queue());
 
 
   computeDt.set_arg<int>(0,    &tree.n);
@@ -659,7 +657,7 @@ void octree::correct(tree_structure &tree)
 
   computeDt.setWork(tree.n, 128);
   computeDt.execute();
-  clFinish(devContext.get_command_queue());
+//   clFinish(devContext.get_command_queue());
 }
 
 
