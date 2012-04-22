@@ -3,9 +3,6 @@
 
 #include "node_specs.h"
 
-extern __device__ int undilate3(uint2 key) ;
-extern __device__ uint2 dilate3(int value) ;
-
 __device__ void sh_MinMax2(int i, int j, float3 *r_min, float3 *r_max, volatile float3 *sh_rmin, volatile  float3 *sh_rmax)
 {
   sh_rmin[i].x  = (*r_min).x = fminf((*r_min).x, sh_rmin[j].x);
@@ -99,8 +96,6 @@ extern "C" __global__ void compute_leaf(const int n_leafs,
                                             double4 *multipole,
                                             real4 *nodeLowerBounds,
                                             real4 *nodeUpperBounds,
-//                                             float3 *lowerBounds,
-//                                             float3 *upperBounds,
                                             real4  *body_vel,
                                             uint *body_id) {
 

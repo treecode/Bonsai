@@ -480,11 +480,35 @@ extern "C" __global__ void build_level_list(const int n_nodes,
 extern "C" __global__ void build_group_list2(int    n_particles,
                                              uint  *validList,
                                              real4  *bodies_pos,
-                                             const float DIST)
+                                             const float DIST,
+                                             int   *node_level_list,
+                                             int   treeDepth)
 {
   uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   uint tid = threadIdx.x;
   uint idx = bid * blockDim.x + tid;
+
+  __shared__ int shmem[128];
+
+  //Compact the node_level_list
+  if(bid == 0)
+  {
+    if(threadIdx.x < 32)
+    {
+      shmem[threadIdx.x] = node_level_list[threadIdx.x];
+    }
+
+    __syncthreads(); //Can most likely do without since its one warp
+
+    //Only selection writes
+    if(threadIdx.x < 32)
+    {
+      node_level_list[threadIdx.x]  = shmem[threadIdx.x*2];
+      if(threadIdx.x == treeDepth-1)
+          node_level_list[threadIdx.x] = shmem[threadIdx.x*2-1]+1;
+    }
+  }//if bid == 0
+  //end compact node level list
 
   //Note that we do not include the final particle
   //Since there is no reason to check it

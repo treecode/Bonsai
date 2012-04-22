@@ -323,7 +323,7 @@ protected:
   // scan & sort algorithm
   my_dev::kernel  compactCount, exScanBlock, compactMove, splitMove;
   my_dev::kernel  sortCount, sortMove;
-  my_dev::kernel  extractInt, fillSequence, reOrderKeysValues;
+  my_dev::kernel  extractInt, reOrderKeysValues;
   my_dev::kernel  convertKey64to96, extractKeyAndPerm;
   my_dev::kernel  dataReorderR4;
   my_dev::kernel  dataReorderF2;
