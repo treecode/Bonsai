@@ -18,6 +18,7 @@ http://github.com/treecode/Bonsai
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
+#define M_PI        3.14159265358979323846264338328
 #endif
 
 #include <iostream>
@@ -252,6 +253,242 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
 }
 
 
+double rot[3][3];
+
+void rotmat(double i,double w)
+{
+    rot[0][0] = cos(w);
+    rot[0][1] = -cos(i)*sin(w);
+    rot[0][2] = -sin(i)*sin(w);
+    rot[1][0] = sin(w);
+    rot[1][1] = cos(i)*cos(w);
+    rot[1][2] = sin(i)*cos(w);
+    rot[2][0] = 0.0;
+    rot[2][1] = -sin(i);
+    rot[2][2] = cos(i);
+    fprintf(stderr,"%g %g %g\n",rot[0][0], rot[0][1], rot[0][2]);
+    fprintf(stderr,"%g %g %g\n",rot[1][0], rot[1][1], rot[1][2]);
+    fprintf(stderr,"%g %g %g\n",rot[2][0], rot[2][1], rot[2][2]);
+}
+
+void rotate(double rot[3][3],float *vin)
+{
+    static double vout[3];
+
+    for(int i=0; i<3; i++) {
+      vout[i] = 0;
+      for(int j=0; j<3; j++)
+        vout[i] += rot[i][j] * vin[j]; 
+      /* Remember the rotation matrix is the transpose of rot */
+    }
+    for(int i=0; i<3; i++)
+            vin[i] = (float) vout[i];
+}
+
+void euler(vector<real4> &bodyPositions,
+           vector<real4> &bodyVelocities,
+           double inc, double omega)
+{
+  rotmat(inc,omega);
+  size_t nobj = bodyPositions.size();
+  for(int i=0; i < nobj; i++)
+  {
+      float r[3], v[3];
+      r[0] = bodyPositions[i].x;
+      r[1] = bodyPositions[i].y;
+      r[2] = bodyPositions[i].z;
+      v[0] = bodyVelocities[i].x;
+      v[1] = bodyVelocities[i].y;
+      v[2] = bodyVelocities[i].z;
+
+      rotate(rot,r);
+      rotate(rot,v);
+
+      bodyPositions[i].x = r[0]; 
+      bodyPositions[i].y = r[1]; 
+      bodyPositions[i].z = r[2]; 
+      bodyVelocities[i].x = v[0];
+      bodyVelocities[i].y = v[1];
+      bodyVelocities[i].z = v[2];
+  }
+}
+
+
+
+double centerGalaxy(vector<real4> &bodyPositions,
+                    vector<real4> &bodyVelocities)
+{
+    size_t nobj = bodyPositions.size();
+    float xc, yc, zc, vxc, vyc, vzc, mtot;
+  
+
+    mtot = 0;
+    xc = yc = zc = vxc = vyc = vzc = 0;
+    for(int i=0; i< nobj; i++) {
+            xc   += bodyPositions[i].w*bodyPositions[i].x;
+            yc   += bodyPositions[i].w*bodyPositions[i].y;
+            zc   += bodyPositions[i].w*bodyPositions[i].z;
+            vxc  += bodyPositions[i].w*bodyVelocities[i].x;
+            vyc  += bodyPositions[i].w*bodyVelocities[i].y;
+            vzc  += bodyPositions[i].w*bodyVelocities[i].z;
+            mtot += bodyPositions[i].w;
+    }
+    xc /= mtot;
+    yc /= mtot;
+    zc /= mtot;
+    vxc /= mtot;
+    vyc /= mtot;
+    vzc /= mtot;
+    for(int i=0; i< nobj; i++)
+    {
+      bodyPositions[i].x  -= xc;
+      bodyPositions[i].y  -= yc;
+      bodyPositions[i].z  -= zc;
+      bodyVelocities[i].x -= vxc;
+      bodyVelocities[i].y -= vyc;
+      bodyVelocities[i].z -= vzc;
+    }
+    
+    return mtot;
+}
+
+
+
+
+int setupMergerModel(vector<real4> &bodyPositions1,
+                     vector<real4> &bodyVelocities1,
+                     vector<int>   &bodyIDs1,
+                     vector<real4> &bodyPositions2,
+                     vector<real4> &bodyVelocities2,
+                     vector<int>   &bodyIDs2){
+        int i;
+        double ds=1.0, vs, ms=1.0;
+        double mu1, mu2, vp;
+        double b=1.0, rsep=10.0;
+        double x, y, vx, vy, x1, y1, vx1, vy1 ,  x2, y2, vx2, vy2;
+        double theta, tcoll;
+        double inc1=0, omega1=0;
+        double inc2=0, omega2=0;
+
+
+        cout << "Enter size ratio (for gal2): ";
+        cin >> ds;
+        cout << "Enter mass ratio (for gal2): ";
+        cin >> ms;
+        cout << "Enter relative impact parameter: ";
+        cin >> b;
+        
+        cout << "Enter initial separation: ";
+        cin >> rsep;
+        cout << "Enter Euler angles for first galaxy:\n";
+        cout << "Enter inclination: ";
+        cin >> inc1;
+        cout << "Enter omega: ";
+        cin >> omega1;
+        cout << "Enter Euler angles for second galaxy:\n";
+        cout << "Enter inclination: ";
+        cin >> inc2;
+        cout << "Enter omega: ";
+        cin >> omega2;
+
+
+        double inc1_inp, inc2_inp, om2_inp, om1_inp;
+        
+        inc1_inp = inc1;
+        inc2_inp = inc2;
+        om1_inp = omega1;
+        om2_inp = omega1;
+
+
+        inc1   *= M_PI/180.;
+        inc2   *= M_PI/180.;
+        omega1 *= M_PI/180.;
+        omega2 *= M_PI/180.;
+        omega1 += M_PI;
+
+        fprintf(stderr,"Size ratio: %f Mass ratio: %f \n", ds, ms);
+        fprintf(stderr,"Relative impact par: %f Initial sep: %f \n", b, rsep);
+        fprintf(stderr,"Euler angles first: %f %f Second: %f %f \n",
+                        inc1, omega1,inc2,omega2);
+
+        vs = sqrt(ms/ds); /* adjustment for internal velocities */
+
+
+        //Center everything in galaxy 1 and galaxy 2
+        double galaxyMass1 = centerGalaxy(bodyPositions1, bodyVelocities1);
+        double galaxyMass2 = centerGalaxy(bodyPositions2, bodyVelocities2);
+
+
+        galaxyMass2 = ms*galaxyMass2;             //Adjust total mass
+
+        mu1 =  galaxyMass2/(galaxyMass1 + galaxyMass2);
+        mu2 = -galaxyMass1/(galaxyMass1 + galaxyMass2);
+        
+        double m1 = galaxyMass1;
+        double m2 = galaxyMass2;
+
+        
+        /* Relative Parabolic orbit - anti-clockwise */
+        if( b > 0 ) {
+                vp = sqrt(2.0*(m1 + m2)/b);
+                x = 2*b - rsep;  y = -2*sqrt(b*(rsep-b));
+                vx = sqrt(b*(rsep-b))*vp/rsep; vy = b*vp/rsep;
+        }
+        else {
+                b = 0;
+                x = - rsep; y = 0.0;
+                vx = sqrt(2.0*(m1 + m2)/rsep); vy = 0.0;
+        }
+
+        /* Calculate collison time */
+        if( b > 0 ) {
+                theta = atan2(y,x);
+                tcoll = (0.5*tan(0.5*theta) + pow(tan(0.5*theta),3.0)/6.)*4*b/vp;
+                fprintf(stderr,"Collision time is t=%g\n",tcoll);
+        }
+        else {
+                tcoll = -pow(rsep,1.5)/(1.5*sqrt(2.0*(m1+m2)));
+                fprintf(stderr,"Collision time is t=%g\n",tcoll);
+        }
+
+        /* These are the orbital adjustments for a parabolic encounter */
+        /* Change to centre of mass frame */
+        x1  =  mu1*x;  x2   =  mu2*x;     
+        y1  =  mu1*y;  y2   =  mu2*y;
+        vx1 =  mu1*vx; vx2  =  mu2*vx;
+        vy1 =  mu1*vy; vy2  =  mu2*vy;
+
+
+        /* Rotate the galaxies */
+        euler(bodyPositions1, bodyVelocities1, inc1,omega1);
+        euler(bodyPositions2, bodyVelocities2, inc2,omega2);
+
+        for(i=0; i< bodyPositions1.size(); i++) {
+                bodyPositions1[i].x  = (float) (bodyPositions1[i].x  + x1);
+                bodyPositions1[i].y  = (float) (bodyPositions1[i].y  + y1);
+                bodyVelocities1[i].x = (float) (bodyVelocities1[i].x + vx1);
+                bodyVelocities1[i].y = (float) (bodyVelocities1[i].y + vy1);
+        }
+        /* Rescale and reset the second galaxy */
+        for(i=0; i< bodyPositions2.size(); i++) {
+                bodyPositions2[i].w = (float) ms*bodyPositions2[i].w;
+                bodyPositions2[i].x = (float) (ds*bodyPositions2[i].x + x2);
+                bodyPositions2[i].y = (float) (ds*bodyPositions2[i].y + y2);
+                bodyPositions2[i].z = (float) ds*bodyPositions2[i].z;
+                bodyVelocities2[i].x = (float) (vs*bodyVelocities2[i].x + vx2);
+                bodyVelocities2[i].y = (float) (vs*bodyVelocities2[i].y + vy2);
+                bodyVelocities2[i].z = (float) vs*bodyVelocities2[i].z;
+        }
+
+
+        //Put them into one 
+        bodyPositions1.insert(bodyPositions1.end(),  bodyPositions2.begin(), bodyPositions2.end());
+        bodyVelocities1.insert(bodyVelocities1.end(), bodyVelocities2.begin(), bodyVelocities2.end());
+        bodyIDs1.insert(bodyIDs1.end(), bodyIDs2.begin(), bodyIDs2.end());
+  
+
+        return 0;
+}
 
 
 long long my_dev::base_mem::currentMemUsage;
@@ -395,6 +632,27 @@ int main(int argc, char** argv)
   {
     tree->ICRecv(0, bodyPositions, bodyVelocities,  bodyIDs);
   }
+  
+  
+  //#define SETUP_MERGER
+  #ifdef SETUP_MERGER
+    vector<real4> bodyPositions2;
+    vector<real4> bodyVelocities2;
+    vector<int>   bodyIDs2;  
+    
+    bodyPositions2.insert(bodyPositions2.begin(),   bodyPositions.begin(),  bodyPositions.end());
+    bodyVelocities2.insert(bodyVelocities2.begin(), bodyVelocities.begin(), bodyVelocities.end());
+    bodyIDs2.insert(bodyIDs2.begin(), bodyIDs.begin(), bodyIDs.end());
+    
+    
+    setupMergerModel(bodyPositions,  bodyVelocities,  bodyIDs,
+                     bodyPositions2, bodyVelocities2, bodyIDs2);
+    
+    NTotal *= 2;
+    NFirst *= 2;
+    NSecond *= 2;
+    NThird *= 2;
+  #endif
   
   
   //Set the properties of the data set, it only is really used by process 0, which does the 
