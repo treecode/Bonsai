@@ -4,10 +4,8 @@
 #include "node_specs.h"
 
 //Helper functions
-
 //Reorders data 
 
-//extern __device__ int undilate3(uint2 key) ;
 
 extern "C" __global__ void dataReorderR4(const int n_particles,
                                          real4 *source,
@@ -159,14 +157,6 @@ extern "C" __global__ void dataReorderCombined3(const int N, uint4 *keyAndPerm,
 }
 
 
-
-
-
-
-
-
-
-
 extern "C" __global__ void dataReorderF2(const int N, uint4 *keyAndPerm,
                                          float2 *source1, float2 *destination1,
                                          int    *source2, int *destination2) {
@@ -186,7 +176,7 @@ extern "C" __global__ void dataReorderF2(const int N, uint4 *keyAndPerm,
 
 
 //Extract 1 of the 4 items of an uint4 key and move it into a 32bit array
-extern "C" __global__ void extractInt(uint4 *keys,  uint *simpleKeys, const int N, int keyIdx)
+extern "C" __global__ void extractInt2(uint4 *keys,  uint *simpleKeys, const int N, int keyIdx)
 {
   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
   const int tid = threadIdx.y * blockDim.x + threadIdx.x;
@@ -208,6 +198,34 @@ extern "C" __global__ void extractInt(uint4 *keys,  uint *simpleKeys, const int 
 
   simpleKeys[idx] = simpleTemp;
 }
+
+extern "C" __global__ void extractInt(uint4 *keys,  uint *simpleKeys, 
+                                      uint *sequence,
+                                      const int N, int keyIdx)
+{
+  const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
+  const int tid = threadIdx.y * blockDim.x + threadIdx.x;
+  const int dim =  blockDim.x * blockDim.y;
+
+  int idx = bid * dim + tid;
+
+  if (idx >= N) return;
+
+  uint4 temp = keys[idx];
+  int  simpleTemp;
+
+  if(keyIdx == 0)
+      simpleTemp = temp.x;
+  else if(keyIdx == 1)
+      simpleTemp = temp.y;
+  else if(keyIdx == 2)
+      simpleTemp = temp.z;
+
+  simpleKeys[idx] = simpleTemp;
+  sequence[idx] = idx;
+}
+
+
 
 //Create range of 0 to N
 extern "C" __global__ void fillSequence(uint *sequence, const int N)

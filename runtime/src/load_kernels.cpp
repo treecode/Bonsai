@@ -80,7 +80,6 @@ void octree::load_kernels() {
   sortCount.setContext(devContext);
   sortMove.setContext(devContext);
   extractInt.setContext(devContext);
-  fillSequence.setContext(devContext);
   reOrderKeysValues.setContext(devContext);
   convertKey64to96.setContext(devContext);
   extractKeyAndPerm.setContext(devContext);
@@ -110,9 +109,6 @@ void octree::load_kernels() {
 
   extractInt.load_source("./sortKernels.ptx", pathName.c_str());
   extractInt.create("extractInt");  
-  
-  fillSequence.load_source("./sortKernels.ptx", pathName.c_str());
-  fillSequence.create("fillSequence");  
   
   reOrderKeysValues.load_source("./sortKernels.ptx", pathName.c_str());
   reOrderKeysValues.create("reOrderKeysValues");    
@@ -544,18 +540,10 @@ void  octree::gpuSort(my_dev::context &devContext,
     
   //Dimensions for the kernels that shuffle and extract data
   const int blockSize = 256;
-  int ng = (N)/blockSize + 1;
-  int nx = (int)sqrt((double)ng);
-  int ny = (ng-1)/nx + 1;
-
-  vector<size_t> localWork(2), globalWork(2);
-  globalWork[0] = nx*blockSize;   globalWork[1] = ny;
-  localWork [0] = blockSize;       localWork[1] = 1;
-
-  extractInt.setWork(globalWork, localWork);
-  fillSequence.setWork(globalWork, localWork);
-  reOrderKeysValues.setWork(globalWork, localWork);
   
+  extractInt.setWork(N, blockSize); 
+  reOrderKeysValues.setWork(N, blockSize); 
+
   //Idx depends on subitems, z goes first, x last if subitems = 3
   //subitems = 3, than idx=2
   //subitems = 2, than idx=1
@@ -563,13 +551,13 @@ void  octree::gpuSort(my_dev::context &devContext,
   //intIdx = subItems-1   
   int intIdx = subItems-1;
 
+  //Extracts a 32bit key and fills a sequence
   extractInt.set_arg<cl_mem>(0, srcValues.p());
   extractInt.set_arg<cl_mem>(1, simpleKeys.p());
-  extractInt.set_arg<uint>(2, &N);
-  extractInt.set_arg<int>(3, &intIdx);//bit idx
+  extractInt.set_arg<cl_mem>(2, permutation.p());
+  extractInt.set_arg<uint>(3, &N);
+  extractInt.set_arg<int>(4, &intIdx);//bit idx
 
-  fillSequence.set_arg<cl_mem>(0, permutation.p());
-  fillSequence.set_arg<uint>(1, &N);
 
   reOrderKeysValues.set_arg<cl_mem>(0, srcValues.p());
   reOrderKeysValues.set_arg<cl_mem>(1, output.p());
@@ -577,13 +565,6 @@ void  octree::gpuSort(my_dev::context &devContext,
   reOrderKeysValues.set_arg<uint>(3, &N);
 
   extractInt.execute();
-  fillSequence.execute();
-  
-  //TODO Jb, uhh why copy? this is allready on host?
-  simpleKeys.d2h();
-  permutation.d2h();
-  
-  
   
   #ifdef USE_THRUST
   
@@ -603,6 +584,7 @@ void  octree::gpuSort(my_dev::context &devContext,
                     N, 32);
   #endif  
 
+    
   //Now reorder the main keys
   //Use output as the new output/src value thing buffer
   reOrderKeysValues.execute();
@@ -623,15 +605,9 @@ void  octree::gpuSort(my_dev::context &devContext,
   intIdx = subItems-2;
   
   extractInt.set_arg<cl_mem>(0, output.p());
-  extractInt.set_arg<int>(3, &intIdx);//smem size
-
-  reOrderKeysValues.set_arg<cl_mem>(0, output.p());
-  reOrderKeysValues.set_arg<cl_mem>(1, buffer.p());
- 
+  extractInt.set_arg<int>(4, &intIdx);//smem size
   extractInt.execute();
-  
-  fillSequence.execute();
-  
+
   #ifdef USE_THRUST
   
     thrust_sort_32b(devContext, 
@@ -650,10 +626,9 @@ void  octree::gpuSort(my_dev::context &devContext,
                     N, 32);
   #endif   
 
-
-                   
+  reOrderKeysValues.set_arg<cl_mem>(0, output.p());
+  reOrderKeysValues.set_arg<cl_mem>(1, buffer.p());
   reOrderKeysValues.execute();
-  
 
   if(subItems == 2)
   {
@@ -670,21 +645,14 @@ void  octree::gpuSort(my_dev::context &devContext,
   //subitems = 1, completed previous round
   //intIdx = subItems-2     
   intIdx = 0;
-  
+ 
   extractInt.set_arg<cl_mem>(0, buffer.p());
-  extractInt.set_arg<int>(3, &intIdx);//integer idx
-
-  reOrderKeysValues.set_arg<cl_mem>(0, buffer.p());
-  reOrderKeysValues.set_arg<cl_mem>(1, output.p());
-
+  extractInt.set_arg<int>(4, &intIdx);//integer idx
   extractInt.execute();
-  fillSequence.execute();
-  //Now sort the 32bit keys
-  //Using int2 with key and value combined
-  
-  
-  #ifdef USE_THRUST
-  
+
+
+  //Now sort the final set of 32bit keys
+  #ifdef USE_THRUST  
     thrust_sort_32b(devContext, 
                     simpleKeys, permutation,
                     output32b, simpleKeys,
@@ -692,8 +660,6 @@ void  octree::gpuSort(my_dev::context &devContext,
                     N, 32);
   
   #else
-    //Now sort the 2nd 32bit keys
-    //Using 32bit sort with key and value seperated    
     gpuSort_32b(devContext, 
                     simpleKeys, permutation,
                     output32b, simpleKeys,
@@ -701,19 +667,10 @@ void  octree::gpuSort(my_dev::context &devContext,
                     N, 32);
   #endif   
   
+  reOrderKeysValues.set_arg<cl_mem>(0, buffer.p());
+  reOrderKeysValues.set_arg<cl_mem>(1, output.p());
+  reOrderKeysValues.execute();  
   
-  
-  //See sortArray4
-  //Using key and value in a seperate array
-  //Now sort the 2nd 32bit keys
-  //Using 32bit sort with key and value seperated    
-//   gpuSort_32b(devContext, 
-//               simpleKeys, permutation,
-//               output32b, simpleKeys,
-//               valuesOutput,permutation,
-//               N, 32);  
-
-  reOrderKeysValues.execute();
 }
 
 

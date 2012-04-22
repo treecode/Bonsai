@@ -32,6 +32,7 @@ void octree::allocateParticleMemory(tree_structure &tree)
   tree.body2group_list.cmalloc(n_bodies, false);
   
   tree.level_list.cmalloc(MAXLEVELS);  
+  tree.node_level_list.cmalloc(MAXLEVELS*2 , false);    
   
   //The generalBuffer is also used during the tree-walk, so the size has to be at least
   //large enough to store the tree-walk stack. Add 4096 for extra memory allignment space
@@ -100,6 +101,8 @@ void octree::allocateParticleMemory(tree_structure &tree)
 
   this->devMemCountsx.setContext(devContext);
   this->devMemCountsx.cmalloc(NBLOCK_PREFIX, false);    
+  
+
   
   if(mpiGetNProcs() > 1)
   {
@@ -352,30 +355,10 @@ void octree::build (tree_structure &tree) {
   //required for easy access in the compute node properties
   build_level_list.execute();  
 
-  tree.node_level_list.cmalloc(level*2 , false);
-
-  int levelThing;
-  
+  int levelThing;  
   gpuCompact(devContext, validList, tree.node_level_list, 
              2*(tree.n_nodes-tree.n_leafs), &levelThing);             
   
-  tree.node_level_list.d2h();
-  
-  //We only care about end positions, so compress the list:
-  int j=0;
-  for(int i=0; i < levelThing; i+=2, j++)
-    tree.node_level_list[j] = tree.node_level_list[i];
-  
-  tree.node_level_list[j] =tree.node_level_list[levelThing-1]+1; //Add 1 to make it the end position
-  levelThing = j+1;
-  tree.node_level_list.h2d();
-  
-  printf("Finished level list \n");
-  
-  for(int i=0; i < levelThing; i++)
-  {
-    printf("node_level_list: %d \t%d\n", i, tree.node_level_list[i]);
-  }
   
   ///******   Start building the particle groups *******///////
 
@@ -395,16 +378,27 @@ void octree::build (tree_structure &tree) {
 
   validList.zeroMem();
   //The newest group creation method!
-  define_groups.set_arg<int>(0, &tree.n);  
+  define_groups.set_arg<int>   (0, &tree.n);  
   define_groups.set_arg<cl_mem>(1, validList.p());    
   define_groups.set_arg<cl_mem>(2, tree.bodies_Ppos.p());
-  define_groups.set_arg<float>(3, &maxDist);     
+  define_groups.set_arg<float> (3, &maxDist);
+  define_groups.set_arg<cl_mem>(4, tree.node_level_list.p());
+  define_groups.set_arg<int>   (5, &level);
   define_groups.setWork(tree.n, 128);  
   define_groups.execute();
   
-  //gpuCompact    
-  gpuCompact(devContext, validList, compactList, tree.n*2, &validCount);
+   
+  //Have to copy it back to host since we need it in compute props
+  printf("Finished level list \n");
+  tree.node_level_list.d2h();
+  for(int i=0; i < (level); i++)
+  {
+    printf("node_level_list: %d \t%d\n", i, tree.node_level_list[i]);
+  }
   
+ 
+  //gpuCompact    
+  gpuCompact(devContext, validList, compactList, tree.n*2, &validCount);  
   printf("Found number of groups: %d \n", validCount/2);
 
   tree.n_groups = validCount/2;
