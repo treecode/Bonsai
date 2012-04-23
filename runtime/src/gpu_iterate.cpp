@@ -120,10 +120,12 @@ bool octree::iterate_once(IterationData &idata) {
       this->compute_properties(this->localTree);
       devContext.stopTiming("Compute-properties", 3);
 
-      devContext.startTiming();
-      setActiveGrpsFunc(this->localTree);
-      devContext.stopTiming("setActiveGrpsFunc", 10);      
-      idata.Nact_since_last_tree_rebuild = 0;
+      #ifdef DO_BLOCK_TIMESTEP
+        devContext.startTiming();
+        setActiveGrpsFunc(this->localTree);
+        devContext.stopTiming("setActiveGrpsFunc", 10);      
+        idata.Nact_since_last_tree_rebuild = 0;
+      #endif
       
       idata.lastBuildTime   = get_time() - t1;
       idata.totalBuildTime += idata.lastBuildTime;  
@@ -210,20 +212,15 @@ bool octree::iterate_once(IterationData &idata) {
       
       return true;
     }
-    
-<<<<<<< HEAD
-  iter++;
-=======
-   
+      
     iter++; 
     /*if((iter % 50) == 0)
     {
       if(removeDistance > 0) checkRemovalDistance(this->localTree);
     }
     */
->>>>>>> added a runtime Rebuild tree parameter. Can be changed at runtime, see ./main help
 
-  return false;
+    return false;
 }
 
 void octree::iterate_setup(IterationData &idata) {
@@ -305,16 +302,7 @@ void octree::iterate() {
   for(int i=0; i < 10000000; i++) //Large number, limit
   {
     if (true == iterate_once(idata))
-<<<<<<< HEAD
         break;    
-=======
-        break;
-
-#if 0
-    iter++;
-#endif
-    
->>>>>>> added a runtime Rebuild tree parameter. Can be changed at runtime, see ./main help
   } //end for i
   
   iterate_teardown(idata);
@@ -330,25 +318,34 @@ void octree::predict(tree_structure &tree)
 //   tnext is reduce result
 
   //First we get the minimum time, which is the next integration time
-  int blockSize = NBLOCK_REDUCE ;
-  getTNext.set_arg<int>(0,    &tree.n);
-  getTNext.set_arg<cl_mem>(1, tree.bodies_time.p());
-  getTNext.set_arg<cl_mem>(2, tnext.p());
-  getTNext.set_arg<float>(3,  NULL, 128); //Dynamic shared memory
-  getTNext.setWork(-1, 128, blockSize);
-  getTNext.execute();
+  #ifdef DO_BLOCK_TIMESTEP
+    int blockSize = NBLOCK_REDUCE ;
+    getTNext.set_arg<int>(0,    &tree.n);
+    getTNext.set_arg<cl_mem>(1, tree.bodies_time.p());
+    getTNext.set_arg<cl_mem>(2, tnext.p());
+    getTNext.set_arg<float>(3,  NULL, 128); //Dynamic shared memory
+    getTNext.setWork(-1, 128, blockSize);
+    getTNext.execute();
 
-  //Reduce the last parts on the host
-  tnext.d2h();
-  t_previous = t_current;
-  t_current  = tnext[0];
-  for (int i = 1; i < blockSize ; i++)
-  {
-      t_current = std::min(t_current, tnext[i]);
-  }
+    //Reduce the last parts on the host
+    tnext.d2h();
+    t_previous = t_current;
+    t_current  = tnext[0];
+    for (int i = 1; i < blockSize ; i++)
+    {
+        t_current = std::min(t_current, tnext[i]);
+    }
+    tree.activeGrpList.zeroMem();      //Reset the active grps
+  #else
+    static int temp = 0;
+    t_previous =  t_current;
+    if(temp > 0)
+      t_current  += timeStep;
+    else
+       temp = 1;
+  #endif
 
-  tree.activeGrpList.zeroMem();      //Reset the active grps
-
+    
   //Set valid list to zero
   predictParticles.set_arg<int>(0,    &tree.n);
   predictParticles.set_arg<float>(1,  &t_current);
@@ -365,15 +362,19 @@ void octree::predict(tree_structure &tree)
   predictParticles.setWork(tree.n, 128);
   predictParticles.execute();
   
-  //Compact the valid list to get a list of valid groups
-  gpuCompact(devContext, tree.activeGrpList, tree.active_group_list,
-             tree.n_groups, &tree.n_active_groups);
+
+  #ifdef DO_BLOCK_TIMESTEP
+    //Compact the valid list to get a list of valid groups
+    gpuCompact(devContext, tree.activeGrpList, tree.active_group_list,
+              tree.n_groups, &tree.n_active_groups);
+  #else
+    tree.n_active_groups = tree.n_groups;
+  #endif
 
   LOG("t_previous: %lg t_current: %lg dt: %lg Active groups: %d \n",
          t_previous, t_current, t_current-t_previous, tree.n_active_groups);
 
-}
-//End predict
+} //End predict
 
 
 void octree::setActiveGrpsFunc(tree_structure &tree)
@@ -478,24 +479,28 @@ void octree::approximate_gravity(tree_structure &tree)
   
   CU_SAFE_CALL(clFinish(0));
   
+  
   if(mpiGetNProcs() == 1) //Only do it here if there is only one process
   {
-    
-    //Reduce the number of valid particles    
-    getNActive.set_arg<int>(0,    &tree.n);
-    getNActive.set_arg<cl_mem>(1, tree.activePartlist.p());
-    getNActive.set_arg<cl_mem>(2, this->nactive.p());
-    getNActive.set_arg<int>(3,    NULL, 128); //Dynamic shared memory , equal to number of threads
-    getNActive.setWork(-1, 128,   NBLOCK_REDUCE);
-    getNActive.execute();
-    
-    //Reduce the last parts on the host
-    this->nactive.d2h();
-    tree.n_active_particles = this->nactive[0];
-    for (int i = 1; i < NBLOCK_REDUCE ; i++)
-        tree.n_active_particles += this->nactive[i];
+    #ifdef DO_BLOCK_TIMESTEP  
+      //Reduce the number of valid particles    
+      getNActive.set_arg<int>(0,    &tree.n);
+      getNActive.set_arg<cl_mem>(1, tree.activePartlist.p());
+      getNActive.set_arg<cl_mem>(2, this->nactive.p());
+      getNActive.set_arg<int>(3,    NULL, 128); //Dynamic shared memory , equal to number of threads
+      getNActive.setWork(-1, 128,   NBLOCK_REDUCE);
+      getNActive.execute();
+      
+      //Reduce the last parts on the host
+      this->nactive.d2h();
+      tree.n_active_particles = this->nactive[0];
+      for (int i = 1; i < NBLOCK_REDUCE ; i++)
+          tree.n_active_particles += this->nactive[i];
 
-    LOG("Active particles: %d \n", tree.n_active_particles);
+      LOG("Active particles: %d \n", tree.n_active_particles);
+    #else
+      tree.n_active_particles = tree.n;
+    #endif
   }
 }
 //end approximate
@@ -657,25 +662,25 @@ void octree::correct(tree_structure &tree)
 
   correctParticles.setWork(tree.n, 128);
   correctParticles.execute();
-//   clFinish(devContext.get_command_queue());
 
+  #ifdef DO_BLOCK_TIMESTEP
+    computeDt.set_arg<int>(0,    &tree.n);
+    computeDt.set_arg<float>(1,  &t_current);
+    computeDt.set_arg<float>(2,  &(this->eta));
+    computeDt.set_arg<int>(3,    &(this->dt_limit));
+    computeDt.set_arg<float>(4,  &(this->eps2));
+    computeDt.set_arg<cl_mem>(5, tree.bodies_time.p());
+    computeDt.set_arg<cl_mem>(6, tree.bodies_vel.p());
+    computeDt.set_arg<cl_mem>(7, tree.ngb.p());
+    computeDt.set_arg<cl_mem>(8, tree.bodies_pos.p());
+    computeDt.set_arg<cl_mem>(9, tree.bodies_acc0.p());
+    computeDt.set_arg<cl_mem>(10, tree.activePartlist.p());
+    computeDt.set_arg<float >(11, &timeStep);
 
-  computeDt.set_arg<int>(0,    &tree.n);
-  computeDt.set_arg<float>(1,  &t_current);
-  computeDt.set_arg<float>(2,  &(this->eta));
-  computeDt.set_arg<int>(3,    &(this->dt_limit));
-  computeDt.set_arg<float>(4,  &(this->eps2));
-  computeDt.set_arg<cl_mem>(5, tree.bodies_time.p());
-  computeDt.set_arg<cl_mem>(6, tree.bodies_vel.p());
-  computeDt.set_arg<cl_mem>(7, tree.ngb.p());
-  computeDt.set_arg<cl_mem>(8, tree.bodies_pos.p());
-  computeDt.set_arg<cl_mem>(9, tree.bodies_acc0.p());
-  computeDt.set_arg<cl_mem>(10, tree.activePartlist.p());
-  computeDt.set_arg<float >(11, &timeStep);
+    computeDt.setWork(tree.n, 128);
+    computeDt.execute();
+  #endif
 
-  computeDt.setWork(tree.n, 128);
-  computeDt.execute();
-//   clFinish(devContext.get_command_queue());
 }
 
 

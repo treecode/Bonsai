@@ -917,14 +917,20 @@ __launch_bounds__(NTHREAD)
 
 
       /*********** set necessary thread constants **********/
-
-      real4 curGroupSize    = groupSizeInfo[active_groups[bid + grpOffset]];
+      #ifdef DO_BLOCK_TIMESTEP
+        real4 curGroupSize    = groupSizeInfo[active_groups[bid + grpOffset]];
+      #else
+        real4 curGroupSize    = groupSizeInfo[bid + grpOffset];
+      #endif
       int   groupData       = __float_as_int(curGroupSize.w);
       uint body_i           =   groupData & CRITMASK;
       uint nb_i             = ((groupData & INVCMASK) >> CRITBIT) + 1;
 
-      real4 group_pos       = groupCenterInfo[active_groups[bid + grpOffset]];
-
+      #ifdef DO_BLOCK_TIMESTEP
+        real4 group_pos       = groupCenterInfo[active_groups[bid + grpOffset]];
+      #else
+        real4 group_pos       = groupCenterInfo[bid + grpOffset];
+      #endif
       //   if(tid == 0)
       //   printf("[%f %f %f %f ] \n [%f %f %f %f ] %d %d \n",
       //           curGroupSize.x, curGroupSize.y, curGroupSize.z, curGroupSize.w,

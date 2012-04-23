@@ -3,6 +3,12 @@ typedef unsigned int uint;
 typedef float real;
 typedef float4 real4;
 
+//Dont uncomment this yet
+#define DO_BLOCK_TIMESTEP
+
+//Uncomment the next line to use thrust radix sort instead of built in one
+// #define USE_THRUST
+
 
 #define IMPBH   //Improved barnes hut opening method
 //#define INDSOFT //Individual softening using cubic spline kernel
@@ -25,9 +31,9 @@ typedef float4 real4;
 #define  LEVELMASK 0xF8000000
 
 #define NLEAF 16
-
 #define NCRIT 32
 #define NTHREAD 64
+
 #define NLEAFTEST 8
 
 #if NLEAF == 8
