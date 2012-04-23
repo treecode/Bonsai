@@ -142,7 +142,13 @@ extern "C" __global__ void predict_particles(const int n_bodies,
   float tb = time[idx].x;
   float te = time[idx].y;
 
-  float dt_cb  = tc - tb;
+  #ifdef DO_BLOCK_TIMESTEP
+    float dt_cb  = tc - tb;
+  #else
+    float dt_cb  = tc - tp;
+    time[idx].x  = tp;
+  #endif
+
 //   float dt_pb  = tp - tb;
 
   p.x += v.x*dt_cb + a.x*dt_cb*dt_cb*0.5f;
@@ -211,7 +217,9 @@ extern "C" __global__ void correct_particles(const int n_bodies,
   if (idx >= n_bodies) return;
 
   //Check if particle is set to active during approx grav
-  if (active_list[idx] != 1) return;
+  #ifdef DO_BLOCK_TIMESTEP
+    if (active_list[idx] != 1) return;
+  #endif
 
 
   float4 v  = vel [idx];
@@ -220,7 +228,9 @@ extern "C" __global__ void correct_particles(const int n_bodies,
   float  tb = time[idx].x;
 //   float  dt = time[idx].y;
 
-  float dt_cb = tc - tb;
+  float dt_cb  = tc - tb;
+
+
 
   //Store the predicted position as the one to use
   pos[idx] = pPos[idx];

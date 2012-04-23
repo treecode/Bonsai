@@ -6,6 +6,32 @@
 
 #include <stdio.h>
 
+#ifdef USE_THRUST
+  #include <thrust/device_ptr.h>
+  #include <thrust/copy.h>
+  #include <thrust/sort.h>
+  #include <thrust/device_vector.h>
+
+  #include "../include/my_cuda_rt.h"
+
+  extern "C" void thrust_sort_32b(my_dev::context &devContext, 
+                      my_dev::dev_mem<uint> &srcKeys,     my_dev::dev_mem<uint> &srcValues,
+                      my_dev::dev_mem<int>  &keysOutput,  my_dev::dev_mem<uint> &keysAPing,
+                      my_dev::dev_mem<uint> &valuesOutput,my_dev::dev_mem<uint> &valuesAPing,
+                      int N, int numberOfBits)
+  {
+
+      // wrap raw pointer with a device_ptr 
+      thrust::device_ptr<uint> key_dev_ptr = thrust::device_pointer_cast(srcKeys.raw_p());
+      thrust::device_ptr<uint> val_dev_ptr = thrust::device_pointer_cast(srcValues.raw_p());
+      
+      thrust::sort_by_key(key_dev_ptr, key_dev_ptr + N, val_dev_ptr);
+      
+      valuesOutput.copy(srcValues, N);
+  }  
+
+#endif
+
 
 __device__ int undilate3(uint2 key) {
   int x, value = 0;
