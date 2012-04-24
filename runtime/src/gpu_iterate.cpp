@@ -281,6 +281,7 @@ bool octree::iterate_once(IterationData &idata) {
     }
     
     
+    iter++;
     /*if((iter % 50) == 0)
     {
       if(removeDistance > 0) checkRemovalDistance(this->localTree);
@@ -368,7 +369,6 @@ void octree::iterate() {
     if (true == iterate_once(idata))
         break;
 
-    iter++;
     
   } //end for i
   
