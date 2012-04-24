@@ -1,7 +1,7 @@
 #include "octree.h"
 
 // #define USE_THRUST
-
+// #define USE_THRUST_96
 
 #ifdef USE_THRUST
   extern "C" void thrust_sort_32b(my_dev::context &devContext, 
@@ -9,6 +9,11 @@
                       my_dev::dev_mem<int>  &keysOutput,  my_dev::dev_mem<uint> &keysAPing,
                       my_dev::dev_mem<uint> &valuesOutput,my_dev::dev_mem<uint> &valuesAPing,
                       int N, int numberOfBits);
+  extern "C" void thrust_sort_96b(my_dev::dev_mem<uint4> &srcKeys, 
+                                  my_dev::dev_mem<uint4> &sortedKeys,
+                                  my_dev::dev_mem<uint>  &temp_buffer,
+                                  my_dev::dev_mem<uint>  &permutation_buffer,
+                                  int N);
   extern "C" void thrust_gpuCompact(my_dev::context &devContext, 
                         my_dev::dev_mem<uint> &srcValues,
                         my_dev::dev_mem<uint> &output,                        
@@ -497,6 +502,30 @@ void  octree::gpuSort(my_dev::context &devContext,
                       int N, int numberOfBits, int subItems,
                       tree_structure &tree) {
 
+#if defined(USE_THRUST) && defined(USE_THRUST_96)
+  //Extra buffer values
+  my_dev::dev_mem<uint> permutation(devContext);   // Permutation values, for sorting the int4 data
+  my_dev::dev_mem<uint> temp_buffer(devContext);  // temporary uint buffer
+
+  int prevOffsetSum = getAllignmentOffset(4*N); //The offset of output
+
+  permutation.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
+                          tree.generalBuffer1.get_flags(), 
+                          tree.generalBuffer1.get_devMem(),
+                          &tree.generalBuffer1[8*N], 8*N,
+                          N, prevOffsetSum + getAllignmentOffset(8*N + prevOffsetSum));    //Ofset 8 since we have 2 uint4 before
+  
+  prevOffsetSum += getAllignmentOffset(8*N + prevOffsetSum);
+  
+  temp_buffer.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
+                          tree.generalBuffer1.get_flags(), 
+                          tree.generalBuffer1.get_devMem(),
+                          &tree.generalBuffer1[9*N], 9*N,
+                          N, prevOffsetSum + getAllignmentOffset(9*N + prevOffsetSum));  //N elements after simpleKeys    
+
+  thrust_sort_96b(srcValues, output, temp_buffer, permutation, N);
+  
+#else
   //Extra buffer values
   my_dev::dev_mem<uint> simpleKeys(devContext);    //Int keys,
   my_dev::dev_mem<uint> permutation(devContext);   //Permutation values, for sorting the int4 data
@@ -670,7 +699,7 @@ void  octree::gpuSort(my_dev::context &devContext,
   reOrderKeysValues.set_arg<cl_mem>(0, buffer.p());
   reOrderKeysValues.set_arg<cl_mem>(1, output.p());
   reOrderKeysValues.execute();  
-  
+#endif // USE_THRUST_96
 }
 
 

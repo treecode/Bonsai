@@ -136,16 +136,7 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
   printf("Corner: %f %f %f idomain fac: %f domain_fac: %f\n", 
          tree.corner.x, tree.corner.y, tree.corner.z, idomain_fac, domain_fac);
   printf("domain fac: %f idomain_fac: %f size: %f MAXLEVELS: %d \n", domain_fac, idomain_fac, size, MAXLEVELS);
-  
-  //Compute the keys
-  build_key_list.set_arg<cl_mem>(0,   tree.bodies_key.p());
-  build_key_list.set_arg<cl_mem>(1,   tree.bodies_Ppos.p());
-  build_key_list.set_arg<int>(2,      &tree.n);
-  build_key_list.set_arg<real4>(3,    &tree.corner);
-  
-  build_key_list.setWork(tree.n, 128); //128 threads per block
-  build_key_list.execute();  
-  
+
   //Call the GPUSort function, since we made it general 
   //into a uint4 so we can extend the tree to 96bit key
   //we have to convert to 64bit key to a 96bit for sorting
@@ -159,14 +150,20 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
                          tree.generalBuffer1.get_devMem(),
                          &tree.generalBuffer1[0], 0,  
                          tree.n, getAllignmentOffset(0));  
-
-  //Sort the keys, make a copy, and store sorted in original     
-  srcValues.copy(tree.bodies_key, tree.n);
+  
+  //Compute the keys directly into srcValues 
+  // will be sorted into tree.bodies_key below
+  build_key_list.set_arg<cl_mem>(0,   srcValues.p());
+  build_key_list.set_arg<cl_mem>(1,   tree.bodies_Ppos.p());
+  build_key_list.set_arg<int>(2,      &tree.n);
+  build_key_list.set_arg<real4>(3,    &tree.corner);
+  
+  build_key_list.setWork(tree.n, 128); //128 threads per block
+  build_key_list.execute();  
   
   // If srcValues and buffer are different, then the original values
   // are preserved, if they are the same srcValues will be overwritten  
   gpuSort(devContext, srcValues, tree.bodies_key,srcValues, tree.n, 32, 3, tree);
- 
 
   devContext.stopTiming("Sorting", 0);  
 
