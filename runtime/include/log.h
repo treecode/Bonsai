@@ -1,9 +1,9 @@
-//#define ENABLE_LOG
+#define ENABLE_LOG 0
 
-#ifdef ENABLE_LOG
-#define LOG(...) printf
-#define LOGF(F, ...) fprintf(F, __VA_ARGS__)
+#if ENABLE_LOG
+#define LOG(fmt, ...) printf(fmt, __VA_ARGS__)
+#define LOGF(file, fmt, ...) fprintf(file, fmt, __VA_ARGS__)
 #else
-#define LOG(...) ((void)0)
-#define LOGF(F, ...) ((void)0)
+#define LOG(fmt, ...) ((void)0)
+#define LOGF(file, fmt, ...) ((void)0)
 #endif

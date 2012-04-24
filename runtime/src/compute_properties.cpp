@@ -22,7 +22,7 @@ void octree::compute_properties (tree_structure &tree) {
   
   
   propsLeaf.setWork(tree.n_leafs, 128);
-  printf("PropsLeaf: "); propsLeaf.printWorkSize();
+  LOG("PropsLeaf: "); propsLeaf.printWorkSize();
 
   propsLeaf.execute();  
 
@@ -48,7 +48,7 @@ void octree::compute_properties (tree_structure &tree) {
         
         propsNonLeaf.setWork(totalOnThisLevel, 128);
         
-        printf("PropsNonLeaf, nodes on level %d : %d (start: %d end: %d) , config: \t", i, totalOnThisLevel,
+        LOG("PropsNonLeaf, nodes on level %d : %d (start: %d end: %d) , config: \t", i, totalOnThisLevel,
                tree.node_level_list[i-1], tree.node_level_list[i]); 
         propsNonLeaf.printWorkSize();
       }      
@@ -70,12 +70,12 @@ void octree::compute_properties (tree_structure &tree) {
   propsScaling.set_arg<cl_mem>(9, tree.boxCenterInfo.p());
   
   propsScaling.setWork(tree.n_nodes, 128);
-  printf("propsScaling: \t "); propsScaling.printWorkSize();
+  LOG("propsScaling: \t "); propsScaling.printWorkSize();
   propsScaling.execute();     
 
 
   //tree.multipole.d2h();
-  //printf("COM: %f %f %f %f \n",tree.multipole[0].x, tree.multipole[0].y, tree.multipole[0].z, tree.multipole[0].w);
+  //LOG("COM: %f %f %f %f \n",tree.multipole[0].x, tree.multipole[0].y, tree.multipole[0].z, tree.multipole[0].w);
 
 
   #ifdef USE_CUDA
@@ -101,7 +101,7 @@ void octree::compute_properties (tree_structure &tree) {
   copyNodeDataToGroupData.set_arg<cl_mem>(9, tree.groupSizeInfo.p());
   copyNodeDataToGroupData.setWork(tree.n_nodes, 128);
 
-  printf("copyNodeDataToGroupData: \t "); copyNodeDataToGroupData.printWorkSize();
+  LOG("copyNodeDataToGroupData: \t "); copyNodeDataToGroupData.printWorkSize();
   copyNodeDataToGroupData.execute();  
  
 //    tree.multipole.d2h();
@@ -187,7 +187,7 @@ void octree::compute_properties_double(tree_structure &tree) {
   propsLeafD.set_arg<cl_mem>(7, tree.bodies_Pvel.p());  //Velocity to get max eps
   
   propsLeafD.setWork(tree.n_leafs, 128);
-  printf("PropsLeaf: "); propsLeafD.printWorkSize();
+  LOG("PropsLeaf: "); propsLeafD.printWorkSize();
   propsLeafD.execute(); 
    
   
@@ -212,7 +212,7 @@ void octree::compute_properties_double(tree_structure &tree) {
         
         propsNonLeafD.setWork(totalOnThisLevel, 128);
         
-        printf("PropsNonLeaf, nodes on level %d : %d (start: %d end: %d) , config: \t", i, totalOnThisLevel,
+        LOG("PropsNonLeaf, nodes on level %d : %d (start: %d end: %d) , config: \t", i, totalOnThisLevel,
                tree.node_level_list[i-1], tree.node_level_list[i]); 
         propsNonLeafD.printWorkSize();
       }      
@@ -236,7 +236,7 @@ void octree::compute_properties_double(tree_structure &tree) {
   propsScalingD.set_arg<cl_mem>(10, tree.node_bodies.p());
   
   propsScalingD.setWork(tree.n_nodes, 128);
-  printf("propsScaling: \t "); propsScalingD.printWorkSize();
+  LOG("propsScaling: \t "); propsScalingD.printWorkSize();
   propsScalingD.execute();   
 
 

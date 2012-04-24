@@ -29,14 +29,14 @@ void octree::getBoundaries(tree_structure &tree, real4 &r_min, real4 &r_max)
     r_max.x = std::max(r_max.x, devMemRMAX[i].x);
     r_max.y = std::max(r_max.y, devMemRMAX[i].y);
     r_max.z = std::max(r_max.z, devMemRMAX[i].z);    
-//     printf("%f\t%f\t%f\t || \t%f\t%f\t%f\n", rMIN[i].x,rMIN[i].y,rMIN[i].z,rMAX[i].x,rMAX[i].y,rMAX[i].z);    
+//     LOG("%f\t%f\t%f\t || \t%f\t%f\t%f\n", rMIN[i].x,rMIN[i].y,rMIN[i].z,rMAX[i].x,rMAX[i].y,rMAX[i].z);    
   }
   
   rMinLocalTree = r_min;
   rMaxLocalTree = r_max;
   
-  printf("Found boundarys, number of particles %d : \n", tree.n);
-  printf("min: %f\t%f\t%f\tmax: %f\t%f\t%f \n", r_min.x,r_min.y,r_min.z,r_max.x,r_max.y,r_max.z);
+  LOG("Found boundarys, number of particles %d : \n", tree.n);
+  LOG("min: %f\t%f\t%f\tmax: %f\t%f\t%f \n", r_min.x,r_min.y,r_min.z,r_max.x,r_max.y,r_max.z);
 }
 
 void octree::getBoundariesGroups(tree_structure &tree, real4 &r_min, real4 &r_max)
@@ -70,8 +70,8 @@ void octree::getBoundariesGroups(tree_structure &tree, real4 &r_min, real4 &r_ma
     r_max.z = std::max(r_max.z, devMemRMAX[i].z);    
   }
   
-  printf("Found group boundarys before increase, number of groups %d : \n", tree.n_groups);
-  printf("min: %f\t%f\t%f\tmax: %f\t%f\t%f \n", r_min.x,r_min.y,r_min.z,r_max.x,r_max.y,r_max.z);
+  LOG("Found group boundarys before increase, number of groups %d : \n", tree.n_groups);
+  LOG("min: %f\t%f\t%f\tmax: %f\t%f\t%f \n", r_min.x,r_min.y,r_min.z,r_max.x,r_max.y,r_max.z);
   
   //Prevent small-numerical differences by making the group/box slightly bigger
   
@@ -93,8 +93,8 @@ void octree::getBoundariesGroups(tree_structure &tree, real4 &r_min, real4 &r_ma
   rMaxLocalTreeGroups = r_max;
   
   
-  printf("Found group boundarys after increase, number of groups %d : \n", tree.n_groups);
-  printf("min: %f\t%f\t%f\tmax: %f\t%f\t%f \n", r_min.x,r_min.y,r_min.z,r_max.x,r_max.y,r_max.z);
+  LOG("Found group boundarys after increase, number of groups %d : \n", tree.n_groups);
+  LOG("min: %f\t%f\t%f\tmax: %f\t%f\t%f \n", r_min.x,r_min.y,r_min.z,r_max.x,r_max.y,r_max.z);
 }
 
 
@@ -136,10 +136,10 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
   
   tree.corner.w = domain_fac;  
   
-  printf("Corner: %f %f %f idomain fac: %f domain_fac: %f\n", 
+  LOG("Corner: %f %f %f idomain fac: %f domain_fac: %f\n", 
          tree.corner.x, tree.corner.y, tree.corner.z, idomain_fac, domain_fac);
-  printf("domain fac: %f idomain_fac: %f size: %f MAXLEVELS: %d \n", domain_fac, idomain_fac, size, MAXLEVELS);
- // printf("Test: %f and %f \n", size, tree.domain_fac*(1 << MAXLEVELS));
+  LOG("domain fac: %f idomain_fac: %f size: %f MAXLEVELS: %d \n", domain_fac, idomain_fac, size, MAXLEVELS);
+ // LOG("Test: %f and %f \n", size, tree.domain_fac*(1 << MAXLEVELS));
   
   //Compute the keys
   build_key_list.set_arg<cl_mem>(0,   tree.bodies_key.p());

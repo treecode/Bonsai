@@ -23,6 +23,7 @@
 #include <vector_functions.h>
 
 #include <iostream>
+#include "log.h"
 
 //Some easy to use typedefs
 typedef float4 real4;
@@ -247,7 +248,7 @@ namespace my_dev {
       CU_SAFE_CALL(cudaEventDestroy(start));
       CU_SAFE_CALL(cudaEventDestroy(stop));      
       
-      printf("%s took:\t%f\t millisecond\n", text, time);
+      LOG("%s took:\t%f\t millisecond\n", text, time);
       
       if(logfile_flag)
       {
@@ -1206,7 +1207,7 @@ namespace my_dev {
     
     void printWorkSize()
     {
-      printf("Blocks: (%ld, %ld, %ld) Threads: (%ld, %ld, %ld) \n", 
+      LOG("Blocks: (%ld, %ld, %ld) Threads: (%ld, %ld, %ld) \n", 
               hGlobalWork[0], hGlobalWork[1], hGlobalWork[2],
               hLocalWork[0], hLocalWork[1], hLocalWork[2]);             
     }

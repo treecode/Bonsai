@@ -269,7 +269,7 @@ void octree::build (tree_structure &tree) {
     gpuCompact(devContext, validList, compactList, tree.n*2, &validCount);
                  
     nodeSum += validCount / 2;
-    printf("ValidCount (%d): %d \tSum: %d Offset: %d\n", mpiGetRank(), validCount, nodeSum, offset);
+    LOG("ValidCount (%d): %d \tSum: %d Offset: %d\n", mpiGetRank(), validCount, nodeSum, offset);
     
     validCount /= 2;     
                   
@@ -304,7 +304,7 @@ void octree::build (tree_structure &tree) {
   
   //The maximum number of levels that can be used is MAXLEVEl 
   //if max level is larger than that the program will exit
-  printf("Max level : %d \n", level);
+  LOG("Max level : %d \n", level);
   if(level >= MAXLEVELS)
   {
     cerr << "The tree has become too deep, the program will exit. \n";
@@ -313,12 +313,12 @@ void octree::build (tree_structure &tree) {
   }
   
   link_tree.setWork(n_nodes, 128);
-  printf("Link_tree: "); link_tree.printWorkSize();
+  LOG("Link_tree: "); link_tree.printWorkSize();
   
   tree.n_levels = level-1;
 
   for(int i=0; i < level; i++)
-    printf("%d\t%d\t%d\n", i, tree.level_list[i].x, tree.level_list[i].y);
+    LOG("%d\t%d\t%d\n", i, tree.level_list[i].x, tree.level_list[i].y);
  
   //Link the tree      
   link_tree.execute();
@@ -336,7 +336,7 @@ void octree::build (tree_structure &tree) {
   //Split the leaf ids and non-leaf node ids
   gpuSplit(devContext, validList, tree.leafNodeIdx, tree.n_nodes, &tree.n_leafs);     
                  
-  printf("Total nodes: %d N_leafs: %d  non-leafs: %d \n", tree.n_nodes, tree.n_leafs, tree.n_nodes - tree.n_leafs);
+  LOG("Total nodes: %d N_leafs: %d  non-leafs: %d \n", tree.n_nodes, tree.n_leafs, tree.n_nodes - tree.n_leafs);
   
 
   build_level_list.set_arg<int>(0, &tree.n_nodes);
@@ -370,11 +370,11 @@ void octree::build (tree_structure &tree) {
   levelThing = j+1;
   tree.node_level_list.h2d();
   
-  printf("Finished level list \n");
+  LOG("Finished level list \n");
   
   for(int i=0; i < levelThing; i++)
   {
-    printf("node_level_list: %d \t%d\n", i, tree.node_level_list[i]);
+    LOG("node_level_list: %d \t%d\n", i, tree.node_level_list[i]);
   }
   
   ///******   Start building the particle groups *******///////
@@ -390,7 +390,7 @@ void octree::build (tree_structure &tree) {
   float maxDist = sqrt(dist) / 10;
   maxDist *= maxDist; //Square since we dont do sqrt on device
                        
-  fprintf(stderr,"Box max size: %f en max dist: %f \t %f en %f  \n", size, dist, sqrt(dist), maxDist);
+  LOG("Box max size: %f en max dist: %f \t %f en %f  \n", size, dist, sqrt(dist), maxDist);
   
   //maxDist = 50;
   
@@ -406,7 +406,7 @@ void octree::build (tree_structure &tree) {
   //gpuCompact    
   gpuCompact(devContext, validList, compactList, tree.n*2, &validCount);
   
-  printf("Found number of groups: %d \n", validCount/2);
+  LOG("Found number of groups: %d \n", validCount/2);
 
   tree.n_groups = validCount/2;
   //Now compact validList to get the list of group ids
@@ -434,7 +434,7 @@ void octree::build (tree_structure &tree) {
   }
 
 
-  printf("Tree built complete!\n");
+  LOG("Tree built complete!\n");
 
   /*************************/
 

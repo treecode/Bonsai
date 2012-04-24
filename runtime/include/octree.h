@@ -31,6 +31,8 @@
 #include "mpi.h"
 #endif
 
+#include "log.h"
+
 #define PRINT_MPI_DEBUG
 
 using namespace std;

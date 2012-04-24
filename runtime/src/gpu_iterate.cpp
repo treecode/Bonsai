@@ -113,7 +113,7 @@ void octree::makeLET()
 bool octree::iterate_once(IterationData &idata) {
     double t1 = 0;
 
-    printf("At the start of iterate:\n");
+    LOG("At the start of iterate:\n");
 
     //predict localtree
     devContext.startTiming();
@@ -220,7 +220,7 @@ bool octree::iterate_once(IterationData &idata) {
     idata.totalGravTime += idata.lastGravTime - thisPartLETExTime;
 //     lastGravTime -= thisPartLETExTime;
     
-    fprintf(stderr,"APPTIME [%d]: Iter: %d\t%g \n", procId, iter, idata.lastGravTime);
+    LOGF(stderr, "APPTIME [%d]: Iter: %d\t%g \n", procId, iter, idata.lastGravTime);
     
     //Corrector
     devContext.startTiming();
@@ -425,7 +425,7 @@ void octree::predict(tree_structure &tree)
   gpuCompact(devContext, tree.activeGrpList, tree.active_group_list,
              tree.n_groups, &tree.n_active_groups);
 
-  printf("t_previous: %lg t_current: %lg dt: %lg Active groups: %d \n",
+  LOG("t_previous: %lg t_current: %lg dt: %lg Active groups: %d \n",
          t_previous, t_current, t_current-t_previous, tree.n_active_groups);
 
 }
@@ -451,7 +451,7 @@ void octree::setActiveGrpsFunc(tree_structure &tree)
   gpuCompact(devContext, tree.activeGrpList, tree.active_group_list,
              tree.n_groups, &tree.n_active_groups);
 
-  printf("t_previous: %lg t_current: %lg dt: %lg Active groups: %d \n",
+  LOG("t_previous: %lg t_current: %lg dt: %lg Active groups: %d \n",
          t_previous, t_current, t_current-t_previous, tree.n_active_groups);
 
 }
@@ -463,7 +463,7 @@ void octree::approximate_gravity(tree_structure &tree)
   node_begend.x   = tree.level_list[level_start].x;
   node_begend.y   = tree.level_list[level_start].y;
 
-  printf("node begend: %d %d iter-> %d\n", node_begend.x, node_begend.y, iter);
+  LOG("node begend: %d %d iter-> %d\n", node_begend.x, node_begend.y, iter);
 
   //Reset the active particles
   tree.activePartlist.zeroMem();
@@ -600,7 +600,7 @@ void octree::approximate_gravity(tree_structure &tree)
     for (int i = 1; i < NBLOCK_REDUCE ; i++)
         tree.n_active_particles += this->nactive[i];
 
-    printf("Active particles: %d \n", tree.n_active_particles);
+    LOG("Active particles: %d \n", tree.n_active_particles);
   }
 }
 //end approximate
@@ -675,7 +675,7 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
     
   approxGravLET.setWork(-1, NTHREAD, nBlocksForTreeWalk);
  
-  printf("LET Approx config: "); approxGravLET.printWorkSize();
+  LOG("LET Approx config: "); approxGravLET.printWorkSize();
     
   if(letRunning)
   {
@@ -742,7 +742,7 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
     for (int i = 1; i < NBLOCK_REDUCE ; i++)
         tree.n_active_particles += this->nactive[i];
 
-    printf("LET Active particles: %d (Process: %d ) \n",tree.n_active_particles, mpiGetRank());
+    LOG("LET Active particles: %d (Process: %d ) \n",tree.n_active_particles, mpiGetRank());
   }
 }
 //end approximate
@@ -979,7 +979,7 @@ double octree::compute_energies(tree_structure &tree)
   }
   MPI_Barrier(MPI_COMM_WORLD);
   double hEtot = hEpot + hEkin;
-  printf("Energy (on host): Etot = %.10lg Ekin = %.10lg Epot = %.10lg \n", hEtot, hEkin, hEpot);
+  LOG("Energy (on host): Etot = %.10lg Ekin = %.10lg Epot = %.10lg \n", hEtot, hEkin, hEpot);
   #endif
 
   //float2 energy : x is kinetic energy, y is potential energy
@@ -1043,12 +1043,12 @@ double octree::compute_energies(tree_structure &tree)
   
   if(mpiGetRank() == 0)
   {
-  printf("iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n",
+  LOG("iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n",
 		  iter, this->t_current, Etot, Ekin, Epot, de, de_max, dde, dde_max, get_time() - tinit);  
-  fprintf(stderr,"iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n", 
+  LOGF(stderr, "iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n", 
 		  iter, this->t_current, Etot, Ekin, Epot, de, de_max, dde, dde_max, get_time() - tinit);          
   }
-  
+
   return de;
 }
 #endif
@@ -1073,7 +1073,7 @@ void octree::compute_energies(tree_structure &tree)
     hEpot += tree.bodies_pos[i].w*0.5*tree.bodies_acc0[i].w;
   }
   double hEtot = hEpot + hEkin;
-  printf("Energy (on host): Etot = %.10lg Ekin = %.10lg Epot = %.10lg \n", hEtot, hEkin, hEpot);
+  LOG("Energy (on host): Etot = %.10lg Ekin = %.10lg Epot = %.10lg \n", hEtot, hEkin, hEpot);
   */
 
   //float2 energy : x is kinetic energy, y is potential energy
@@ -1123,7 +1123,7 @@ void octree::compute_energies(tree_structure &tree)
   Ekin1 = Ekin;
   Epot1 = Epot;
   Etot1 = Etot;
-  printf("iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg d(de)= %lg t_sim= %lg sec\n",
+  LOG("iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg d(de)= %lg t_sim= %lg sec\n",
           iter, this->t_current, Etot, Ekin, Epot, de, dde, get_time() - tinit);
 
 }

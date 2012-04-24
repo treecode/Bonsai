@@ -379,10 +379,10 @@ extern "C" __global__ void compute_scaling(const int node_count,
 
 //   if(idx < -10)
 //   {
-//     printf("%d\tcom:\t (%f, %f, %f) \tbox:  (%f, %f, %f) \n", idx, mon.x, mon.y, mon.z, boxCenter.x, boxCenter.y, boxCenter.z);
-//     printf("%d\tmin:\t (%f, %f, %f) \tmax:  (%f, %f, %f) \n", idx, r_min.x, r_min.y, r_min.z, r_max.x, r_max.y, r_max.z);
-//     printf("%d\tsize:\t (%f, %f, %f) \tbox:  (%f, %f, %f) \n", idx, boxSize.x, boxSize.y, boxSize.z, size3.x, size3.y, size3.z);
-//     printf("%d\ts:\t (%f, %f, %f) \tbox:  (%f, %f, %f) \n", idx, s3.x, s3.y, s3.z, s, size3.y, size3.z);
+//     LOG("%d\tcom:\t (%f, %f, %f) \tbox:  (%f, %f, %f) \n", idx, mon.x, mon.y, mon.z, boxCenter.x, boxCenter.y, boxCenter.z);
+//     LOG("%d\tmin:\t (%f, %f, %f) \tmax:  (%f, %f, %f) \n", idx, r_min.x, r_min.y, r_min.z, r_max.x, r_max.y, r_max.z);
+//     LOG("%d\tsize:\t (%f, %f, %f) \tbox:  (%f, %f, %f) \n", idx, boxSize.x, boxSize.y, boxSize.z, size3.x, size3.y, size3.z);
+//     LOG("%d\ts:\t (%f, %f, %f) \tbox:  (%f, %f, %f) \n", idx, s3.x, s3.y, s3.z, s, size3.y, size3.z);
 //   }
 
   //BH: l/theta + s < d
