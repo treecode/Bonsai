@@ -10,7 +10,9 @@
   #include <thrust/device_ptr.h>
   #include <thrust/copy.h>
   #include <thrust/sort.h>
-  #include <thrust/device_vector.h>
+  #include <thrust/gather.h>
+  #include <thrust/device_vector.h> 
+  #include <thrust/iterator/transform_iterator.h>
 
   #include "../include/my_cuda_rt.h"
 
@@ -29,6 +31,66 @@
       
       valuesOutput.copy(srcValues, N);
   }  
+
+  template <int keyIdx>
+  struct ExtractBits : public thrust::unary_function<uint4, uint>
+  {
+    __host__ __device__ 
+    uint operator()(uint4 key) const {
+      if(keyIdx == 0)
+        return key.x;
+      else if(keyIdx == 1)
+        return key.y;
+      else 
+        return key.z;
+    }
+  };
+  
+  template <int keyIdx, typename KeyPtr, typename PermutationPtr, typename ExtractedPtr>
+  void update_permutation(KeyPtr& keys, PermutationPtr& permutation, ExtractedPtr& temp, int N)
+  {
+    // permute the keys with the current reordering
+    thrust::gather(permutation, permutation + N, 
+                   thrust::make_transform_iterator(keys, ExtractBits<keyIdx>()), temp);
+
+    // stable_sort the permuted keys and update the permutation
+    thrust::stable_sort_by_key(temp, temp + N, permutation);
+  }
+
+
+  template <typename KeyPtr, typename PermutationPtr, typename OutputPtr>
+  void apply_permutation(KeyPtr& keys, PermutationPtr& permutation, OutputPtr& out, int N)
+  {
+    // permute the keys into out vector
+    thrust::gather(permutation, permutation + N, keys, out);
+  }
+
+  extern "C" void thrust_sort_96b(my_dev::dev_mem<uint4> &srcKeys, 
+                                  my_dev::dev_mem<uint4> &sortedKeys,
+                                  my_dev::dev_mem<uint>  &temp_buffer,
+                                  my_dev::dev_mem<uint>  &permutation_buffer,
+                                  int N)
+  {
+
+      // wrap raw pointer with a device_ptr 
+      thrust::device_ptr<uint4> keys     = thrust::device_pointer_cast(srcKeys.raw_p());
+      thrust::device_ptr<uint4> outKeys = thrust::device_pointer_cast(sortedKeys.raw_p());
+      thrust::device_ptr<uint> temp = thrust::device_pointer_cast(temp_buffer.raw_p());
+      thrust::device_ptr<uint> permutation = thrust::device_pointer_cast(permutation_buffer.raw_p());
+      
+      // initialize permutation to [0, 1, 2, ... ,N-1]
+      thrust::sequence(permutation, permutation + N);
+
+      // sort z, y, x
+      update_permutation<2>(keys, permutation, temp, N);
+      update_permutation<1>(keys, permutation, temp, N);
+      update_permutation<0>(keys, permutation, temp, N);
+
+      // Note: keys have not been modified
+      // Note: permutation now maps unsorted keys to sorted order
+
+      thrust::gather(permutation, permutation + N, keys, outKeys);
+  }
 
 #endif
 
