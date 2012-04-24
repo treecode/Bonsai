@@ -27,7 +27,7 @@
       thrust::device_ptr<uint> key_dev_ptr = thrust::device_pointer_cast(srcKeys.raw_p());
       thrust::device_ptr<uint> val_dev_ptr = thrust::device_pointer_cast(srcValues.raw_p());
       
-      thrust::sort_by_key(key_dev_ptr, key_dev_ptr + N, val_dev_ptr);
+      thrust::stable_sort_by_key(key_dev_ptr, key_dev_ptr + N, val_dev_ptr);
       
       valuesOutput.copy(srcValues, N);
   }  
