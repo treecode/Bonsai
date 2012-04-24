@@ -21,6 +21,7 @@
 
 #include "renderloop.h"
 #include "render_particles.h"
+#include "SmokeRenderer.h"
 #include "vector_math.h"
 
 void drawWireBox(float3 boxMin, float3 boxMax) {
@@ -75,9 +76,13 @@ class BonsaiDemo
 public:
   BonsaiDemo(octree *tree, octree::IterationData &idata) 
     : m_tree(tree), m_idata(idata), iterationsRemaining(true),
-      m_displayMode(ParticleRenderer::PARTICLE_SPRITES_COLOR),
+      //m_displayMode(ParticleRenderer::PARTICLE_SPRITES_COLOR),
+	  m_displayMode(SmokeRenderer::SPRITES),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.1f),
-      m_paused(false), m_displayBoxes(false), 
+      m_paused(false),
+	  m_displayBoxes(false), 
+	  m_displaySliders(false),
+	  m_enableGlow(true),
       m_octreeDisplayLevel(3)
   {
     m_windowDims = make_int2(720, 480);
@@ -88,9 +93,13 @@ public:
             
     //float color[4] = { 0.8f, 0.7f, 0.95f, 0.5f};
 	float color[4] = { 1.0f, 1.0f, 1.0f, 1.0f};
-    m_renderer.setBaseColor(color);
-    m_renderer.setPointSize(0.00001f);
+    //m_renderer.setBaseColor(color);
+    //m_renderer.setPointSize(0.00001f);
     tree->iterate_setup(m_idata);
+
+	m_renderer.setFOV(60.0f);
+	m_renderer.setWindowSize(1024, 768);
+	m_renderer.setDisplayMode(m_displayMode);
   }
 
   ~BonsaiDemo() {
@@ -99,8 +108,9 @@ public:
   }
 
   void cycleDisplayMode() {
-    m_displayMode = (ParticleRenderer::DisplayMode)
-      ((m_displayMode + 1) % ParticleRenderer::PARTICLE_NUM_MODES);
+    //m_displayMode = (ParticleRenderer::DisplayMode) ((m_displayMode + 1) % ParticleRenderer::PARTICLE_NUM_MODES);
+	  m_displayMode = (SmokeRenderer::DisplayMode) ((m_displayMode + 1) % SmokeRenderer::VOLUMETRIC);
+	  m_renderer.setDisplayMode(m_displayMode);
     // MJH todo: add body color support and remove this
     //if (ParticleRenderer::PARTICLE_SPRITES_COLOR == m_displayMode)
     //  cycleDisplayMode();
@@ -108,6 +118,9 @@ public:
 
   void togglePause() { m_paused = !m_paused; }
   void toggleBoxes() { m_displayBoxes = !m_displayBoxes; }
+  void toggleSliders() { m_displaySliders = !m_displaySliders; }
+  void toggleGlow() { m_enableGlow = !m_enableGlow; m_renderer.setEnableFilters(m_enableGlow); }
+
   void incrementOctreeDisplayLevel(int inc) { 
     m_octreeDisplayLevel += inc;
     m_octreeDisplayLevel = std::max(0, std::min(m_octreeDisplayLevel, 30));
@@ -136,16 +149,27 @@ public:
       glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
     }
 
+    //m_renderer.display(m_displayMode);
+	m_renderer.render();
+
     if (m_displayBoxes) {
+      glEnable(GL_DEPTH_TEST);
       displayOctree();  
     }
 
-    m_renderer.display(m_displayMode);
+	if (m_displaySliders) {
+		m_renderer.getParams()->Render(0, 0);
+	}
   }
 
   void mouse(int button, int state, int x, int y)
   {
     int mods;
+
+	if (m_displaySliders) {
+		m_renderer.getParams()->Mouse(x, y, button, state);
+		return;
+	}
 
     if (state == GLUT_DOWN) {
         m_buttonState |= 1<<button;
@@ -171,6 +195,11 @@ public:
   {
     float dx = (float)(x - m_ox);
     float dy = (float)(y - m_oy);
+
+	if (m_displaySliders) {
+	  m_renderer.getParams()->Motion(x, y);
+	  return;
+	}
 
     if (m_buttonState == 3) {
       // left+middle = zoom
@@ -220,6 +249,8 @@ public:
                    4 * (radius + distanceToCenter));
   }
 
+  ParamListGL *getParams() { return m_renderer.getParams(); }
+
 private:
   void getBodyData() {
     m_tree->localTree.bodies_pos.d2h();
@@ -228,8 +259,10 @@ private:
 
     int n = m_tree->localTree.n;
 
-    float4 darkMatterColor = make_float4(1.0f, 0.5f, 0.1f, 0.1f);
-    float4 starColor =       make_float4(0.1f, 0.5f, 1.0f, 0.5f);
+    float4 darkMatterColor = make_float4(1.0f, 0.5f, 0.1f, 1.0f);
+    float4 starColor =       make_float4(0.1f, 0.5f, 1.0f, 1.0f);
+	//float4 darkMatterColor = make_float4(0.0f, 0.25f, 0.5f, 0.2f);
+    //float4 starColor =       make_float4(1.0f, 0.75f, 0.1f, 1.0f);
 
     float4 *colors = new float4[n];
 
@@ -240,8 +273,11 @@ private:
       else colors[i] = starColor;
     }
 
-    m_renderer.setPositions((float*)&m_tree->localTree.bodies_pos[0], n);
-    m_renderer.setColors((float*)colors, n);
+    //m_renderer.setPositions((float*)&m_tree->localTree.bodies_pos[0], n);
+    //m_renderer.setColors((float*)colors, n);
+	m_renderer.setNumParticles(n);
+	m_renderer.setPositions((float*)&m_tree->localTree.bodies_pos[0]);
+	m_renderer.setColors((float*)colors);
 
     delete [] colors;
   }
@@ -276,8 +312,10 @@ private:
   octree::IterationData &m_idata;
   bool iterationsRemaining;
 
-  ParticleRenderer m_renderer;
-  ParticleRenderer::DisplayMode m_displayMode; 
+  //ParticleRenderer m_renderer;
+  //ParticleRenderer::DisplayMode m_displayMode; 
+  SmokeRenderer m_renderer;
+  SmokeRenderer ::DisplayMode m_displayMode; 
   int m_octreeDisplayLevel;
 
   // view params
@@ -293,6 +331,8 @@ private:
 
   bool m_paused;
   bool m_displayBoxes;
+  bool m_displaySliders;
+  bool m_enableGlow;
 };
 
 BonsaiDemo *theDemo = NULL;
@@ -307,7 +347,7 @@ void display()
   
   theDemo->step();
   theDemo->display();
-  
+
   glutSwapBuffers();
 }
 
@@ -342,9 +382,9 @@ void key(unsigned char key, int /*x*/, int /*y*/)
     cudaDeviceReset();
     exit(0);
     break;
-  /*case '`':
-     bShowSliders = !bShowSliders;
-     break;*/
+  case '`':
+     theDemo->toggleSliders();
+     break;
   case 'p':
   case 'P':
     theDemo->cycleDisplayMode();
@@ -369,6 +409,12 @@ void key(unsigned char key, int /*x*/, int /*y*/)
   case '>':
     theDemo->incrementOctreeDisplayLevel(+1);
     break;
+  case 'h':
+	theDemo->toggleSliders();
+	break;
+  case 'g':
+	theDemo->toggleGlow();
+	break;
   }
 
   glutPostRedisplay();
@@ -376,7 +422,7 @@ void key(unsigned char key, int /*x*/, int /*y*/)
 
 void special(int key, int x, int y)
 {
-    //paramlist->Special(key, x, y);
+	theDemo->getParams()->Special(key, x, y);
     glutPostRedisplay();
 }
 

@@ -30,7 +30,7 @@ endif (USE_MPI)
 
 set(CMAKE_DEBUG_POSTFIX "D")
 
-include_directories(${CMAKE_SOURCE_DIR}/include)
+include_directories(${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/renderer)
 
 set (CCFILES
   src/build.cpp 
@@ -90,6 +90,24 @@ add_definitions(-DTIPSYOUTPUT)
 if (USE_OPENGL) 
   set(CCFILES ${CCFILES} src/renderloop.cpp src/render_particles.cpp)
   set(HFILES ${HFILES} include/renderloop.h include/render_particles.h)
+  
+  set (CCFILES ${CCFILES} 
+  renderer/SmokeRenderer.cpp
+  renderer/SmokeShaders.cpp
+  renderer/paramgl.cpp
+  renderer/param.cpp
+  renderer/GLSLProgram.cpp
+  renderer/framebufferObject.cpp
+  )
+
+  set (HFILES ${HFILES} 
+  renderer/SmokeRenderer.h
+  renderer/SmokeShaders.h
+  renderer/paramgl.h
+  renderer/param.h
+  renderer/GLSLProgram.h
+  renderer/framebufferObject.h
+  )
 
   add_definitions(-DUSE_OPENGL)
   FIND_PACKAGE(OpenGL REQUIRED)
