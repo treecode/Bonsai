@@ -22,11 +22,20 @@ option(USE_OPENGL
   OFF
   )
 
+option(USE_THRUST
+  "On to use thrust for sorting"
+  OFF
+  )
+
 FIND_PACKAGE(CUDA REQUIRED)
 
 if (USE_MPI)
   add_definitions(-DUSE_MPI)
 endif (USE_MPI)
+
+if (USE_THRUST)
+  add_definitions(-DUSE_THRUST)
+endif (USE_THRUST)
 
 set(CMAKE_DEBUG_POSTFIX "D")
 
