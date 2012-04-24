@@ -75,7 +75,7 @@ class BonsaiDemo
 public:
   BonsaiDemo(octree *tree, octree::IterationData &idata) 
     : m_tree(tree), m_idata(idata), iterationsRemaining(true),
-      m_displayMode(ParticleRenderer::PARTICLE_SPRITES),
+      m_displayMode(ParticleRenderer::PARTICLE_SPRITES_COLOR),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.1f),
       m_paused(false), m_displayBoxes(false), 
       m_octreeDisplayLevel(3)
@@ -86,7 +86,8 @@ public:
     m_cameraRot = make_float3(0, 0, 0);
     m_cameraRotLag = m_cameraRot;
             
-    float color[4] = { 0.8f, 0.7f, 0.95f, 1.0f};
+    //float color[4] = { 0.8f, 0.7f, 0.95f, 0.5f};
+	float color[4] = { 1.0f, 1.0f, 1.0f, 1.0f};
     m_renderer.setBaseColor(color);
     m_renderer.setPointSize(0.00001f);
     tree->iterate_setup(m_idata);
@@ -209,6 +210,7 @@ public:
     float distanceToCenter = radius / sinf(0.5f * fovRads);
     
     m_cameraTrans = center + make_float3(0, 0, - distanceToCenter);
+	m_cameraTransLag = m_cameraTrans;
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
@@ -226,8 +228,8 @@ private:
 
     int n = m_tree->localTree.n;
 
-    float4 darkMatterColor = make_float4(1.0f, 0.0f, 0.0f, 1.0f);
-    float4 starColor =       make_float4(0.0f, 0.0f, 1.0f, 1.0f);
+    float4 darkMatterColor = make_float4(1.0f, 0.5f, 0.1f, 0.1f);
+    float4 starColor =       make_float4(0.1f, 0.5f, 1.0f, 0.5f);
 
     float4 *colors = new float4[n];
 
@@ -389,7 +391,8 @@ void initGL(int argc, char** argv)
   // This is necessary in order to achieve optimal performance with OpenGL/CUDA interop.
   glutInit(&argc, argv);
   glutInitDisplayMode(GLUT_RGB | GLUT_DEPTH | GLUT_DOUBLE);
-  glutInitWindowSize(720, 480);
+  //glutInitWindowSize(720, 480);
+  glutInitWindowSize(1024, 768);
   glutCreateWindow("Bonsai Tree-code Gravitational N-body Simulation");
   //if (bFullscreen)
   //  glutFullScreen();

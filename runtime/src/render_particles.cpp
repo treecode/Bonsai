@@ -195,11 +195,14 @@ void ParticleRenderer::display(DisplayMode mode /* = PARTICLE_POINTS */)
       GLuint texLoc = glGetUniformLocation(m_programSprites, "splatTexture");
       glUniform1i(texLoc, 0);
 
+	  GLuint loc = glGetUniformLocation(m_programSprites, "baseColor");
+	  glUniform4fv(loc, 1, m_baseColor);
+
       glActiveTextureARB(GL_TEXTURE0_ARB);
       glBindTexture(GL_TEXTURE_2D, m_texture);
 
       glColor3f(1, 1, 1);
-      glSecondaryColor3fv(m_baseColor);
+      //glSecondaryColor3fv(m_baseColor);
 
       _drawPoints();
 
@@ -216,7 +219,7 @@ void ParticleRenderer::display(DisplayMode mode /* = PARTICLE_POINTS */)
       // setup point sprites
       glEnable(GL_POINT_SPRITE_ARB);
       glTexEnvi(GL_POINT_SPRITE_ARB, GL_COORD_REPLACE_ARB, GL_TRUE);
-      glEnable(GL_VERTEX_PROGRAM_POINT_SIZE_NV);
+      glEnable(GL_VERTEX_PROGRAM_POINT_SIZE_ARB);
       glPointSize(m_spriteSize);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE);
       glEnable(GL_BLEND);
@@ -226,11 +229,14 @@ void ParticleRenderer::display(DisplayMode mode /* = PARTICLE_POINTS */)
       GLuint texLoc = glGetUniformLocation(m_programSprites, "splatTexture");
       glUniform1i(texLoc, 0);
 
+	  GLuint loc = glGetUniformLocation(m_programSprites, "baseColor");
+	  glUniform4fv(loc, 1, m_baseColor);
+
       glActiveTextureARB(GL_TEXTURE0_ARB);
       glBindTexture(GL_TEXTURE_2D, m_texture);
 
       glColor3f(1, 1, 1);
-      glSecondaryColor3fv(m_baseColor);
+      //glSecondaryColor3fv(m_baseColor);
 
       _drawPoints(true);
 
@@ -254,7 +260,6 @@ const char vertexShaderPoints[] =
   "    vec4 vert = vec4(gl_Vertex.xyz, 1.0);  			                      \n"
   "    gl_Position = gl_ProjectionMatrix * gl_ModelViewMatrix * vert;                           \n"
   "    gl_FrontColor = gl_Color;                                          \n"
-  "    gl_FrontSecondaryColor = gl_SecondaryColor;                        \n"
   "}                                                                      \n"
 };
 
@@ -266,26 +271,22 @@ const char vertexShader[] =
   "    float pointSize = 500.0 * gl_Point.size;                           \n"
   "    vec4 vert = vec4(gl_Vertex.xyz, 1.0);  			                      \n"
   "    vec3 pos_eye = vec3 (gl_ModelViewMatrix * vert);                   \n"
-  "    gl_PointSize = max(1.0, pointSize / (1.0 - pos_eye.z));            \n"
+  "    gl_PointSize = max(1.0, pointSize / - pos_eye.z);			      \n"
   "    gl_TexCoord[0] = gl_MultiTexCoord0;                                \n"
   //"    gl_TexCoord[1] = gl_MultiTexCoord1;                                \n"
   "    gl_Position = gl_ProjectionMatrix * gl_ModelViewMatrix * vert;                           \n"
   "    gl_FrontColor = gl_Color;                                          \n"
-  "    gl_FrontSecondaryColor = gl_SecondaryColor;                        \n"
   "}                                                                      \n"
 };
 
 const char pixelShader[] =
 {
   "uniform sampler2D splatTexture;                                        \n"
-
+  "uniform float4 baseColor;\n"
   "void main()                                                            \n"
   "{                                                                      \n"
-  "    vec4 color2 = gl_SecondaryColor;                                   \n"
-  "    vec4 color = (0.6 + 0.4 * gl_Color) * texture2D(splatTexture, gl_TexCoord[0].st); \n"
-  "    gl_FragColor =                                                     \n"
-  "         color;\n"//mix(vec4(0.1, 0.0, 0.0, color.w), color2, color.w);\n"
-  "    gl_FragColor = color * color2;                                      \n"
+  "    vec4 tex = texture2D(splatTexture, gl_TexCoord[0].st); \n"
+  "    gl_FragColor = gl_Color * baseColor * tex;						  \n"
   "}                                                                      \n"
 };
 
@@ -377,6 +378,7 @@ void ParticleRenderer::_createTexture(int resolution)
   glBindTexture(GL_TEXTURE_2D, m_texture);
   glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP_SGIS, GL_TRUE);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+  //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, resolution, resolution, 0, 
     GL_RGBA, GL_UNSIGNED_BYTE, data);
