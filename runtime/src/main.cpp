@@ -30,6 +30,28 @@ using namespace std;
 
 #include "../profiling/bonsai_timing.h"
 
+extern void initTimers()
+{
+  // Set up the profiling timing info
+  build_tree_init();
+  compute_propertiesD_init();
+  dev_approximate_gravity_init();
+  parallel_init();
+  sortKernels_init();
+  timestep_init();
+}
+
+extern void displayTimers()
+{
+  // Display all timing info on the way out
+  build_tree_display();
+  compute_propertiesD_display();
+  //dev_approximate_gravity_display();
+  //parallel_display();
+  //sortKernels_display();
+  //timestep_display();
+}
+
 #include "octree.h"
 
 #ifdef USE_OPENGL
