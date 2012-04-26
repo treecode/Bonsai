@@ -76,29 +76,29 @@ set (HFILES
 set (CUFILES
   CUDAkernels/build_tree.cu
   CUDAkernels/compute_propertiesD.cu
-  CUDAkernels/dev_approximate_gravity.cu
-  CUDAkernels/dev_approximate_gravity_let.cu
   CUDAkernels/parallel.cu
   CUDAkernels/sortKernels.cu
   CUDAkernels/timestep.cu
   CUDAkernels/depthSort.cu
+  CUDAkernels/dev_approximate_gravity_fermi.cu  
   )
+
+ if (COMPILE_SM30)
+  set (CUFILES 
+    ${CUFILES}
+    CUDAkernels/dev_approximate_gravity.cu  
+    )
+endif (COMPILE_SM30)
 
 set (CUHFILES
   CUDAkernels/support_kernels.cu
   CUDAkernels/scanKernels.cu
   )
 
-source_group("CUDA Source Files" FILES ${CUFILES})
-source_group("CUDA Include Files" FILES ${CUHFILES})
+source_group("CUDA Source Files" FILES ${CUFILES} ${CUHFILES})
 
-set (GENCODE)
-if (COMPILE_SM20)
-  set(GENCODE -gencode=arch=compute_20,code=sm_20 -gencode=arch=compute_20,code=compute_20)
-endif(COMPILE_SM20)
-if (COMPILE_SM30)
-  set(GENCODE ${GENCODE} -gencode=arch=compute_30,code=sm_30 -gencode=arch=compute_30,code=compute_30)
-endif(COMPILE_SM30)
+set(GENCODE_SM20 -gencode=arch=compute_20,code=sm_20 -gencode=arch=compute_20,code=compute_20)
+set(GENCODE_SM30 -gencode=arch=compute_30,code=sm_30 -gencode=arch=compute_30,code=compute_30)
 
 if (CUDA_VERBOSE_PTXAS)
   set(VERBOSE_PTXAS --ptxas-options=-v)
@@ -166,11 +166,18 @@ if (USE_OPENGL)
 
 endif (USE_OPENGL)
 
+set(GENCODE)
+if (COMPILE_SM20)
+  set(GENCODE ${GENCODE} ${GENCODE_SM20})
+endif(COMPILE_SM20)
+if (COMPILE_SM30)
+  set(GENCODE ${GENCODE} ${GENCODE_SM_30})
+endif(COMPILE_SM30)
 
 cuda_add_executable(bonsai2
   ${CCFILES} 
   ${HFILES}
-  ${CUFILES}
+  ${CUFILES} 
   OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING}
   )
 

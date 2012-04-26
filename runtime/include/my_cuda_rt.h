@@ -119,6 +119,7 @@ namespace my_dev {
     int ccMinor;
     int defaultComputeMode;   
 
+
     
     
   public:
@@ -138,6 +139,8 @@ namespace my_dev {
       {
       }
     }
+
+    int getComputeCapability() const { return 100 * ccMajor + 10 * ccMinor; }
      
     
     int create(std::ofstream &log, bool disableTiming = false)
@@ -191,41 +194,43 @@ namespace my_dev {
       int res = cudaSetDevice((int)dev);
       if(res != cudaSuccess)
       {
-       printf("failed (error #: %d), now trying all devices starting at 0 \n", res);
+        printf("failed (error #: %d), now trying all devices starting at 0 \n", res);
 
-	for(int i=0; i < ciDeviceCount; i++)
-	{
-		printf("Trying device: %d  ...", i);
-                if(cudaSetDevice(i) != cudaSuccess)
-		{
-			printf("failed!\n");
-			if(i+1 == ciDeviceCount)
-			{
-  			  printf("All devices failed, exit! \n");
-			  exit(0);
-			}
-		}
-		else
-		{
-			printf("success! \n");
-                        this->dev = i;
-			break;
-		}
-	}
+	      for(int i=0; i < ciDeviceCount; i++)
+        {
+          printf("Trying device: %d  ...", i);
+          if(cudaSetDevice(i) != cudaSuccess)
+          {
+            printf("failed!\n");
+            if(i+1 == ciDeviceCount)
+            {
+              printf("All devices failed, exit! \n");
+              exit(0);
+            }
+          }
+          else
+          {
+            printf("success! \n");
+            this->dev = i;
+            break;
+          }
+        }
       }
       else
       {
-	      printf("success!\n");
+        printf("success!\n");
       }
-      
+
       cudaDeviceProp deviceProp;                                                                                                     
       CU_SAFE_CALL(cudaGetDeviceProperties(&deviceProp, (int)dev));
       //Get the number of multiprocessors of the device
       multiProcessorCount = deviceProp.multiProcessorCount;
-      
+      ccMajor = deviceProp.major;
+      ccMinor = deviceProp.minor;
+
       hContext_flag = true;
     }
-    
+
     
     void startTiming(cudaStream_t stream=0)
     {
