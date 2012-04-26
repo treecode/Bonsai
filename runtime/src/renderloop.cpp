@@ -330,6 +330,7 @@ void motion(int x, int y)
 }
 
 // commented out to remove unused parameter warnings in Linux
+extern void displayTimers();    // For profiling counter display
 void key(unsigned char key, int /*x*/, int /*y*/)
 {
   switch (key) {
@@ -339,6 +340,7 @@ void key(unsigned char key, int /*x*/, int /*y*/)
   case 27: // escape
   case 'q':
   case 'Q':
+    displayTimers();
     cudaDeviceReset();
     exit(0);
     break;

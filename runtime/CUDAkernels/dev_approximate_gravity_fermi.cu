@@ -1,4 +1,7 @@
-  // #include "support_kernels.cu"
+// MJH: I put the whole file in this because I couldn't get CMake to treat .cu files differently
+#if __CUDA_ARCH__ < 300  // This file contains fermi-only code
+
+// #include "support_kernels.cu"
 #include <stdio.h>
 #include "../profiling/cuxTimer_host.cu"
 #include "../profiling/bonsai_timing.h"
@@ -1058,3 +1061,4 @@ __launch_bounds__(NTHREAD)
   }
 
 
+#endif // __CUDA_ARCH__ < 300

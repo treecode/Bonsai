@@ -275,7 +275,12 @@ void octree::load_kernels() {
   getTNext.create("get_Tnext"); 
   predictParticles.create("predict_particles");   
   getNActive.create("get_nactive");
-  approxGrav.create("dev_approximate_gravity");
+
+  if (devContext.getComputeCapability() >= 300)
+    approxGrav.create("dev_approximate_gravity_kepler");
+  else
+    approxGrav.create("dev_approximate_gravity");
+  
   correctParticles.create("correct_particles");
   computeDt.create("compute_dt");  
   setActiveGrps.create("setActiveGroups");
