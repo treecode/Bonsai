@@ -26,12 +26,7 @@ option(USE_THRUST
   "On to use thrust for sorting"
   OFF
   )
-
-option(COMPILE_SM20
-  "On to enable SM20 compilation"
-  ON
-  )
-
+  
 option(COMPILE_SM30
   "On to enable SM30 compilation"
   ON
@@ -81,7 +76,7 @@ set (CUFILES
   CUDAkernels/dev_approximate_gravity_fermi.cu  
   )
 
- if (COMPILE_SM30)
+if (COMPILE_SM30)
   set (CUFILES 
     ${CUFILES}
     CUDAkernels/dev_approximate_gravity.cu  
@@ -146,12 +141,10 @@ if (USE_OPENGL)
 
 endif (USE_OPENGL)
 
-set(GENCODE)
-if (COMPILE_SM20)
-  set(GENCODE ${GENCODE} ${GENCODE_SM20})
-endif(COMPILE_SM20)
+set(GENCODE ${GENCODE_SM20})
+
 if (COMPILE_SM30)
-  set(GENCODE ${GENCODE} ${GENCODE_SM_30})
+  set(GENCODE ${GENCODE} ${GENCODE_SM30})
 endif(COMPILE_SM30)
 
 cuda_add_executable(bonsai2
