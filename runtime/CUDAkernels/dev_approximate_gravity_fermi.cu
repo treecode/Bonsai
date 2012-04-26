@@ -3,6 +3,9 @@
 
 // #include "support_kernels.cu"
 #include <stdio.h>
+#include "../profiling/cuxTimer_host.cu"
+#include "../profiling/bonsai_timing.h"
+PROF_MODULE(dev_approximate_gravity);
 
 #include "node_specs.h"
 

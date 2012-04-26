@@ -1,4 +1,7 @@
 // #include "support_kernels.cu"
+#include "../profiling/cuxTimer_host.cu"
+#include "../profiling/bonsai_timing.h"
+PROF_MODULE(parallel);
 
 #include <stdio.h>
 #include "node_specs.h"
@@ -22,7 +25,7 @@ extern "C" __global__ void doDomainCheck(int    n_bodies,
                                            real4  *body_pos,
                                            int    *validList    //Valid is 1 if particle is outside domain
 ){
-  
+  CUXTIMER("doDomainCheck");
   uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   uint tid = threadIdx.x;
   uint id  = bid * blockDim.x + tid;
@@ -46,7 +49,7 @@ extern "C" __global__ void doDomainCheckAdvanced(int    n_bodies,
                                            real4  *body_pos,
                                            int    *validList    //Valid is 1 if particle is outside domain
 ){
-  
+  CUXTIMER("doDomainCheckAdvanced");
   uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   uint tid = threadIdx.x;
   uint id  = bid * blockDim.x + tid;
@@ -66,6 +69,7 @@ extern "C" __global__ void extractSampleParticles(int    n_bodies,
                                                   real4  *body_pos,
                                                   real4  *samplePosition
 ){
+  CUXTIMER("extractSampleParticles");
   uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   uint tid = threadIdx.x;
   uint id  = bid * blockDim.x + tid;
@@ -82,6 +86,7 @@ extern "C" __global__ void extractOutOfDomainParticlesR4(int n_extract,
                                                        real4 *source,
                                                        real4 *destination)
 {
+  CUXTIMER("extractOutOfDomainParticlesR4");
   uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   uint tid = threadIdx.x;
   uint id  = bid * blockDim.x + tid;
@@ -120,6 +125,7 @@ extern "C" __global__ void extractOutOfDomainParticlesAdvanced(int n_extract,
                                                        int   *body_id,
                                                        bodyStruct *destination)
 {
+  CUXTIMER("extractOutOfDomainParticlesAdvanced");
   uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   uint tid = threadIdx.x;
   uint id  = bid * blockDim.x + tid;
@@ -154,6 +160,7 @@ extern "C" __global__ void internalMove(int       n_extract,
                                         float2    *time,
                                         int       *body_id)
 {
+  CUXTIMER("internalMove");
   uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   uint tid = threadIdx.x;
   uint id  = bid * blockDim.x + tid;
@@ -195,6 +202,7 @@ extern "C" __global__ void insertNewParticles(int       n_extract,
                                               int       *body_id,
                                               bodyStruct *source)
 {
+  CUXTIMER("insertNewParticles");
   uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   uint tid = threadIdx.x;
   uint id  = bid * blockDim.x + tid;
