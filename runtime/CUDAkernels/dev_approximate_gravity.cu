@@ -288,15 +288,6 @@ __device__ T inclusive_scan_array(volatile T *ptr_global, const int N, const uns
 
 #define WARP_SIZE2 5
 #define WARP_SIZE  (1 << WARP_SIZE2)
-template<class T>
-struct ADDOP 
-{
-  __device__ static inline T identity()           {return (T)(0);}
-  __device__ static inline T apply(T a, T b)      {return (T)(a + b);};
-  __device__ static inline T unapply(T a, T b)    {return (T)(a - b);};
-  __device__ static inline T mask(bool flag, T b) {return (T)(-(int)(flag) & b);};
-};
-
 
 #if 1
 
@@ -313,21 +304,18 @@ __device__ __forceinline__ uint shfl_scan_add_step(uint partial, uint up_offset)
   return result;
 }
 
-  template <class OP, class T, const int levels>
+  template <const int levels>
 __device__ __forceinline__ uint inclusive_scan_warp(int mysum, const int idx)
 {
-  // this pragma may be unnecessary with the template parameter!
-#pragma unroll
   for(int i = 0; i < levels; ++i)
     mysum = shfl_scan_add_step(mysum, 1 << i);
-
   return mysum;
 }
 
 #else
 
-  template<class OP, class T, const int SIZE2>
-__device__ __forceinline__ T inclusive_scan_warp(T value, const unsigned int idx) 
+  template<const int SIZE2>
+__device__ __forceinline__ int inclusive_scan_warp(int value, const unsigned int idx) 
 {
   const unsigned int laneId = idx & 31;
 
@@ -344,25 +332,63 @@ __device__ __forceinline__ T inclusive_scan_warp(T value, const unsigned int idx
 
 #endif
 
-  template<class OP, class T, const int BLOCKDIM2>
-__device__ __inline__ T inclusive_scan_block(T v_in, const unsigned int idx) 
+  template<const int BLOCKDIM2>
+__device__ __inline__ int inclusive_scan_block(volatile int* shdata, int v_in, const unsigned int idx) 
 {
-  __shared__ T shdata[WARP_SIZE];
   const unsigned int laneId = idx & (WARP_SIZE - 1);
   const unsigned int warpId = idx >> WARP_SIZE2;
 
-  T val = inclusive_scan_warp<OP, T, WARP_SIZE2>(v_in, idx);
+  int val = inclusive_scan_warp<WARP_SIZE2>(v_in, idx);
   if (31 == laneId) shdata[warpId] = val;
   __syncthreads();
 
-  if (0 == warpId) shdata[idx] = inclusive_scan_warp<OP, T, BLOCKDIM2 - WARP_SIZE2>(shdata[idx], idx);
+  if (0 == warpId) shdata[idx] = inclusive_scan_warp<BLOCKDIM2 - WARP_SIZE2>(shdata[idx], idx);
   __syncthreads();
 
-  if (warpId > 0) val = OP::apply(shdata[warpId - 1], val);
+  if (warpId > 0) val += shdata[warpId - 1];
 
   return val; 
 }
 
+  template<const int BLOCKDIM2>
+__device__ __inline__ int2 inclusive_scan_blockS(volatile int* shdata, int v_in, const unsigned int idx) 
+{
+  const unsigned int laneId = idx & (WARP_SIZE - 1);
+  const unsigned int warpId = idx >> WARP_SIZE2;
+
+  int val = inclusive_scan_warp<WARP_SIZE2>(v_in, idx);
+  if (31 == laneId) shdata[warpId] = val;
+  __syncthreads();
+
+  if (0 == warpId) shdata[idx] = inclusive_scan_warp<BLOCKDIM2 - WARP_SIZE2>(shdata[idx], idx);
+  __syncthreads();
+
+  if (warpId > 0) val += shdata[warpId - 1];
+  __syncthreads();
+  if ((1 << BLOCKDIM2) - 1 == idx) shdata[0] = val;
+  __syncthreads();
+
+  return make_int2(val, shdata[0]);
+}
+
+template<const int BLOCKDIM2>
+__device__ int inclusive_scan_array(volatile int *ptr, volatile int* shdata, const int N, const unsigned int idx) 
+{
+  int y = 0;
+
+  for (int p = 0; p < N; p += blockDim.x) 
+  {
+    __syncthreads();
+    ptr[p + idx] = inclusive_scan_block<BLOCKDIM2>(shdata, ptr[p+idx], idx);
+    ptr[p + idx] += y;
+
+    __syncthreads();
+
+    y = ptr[blockDim.x - 1];
+  }
+
+  return y;
+}
 
 
 #endif
@@ -419,7 +445,9 @@ __device__ bool split_node_grav_impbh(
 
 
 #define TEXTURES
-// #define OLDPREFIX
+#if 0
+#define OLDPREFIX
+#endif
 
 
 template<int DIM2, int SHIFT>
@@ -459,6 +487,10 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
   int *direct = (int*)&approx[ 2*DIM];            //  2*DIM,  3*DIM,  1*DIM
   int *nodes  = (int*)&direct[   DIM];            //  3*DIM, 13*DIM, 10*DIM
   int *prefix = (int*)&nodes [10*DIM];            // 13*DIM, 15*DIM,  2*DIM
+
+#ifndef OLDPREFIX
+  __shared__ int prefix_shmem[32];
+#endif
 
   float  *node_mon0 = (float* )&nodes    [DIM];   //  4*DIM,  5*DIM,  1*DIM
   float3 *node_mon1 = (float3*)&node_mon0[DIM];   //  5*DIM,  8*DIM,  3*DIM
@@ -567,17 +599,10 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
         prefix[tid] += n_offset - nchild;
         __syncthreads();
 #else
-#if 0
-        inclusive_scan_block<ADDOP<int>, int, DIM2>(prefix, nchild, tid);        // inclusive scan to compute memory offset of each child
-#else
-        int v0 = inclusive_scan_block<ADDOP<int>, int, DIM2>(nchild, tid);        // inclusive scan to compute memory offset of each child
-        prefix[tid] = v0;
-        __syncthreads();
-#endif
-        int n_total = prefix[blockDim.x - 1];                              // fetch total number of children, i.e. offset of the last child -1
-        __syncthreads();                                                   // thread barrier to make sure that warps completed their jobs
-        prefix[tid] += n_offset - nchild;                                  // convert inclusive into exclusive scan for referencing purpose
-        __syncthreads();                                                   // thread barrier
+        int2 offset2 = inclusive_scan_blockS<DIM2>(prefix_shmem, nchild, tid);        // inclusive scan to compute memory offset of each child
+        int  offset = offset2.x;
+        int n_total = offset2.y;
+        offset += n_offset - nchild;
 #endif
 
         for (int i = n_offset; i < n_offset + n_total; i += DIM)         //nullify part of the array that will be filled with children
@@ -585,6 +610,7 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
         __syncthreads();                                                 //Thread barrier to make sure all warps finished writing data
 
         bool flag = (split && !leaf) && use_node;                        //Flag = use_node + split + not_a_leaf;Use only non_leaf nodes that are to be split
+#if 0
         if (flag) nodes[prefix[tid]] = child;                            //Thread with the node that is about to be split
         __syncthreads();                                                 //writes the first child in the array of nodes
 
@@ -596,6 +622,19 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
         if (flag && nodes[prefix[tid] + 5] == 0) nodes[prefix[tid] + 5] = child + 5; __syncthreads();
         if (flag && nodes[prefix[tid] + 6] == 0) nodes[prefix[tid] + 6] = child + 6; __syncthreads();
         if (flag && nodes[prefix[tid] + 7] == 0) nodes[prefix[tid] + 7] = child + 7; __syncthreads();
+#else
+        /* Thread with the node that is about to be split */
+        if (flag                          ) nodes[offset    ] = child;    
+        /* in the following 8 lines, we calculate indexes of all the children that have to be walked from the index of the first child */
+        if (flag && nodes[offset + 1] == 0) nodes[offset + 1] = child + 1;
+        if (flag && nodes[offset + 2] == 0) nodes[offset + 2] = child + 2;
+        if (flag && nodes[offset + 3] == 0) nodes[offset + 3] = child + 3;
+        if (flag && nodes[offset + 4] == 0) nodes[offset + 4] = child + 4;
+        if (flag && nodes[offset + 5] == 0) nodes[offset + 5] = child + 5;
+        if (flag && nodes[offset + 6] == 0) nodes[offset + 6] = child + 6;
+        if (flag && nodes[offset + 7] == 0) nodes[offset + 7] = child + 7;
+        __syncthreads();
+#endif
 
         n_offset += n_total;    //Increase the offset in the array by the number of newly added nodes
 
@@ -633,23 +672,12 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
         /******       APPROX          ******/
         /***********************************/
 
-#ifdef OLDPREFIX
-        n_total = calc_prefix<DIM2>(prefix, tid,  1 - (split || !use_node));
-#else
-#if 0
-        inclusive_scan_block<ADDOP<int>, int, DIM2>(prefix, 1 - (split || !use_node), tid);
-#else
-        v0 = inclusive_scan_block<ADDOP<int>, int, DIM2>(1 - (split || !use_node), tid);
-        prefix[tid] = v0;
+        offset2 = inclusive_scan_blockS<DIM2>(prefix_shmem, 1 - (split || !use_node), tid);
+        offset  = offset2.x;
+        n_total = offset2.y;
+        if (!split && use_node) approx[n_approx + offset - 1] = node;
         __syncthreads();
-#endif
-        n_total = prefix[blockDim.x - 1];
-#endif
 
-
-        // 	n_total = calc_prefix<DIM2>(prefix, tid,  !split && use_node);         // for some unkown reason this does not work right on the GPU
-        if (!split && use_node) approx[n_approx + prefix[tid] - 1] = node;
-        __syncthreads();
         n_approx += n_total;
 
         while (n_approx >= DIM) 
@@ -721,39 +749,40 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
         sh_body  [tid] = jbody;                                                  //store the leafs first body id into shared memory
 
         // step 1
-#ifdef OLDPREFIX
-        calc_prefix<DIM2>(prefix0, tid, flag);
-#else
 #if 0
-        inclusive_scan_block<ADDOP<int>, int, DIM2>(prefix0, (int)flag, tid);       // inclusive scan on flags to construct array
-#else
-        v0 = inclusive_scan_block<ADDOP<int>, int, DIM2>((int)flag, tid);       // inclusive scan on flags to construct array
+        int v0 = inclusive_scan_block<DIM2>(prefix_shmem, (int)flag, tid);       // inclusive scan on flags to construct array
         prefix0[tid] = v0;
         __syncthreads();
-#endif
-#endif
 
         if (flag) prefix1[prefix0[tid] - 1] = tid;                             //with tidś whose leaves have to be opened
         __syncthreads();                                                      //thread barrier, make sure all warps completed the job
+#else
+        offset = inclusive_scan_block<DIM2>(prefix_shmem, (int)flag, tid);       // inclusive scan on flags to construct array
+        if (flag) prefix1[offset - 1] = tid;                             //with tidś whose leaves have to be opened
+#endif
 
         // step 2
-#ifdef OLDPREFIX
-        int n_bodies  = calc_prefix<DIM2>(prefix0, tid, nbody);
-#else
 #if 0
-        inclusive_scan_block<ADDOP<int>, int, DIM2>(prefix0, nbody, tid);        // inclusive scan to compute memory offset for each body
-#else
-        v0 = inclusive_scan_block<ADDOP<int>, int, DIM2>(nbody, tid);        // inclusive scan to compute memory offset for each body
-        prefix[tid] = v0;
+        int v0 = inclusive_scan_block<DIM2>(prefix_shmem, nbody, tid);        // inclusive scan to compute memory offset for each body
+        prefix0[tid] = v0;
         __syncthreads();
-#endif
         int n_bodies = prefix0[blockDim.x - 1];                            //Total number of bides extract from the leaves
         __syncthreads();                                                   // thread barrier to make sure that warps completed their jobs
-#endif
 
         direct [tid]  = prefix0[tid];                                       //Store a copy of inclusive scan in direct
         prefix0[tid] -= nbody;                                              //convert inclusive int oexclusive scan
         prefix0[tid] += 1;                                                  //add unity, since later prefix0[tid] == 0 used to check barrier
+#else
+        offset2 = inclusive_scan_blockS<DIM2>(prefix_shmem, nbody, tid);        // inclusive scan to compute memory offset for each body
+        int offset1  = offset2.x;
+        int n_bodies = offset2.y;
+
+        direct[tid] = offset1;
+        offset1    -= nbody;
+        offset1    += 1;
+        prefix0[tid] = offset1;
+        __syncthreads();
+#endif
 
         int nl_pre = 0;                                                     //Number of leaves that have already been processed
 
@@ -770,16 +799,22 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
           __syncthreads();
 
           //step 1:
+#if 0
           if (flag && (direct[tid] <= nb) && (prefix0[tid] > 0))        //make sure that the thread indeed carries a leaf
             body_list[n_direct + prefix0[tid] - 1] = 1;                 //whose bodies will be extracted
           __syncthreads();
+#else
+          if (flag && (direct[tid] <= nb) && (offset1 > 0))        //make sure that the thread indeed carries a leaf
+            body_list[n_direct + offset1 - 1] = 1;                 //whose bodies will be extracted
+          __syncthreads();
+#endif
 
           //step 2:
-#if 1 //def OLDPREFIX
+#if 0 //def OLDPREFIX
           int nl = calc_prefix<DIM2>(nb, &body_list[n_direct], tid);
 #else
-          int nl = inclusive_scan_array<ADDOP<int>, int>              // inclusive scan to compute number of leaves to process
-            (&body_list[n_direct], nb, tid);            // to make sure that there is enough shared memory for bodies
+          int nl = inclusive_scan_array<DIM2>              // inclusive scan to compute number of leaves to process
+            (&body_list[n_direct], prefix_shmem, nb, tid);            // to make sure that there is enough shared memory for bodies
 #endif
           nb = direct[prefix1[nl_pre + nl - 1]];                        // number of bodies stored in these leaves
 
@@ -805,7 +840,12 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
           n_bodies     -= nb;                                   //subtract from n_bodies number of bodies that have been extracted
           nl_pre       += nl;                                   //increase the number of leaves that where processed
           direct [tid] -= nb;                                   //subtract the number of extracted bodies in this pass
+#if 0
           prefix0[tid] = max(prefix0[tid] - nb, 0);             //same here, but do not let the number be negative (GT200 bug!?)
+#else
+          offset1 = max(offset1 - nb, 0);
+          prefix0[tid] = offset1;
+#endif
           n_direct     += nb;                                  //increase the number of bodies to be procssed
 
           while(n_direct >= DIM) 
