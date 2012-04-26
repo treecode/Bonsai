@@ -27,6 +27,16 @@ option(USE_THRUST
   OFF
   )
 
+option(COMPILE_SM20
+  "On to enable SM20 compilation"
+  ON
+  )
+
+option(COMPILE_SM30
+  "On to enable SM30 compilation"
+  ON
+  )
+
 FIND_PACKAGE(CUDA REQUIRED)
 
 if (USE_MPI)
@@ -80,7 +90,13 @@ set (CUHFILES
 source_group("CUDA Source Files" FILES ${CUFILES})
 source_group("CUDA Include Files" FILES ${CUHFILES})
 
-set(GENCODE_SM20 -gencode=arch=compute_20,code=sm_20 -gencode=arch=compute_20,code=compute_20)
+set (GENCODE)
+if (COMPILE_SM20)
+  set(GENCODE -gencode=arch=compute_20,code=sm_20 -gencode=arch=compute_20,code=compute_20)
+endif(COMPILE_SM20)
+if (COMPILE_SM30)
+  set(GENCODE ${GENCODE} -gencode=arch=compute_30,code=sm_30 -gencode=arch=compute_30,code=compute_30)
+endif(COMPILE_SM30)
 
 if (CUDA_VERBOSE_PTXAS)
   set(VERBOSE_PTXAS --ptxas-options=-v)
@@ -135,7 +151,7 @@ cuda_add_executable(bonsai2
   ${CCFILES} 
   ${HFILES}
   ${CUFILES}
-  OPTIONS ${GENCODE_SM20} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING}
+  OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING}
   )
 
 target_link_libraries(bonsai2 ${ALL_LIBRARIES})
