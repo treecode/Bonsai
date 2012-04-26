@@ -46,10 +46,10 @@ extern void displayTimers()
   // Display all timing info on the way out
   build_tree_display();
   compute_propertiesD_display();
-  dev_approximate_gravity_display();
-  parallel_display();
-  sortKernels_display();
-  timestep_display();
+  //dev_approximate_gravity_display();
+  //parallel_display();
+  //sortKernels_display();
+  //timestep_display();
 }
 
 #include "octree.h"
