@@ -1,7 +1,10 @@
 // //#include "/home/jbedorf/papers/GBPZ2010/codes/jb/build_tree/CUDA/support_kernels.cu"
 #include "support_kernels.cu"
-
 #include <stdio.h>
+
+#include "../profiling/cuxTimer_host.cu"
+#include "../profiling/bonsai_timing.h"
+PROF_MODULE(build_tree);
 
 //////////////////////////////
 //////////////////////////////
@@ -13,6 +16,7 @@ extern "C" __global__ void boundaryReduction(const int n_particles,
                                             float3     *output_min,
                                             float3     *output_max)
 {
+  CUXTIMER("boundaryReduction");
   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   const uint tid = threadIdx.x;
   //const uint idx = bid * blockDim.x + tid;
@@ -99,6 +103,7 @@ extern "C" __global__ void boundaryReductionGroups(const int n_groups,
                                                    float3     *output_min,
                                                    float3     *output_max)
 {
+  CUXTIMER("boundaryReductionGroups");
   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   const uint tid = threadIdx.x;
   //const uint idx = bid * blockDim.x + tid;
@@ -187,6 +192,7 @@ extern "C" __global__ void cl_build_key_list(uint4  *body_key,
                                             int   n_bodies,
                                             real4  corner) {
   
+  CUXTIMER("cl_build_key_list");
   uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   uint tid = threadIdx.x;
   uint id  = bid * blockDim.x + tid;
@@ -229,7 +235,7 @@ extern "C" __global__ void cl_build_valid_list(int n_bodies,
                                                uint4  *body_key,
                                                uint *valid_list){
 //                                                uint2 *test_key_data) {
-  
+  CUXTIMER("cl_build_valid_list");
   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   const uint tid = threadIdx.x;
   const uint id  = bid * blockDim.x + tid;
@@ -301,6 +307,7 @@ extern "C" __global__ void cl_build_nodes(uint level,
                              uint  *n_children,
                              uint2 *node_bodies){
 
+  CUXTIMER("cl_build_nodes");
   uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   uint tid = threadIdx.x;
   uint id  = bid * blockDim.x + tid;
@@ -343,6 +350,7 @@ extern "C" __global__ void cl_link_tree(int n_nodes,
                             uint4 *bodies_key,
                             int   maxLevel) {
 
+  CUXTIMER("cl_link_tree");
   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   const uint tid = threadIdx.x;
   uint id  = bid * blockDim.x + tid;
@@ -429,6 +437,7 @@ extern "C" __global__ void build_level_list(const int n_nodes,
                                             uint2 *node_bodies,                                      
                                             uint* valid_list)
 {
+  CUXTIMER("build_level_list");
   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   const uint tid = threadIdx.x;
   const uint id  = bid * blockDim.x + tid;
@@ -484,6 +493,7 @@ extern "C" __global__ void build_group_list2(int    n_particles,
                                              int   *node_level_list,
                                              int   treeDepth)
 {
+  CUXTIMER("build_group_list2");
   uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   uint tid = threadIdx.x;
   uint idx = bid * blockDim.x + tid;
@@ -565,6 +575,7 @@ extern "C" __global__ void store_group_list(int    n_particles,
                                             uint  *body2group_list,
                                             uint2 *group_list)
 {
+  CUXTIMER("store_group_list");
   uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   uint tid = threadIdx.x;
 //   uint idx = bid * blockDim.x + tid;

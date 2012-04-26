@@ -398,11 +398,11 @@ namespace my_dev {
       if (hDeviceMem_flag)
       {
 	assert(size > 0);
-	CU_SAFE_CALL(cudaFree(hDeviceMem));
+	(cudaFree(hDeviceMem));
         decreaseMemUsage(size*sizeof(T));
         
         if(pinned_mem){
-          CU_SAFE_CALL(cudaFreeHost((void*)host_ptr));}
+          (cudaFreeHost((void*)host_ptr));}
         else{
           free(host_ptr);}
           hDeviceMem_flag = false;

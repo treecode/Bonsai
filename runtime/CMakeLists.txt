@@ -88,7 +88,19 @@ set (CUHFILES
   CUDAkernels/scanKernels.cu
   )
 
+set (PROFFILES
+  # profiling/cuxTimer.cu
+  # profiling/cuxTimer_host.cu
+  profiling/cuxTimer.h
+  profiling/cuxTimer_private.h
+  profiling/warp_functions.h
+  profiling/derived_atomic_functions.h
+  profiling/bonsai_timing.h
+  )
+
 source_group("CUDA Source Files" FILES ${CUFILES} ${CUHFILES})
+source_group("CUDA Include Files" FILES ${CUHFILES})
+source_group("CUDA Profiling Tools" FILES ${PROFFILES})
 
 set(GENCODE_SM20 -gencode=arch=compute_20,code=sm_20 -gencode=arch=compute_20,code=compute_20)
 set(GENCODE_SM30 -gencode=arch=compute_30,code=sm_30 -gencode=arch=compute_30,code=compute_30)
@@ -150,7 +162,8 @@ endif(COMPILE_SM30)
 cuda_add_executable(bonsai2
   ${CCFILES} 
   ${HFILES}
-  ${CUFILES} 
+  ${CUFILES}
+  ${PROFFILES}
   OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING}
   )
 

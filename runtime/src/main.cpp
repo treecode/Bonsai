@@ -28,6 +28,30 @@ http://github.com/treecode/Bonsai
 
 using namespace std;
 
+#include "../profiling/bonsai_timing.h"
+
+extern void initTimers()
+{
+  // Set up the profiling timing info
+  build_tree_init();
+  compute_propertiesD_init();
+  dev_approximate_gravity_init();
+  parallel_init();
+  sortKernels_init();
+  timestep_init();
+}
+
+extern void displayTimers()
+{
+  // Display all timing info on the way out
+  build_tree_display();
+  compute_propertiesD_display();
+  //dev_approximate_gravity_display();
+  //parallel_display();
+  //sortKernels_display();
+  //timestep_display();
+}
+
 #include "octree.h"
 
 #ifdef USE_OPENGL
@@ -592,6 +616,8 @@ int main(int argc, char** argv)
   int NTotal, NFirst, NSecond, NThird;
   NTotal = NFirst = NSecond = NThird = 0;
 
+  initTimers();
+
   //Creat the octree class and set the properties
   octree *tree = new octree(argv, devID, theta, eps, snapshotFile, snapshotIter,  timeStep, tEnd, killDistance, (int)remoDistance, snapShotAdd, rebuild_tree_rate);
                             
@@ -785,5 +811,7 @@ int main(int argc, char** argv)
   delete tree;
   tree = NULL;
 #endif
+
+  displayTimers();
   return 0;
 }
