@@ -1,6 +1,10 @@
 // #include "support_kernels.cu"
 #include <stdio.h>
 
+#include "../profiling/cuxTimer_host.cu"
+#include "../profiling/bonsai_timing.h"
+PROF_MODULE(compute_propertiesD);
+
 #include "node_specs.h"
 
 __device__ void sh_MinMax2(int i, int j, float3 *r_min, float3 *r_max, volatile float3 *sh_rmin, volatile  float3 *sh_rmax)
@@ -99,6 +103,7 @@ extern "C" __global__ void compute_leaf(const int n_leafs,
                                             real4  *body_vel,
                                             uint *body_id) {
 
+  CUXTIMER("compute_leaf");
   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   const uint tid = threadIdx.x;
   const uint id  = bid * blockDim.x + tid;
@@ -197,6 +202,7 @@ extern "C" __global__ void compute_non_leaf(const int curLevel,         //Level 
                                             real4 *nodeLowerBounds,
                                             real4 *nodeUpperBounds){
 
+  CUXTIMER("compute_non_leaf");
   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
   const int tid = threadIdx.y * blockDim.x + threadIdx.x;
 
@@ -280,6 +286,7 @@ extern "C" __global__ void compute_scaling(const int node_count,
 					   real4 *boxCenterInfo,
                                            uint2 *node_bodies){
 
+  CUXTIMER("compute_scaling");
   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
   const int tid = threadIdx.y * blockDim.x + threadIdx.x;
 
@@ -390,6 +397,7 @@ extern "C" __global__ void setPHGroupData(const int n_groups,
                                           int2  *group_list,                                                
                                           real4 *groupCenterInfo,
                                           real4 *groupSizeInfo){
+  CUXTIMER("setPHGroupData");
   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
   const int tid = threadIdx.y * blockDim.x + threadIdx.x;
 

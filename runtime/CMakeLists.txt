@@ -75,8 +75,10 @@ set (HFILES
 set (CUFILES
   CUDAkernels/build_tree.cu
   CUDAkernels/compute_propertiesD.cu
-  CUDAkernels/dev_approximate_gravity.cu
-  CUDAkernels/dev_approximate_gravity_let.cu
+  # CUDAkernels/dev_approximate_gravity.cu
+  CUDAkernels/dev_approximate_gravity_fermi.cu
+  CUDAkernels/dev_approximate_gravity_kepler.cu
+  # CUDAkernels/dev_approximate_gravity_let.cu
   CUDAkernels/parallel.cu
   CUDAkernels/sortKernels.cu
   CUDAkernels/timestep.cu
@@ -87,8 +89,19 @@ set (CUHFILES
   CUDAkernels/scanKernels.cu
   )
 
+set (PROFFILES
+  # profiling/cuxTimer.cu
+  # profiling/cuxTimer_host.cu
+  profiling/cuxTimer.h
+  profiling/cuxTimer_private.h
+  profiling/warp_functions.h
+  profiling/derived_atomic_functions.h
+  profiling/bonsai_timing.h
+  )
+
 source_group("CUDA Source Files" FILES ${CUFILES})
 source_group("CUDA Include Files" FILES ${CUHFILES})
+source_group("CUDA Profiling Tools" FILES ${PROFFILES})
 
 set (GENCODE)
 if (COMPILE_SM20)
@@ -151,6 +164,7 @@ cuda_add_executable(bonsai2
   ${CCFILES} 
   ${HFILES}
   ${CUFILES}
+  ${PROFFILES}
   OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING}
   )
 
