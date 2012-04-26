@@ -262,7 +262,12 @@ void octree::load_kernels() {
   getTNext.load_source("./timestep.ptx", pathName.c_str(), "", -1);
   predictParticles.load_source("./timestep.ptx", pathName.c_str(), "", -1);
   getNActive.load_source("./timestep.ptx", pathName.c_str(), "", -1);
-  approxGrav.load_source("./dev_approximate_gravity.ptx", pathName.c_str(), "", 64);
+  
+  if (devContext.getComputeCapability() >= 300)
+	approxGrav.load_source("./dev_approximate_gravity.ptx", pathName.c_str(), "", 64);
+  else
+	approxGrav.load_source("./dev_approximate_gravity_fermi.ptx", pathName.c_str(), "", 64);
+
   correctParticles.load_source("./timestep.ptx", pathName.c_str(), "", -1);
   computeDt.load_source("./timestep.ptx", pathName.c_str(), "", -1);
   computeEnergy.load_source("./timestep.ptx", pathName.c_str(), "", -1);
