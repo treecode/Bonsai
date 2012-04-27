@@ -3,7 +3,6 @@
 #else
   #define EMUSYNC
 #endif
-#include "../profiling/cuxTimer_host.cu"
 #include "../profiling/bonsai_timing.h"
 PROF_MODULE(timestep);
 

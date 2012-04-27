@@ -1,5 +1,4 @@
 // #include "support_kernels.cu"
-#include "../profiling/cuxTimer_host.cu"
 #include "../profiling/bonsai_timing.h"
 PROF_MODULE(parallel);
 
