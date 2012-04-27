@@ -1,6 +1,5 @@
 // #include "support_kernels.cu"
 #include <stdio.h>
-#include "../profiling/cuxTimer_host.cu"
 #include "../profiling/bonsai_timing.h"
 PROF_MODULE(dev_approximate_gravity);
 
@@ -466,9 +465,9 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
     int *lmem,
     int &ngb,
     int &apprCount, int &direCount,
-    volatile float4 *boxSizeInfo,
+    float4 *boxSizeInfo,
     float4 groupSize,
-    volatile float4 *boxCenterInfo,
+    float4 *boxCenterInfo,
     float group_eps,
     real4 *body_vel) {
 

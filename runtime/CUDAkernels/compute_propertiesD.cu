@@ -1,7 +1,6 @@
 // #include "support_kernels.cu"
 #include <stdio.h>
 
-#include "../profiling/cuxTimer_host.cu"
 #include "../profiling/bonsai_timing.h"
 PROF_MODULE(compute_propertiesD);
 

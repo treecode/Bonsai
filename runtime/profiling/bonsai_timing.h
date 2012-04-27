@@ -5,8 +5,11 @@
 
 #define CUXTIMER_DISABLE
 
+#include "../profiling/cuxTimer_host.cu"
+
 #ifdef CUXTIMER_DISABLE
 #define PROF_HOOK(name)
+#define CUXTIMER(...)
 #else
 #define PROF_HOOK(name) \
 extern void name ## _init(); \
