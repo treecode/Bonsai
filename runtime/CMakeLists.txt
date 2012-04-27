@@ -78,7 +78,6 @@ set (CUFILES
   CUDAkernels/parallel.cu
   CUDAkernels/sortKernels.cu
   CUDAkernels/timestep.cu
-  CUDAkernels/dev_approximate_gravity_fermi.cu  
   )
 
 if (COMPILE_SM30)
@@ -86,6 +85,14 @@ if (COMPILE_SM30)
     ${CUFILES}
     CUDAkernels/dev_approximate_gravity.cu  
     )
+  set(GENCODE -gencode=arch=compute_30,code=sm_30 -gencode=arch=compute_30,code=compute_30)
+
+else (COMPILE_SM30)
+  set (CUFILES
+    ${CUFILES}
+	CUDAkernels/dev_approximate_gravity_fermi.cu  
+	)
+  set(GENCODE -gencode=arch=compute_20,code=sm_20 -gencode=arch=compute_20,code=compute_20)
 endif (COMPILE_SM30)
 
 set (CUHFILES
@@ -106,9 +113,6 @@ set (PROFFILES
 source_group("CUDA Source Files" FILES ${CUFILES} ${CUHFILES})
 source_group("CUDA Include Files" FILES ${CUHFILES})
 source_group("CUDA Profiling Tools" FILES ${PROFFILES})
-
-set(GENCODE_SM20 -gencode=arch=compute_20,code=sm_20 -gencode=arch=compute_20,code=compute_20)
-set(GENCODE_SM30 -gencode=arch=compute_30,code=sm_30 -gencode=arch=compute_30,code=compute_30)
 
 if (CUDA_KEEP_INTERMEDIATE_FILES)
   set(KEEP -keep)
@@ -161,12 +165,6 @@ if (USE_OPENGL)
   file(COPY ${LIB_PATH}/${GLEW_NAME}.dll DESTINATION ${CMAKE_BINARY_DIR}) 
 
 endif (USE_OPENGL)
-
-set(GENCODE ${GENCODE_SM20})
-
-if (COMPILE_SM30)
-  set(GENCODE ${GENCODE} ${GENCODE_SM30})
-endif(COMPILE_SM30)
 
 cuda_add_executable(bonsai2
   ${CCFILES} 
