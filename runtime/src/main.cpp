@@ -32,6 +32,7 @@ using namespace std;
 
 extern void initTimers()
 {
+#ifndef CUXTIMER_DISABLE
   // Set up the profiling timing info
   build_tree_init();
   compute_propertiesD_init();
@@ -39,10 +40,12 @@ extern void initTimers()
   parallel_init();
   sortKernels_init();
   timestep_init();
+#endif
 }
 
 extern void displayTimers()
 {
+#ifndef CUXTIMER_DISABLE
   // Display all timing info on the way out
   build_tree_display();
   compute_propertiesD_display();
@@ -50,6 +53,7 @@ extern void displayTimers()
   //parallel_display();
   //sortKernels_display();
   //timestep_display();
+#endif
 }
 
 #include "octree.h"

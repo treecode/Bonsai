@@ -48,13 +48,13 @@
 
 // Dummy functions for unsupported architecture
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ <= 100)
-__device__ unsigned long long atomicOr(unsigned long long *address, unsigned long long val) { return 0; }
-__device__ unsigned long long atomicAnd(unsigned long long *address, unsigned long long val) { return 0; }
-__device__ unsigned long long atomicXor(unsigned long long *address, unsigned long long val) { return 0; }
-__device__ long long atomicMin(long long *address, long long val) { return 0; }
-__device__ unsigned long long atomicMin(unsigned long long *address, unsigned long long val) { return 0; }
-__device__ long long atomicMax(long long *address, long long val) { return 0; }
-__device__ unsigned long long atomicMax(unsigned long long *address, unsigned long long val) { return 0; }
+//__device__ unsigned long long atomicOr(unsigned long long *address, unsigned long long val) { return 0; }//
+//__device__ unsigned long long atomicAnd(unsigned long long *address, unsigned long long val) { return 0; }
+//__device__ unsigned long long atomicXor(unsigned long long *address, unsigned long long val) { return 0; }
+//__device__ long long atomicMin(long long *address, long long val) { return 0; }
+//__device__ unsigned long long atomicMin(unsigned long long *address, unsigned long long val) { return 0; }
+//__device__ long long atomicMax(long long *address, long long val) { return 0; }
+//__device__ unsigned long long atomicMax(unsigned long long *address, unsigned long long val) { return 0; }
 __device__ float atomicMin(float *address, float val) { return 0; }
 __device__ float atomicMax(float *address, float val) { return 0; }
 __device__ double atomicMin(double *address, double val) { return 0; }
