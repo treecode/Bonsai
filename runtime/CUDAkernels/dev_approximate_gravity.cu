@@ -1,8 +1,8 @@
-// MJH: I put the whole file in this because I couldn't get CMake to treat .cu files differently
-#if __CUDA_ARCH__ >= 300  // This file now contains kepler-only code
-
 // #include "support_kernels.cu"
 #include <stdio.h>
+#include "../profiling/cuxTimer_host.cu"
+#include "../profiling/bonsai_timing.h"
+PROF_MODULE(dev_approximate_gravity);
 
 #include "node_specs.h"
 
@@ -1012,7 +1012,7 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 
   extern "C" __global__ void
 __launch_bounds__(NTHREAD)
-  dev_approximate_gravity_kepler(const int n_active_groups,
+  dev_approximate_gravity(const int n_active_groups,
       int    n_bodies,
       float eps2,
       uint2 node_begend,
@@ -1200,5 +1200,3 @@ __launch_bounds__(NTHREAD)
 
     }     //end while
   }
-
-#endif // __CUDA_ARCH__ >= 300
