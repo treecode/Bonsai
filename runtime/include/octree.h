@@ -659,8 +659,12 @@ public:
     int argc = 0;
     mpiInit(argc, argv, procId, nProcs);
 
-//    devID = device;
-    devID = procId % getNumberOfCUDADevices();
+#ifdef USE_MPI
+	devID = procId % getNumberOfCUDADevices();
+#else
+    devID = device;
+#endif
+    
 
     cerr << "Preset device : "  << devID << "\t" << device << "\t" << nProcs <<endl;
 
