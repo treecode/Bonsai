@@ -31,6 +31,11 @@ option(COMPILE_SM30
   "On to enable SM30 compilation"
   ON
   )
+  
+option(CUDA_KEEP_INTERMEDIATE_FILES
+  "On to enable -keep"
+  OFF
+  )
 
 FIND_PACKAGE(CUDA REQUIRED)
 
@@ -111,6 +116,10 @@ source_group("CUDA Profiling Tools" FILES ${PROFFILES})
 set(GENCODE_SM20 -gencode=arch=compute_20,code=sm_20 -gencode=arch=compute_20,code=compute_20)
 set(GENCODE_SM30 -gencode=arch=compute_30,code=sm_30 -gencode=arch=compute_30,code=compute_30)
 
+if (CUDA_KEEP_INTERMEDIATE_FILES)
+  set(KEEP -keep)
+endif(CUDA_KEEP_INTERMEDIATE_FILES)
+
 if (CUDA_VERBOSE_PTXAS)
   set(VERBOSE_PTXAS --ptxas-options=-v)
 endif (CUDA_VERBOSE_PTXAS)
@@ -186,9 +195,9 @@ endif(COMPILE_SM30)
 cuda_add_executable(bonsai2
   ${CCFILES} 
   ${HFILES}
-  ${CUFILES}
+  ${CUFILES} 
   ${PROFFILES}
-  OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING}
+  OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING} ${KEEP}
   )
 
 target_link_libraries(bonsai2 ${ALL_LIBRARIES})
