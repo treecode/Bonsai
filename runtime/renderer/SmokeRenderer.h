@@ -19,11 +19,12 @@
 #include "GLSLProgram.h"
 #include "nvMath.h"
 #include "ParamGL.h"
+#include "GpuArray.h"
 
 class SmokeRenderer
 {
 public:
-    SmokeRenderer();
+    SmokeRenderer(int numParticles);
     ~SmokeRenderer();
 
     enum DisplayMode
@@ -107,8 +108,10 @@ private:
     //void loadSmokeTextures(int nImages, int offset, char* sTexturePrefix);
 	GLuint createRainbowTexture();
 
-    void drawPoints(int start, int count, bool sort);
-    void drawPointSprites(GLSLProgram *prog, int start, int count, bool shadowed, bool sort);
+    void depthSort();
+
+    void drawPoints(int start, int count, bool sorted);
+    void drawPointSprites(GLSLProgram *prog, int start, int count, bool shadowed, bool sorted);
 
     void drawSlice(int i);
     void drawSliceLightView(int i);
@@ -117,12 +120,13 @@ private:
 	void drawVolumeSlice(int i, bool shadowed);
 
     void drawSlices();
+	void renderSprites();
+
     void displayTexture(GLuint tex, float scale);
     void doStarFilter();
     void doGlowFilter();
     void compositeResult();
     void blurLightBuffer();
-    void depthSort();
 	void processImage(GLSLProgram *prog, GLuint src, GLuint dest);
 
     GLuint createTexture(GLenum target, int w, int h, GLint internalformat, GLenum format);
@@ -147,6 +151,10 @@ private:
     GLuint              mIndexBuffer;
 	GLuint              mPosBufferTexture;
 
+	GpuArray<float4>    mParticlePos;
+	GpuArray<float>     mParticleDepths;
+	GpuArray<uint>      mParticleIndices;
+
     float               mParticleRadius;
     DisplayMode	        mDisplayMode;
 
@@ -168,6 +176,7 @@ private:
     // parameters
     float               m_shadowAlpha;
     float               m_spriteAlpha;
+	float               m_dustAlpha;
     bool                m_doBlur;
     float               m_blurRadius;
     bool                m_displayLightBuffer;
@@ -205,6 +214,7 @@ private:
 	float m_gamma;
 
     float m_ageScale;
+	float m_fog;
 
     float m_volumeAlpha;
     nv::vec3f m_volumeColor;

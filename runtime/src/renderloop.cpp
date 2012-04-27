@@ -76,16 +76,19 @@ class BonsaiDemo
 public:
   BonsaiDemo(octree *tree, octree::IterationData &idata) 
     : m_tree(tree), m_idata(idata), iterationsRemaining(true),
+      m_renderer(tree->localTree.n),
       //m_displayMode(ParticleRenderer::PARTICLE_SPRITES_COLOR),
-	  m_displayMode(SmokeRenderer::SPRITES),
+	  m_displayMode(SmokeRenderer::VOLUMETRIC),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.1f),
       m_paused(false),
 	  m_displayBoxes(false), 
 	  m_displaySliders(false),
 	  m_enableGlow(true),
-      m_octreeDisplayLevel(3)
+	  m_displayLightBuffer(false),
+      m_octreeDisplayLevel(3),
+	  m_fov(60.0f)
   {
-    m_windowDims = make_int2(720, 480);
+    m_windowDims = make_int2(1024, 768);
     m_cameraTrans = make_float3(0, -2, -100);
     m_cameraTransLag = m_cameraTrans;
     m_cameraRot = make_float3(0, 0, 0);
@@ -97,19 +100,22 @@ public:
     //m_renderer.setPointSize(0.00001f);
     tree->iterate_setup(m_idata);
 
-	m_renderer.setFOV(60.0f);
-	m_renderer.setWindowSize(1024, 768);
+	m_particleColors = new float4[tree->localTree.n];
+
+	m_renderer.setFOV(m_fov);
+	m_renderer.setWindowSize(m_windowDims.x, m_windowDims.y);
 	m_renderer.setDisplayMode(m_displayMode);
   }
 
   ~BonsaiDemo() {
     m_tree->iterate_teardown(m_idata);
     delete m_tree;
+	delete [] m_particleColors;
   }
 
   void cycleDisplayMode() {
     //m_displayMode = (ParticleRenderer::DisplayMode) ((m_displayMode + 1) % ParticleRenderer::PARTICLE_NUM_MODES);
-	  m_displayMode = (SmokeRenderer::DisplayMode) ((m_displayMode + 1) % SmokeRenderer::VOLUMETRIC);
+	  m_displayMode = (SmokeRenderer::DisplayMode) ((m_displayMode + 1) % SmokeRenderer::NUM_MODES);
 	  m_renderer.setDisplayMode(m_displayMode);
     // MJH todo: add body color support and remove this
     //if (ParticleRenderer::PARTICLE_SPRITES_COLOR == m_displayMode)
@@ -120,6 +126,7 @@ public:
   void toggleBoxes() { m_displayBoxes = !m_displayBoxes; }
   void toggleSliders() { m_displaySliders = !m_displaySliders; }
   void toggleGlow() { m_enableGlow = !m_enableGlow; m_renderer.setEnableFilters(m_enableGlow); }
+  void toggleLightBuffer() { m_displayLightBuffer = !m_displayLightBuffer; m_renderer.setDisplayLightBuffer(m_displayLightBuffer); }
 
   void incrementOctreeDisplayLevel(int inc) { 
     m_octreeDisplayLevel += inc;
@@ -167,8 +174,8 @@ public:
     int mods;
 
 	if (m_displaySliders) {
-		m_renderer.getParams()->Mouse(x, y, button, state);
-		return;
+		if (m_renderer.getParams()->Mouse(x, y, button, state))
+			return;
 	}
 
     if (state == GLUT_DOWN) {
@@ -197,8 +204,8 @@ public:
     float dy = (float)(y - m_oy);
 
 	if (m_displaySliders) {
-	  m_renderer.getParams()->Motion(x, y);
-	  return;
+	  if (m_renderer.getParams()->Motion(x, y))
+		return;
 	}
 
     if (m_buttonState == 3) {
@@ -222,6 +229,10 @@ public:
 
   void reshape(int w, int h) {
     m_windowDims = make_int2(w, h);
+
+	m_renderer.setFOV(m_fov);
+	m_renderer.setWindowSize(m_windowDims.x, m_windowDims.y);
+
     fitCamera();
     glMatrixMode(GL_MODELVIEW);
     glViewport(0, 0, m_windowDims.x, m_windowDims.y);
@@ -243,7 +254,7 @@ public:
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    gluPerspective(60.0, 
+    gluPerspective(m_fov, 
                    (float) m_windowDims.x / (float) m_windowDims.y, 
                    0.0001 * distanceToCenter, 
                    4 * (radius + distanceToCenter));
@@ -252,6 +263,9 @@ public:
   ParamListGL *getParams() { return m_renderer.getParams(); }
 
 private:
+  float  frand() { return rand() / (float) RAND_MAX; }
+  float4 randColor(float scale) { return make_float4(frand()*scale, frand()*scale, frand()*scale, 0.0f); }
+
   void getBodyData() {
     m_tree->localTree.bodies_pos.d2h();
     m_tree->localTree.bodies_ids.d2h();
@@ -259,18 +273,42 @@ private:
 
     int n = m_tree->localTree.n;
 
-    float4 darkMatterColor = make_float4(1.0f, 0.5f, 0.1f, 1.0f);
-    float4 starColor =       make_float4(0.1f, 0.5f, 1.0f, 1.0f);
-	//float4 darkMatterColor = make_float4(0.0f, 0.25f, 0.5f, 0.2f);
-    //float4 starColor =       make_float4(1.0f, 0.75f, 0.1f, 1.0f);
+    //float4 starColor = make_float4(1.0f, 0.75f, 0.1f, 1.0f);	// yellowish
+	float4 starColor = make_float4(1.0f, 1.0f, 1.0f, 1.0f);		// white
+	float4 starColor2 = make_float4(1.0f, 0.1f, 0.5f, 1.0f) * make_float4(20.0f, 20.0f, 20.0f, 1.0f);		// purplish
 
-    float4 *colors = new float4[n];
+	float overbright = 1.0f;
+	starColor *= make_float4(overbright, overbright, overbright, 1.0f);
+
+	float4 dustColor = make_float4(0.0f, 0.1f, 0.25f, 0.0f);	// blue
+	//float4 dustColor = 	make_float4(0.1f, 0.1f, 0.1f, 0.0f);	// grey
+
+    //float4 *colors = new float4[n];
+	float4 *colors = m_particleColors;
 
     for (int i = 0; i < n; i++) {
       int id = m_tree->localTree.bodies_ids[i];
-      if (id >= 0 && id < 100000000) colors[i] = make_float4(0, 0, 0, 0); // dust -- not used yet
-      else if (id >= 100000000 && id < 200000000) colors[i] = darkMatterColor;
-      else colors[i] = starColor;
+	  //printf("%d: id %d, mass: %f\n", i, id, m_tree->localTree.bodies_pos[i].w);
+	  srand(id*1783);
+#if 1
+	  float r = frand();
+	  if (id >= 0 && id < 100000000) {
+		// dust -- not used yet
+		colors[i] = make_float4(1, 0, 0, 1);
+	  } else if (id >= 100000000 && id < 200000000) {
+	    // dark matter
+//         colors[i] = starColor + randColor(0.1f);
+//         colors[i] = starColor; // * powf(r, 2.0f);
+		  colors[i] = (frand() < 0.99f) ? starColor : starColor2;
+	  } else {
+		// stars
+		//colors[i] = dustColor * make_float4(r, r, r, 1.0f);
+		colors[i] = dustColor;
+	  }
+#else
+	  // test sorting
+	  colors[i] = make_float4(frand(), frand(), frand(), 1.0f);
+#endif
     }
 
     //m_renderer.setPositions((float*)&m_tree->localTree.bodies_pos[0], n);
@@ -279,7 +317,7 @@ private:
 	m_renderer.setPositions((float*)&m_tree->localTree.bodies_pos[0]);
 	m_renderer.setColors((float*)colors);
 
-    delete [] colors;
+    //delete [] colors;
   }
 
   void displayOctree() {
@@ -318,11 +356,14 @@ private:
   SmokeRenderer ::DisplayMode m_displayMode; 
   int m_octreeDisplayLevel;
 
+  float4 *m_particleColors;
+
   // view params
   int m_ox; // = 0
   int m_oy; // = 0;
   int m_buttonState;     
   int2 m_windowDims;
+  float m_fov;
   float3 m_cameraTrans;   
   float3 m_cameraRot;     
   float3 m_cameraTransLag;
@@ -333,6 +374,7 @@ private:
   bool m_displayBoxes;
   bool m_displaySliders;
   bool m_enableGlow;
+  bool m_displayLightBuffer;
 };
 
 BonsaiDemo *theDemo = NULL;
@@ -396,6 +438,7 @@ void key(unsigned char key, int /*x*/, int /*y*/)
   case 'd':
   case 'D':
     //displayEnabled = !displayEnabled;
+ 	theDemo->toggleLightBuffer();
     break;
   case 'f':
   case 'F':

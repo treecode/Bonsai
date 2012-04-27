@@ -9,7 +9,7 @@
  *
  */
  
-extern const char *particleVS;
+extern const char *particleVS, *simpleVS;
 extern const char *particleSpherePS, *simplePS, *particlePS, *particleAAPS, *particleShadowPS;
 extern const char *mblurVS, *mblurGS;
 extern const char *passThruVS, *transformVS, *texture2DPS;

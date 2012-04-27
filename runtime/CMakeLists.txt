@@ -51,6 +51,7 @@ set (HFILES
   include/octree.h
   include/tipsydefs.h
   include/vector_math.h
+  include/depthSort.h
   )
 
 set (CUFILES
@@ -61,6 +62,7 @@ set (CUFILES
   CUDAkernels/parallel.cu
   CUDAkernels/sortKernels.cu
   CUDAkernels/timestep.cu
+  CUDAkernels/depthSort.cu
   )
 
 set (CUHFILES

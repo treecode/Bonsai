@@ -18,6 +18,7 @@
 #include "SmokeRenderer.h"
 #include "SmokeShaders.h"
 //#include <nvImage.h>
+#include "depthSort.h"
 
 #if defined(__APPLE__) || defined(MACOSX)
 #include <GLUT/glut.h>
@@ -25,7 +26,6 @@
 #include <GL/freeglut.h>
 #endif
 
-#define USE_MBLUR 1
 #define COLOR_ATTENUATION 0
 #define USE_MRT 0
 #define USE_HALF_ANGLE 0
@@ -33,26 +33,27 @@
 
 using namespace nv;
 
-SmokeRenderer::SmokeRenderer() :
-    mMaxParticles(0),
-    mNumParticles(0),
+SmokeRenderer::SmokeRenderer(int numParticles) :
+    mMaxParticles(numParticles),
+    mNumParticles(numParticles),
     mPosVbo(0),
     mVelVbo(0),
     mColorVbo(0),
     mIndexBuffer(0),
-    mParticleRadius(0.5f),
+    mParticleRadius(0.25f),
 	mDisplayMode(SPRITES),
     mWindowW(800),
     mWindowH(600),
     mFov(40.0f),
     m_downSample(1),
     m_blurDownSample(2),
-    m_numSlices(32),
-	m_numDisplayedSlices(32),
+    m_numSlices(128),
+	m_numDisplayedSlices(m_numSlices),
     m_sliceNo(0),
-    m_shadowAlpha(0.5f),
-    m_spriteAlpha(1.0f),
+    m_shadowAlpha(0.1f),
+    m_spriteAlpha(0.1f),
     m_volumeAlpha(0.2f),
+	m_dustAlpha(1.0f),
     m_volumeColor(0.5f, 0.0f, 0.0f),
     m_doBlur(true),
 	m_blurRadius(1.0f),
@@ -60,7 +61,7 @@ SmokeRenderer::SmokeRenderer() :
     m_displayLightBuffer(false),
     m_lightPos(5.0f, 5.0f, -5.0f),
 	m_lightTarget(0.0f, 0.5f, 0.0f),
-	m_lightColor(0.1f, 0.25f, 0.5f),
+	m_lightColor(0.0f, 0.0f, 0.0f),
 	m_colorOpacity(0.1f, 0.2f, 0.3f),
     //m_lightBufferSize(256),
 	m_lightBufferSize(512),
@@ -69,7 +70,7 @@ SmokeRenderer::SmokeRenderer() :
     m_fbo(0),
     m_depthTex(0),
     m_rampTex(0),
-    m_overBright(100.0f),
+    m_overBright(1.0f),
     m_overBrightThreshold(0.005f),
     m_imageBrightness(1.0f),
     m_invertedView(false),
@@ -82,19 +83,20 @@ SmokeRenderer::SmokeRenderer() :
 	m_starThreshold(0.9f),
     m_glowRadius(10.0f),
     m_glowIntensity(0.5f),
-	m_ageScale(1.0f),
-	m_enableVolume(true),
+	m_ageScale(5.0f),
+	m_enableVolume(false),
 	m_enableFilters(true),
     m_noiseFreq(0.05f),
     m_noiseAmp(1.0f),
-    m_indirectAmount(0.9f),
+    m_indirectAmount(0.5f),
     m_volumeIndirect(0.5f),
 	m_volumeStart(0.5f),
 	m_volumeWidth(0.1f),
-	m_gamma(1.0f / 2.2f)
+	m_gamma(1.0f / 2.2f),
+	m_fog(0.001f)
 {
 	// load shader programs
-	m_simpleProg = new GLSLProgram(particleVS, simplePS);
+	m_simpleProg = new GLSLProgram(simpleVS, simplePS);
 #if MOTION_BLUR
     m_particleProg = new GLSLProgram(mblurVS, mblurGS, particlePS);
     m_particleAAProg = new GLSLProgram(mblurVS, mblurGS, particleAAPS);
@@ -133,7 +135,42 @@ SmokeRenderer::SmokeRenderer() :
 
     initParams();
 
+	initCUDA();
+	mParticlePos.alloc(mMaxParticles, false, false, false);
+	mParticleDepths.alloc(mMaxParticles, false, false, false);
+	mParticleIndices.alloc(mMaxParticles, true, false, true);
+	for(uint i=0; i<mMaxParticles; i++) {
+		mParticleIndices.getHostPtr()[i] = i;
+	}
+	mParticleIndices.copy(GpuArray<uint>::HOST_TO_DEVICE);
+
     glutReportErrors();
+}
+
+SmokeRenderer::~SmokeRenderer()
+{
+    delete m_particleProg;
+	delete m_particleAAProg;
+    delete m_particleShadowProg;
+    delete m_blurProg;
+    delete m_displayTexProg;
+	delete m_simpleProg;
+	delete m_starFilterProg;
+	delete m_compositeProg;
+    delete m_volumeProg;
+
+    delete m_fbo;
+    glDeleteTextures(2, m_lightTexture);
+    glDeleteTextures(1, &m_lightDepthTexture);
+	glDeleteTextures(1, &mPosBufferTexture);
+
+    glDeleteTextures(3, m_imageTex);
+    glDeleteTextures(1, &m_depthTex);
+
+	glDeleteTextures(1, &m_noiseTex);
+
+	mParticleDepths.free();
+	mParticleIndices.free();
 }
 
 GLuint SmokeRenderer::createRainbowTexture()
@@ -227,38 +264,26 @@ void SmokeRenderer::loadSmokeTextures(int nImages, int offset, char* sTexturePre
 }
 #endif
 
-SmokeRenderer::~SmokeRenderer()
-{
-    delete m_particleProg;
-	delete m_particleAAProg;
-    delete m_particleShadowProg;
-    delete m_blurProg;
-    delete m_displayTexProg;
-	delete m_simpleProg;
-	delete m_starFilterProg;
-	delete m_compositeProg;
-    delete m_volumeProg;
-
-    delete m_fbo;
-    glDeleteTextures(2, m_lightTexture);
-    glDeleteTextures(1, &m_lightDepthTexture);
-	glDeleteTextures(1, &mPosBufferTexture);
-
-    glDeleteTextures(3, m_imageTex);
-    glDeleteTextures(1, &m_depthTex);
-
-	glDeleteTextures(1, &m_noiseTex);
-}
-
 void SmokeRenderer::setPositions(float *pos)
 {
 	if (!mPosVbo)
 	{
+		// allocate
 		glGenBuffers(1, &mPosVbo);
+		glBindBuffer(GL_ARRAY_BUFFER_ARB, mPosVbo);
+		glBufferData(GL_ARRAY_BUFFER_ARB, mNumParticles * 4 * sizeof(float), pos, GL_STATIC_DRAW_ARB);
+
+		cutilSafeCall(cudaGLRegisterBufferObject(mPosVbo));
+		cutilSafeCall(cudaGLSetBufferObjectMapFlags(mPosVbo, cudaGLMapFlagsWriteDiscard));    // CUDA writes, GL consumes
 	}
 
+	// XX - this is retarted:
+	memcpy(mParticlePos.getHostPtr(), pos, mNumParticles*4*sizeof(float));
+	mParticlePos.copy(GpuArray<float4>::HOST_TO_DEVICE);
+
 	glBindBuffer(GL_ARRAY_BUFFER_ARB, mPosVbo);
-	glBufferData(GL_ARRAY_BUFFER_ARB, mNumParticles * 4 * sizeof(float), pos, GL_STATIC_DRAW_ARB);
+	//glBufferData(GL_ARRAY_BUFFER_ARB, mNumParticles * 4 * sizeof(float), pos, GL_STATIC_DRAW_ARB);
+	glBufferSubData(GL_ARRAY_BUFFER_ARB, 0, mNumParticles * 4 * sizeof(float), pos);
 	glBindBuffer( GL_ARRAY_BUFFER_ARB, 0);
 //  glutReportErrors();
 }
@@ -267,17 +292,36 @@ void SmokeRenderer::setColors(float *color)
 {
 	if (!mColorVbo)
 	{
+		// allocate
 		glGenBuffers(1, &mColorVbo);
+		glBindBuffer(GL_ARRAY_BUFFER_ARB, mColorVbo);
+		glBufferData(GL_ARRAY_BUFFER_ARB, mNumParticles * 4 * sizeof(float), color, GL_STATIC_DRAW_ARB);
 	}
 
 	glBindBuffer(GL_ARRAY_BUFFER_ARB, mColorVbo);
-	glBufferData(GL_ARRAY_BUFFER_ARB, mNumParticles * 4 * sizeof(float), color, GL_STATIC_DRAW_ARB);
+	//glBufferData(GL_ARRAY_BUFFER_ARB, mNumParticles * 4 * sizeof(float), color, GL_STATIC_DRAW_ARB);
+	glBufferSubData(GL_ARRAY_BUFFER_ARB, 0, mNumParticles * 4 * sizeof(float), color);
 	glBindBuffer( GL_ARRAY_BUFFER_ARB, 0);
 //	glutReportErrors();
 }
 
+void SmokeRenderer::depthSort()
+{
+	//float4 *pos;
+	//cutilSafeCall(cudaGLMapBufferObject((void **) &pos, mPosVbo));	// XXX - doesn't work?
+
+    mParticleIndices.map();
+
+	float4 modelViewZ = make_float4(m_modelView._array[2], m_modelView._array[6], m_modelView._array[10], m_modelView._array[14]);
+	//depthSortCUDA(pos, mParticleDepths.getDevicePtr(), (int *) mParticleIndices.getDevicePtr(), modelViewZ, mNumParticles);
+	depthSortCUDA(mParticlePos.getDevicePtr(), mParticleDepths.getDevicePtr(), (int *) mParticleIndices.getDevicePtr(), modelViewZ, mNumParticles);
+
+    mParticleIndices.unmap();
+	//cutilSafeCall(cudaGLUnmapBufferObject(mPosVbo));
+}
+
 // draw points from vertex buffer objects
-void SmokeRenderer::drawPoints(int start, int count, bool sort)
+void SmokeRenderer::drawPoints(int start, int count, bool sorted)
 {
     glBindBufferARB(GL_ARRAY_BUFFER_ARB, mPosVbo);
     glVertexPointer(4, GL_FLOAT, 0, 0);
@@ -296,8 +340,9 @@ void SmokeRenderer::drawPoints(int start, int count, bool sort)
         glEnableClientState(GL_TEXTURE_COORD_ARRAY);
     }
 
-    if (sort) {
-        glBindBufferARB(GL_ELEMENT_ARRAY_BUFFER_ARB, mIndexBuffer);
+    if (sorted) {
+        //glBindBufferARB(GL_ELEMENT_ARRAY_BUFFER_ARB, mIndexBuffer);
+		glBindBufferARB(GL_ELEMENT_ARRAY_BUFFER_ARB, mParticleIndices.getVbo());
         glDrawElements(GL_POINTS, count, GL_UNSIGNED_INT, (void*) (start*sizeof(unsigned int)) );
         glBindBufferARB(GL_ELEMENT_ARRAY_BUFFER_ARB, 0);
     } else {
@@ -306,13 +351,14 @@ void SmokeRenderer::drawPoints(int start, int count, bool sort)
 
     glDisableClientState(GL_VERTEX_ARRAY);
 	glDisableClientState(GL_COLOR_ARRAY);
+	glBindBufferARB(GL_ARRAY_BUFFER_ARB, 0);
 
     glClientActiveTexture(GL_TEXTURE0);
 	glDisableClientState(GL_TEXTURE_COORD_ARRAY);
 }
 
 // draw points using given shader program
-void SmokeRenderer::drawPointSprites(GLSLProgram *prog, int start, int count, bool shadowed, bool sort)
+void SmokeRenderer::drawPointSprites(GLSLProgram *prog, int start, int count, bool shadowed, bool sorted)
 {
     glEnable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);  // don't write depth
@@ -321,12 +367,13 @@ void SmokeRenderer::drawPointSprites(GLSLProgram *prog, int start, int count, bo
     prog->enable();
     prog->setUniform1f("pointRadius", mParticleRadius);
 	prog->setUniform1f("ageScale", m_ageScale);
+	prog->setUniform1f("dustAlpha", m_dustAlpha);
     prog->setUniform1f("overBright", m_overBright);
-    prog->setUniform1f("overBrightThreshold", m_overBrightThreshold);
-	prog->setUniform1f("alphaScale", m_spriteAlpha);
+    //prog->setUniform1f("overBrightThreshold", m_overBrightThreshold);
+	prog->setUniform1f("fogDist", m_fog);
 
     //prog->bindTexture("rampTex", m_rampTex, GL_TEXTURE_2D, 0);
-    prog->bindTexture("rampTex", m_rainbowTex, GL_TEXTURE_2D, 0);
+    //prog->bindTexture("rampTex", m_rainbowTex, GL_TEXTURE_2D, 0);
     //prog->bindTexture("spriteTex",  m_textureArrayID, GL_TEXTURE_2D_ARRAY_EXT, 1);
 	if (shadowed) {
 		prog->bindTexture("shadowTex", m_lightTexture[m_srcLightTexture], GL_TEXTURE_2D, 2);
@@ -336,7 +383,11 @@ void SmokeRenderer::drawPointSprites(GLSLProgram *prog, int start, int count, bo
         prog->setUniform2f("shadowTexScale", 1.0f, 1.0f);
 #endif
         prog->setUniform1f("indirectAmount", m_indirectAmount);
-    }
+		prog->setUniform1f("alphaScale", m_spriteAlpha);
+
+	} else {
+		prog->setUniform1f("alphaScale", m_shadowAlpha);
+	}
 
 #if MOTION_BLUR==0
     GLint viewport[4];
@@ -352,7 +403,7 @@ void SmokeRenderer::drawPointSprites(GLSLProgram *prog, int start, int count, bo
 #endif
 
     // draw points
-    drawPoints(start, count, sort);
+    drawPoints(start, count, sorted);
 
     prog->disable();
 
@@ -474,7 +525,8 @@ void SmokeRenderer::drawSlice(int i)
     glColorMaskIndexedEXT(1, false, false, false, false);
 #else
     m_fbo->AttachTexture(GL_TEXTURE_2D, m_imageTex[0], GL_COLOR_ATTACHMENT0_EXT);
-    m_fbo->AttachTexture(GL_TEXTURE_2D, m_depthTex, GL_DEPTH_ATTACHMENT_EXT);
+    //m_fbo->AttachTexture(GL_TEXTURE_2D, m_depthTex, GL_DEPTH_ATTACHMENT_EXT);
+	m_fbo->AttachTexture(GL_TEXTURE_2D, 0, GL_DEPTH_ATTACHMENT_EXT);
 #endif
     glViewport(0, 0, m_imageW, m_imageH);
 
@@ -488,8 +540,8 @@ void SmokeRenderer::drawSlice(int i)
         glBlendFunc(GL_ONE_MINUS_DST_ALPHA, GL_ONE);
     } else {
         // back-to-front
-        //glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-        glBlendFunc(GL_ONE, GL_ONE);
+        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+        //glBlendFunc(GL_ONE, GL_ONE);
     }
     drawPointSprites(m_particleShadowProg, i*m_batchSize, m_batchSize, true, true);
 }
@@ -505,7 +557,8 @@ void SmokeRenderer::drawSliceLightView(int i)
     glColorMaskIndexedEXT(1, true, true, true, true);
 #else
     m_fbo->AttachTexture(GL_TEXTURE_2D, m_lightTexture[m_srcLightTexture], GL_COLOR_ATTACHMENT0_EXT);
-    m_fbo->AttachTexture(GL_TEXTURE_2D, m_lightDepthTexture, GL_DEPTH_ATTACHMENT_EXT);
+    //m_fbo->AttachTexture(GL_TEXTURE_2D, m_lightDepthTexture, GL_DEPTH_ATTACHMENT_EXT);
+	m_fbo->AttachTexture(GL_TEXTURE_2D, 0, GL_DEPTH_ATTACHMENT_EXT);
 #endif
 
     glMatrixMode(GL_MODELVIEW);
@@ -528,8 +581,8 @@ void SmokeRenderer::drawSliceLightView(int i)
 #else
     glColor4f(1.0, 1.0, 1.0, m_shadowAlpha);
 //    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-//    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-    glBlendFunc(GL_ONE, GL_ONE);
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+//    glBlendFunc(GL_ONE, GL_ONE);	// additive
 #endif
 
 	drawPointSprites(m_particleProg, i*m_batchSize, m_batchSize, false, true);
@@ -552,7 +605,8 @@ void SmokeRenderer::drawSliceLightViewAA(int i)
     glColorMaskIndexedEXT(1, true, true, true, true);
 #else
     m_fbo->AttachTexture(GL_TEXTURE_2D, m_lightTexture[m_srcLightTexture], GL_COLOR_ATTACHMENT0_EXT);
-    m_fbo->AttachTexture(GL_TEXTURE_2D, m_lightDepthTexture, GL_DEPTH_ATTACHMENT_EXT);
+    //m_fbo->AttachTexture(GL_TEXTURE_2D, m_lightDepthTexture, GL_DEPTH_ATTACHMENT_EXT);
+	m_fbo->AttachTexture(GL_TEXTURE_2D, 0, GL_DEPTH_ATTACHMENT_EXT);
 #endif
 
     glMatrixMode(GL_MODELVIEW);
@@ -783,7 +837,7 @@ void SmokeRenderer::doGlowFilter()
     // downsample
     glViewport(0, 0, m_downSampledW, m_downSampledH);
     m_downSampleProg->enable();
-	m_downSampleProg->setUniform2f("texelSize", 1.0f / (float) m_imageW, 1.0f / (float) m_imageH);
+	//m_downSampleProg->setUniform2f("texelSize", 1.0f / (float) m_imageW, 1.0f / (float) m_imageH);
         processImage(m_downSampleProg, m_imageTex[0], m_downSampledTex[0]);
 	m_downSampleProg->disable();
 
@@ -869,49 +923,66 @@ void SmokeRenderer::drawBounds()
 	glPopMatrix();
 }
 
+void SmokeRenderer::renderSprites()
+{
+    if (m_invertedView) {
+        // front-to-back
+        glBlendFunc(GL_ONE_MINUS_DST_ALPHA, GL_ONE);
+    } else {
+        // back-to-front
+        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+        //glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+        //glBlendFunc(GL_ONE, GL_ONE);
+    }
+
+#if 0
+	// post
+    m_fbo->Bind();
+    m_fbo->AttachTexture(GL_TEXTURE_2D, m_imageTex[0], GL_COLOR_ATTACHMENT0_EXT);
+    m_fbo->AttachTexture(GL_TEXTURE_2D, 0, GL_DEPTH_ATTACHMENT_EXT);
+	//m_fbo->AttachTexture(GL_TEXTURE_2D, m_depthTex, GL_DEPTH_ATTACHMENT_EXT);
+    glViewport(0, 0, m_imageW, m_imageH);
+    glClearColor(0.0, 0.0, 0.0, 0.0); 
+    //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	glClear(GL_COLOR_BUFFER_BIT);
+#endif
+
+	glColor4f(1.0, 1.0, 1.0, m_spriteAlpha);
+#if 0
+	// sort
+	calcVectors();
+	depthSort();
+	drawPointSprites(m_particleProg, 0, mNumParticles, true, true);	
+#else
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+	drawPointSprites(m_particleProg, 0, mNumParticles, true, false);
+#endif
+
+#if 0
+    m_fbo->Disable();
+	compositeResult();
+#endif
+}
+
 void SmokeRenderer::render()
 {
 	switch(mDisplayMode) {
 	case POINTS:
-		glColor4f(1.0, 1.0, 1.0, 1.0f);
-		m_simpleProg->enable();
 		glPointSize(1.0f);
 		glEnable(GL_DEPTH_TEST);
+		glColor4f(1.0, 1.0, 1.0, 1.0f);
+		m_simpleProg->enable();
 		drawPoints(0, mNumParticles, false);
 		m_simpleProg->disable();
 		break;
 
 	case SPRITES:
-        if (m_invertedView) {
-            // front-to-back
-            glBlendFunc(GL_ONE_MINUS_DST_ALPHA, GL_ONE);
-        } else {
-            // back-to-front
-            //glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-            //glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-            glBlendFunc(GL_ONE, GL_ONE);
-        }
-#if 1
-		// post
-        m_fbo->Bind();
-        m_fbo->AttachTexture(GL_TEXTURE_2D, m_imageTex[0], GL_COLOR_ATTACHMENT0_EXT);
-        m_fbo->AttachTexture(GL_TEXTURE_2D, 0, GL_DEPTH_ATTACHMENT_EXT);
-		//m_fbo->AttachTexture(GL_TEXTURE_2D, m_depthTex, GL_DEPTH_ATTACHMENT_EXT);
-        glViewport(0, 0, m_imageW, m_imageH);
-        glClearColor(0.0, 0.0, 0.0, 0.0); 
-        //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-		glClear(GL_COLOR_BUFFER_BIT);
-#endif
-		glColor4f(1.0, 1.0, 1.0, m_spriteAlpha);
-		drawPointSprites(m_particleProg, 0, mNumParticles, false, false);
-
-#if 1
-        m_fbo->Disable();
-		compositeResult();
-#endif
+		renderSprites();
 		break;
 
 	case VOLUMETRIC:
+		calcVectors();
+		depthSort();
 		drawSlices();
 		compositeResult();
 		//drawBounds();
@@ -1177,7 +1248,8 @@ void SmokeRenderer::initParams()
 	m_params->AddParam(new Param<int>("displayed slices", m_numDisplayedSlices, 0, 256, 1, &m_numDisplayedSlices));
 
     m_params->AddParam(new Param<float>("sprite size", mParticleRadius, 0.0f, 2.0f, 0.01f, &mParticleRadius));
-    m_params->AddParam(new Param<float>("age scale", m_ageScale, 0.0f, 10.0f, 0.1f, &m_ageScale));
+    m_params->AddParam(new Param<float>("dust scale", m_ageScale, 0.0f, 50.0f, 0.1f, &m_ageScale));
+    m_params->AddParam(new Param<float>("dust alpha", m_dustAlpha, 0.0f, 10.0f, 0.1f, &m_dustAlpha));
 
     m_params->AddParam(new Param<float>("light color r", m_lightColor[0], 0.0f, 1.0f, 0.01f, &m_lightColor[0]));
     m_params->AddParam(new Param<float>("light color g", m_lightColor[1], 0.0f, 1.0f, 0.01f, &m_lightColor[1]));
@@ -1207,7 +1279,9 @@ void SmokeRenderer::initParams()
     m_params->AddParam(new Param<float>("volume width", m_volumeWidth, 0.0f, 1.0f, 0.01f, &m_volumeWidth));
 #endif
 
-    m_params->AddParam(new Param<float>("over bright multiplier", m_overBright, 0.0f, 1000.0f, 1.0f, &m_overBright));
+    m_params->AddParam(new Param<float>("fog", m_fog, 0.0f, 0.1f, 0.001f, &m_fog));
+
+    m_params->AddParam(new Param<float>("over bright multiplier", m_overBright, 0.0f, 100.0f, 1.0f, &m_overBright));
     m_params->AddParam(new Param<float>("over bright threshold", m_overBrightThreshold, 0.0f, 1.0f, 0.001f, &m_overBrightThreshold));
     m_params->AddParam(new Param<float>("image brightness", m_imageBrightness, 0.0f, 10.0f, 0.1f, &m_imageBrightness));
     m_params->AddParam(new Param<float>("image gamma", m_gamma, 0.0f, 2.0f, 0.0f, &m_gamma));

@@ -12,32 +12,60 @@
  // GLSL shaders for particle rendering
 #define STRINGIFY(A) #A
 
+const char *simpleVS = STRINGIFY(
+void main()                                                 \n
+{                                                           \n
+	vec4 wpos = vec4(gl_Vertex.xyz, 1.0);                   \n
+    gl_Position = gl_ModelViewProjectionMatrix * wpos;      \n
+    gl_FrontColor = gl_Color;                               \n
+}                                                           \n
+);
+
 // particle vertex shader
 const char *particleVS = STRINGIFY(
 uniform float pointRadius;  // point size in world space    \n
 uniform float pointScale;   // scale to calculate size in pixels \n
+uniform float overBright;
 uniform float overBrightThreshold;
 uniform float ageScale;
+uniform float dustAlpha;
+uniform float fogDist;
 void main()                                                 \n
 {                                                           \n
 	vec4 wpos = vec4(gl_Vertex.xyz, 1.0);                   \n
     gl_Position = gl_ModelViewProjectionMatrix * wpos;      \n
 	float mass = gl_Vertex.w;
+	float type = gl_Color.w;
 
     // calculate window-space point size                    \n
     vec4 eyeSpacePos = gl_ModelViewMatrix * wpos;           \n
-    //float dist = length(eyeSpacePos.xyz);                   \n
-	float dist = -eyeSpacePos.z; \n
+    float dist = length(eyeSpacePos.xyz);                   \n
+	//float dist = -eyeSpacePos.z; \n
 
 	//pointRadius *= 1.0 + smoothstep(overBrightThreshold, 0.0, age)*ageScale;
+	//pointRadius *= mass;
+	vec4 col = gl_Color;
+	if (type == 0.0) {
+		// dust
+		pointRadius *= ageScale;	// scale up
+		col.a = dustAlpha;
+	} else if (type == 1.0) {
+		// star
+		col.rgb *= overBright;
+	}
 
-    gl_PointSize = pointRadius*(pointScale / dist);       \n
-	//gl_PointSize = max(1.0, pointRadius * (pointScale / dist)); \n
+    //gl_PointSize = pointRadius*(pointScale / dist);       \n
+	gl_PointSize = max(2.0, pointRadius * (pointScale / dist)); \n
 
     //gl_TexCoord[0] = vec4(gl_MultiTexCoord0.xyz, age); // sprite texcoord  \n
-    gl_TexCoord[1] = vec4(eyeSpacePos.xyz, mass);                           \n
+    //gl_TexCoord[1] = vec4(eyeSpacePos.xyz, mass);                           \n
+	gl_TexCoord[1] = vec4(eyeSpacePos.xyz, type);
 
-    gl_FrontColor = gl_Color;                               \n
+	float fog = exp(-dist*fogDist);
+
+    //gl_FrontColor = gl_Color;                               \n
+	gl_FrontColor = vec4(col.rgb*fog, col.a);       \n
+	//gl_FrontColor = vec4(gl_Color.xyz, 1.0);                \n
 }                                                           \n
 );
 
@@ -193,28 +221,28 @@ void main()                                                        \n
     vec3 N;                                                        \n
     N.xy = gl_TexCoord[0].xy*vec2(2.0, -2.0) + vec2(-1.0, 1.0);    \n
     float r2 = dot(N.xy, N.xy);                                    \n
-    if (r2 > 1.0) discard;   // kill pixels outside circle         \n
-    N.z = sqrt(1.0-r2);                                            \n
+    //if (r2 > 1.0) discard;   // kill pixels outside circle         \n
+    //N.z = sqrt(1.0-r2);                                            \n
 
 //    float alpha = clamp(1.0 - r2, 0.0, 1.0);                     \n
     float alpha = exp(-r2*4.0);
 //    float alpha = texture2DArray(spriteTex, vec3(gl_TexCoord[0].xy, gl_PrimitiveID & 7)).x;
     //alpha *= gl_Color.w;                                           \n
 	alpha *= gl_Color.w * alphaScale;
+	alpha = clamp(alpha, 0.0, 1.0);
 
     // color based on age/temp
-    float mass = gl_TexCoord[0].w;
-//    float age = gl_TexCoord[1].w;
+//    float mass = gl_TexCoord[0].w;
+    float type = gl_TexCoord[1].w;
 //    vec4 col = texture2D(rampTex, vec2(age, 0));
 //	vec4 col = mix(vec4(1.0, 1.0, 0.5, 1), vec4(0.0, 0.0, 0.1, 1), age);	// star color
 //    vec4 col = vec4(0.1);
 //    vec4 col = vec4(age);
 //    col.rgb *= overBright;
 //    col.rgb *= 1.0 + smoothstep(overBrightThreshold, 0.0, age)*overBright;
-
 	//alpha *= smoothstep(1.0, 0.8, age);
 
-    gl_FragColor = vec4(gl_Color.xyz * alpha * mass, alpha);              \n
+    gl_FragColor = vec4(gl_Color.xyz * alpha, alpha);              \n
 //    gl_FragColor = vec4(gl_Color.xyz * gl_Color.w, gl_Color.w);              \n
 //    gl_FragColor = vec4(col.xyz * alpha, alpha);
 //    gl_FragColor = vec4(gl_Color.xyz * col.xyz * alpha, alpha); // premul
@@ -237,14 +265,15 @@ uniform vec2 shadowTexScale;
 uniform float overBright = 1.0;
 uniform float overBrightThreshold;
 uniform float indirectAmount;
+uniform float alphaScale;
 void main()                                                        \n
 {                                                                  \n
     // calculate eye-space sphere normal from texture coordinates  \n
     vec3 N;                                                        \n
     N.xy = gl_TexCoord[0].xy*vec2(2.0, -2.0) + vec2(-1.0, 1.0);    \n
     float r2 = dot(N.xy, N.xy);                                    \n
-    if (r2 > 1.0) discard;                                         \n // kill pixels outside circle
-    N.z = sqrt(1.0-r2);                                            \n
+    //if (r2 > 1.0) discard;                                         \n // kill pixels outside circle
+    //N.z = sqrt(1.0-r2);                                            \n
 
     // fetch indirect lighting
 	vec4 eyeSpacePos = gl_TexCoord[1];                             \n
@@ -259,16 +288,17 @@ void main()                                                        \n
     float alpha = exp(-r2*4.0);
     //float alpha = texture2DArray(spriteTex, vec3(gl_TexCoord[0].xy, float(gl_PrimitiveID & 7))).x;
     //alpha *= gl_Color.w;                                           \n
+	alpha *= gl_Color.w * alphaScale;
+	alpha = clamp(alpha, 0.0, 1.0);
 
     // color based on age/temp
-    //float age = gl_TexCoord[0].w;
-    float age = gl_TexCoord[1].w;
+    float type = gl_TexCoord[1].w;
     //vec4 col = texture2D(rampTex, vec2(age, 0));
-	vec4 col = mix(vec4(1.0, 1.0, 0.5, 1), vec4(0.0, 0.0, 0.1, 1), age);	// star color
-    col.rgb *= 1.0 + smoothstep(overBrightThreshold, 0.0, age)*overBright;
+	//vec4 col = mix(vec4(1.0, 1.0, 0.5, 1), vec4(0.0, 0.0, 0.1, 1), age);	// star color
+    //col.rgb *= 1.0 + smoothstep(overBrightThreshold, 0.0, age)*overBright;
 	//alpha *= smoothstep(1.0, 0.8, age);
 
-	gl_FragColor = vec4(mix(col.rgb, shadow, indirectAmount)*alpha, alpha);
+	gl_FragColor = vec4(mix(gl_Color.rgb, shadow, indirectAmount)*alpha, alpha);
 //    gl_FragColor = vec4(gl_Color.xyz * shadow * alpha, alpha);     \n // premul alpha
 //    gl_FragColor = vec4(gl_Color.xyz * shadow, alpha);     \n
 //    gl_FragColor = vec4(gl_Color.xyz * alpha, alpha);     \n // premul alpha
