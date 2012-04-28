@@ -338,6 +338,9 @@ __device__ bool split_node_grav_impbh(
 
 #define TEXTURES
 #define OLDPREFIX
+#if 0
+#define _ORIG_SHMEM_
+#endif
 
 
 template<int DIM2, int SHIFT>
@@ -373,27 +376,56 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 
   //  begin,    end,   size
   // -----------------------
-  int *approx = (int*)&shmem [     0];            //  0*DIM,  2*DIM,  2*DIM
-  int *direct = (int*)&approx[ 2*DIM];            //  2*DIM,  3*DIM,  1*DIM
-  int *nodes  = (int*)&direct[   DIM];            //  3*DIM, 13*DIM, 10*DIM
-  int *prefix = (int*)&nodes [10*DIM];            // 13*DIM, 15*DIM,  2*DIM
+#ifdef _ORIG_SHMEM_
+  
+  int *approxS = (int*)&shmem  [     0];            //  0*DIM,  2*DIM,  2*DIM
+  int *directS = (int*)&approxS[ 2*DIM];            //  2*DIM,  3*DIM,  1*DIM
+  int *nodesS = (int*)&directS [   DIM];            //  3*DIM, 12*DIM,  9*DIM
+  int *prefix = (int*)&nodesS  [9 *DIM];            // 12*DIM, 14*DIM,  2*DIM
+  int *sh_body = &approxS[DIM];
+  
+  int *prefix0 = &prefix[  0];
+  int *prefix1 = &prefix[DIM];
+  
+  const int NJMAX = DIM*2;
+  int    *body_list = (int*   )&nodesS   [  DIM]; //  4*DIM,  6*DIM,  2*DIM
+  float  *sh_mass   = (float* )&body_list[NJMAX]; //  6*DIM,  7*DIM,  1*DIM
+  float3 *sh_pos    = (float3*)&sh_mass  [  DIM]; //  7*DIM, 10*DIM   3*DIM
+  
+  int *approxM = approxS;
+  int *directM = directS;
+  int * nodesM =  nodesS;
 
-  float  *node_mon0 = (float* )&nodes    [DIM];   //  4*DIM,  5*DIM,  1*DIM
-  float3 *node_mon1 = (float3*)&node_mon0[DIM];   //  5*DIM,  8*DIM,  3*DIM
-#if 0
-  float3 *node_oct0 = (float3*)&node_mon1[DIM];   //  8*DIM, 11*DIM,  3*DIM
-  float3 *node_oct1 = (float3*)&node_oct0[DIM];   // 11*DIM, 14*DIM,  3*DIM
-#endif
+#else
 
-  int    *body_list = (int*   )&nodes    [  DIM]; //  4*DIM,  8*DIM,  4*DIM
-  float  *sh_mass   = (float* )&body_list[4*DIM]; //  8*DIM,  9*DIM,  1*DIM
-  float3 *sh_pos    = (float3*)&sh_mass  [  DIM]; //  9*DIM, 12*DIM   3*DIM
+  const int stack_sz = (LMEM_STACK_SIZE << SHIFT) + 4096;
+  int *approxL = lmem + stack_sz; 
 
+  int *directS = shmem;                              //  0*DIM,  1*DIM,  1*DIM
+  int *nodesS  = directS + DIM;                      //  1*DIM, 10*DIM,  9*DIM
+  int *prefix  = nodesS  + DIM*9;                    // 10*DIM, 12*DIM,  2*DIM
+  
+  int *prefix0 = &prefix[  0];
+  int *prefix1 = &prefix[DIM];
+  
+  const int NJMAX = DIM*3;
+  int    *body_list = (int*   )&nodesS   [  DIM]; //  2*DIM,   5*DIM,  2*DIM
+  float  *sh_mass   = (float* )&body_list[NJMAX]; //  5*DIM,   6*DIM,  1*DIM
+  float3 *sh_pos    = (float3*)&sh_mass  [  DIM]; //  6*DIM,   9*DIM   3*DIM
+  int    *sh_body   = nodesS + DIM*8;             //  9*DIM,  10*DIM,  1*DIM
+  
+  int *approxM = approxL;
+  int *directM = directS;
+  int * nodesM =  nodesS;
+
+#endif /* _ORIG_SHMEM_ */
+
+
+  float  *node_mon0 = sh_mass;
+  float3 *node_mon1 = sh_pos; 
+  
   float  *sh_pot = sh_mass;
   float3 *sh_acc = sh_pos;
-
-  int    *sh_jid    = (int*  )&sh_pos[DIM];
-
 
   /*********** stack **********/
 
@@ -431,13 +463,22 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
          **** --> fetch the list of nodes rom LMEM
          ***/
         bool use_node = tid <  n_nodes0;
+#if 0
         { prefix[tid] = nstack[ACCS<SHIFT>(c_stack0)];   c_stack0++; }
         __syncthreads();
         int node  = prefix[min(tid, n_nodes0 - 1)];
+#else
+        int node;
+        { node  = nstack[ACCS<SHIFT>(c_stack0)];   c_stack0++; }
+#endif
 
+#if 0
         if(n_nodes0 > 0){       //Work around pre 4.1 compiler bug
           n_nodes0 -= DIM;
         }
+#else
+        n_nodes0 -= DIM;
+#endif
 
         /***
          **** --> process each of the nodes in the list in parallel
@@ -467,18 +508,14 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
         bool leaf       = node_pos.w <= 0;  //Small AND equal incase of a 1 particle cell       //Check if it is a leaf
         //         split = true;
 
-
         uint mask    = BTEST((split && !leaf) && use_node);               // mask = #FFFFFFFF if use_node+split+not_a_leaf==true, otherwise zero
         int child    =    node_data & 0x0FFFFFFF;                         //Index to the first child of the node
         int nchild   = (((node_data & 0xF0000000) >> 28)) & mask;         //The number of children this node has
-
 
         /***
          **** --> calculate prefix
          ***/
 
-        int *prefix0 = &prefix[  0];
-        int *prefix1 = &prefix[DIM];
 
 #ifdef OLDPREFIX
         int n_total = calc_prefix<DIM2>(prefix, tid,  nchild);
@@ -493,21 +530,36 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 #endif
 
         for (int i = n_offset; i < n_offset + n_total; i += DIM)         //nullify part of the array that will be filled with children
-          nodes[tid + i] = 0;                                          //but do not touch those parts which has already been filled
+          nodesM[tid + i] = 0;                                          //but do not touch those parts which has already been filled
         __syncthreads();                                                 //Thread barrier to make sure all warps finished writing data
 
         bool flag = (split && !leaf) && use_node;                        //Flag = use_node + split + not_a_leaf;Use only non_leaf nodes that are to be split
-        if (flag) nodes[prefix[tid]] = child;                            //Thread with the node that is about to be split
+#if 0
+        if (flag) nodesM[prefix[tid]] = child;                            //Thread with the node that is about to be split
         __syncthreads();                                                 //writes the first child in the array of nodes
 
         /*** in the following 8 lines, we calculate indexes of all the children that have to be walked from the index of the first child***/
-        if (flag && nodes[prefix[tid] + 1] == 0) nodes[prefix[tid] + 1] = child + 1; __syncthreads();
-        if (flag && nodes[prefix[tid] + 2] == 0) nodes[prefix[tid] + 2] = child + 2; __syncthreads();
-        if (flag && nodes[prefix[tid] + 3] == 0) nodes[prefix[tid] + 3] = child + 3; __syncthreads();
-        if (flag && nodes[prefix[tid] + 4] == 0) nodes[prefix[tid] + 4] = child + 4; __syncthreads();
-        if (flag && nodes[prefix[tid] + 5] == 0) nodes[prefix[tid] + 5] = child + 5; __syncthreads();
-        if (flag && nodes[prefix[tid] + 6] == 0) nodes[prefix[tid] + 6] = child + 6; __syncthreads();
-        if (flag && nodes[prefix[tid] + 7] == 0) nodes[prefix[tid] + 7] = child + 7; __syncthreads();
+        if (flag && nodesM[prefix[tid] + 1] == 0) nodesM[prefix[tid] + 1] = child + 1; __syncthreads();
+        if (flag && nodesM[prefix[tid] + 2] == 0) nodesM[prefix[tid] + 2] = child + 2; __syncthreads();
+        if (flag && nodesM[prefix[tid] + 3] == 0) nodesM[prefix[tid] + 3] = child + 3; __syncthreads();
+        if (flag && nodesM[prefix[tid] + 4] == 0) nodesM[prefix[tid] + 4] = child + 4; __syncthreads();
+        if (flag && nodesM[prefix[tid] + 5] == 0) nodesM[prefix[tid] + 5] = child + 5; __syncthreads();
+        if (flag && nodesM[prefix[tid] + 6] == 0) nodesM[prefix[tid] + 6] = child + 6; __syncthreads();
+        if (flag && nodesM[prefix[tid] + 7] == 0) nodesM[prefix[tid] + 7] = child + 7; __syncthreads();
+#else
+        if (flag) nodesM[prefix[tid]] = child;                            //Thread with the node that is about to be split
+                                                                          //writes the first child in the array of nodes
+
+        /*** in the following 8 lines, we calculate indexes of all the children that have to be walked from the index of the first child***/
+        if (flag && nodesM[prefix[tid] + 1] == 0) nodesM[prefix[tid] + 1] = child + 1; 
+        if (flag && nodesM[prefix[tid] + 2] == 0) nodesM[prefix[tid] + 2] = child + 2;
+        if (flag && nodesM[prefix[tid] + 3] == 0) nodesM[prefix[tid] + 3] = child + 3;
+        if (flag && nodesM[prefix[tid] + 4] == 0) nodesM[prefix[tid] + 4] = child + 4;
+        if (flag && nodesM[prefix[tid] + 5] == 0) nodesM[prefix[tid] + 5] = child + 5;
+        if (flag && nodesM[prefix[tid] + 6] == 0) nodesM[prefix[tid] + 6] = child + 6;
+        if (flag && nodesM[prefix[tid] + 7] == 0) nodesM[prefix[tid] + 7] = child + 7;
+        __syncthreads();
+#endif
 
         n_offset += n_total;    //Increase the offset in the array by the number of newly added nodes
 
@@ -517,10 +569,11 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
          ***/
 
         /*** if half of shared memory or more is filled with the the nodes, dump these into slowmem stack ***/
-        while(n_offset >= DIM) {
+        while(n_offset >= DIM) 
+        {
           n_offset -= DIM;
           const int offs1 = ACCS<SHIFT>(n_stack1);
-          nstack[offs1] = nodes[n_offset + tid];   n_stack1++;
+          nstack[offs1] = nodesM[n_offset + tid];   n_stack1++;
           n_nodes1 += DIM;
 
           if((n_stack1 - c_stack0) >= (LMEM_STACK_SIZE << SHIFT))
@@ -554,14 +607,14 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 
 
         // 	n_total = calc_prefix<DIM2>(prefix, tid,  !split && use_node);         // for some unkown reason this does not work right on the GPU
-        if (!split && use_node) approx[n_approx + prefix[tid] - 1] = node;
+        if (!split && use_node) approxM[n_approx + prefix[tid] - 1] = node;
         __syncthreads();
         n_approx += n_total;
 
         while (n_approx >= DIM) 
         {
           n_approx -= DIM;
-          const int address      = (approx[n_approx + tid] << 1) + approx[n_approx + tid];
+          const int address      = (approxM[n_approx + tid] << 1) + approxM[n_approx + tid];
 #ifndef TEXTURES
           const float4 monopole  = multipole_data[address    ];
 #if 0
@@ -617,13 +670,12 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
         /******       DIRECT          ******/
         /***********************************/
 
-        int *sh_body = &approx[DIM];
 
         flag         = split && leaf && use_node;                                //flag = split + leaf + use_node
         int  jbody   = node_data & BODYMASK;                                     //the first body in the leaf
         int  nbody   = (((node_data & INVBMASK) >> LEAFBIT)+1) & BTEST(flag);    //number of bodies in the leaf masked with the flag
 
-        body_list[tid] = direct[tid];                                            //copy list of bodies from previous pass to body_list
+        body_list[tid] = directM[tid];                                            //copy list of bodies from previous pass to body_list
         sh_body  [tid] = jbody;                                                  //store the leafs first body id into shared memory
 
         // step 1
@@ -645,13 +697,12 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
         __syncthreads();                                                   // thread barrier to make sure that warps completed their jobs
 #endif
 
-        direct [tid]  = prefix0[tid];                                       //Store a copy of inclusive scan in direct
+        directM[tid]  = prefix0[tid];                                       //Store a copy of inclusive scan in direct
         prefix0[tid] -= nbody;                                              //convert inclusive int oexclusive scan
         prefix0[tid] += 1;                                                  //add unity, since later prefix0[tid] == 0 used to check barrier
 
         int nl_pre = 0;                                                     //Number of leaves that have already been processed
 
-#define NJMAX (DIM*4)
         while (n_bodies > 0) 
         {
           int nb    = min(n_bodies, NJMAX - n_direct);                    //Make sure number of bides to be extracted does not exceed
@@ -664,7 +715,7 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
           __syncthreads();
 
           //step 1:
-          if (flag && (direct[tid] <= nb) && (prefix0[tid] > 0))        //make sure that the thread indeed carries a leaf
+          if (flag && (directM[tid] <= nb) && (prefix0[tid] > 0))        //make sure that the thread indeed carries a leaf
             body_list[n_direct + prefix0[tid] - 1] = 1;                 //whose bodies will be extracted
           __syncthreads();
 
@@ -675,7 +726,7 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
           int nl = inclusive_scan_array<ADDOP<int>, int>              // inclusive scan to compute number of leaves to process
             (&body_list[n_direct], nb, tid);            // to make sure that there is enough shared memory for bodies
 #endif
-          nb = direct[prefix1[nl_pre + nl - 1]];                        // number of bodies stored in these leaves
+          nb = directM[prefix1[nl_pre + nl - 1]];                        // number of bodies stored in these leaves
 
           // step 3:
           for (int i = n_direct; i < n_direct + nb; i += DIM) {          //segmented fill of the body_list
@@ -698,7 +749,7 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 
           n_bodies     -= nb;                                   //subtract from n_bodies number of bodies that have been extracted
           nl_pre       += nl;                                   //increase the number of leaves that where processed
-          direct [tid] -= nb;                                   //subtract the number of extracted bodies in this pass
+          directM[tid] -= nb;                                   //subtract the number of extracted bodies in this pass
           prefix0[tid] = max(prefix0[tid] - nb, 0);             //same here, but do not let the number be negative (GT200 bug!?)
           n_direct     += nb;                                  //increase the number of bodies to be procssed
 
@@ -713,7 +764,6 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 #endif
             sh_mass[tid] = posj.w;
             sh_pos [tid] = make_float3(posj.x, posj.y, posj.z);
-            sh_jid [tid] = body_list[n_direct + tid];  /* we need this to distinghuis between DM and *-particles */
 
             __syncthreads();
 #if 1
@@ -728,7 +778,7 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
           }
 
         }
-        direct[tid] = body_list[tid];
+        directM[tid] = body_list[tid];
         __syncthreads();
 #endif
       } //end lvl
@@ -737,7 +787,7 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
       n_nodes1 += n_offset;
       if (n_offset > 0)
       { 
-        nstack[ACCS<SHIFT>(n_stack1)] = nodes[tid];   n_stack1++; 
+        nstack[ACCS<SHIFT>(n_stack1)] = nodesM[tid];   n_stack1++; 
         if((n_stack1 - c_stack0) >= (LMEM_STACK_SIZE << SHIFT))
         {
           //We overwrote our current stack
@@ -764,7 +814,7 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
   {
     if (tid < n_approx) 
     {
-      const int address = (approx[tid] << 1) + approx[tid];
+      const int address = (approxM[tid] << 1) + approxM[tid];
 #ifndef TEXTURES
       float4 monopole  = multipole_data[address    ];
       float4 octopole0 = multipole_data[address + 1];
@@ -798,23 +848,20 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
   {
     if (tid < n_direct) 
     {
-      const float4 posj = body_pos[direct[tid]];
+      const float4 posj = body_pos[directM[tid]];
 #if 0
       const float4 posj  = tex1Dfetch(texBody, direct[tid]);
 #endif
       sh_mass[tid] = posj.w;
       sh_pos [tid] = make_float3(posj.x, posj.y, posj.z);
-      sh_jid [tid] = direct[tid];
     } else {
       sh_mass[tid] = 0.0f;
       sh_pos [tid] = make_float3(1.0e10f, 1.0e10f, 1.0e10f);
-      sh_jid [tid] = -1;
     }
 
     __syncthreads();
 #pragma unroll
     for (int j = 0; j < DIMx; j++) 
-      if ((sh_jid[offs + j] >= 0)) 
         acc_i = add_acc(acc_i, pos_i, sh_mass[offs + j], sh_pos[offs + j], eps2);
 #if 0
     direCount += DIMx;
@@ -888,7 +935,11 @@ __launch_bounds__(NTHREAD)
 
 
     const int blockDim2 = NTHREAD2;
+#ifdef _ORIG_SHMEM_
     __shared__ int shmem[15*(1 << blockDim2)];
+#else
+    __shared__ int shmem[12*(1 << blockDim2)];
+#endif
     //    __shared__ int shmem[24*(1 << blockDim2)]; is possible on FERMI
     //    int             lmem[LMEM_STACK_SIZE];
 
