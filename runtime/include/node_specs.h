@@ -16,6 +16,7 @@ typedef float4 real4;
 //Tree-walk and stack configuration
 //#define LMEM_STACK_SIZE            3072         //Number of storage places PER thread, MUST be power 2 !!!!
 #define LMEM_STACK_SIZE            2048         //Number of storage places PER thread, MUST be power 2 !!!!
+#define LMEM_EXTRA_SIZE            2048
 //#define LMEM_STACK_SIZE            1024         //Number of storage places PER thread, MUST be power 2 !!!!
 //#define LMEM_STACK_SIZE            512         //Number of storage places PER thread, MUST be power 2 !!!!
 #define TREE_WALK_BLOCKS_PER_SM    16           //Number of GPU thread-blocks used for tree-walk
