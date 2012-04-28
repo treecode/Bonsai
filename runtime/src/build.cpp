@@ -38,7 +38,11 @@ void octree::allocateParticleMemory(tree_structure &tree)
   //large enough to store the tree-walk stack. Add 4096 for extra memory allignment space
   //Times 2 since first half is used for regular walks, 2nd half for walks that go outside 
   //the memory stack and require another walk with 'unlimited' stack size
+#if 0
   int treeWalkStackSize = (2*LMEM_STACK_SIZE*NTHREAD*nBlocksForTreeWalk) + 4096;
+#else
+  int treeWalkStackSize = (2*LMEM_STACK_SIZE*NTHREAD*nBlocksForTreeWalk) + 4096 + (2*LMEM_EXTRA_SIZE*nBlocksForTreeWalk);
+#endif
     
 
   int tempSize   = max(n_bodies, 4096);   //Use minium of 4096 to prevent offsets mess up with small N
