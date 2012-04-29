@@ -37,36 +37,8 @@ __forceinline__ __device__ float interact(
 **** --> prefix calculation via Horn(2005) data-parallel algoritm
 ***/
 #define BTEST(x) (-(int)(x))
-template<int DIM2>
-__device__ int calc_prefix(int N, int* prefix_in, int tid) {
-  int x, y = 0;
 
-  const int DIM = 1 << DIM2;
-  
-  for (int p = 0; p < N; p += DIM) {
-    int *prefix = &prefix_in[p];
-
-    x = prefix[tid -  1]; __syncthreads(); prefix[tid] += x & BTEST(tid >=  1); __syncthreads();
-    x = prefix[tid -  2]; __syncthreads(); prefix[tid] += x & BTEST(tid >=  2); __syncthreads();
-    x = prefix[tid -  4]; __syncthreads(); prefix[tid] += x & BTEST(tid >=  4); __syncthreads();
-    x = prefix[tid -  8]; __syncthreads(); prefix[tid] += x & BTEST(tid >=  8); __syncthreads();
-    x = prefix[tid - 16]; __syncthreads(); prefix[tid] += x & BTEST(tid >= 16); __syncthreads();
-    if (DIM2 >= 6) {x = prefix[tid - 32]; __syncthreads(); prefix[tid] += x & BTEST(tid >= 32); __syncthreads();}
-    if (DIM2 >= 7) {x = prefix[tid - 64]; __syncthreads(); prefix[tid] += x & BTEST(tid >= 64); __syncthreads();}
-    if (DIM2 >= 8) {x = prefix[tid -128]; __syncthreads(); prefix[tid] += x & BTEST(tid >=128); __syncthreads();}
-    
-
-    prefix[tid] += y;
-    __syncthreads();
-
-    y = prefix[DIM-1];
-    __syncthreads();
-  }
-
-  return y;
-} 
-
-template<int DIM2>
+  template<int DIM2>
 __device__ int calc_prefix1(int* prefix, int tid, int value)
 {
   int  x;
@@ -76,7 +48,6 @@ __device__ int calc_prefix1(int* prefix, int tid, int value)
   prefix[tid] = value;
   __syncthreads();
 
-#if 1
   x = prefix[tid -  1]; __syncthreads(); prefix[tid] += x & BTEST(tid >=  1); __syncthreads();
   x = prefix[tid -  2]; __syncthreads(); prefix[tid] += x & BTEST(tid >=  2); __syncthreads();
   x = prefix[tid -  4]; __syncthreads(); prefix[tid] += x & BTEST(tid >=  4); __syncthreads();
@@ -89,54 +60,10 @@ __device__ int calc_prefix1(int* prefix, int tid, int value)
   x = prefix[DIM - 1];
   __syncthreads();
   return x;
-#else
-
-  int offset = 0;
-  int tid2 = tid << 1;
-
-#pragma unroll
-  for (int d = DIM >> 1; d > 0; d >>= 1) {
-    __syncthreads();
-
-    int iflag = BTEST(tid < d);
-    int ai = (((tid2 + 1) << offset) - 1) & iflag;
-    int bi = (((tid2 + 2) << offset) - 1) & iflag;
-
-    prefix[bi] += prefix[ai] & iflag;
-    offset++;
-  }
-
-  // clear the last element
-  if (tid == 0) prefix[DIM - 1] = 0;
-
-  // traverse down the tree building the scan in place
-#pragma unroll
-  for (int d = 1; d < DIM; d <<= 1) {
-    offset--;
-    __syncthreads();
-
-    int iflag = BTEST(tid < d);
-    int ai = (((tid2 + 1) << offset) - 1) & iflag;
-    int bi = (((tid2 + 2) << offset) - 1) & iflag;
-
-    int t       = prefix[ai];
-    if (tid < d) {
-      prefix[ai]  = (prefix[bi] & iflag) + (t & BTEST(tid >= d));
-      prefix[bi] += t & iflag;
-    }
-  }
-  __syncthreads();
-
-  prefix[tid] += value;
-  __syncthreads();
-
-  x = prefix[DIM - 1];
-  __syncthreads();
-  return x;
-#endif
 }
 
-#if 1
+/****** KEPLER __shfl prefix sum ******/
+
 __device__ __forceinline__ uint shfl_scan_add_step(uint partial, uint up_offset)
 {
   uint result;
@@ -179,7 +106,29 @@ __device__ __forceinline__ int calc_prefix(int* prefix, int tid, int value)
     return x;
   }
 }
-#endif
+
+
+template<int DIM2>
+__device__ int calc_prefix(int N, int* prefix_in, int tid) 
+{
+  const int DIM = 1 << DIM2;
+  const int N2  = N >> DIM2;
+
+  int y = calc_prefix<DIM2>(prefix_in, tid, prefix_in[tid]);
+  if (N2 == 0) return y;
+
+  for (int p = DIM; p < N; p += DIM) 
+  {
+    int *prefix = &prefix_in[p];
+    const int y1 = calc_prefix<DIM2>(prefix, tid, prefix[tid]);
+    prefix[tid] += y;
+    y += y1;
+  }
+  __syncthreads();
+
+  return y;
+} 
+
 
 
   template<int SHIFT>
@@ -438,29 +387,9 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
         __syncthreads();                                                 //Thread barrier to make sure all warps finished writing data
 
         bool flag = (split && !leaf) && use_node;                        //Flag = use_node + split + not_a_leaf;Use only non_leaf nodes that are to be split
-#if 0
-        if (flag) nodesM[prefix[tid]] = child;                            //Thread with the node that is about to be split
-        __syncthreads();                                                 //writes the first child in the array of nodes
-
-        /*** in the following 8 lines, we calculate indexes of all the children that have to be walked from the index of the first child***/
-        if (flag && nodesM[prefix[tid] + 1] == 0) nodesM[prefix[tid] + 1] = child + 1; __syncthreads();
-        if (flag && nodesM[prefix[tid] + 2] == 0) nodesM[prefix[tid] + 2] = child + 2; __syncthreads();
-        if (flag && nodesM[prefix[tid] + 3] == 0) nodesM[prefix[tid] + 3] = child + 3; __syncthreads();
-        if (flag && nodesM[prefix[tid] + 4] == 0) nodesM[prefix[tid] + 4] = child + 4; __syncthreads();
-        if (flag && nodesM[prefix[tid] + 5] == 0) nodesM[prefix[tid] + 5] = child + 5; __syncthreads();
-        if (flag && nodesM[prefix[tid] + 6] == 0) nodesM[prefix[tid] + 6] = child + 6; __syncthreads();
-        if (flag && nodesM[prefix[tid] + 7] == 0) nodesM[prefix[tid] + 7] = child + 7; __syncthreads();
-#else
-#if 1
         if (flag) nodesM[offset] = child;                            //Thread with the node that is about to be split
-        //writes the first child in the array of nodes
-#else
-        const int maskT = flag ? 0xFFFFFFFF : 0x0;
-        const int maskF = ~maskT;
-        const int addr = (offset & maskT) + (-1 & maskF);;
-        nodesM[addr] = (maskF & nodesM[addr]) + (maskT & child);
-#endif
-
+                                                                     //writes the first child in the array of nodes
+        /*** in the following 8 lines, we calculate indexes of all the children that have to be walked from the index of the first child***/
         if (flag && nodesM[offset + 1] == 0) nodesM[offset + 1] = child + 1; 
         if (flag && nodesM[offset + 2] == 0) nodesM[offset + 2] = child + 2;
         if (flag && nodesM[offset + 3] == 0) nodesM[offset + 3] = child + 3;
@@ -469,7 +398,6 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
         if (flag && nodesM[offset + 6] == 0) nodesM[offset + 6] = child + 6;
         if (flag && nodesM[offset + 7] == 0) nodesM[offset + 7] = child + 7;
         __syncthreads();
-#endif
 
         n_offset += n_total;    //Increase the offset in the array by the number of newly added nodes
 
