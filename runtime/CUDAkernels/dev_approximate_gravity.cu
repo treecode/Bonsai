@@ -1084,7 +1084,11 @@ __launch_bounds__(NTHREAD)
 
         __syncthreads();
 
+#ifdef _ORIG_SHMEM_
         lmem = &MEM_BUF[gridDim.x*LMEM_STACK_SIZE*blockDim.x];    //Use the extra large buffer
+#else
+        lmem = &MEM_BUF[gridDim.x*(LMEM_STACK_SIZE*blockDim.x + LMEM_EXTRA_SIZE)];    //Use the extra large buffer
+#endif
         apprCount = direCount = 0;
         acc_i = approximate_gravity<blockDim2, 8>( DIM2x, DIM2y, tid, tx, ty,
             body_i, pos_i, group_pos,
