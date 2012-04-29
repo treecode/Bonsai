@@ -125,10 +125,9 @@ __device__ __forceinline__ int calc_prefix(int* prefix, int tid, int value)
 __device__ int calc_prefix(int N, int* prefix_in, int tid) 
 {
   const int DIM = 1 << DIM2;
-  const int N2  = N >> DIM2;
 
   int y = calc_prefix<DIM2>(prefix_in, tid, prefix_in[tid]);
-  if (N2 == 0) return y;
+  if (N <= DIM) return y;
 
   for (int p = DIM; p < N; p += DIM) 
   {
