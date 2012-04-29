@@ -396,9 +396,9 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
   int *directM = directS;
   int * nodesM =  nodesS;
 
-#else
+#else   /* !_ORIG_SHMEM_ */
 
-  const int stack_sz = (LMEM_STACK_SIZE << SHIFT) + 4096;
+  const int stack_sz = (LMEM_STACK_SIZE << SHIFT) << DIM2;  /* stack allocated per thread-block */
   int *approxL = lmem + stack_sz; 
 
   int *directS = shmem;                              //  0*DIM,  1*DIM,  1*DIM
@@ -467,7 +467,7 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
         { prefix[tid] = nstack[ACCS<SHIFT>(c_stack0)];   c_stack0++; }
         __syncthreads();
         int node  = prefix[min(tid, n_nodes0 - 1)];
-#else
+#else  /* eg: seems to work, but I do not remember if that will *always* work */
         int node;
         { node  = nstack[ACCS<SHIFT>(c_stack0)];   c_stack0++; }
 #endif
@@ -547,10 +547,16 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
         if (flag && nodesM[prefix[tid] + 6] == 0) nodesM[prefix[tid] + 6] = child + 6; __syncthreads();
         if (flag && nodesM[prefix[tid] + 7] == 0) nodesM[prefix[tid] + 7] = child + 7; __syncthreads();
 #else
+#if 1
         if (flag) nodesM[prefix[tid]] = child;                            //Thread with the node that is about to be split
                                                                           //writes the first child in the array of nodes
-
-        /*** in the following 8 lines, we calculate indexes of all the children that have to be walked from the index of the first child***/
+#else
+        const int maskT = flag ? 0xFFFFFFFF : 0x0;
+        const int maskF = ~maskT;
+        const int addr = (prefix[tid] & maskT) + (-1 & maskF);;
+        nodesM[addr] = (maskF & nodesM[addr]) + (maskT & child);
+#endif
+        
         if (flag && nodesM[prefix[tid] + 1] == 0) nodesM[prefix[tid] + 1] = child + 1; 
         if (flag && nodesM[prefix[tid] + 2] == 0) nodesM[prefix[tid] + 2] = child + 2;
         if (flag && nodesM[prefix[tid] + 3] == 0) nodesM[prefix[tid] + 3] = child + 3;
@@ -862,7 +868,7 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
     __syncthreads();
 #pragma unroll
     for (int j = 0; j < DIMx; j++) 
-        acc_i = add_acc(acc_i, pos_i, sh_mass[offs + j], sh_pos[offs + j], eps2);
+      acc_i = add_acc(acc_i, pos_i, sh_mass[offs + j], sh_pos[offs + j], eps2);
 #if 0
     direCount += DIMx;
 #endif
@@ -970,24 +976,28 @@ __launch_bounds__(NTHREAD)
 
       //   volatile int *lmem = &MEM_BUF[blockIdx.x*LMEM_STACK_SIZE*blockDim.x + threadIdx.x*LMEM_STACK_SIZE];
       //   int *lmem = &MEM_BUF[blockIdx.x*LMEM_STACK_SIZE*blockDim.x + threadIdx.x*LMEM_STACK_SIZE];
-      int *lmem = &MEM_BUF[blockIdx.x*LMEM_STACK_SIZE*blockDim.x];
+#ifdef _ORIG_SHMEM_
+      int *lmem = &MEM_BUF[blockIdx.x* LMEM_STACK_SIZE*blockDim.x];
+#else
+      int *lmem = &MEM_BUF[blockIdx.x*(LMEM_STACK_SIZE*blockDim.x + LMEM_EXTRA_SIZE)];
+#endif
 
 
       /*********** set necessary thread constants **********/
-      #ifdef DO_BLOCK_TIMESTEP
-        real4 curGroupSize    = groupSizeInfo[active_groups[bid + grpOffset]];
-      #else
-        real4 curGroupSize    = groupSizeInfo[bid + grpOffset];
-      #endif
+#ifdef DO_BLOCK_TIMESTEP
+      real4 curGroupSize    = groupSizeInfo[active_groups[bid + grpOffset]];
+#else
+      real4 curGroupSize    = groupSizeInfo[bid + grpOffset];
+#endif
       int   groupData       = __float_as_int(curGroupSize.w);
       uint body_i           =   groupData & CRITMASK;
       uint nb_i             = ((groupData & INVCMASK) >> CRITBIT) + 1;
 
-      #ifdef DO_BLOCK_TIMESTEP
-        real4 group_pos       = groupCenterInfo[active_groups[bid + grpOffset]];
-      #else
-        real4 group_pos       = groupCenterInfo[bid + grpOffset];
-      #endif
+#ifdef DO_BLOCK_TIMESTEP
+      real4 group_pos       = groupCenterInfo[active_groups[bid + grpOffset]];
+#else
+      real4 group_pos       = groupCenterInfo[bid + grpOffset];
+#endif
       //   if(tid == 0)
       //   printf("[%f %f %f %f ] \n [%f %f %f %f ] %d %d \n",
       //           curGroupSize.x, curGroupSize.y, curGroupSize.z, curGroupSize.w,
@@ -1087,7 +1097,11 @@ __launch_bounds__(NTHREAD)
             shmem, lmem, ngb_i, apprCount, direCount, boxSizeInfo, curGroupSize, boxCenterInfo,
             group_eps, body_vel);
 
-        lmem = &MEM_BUF[blockIdx.x*LMEM_STACK_SIZE*blockDim.x]; //Back to normal location
+#ifdef _ORIG_SHMEM_
+        lmem = &MEM_BUF[blockIdx.x* LMEM_STACK_SIZE*blockDim.x]; //Back to normal location
+#else
+        lmem = &MEM_BUF[blockIdx.x*(LMEM_STACK_SIZE*blockDim.x + LMEM_EXTRA_SIZE)];
+#endif
 
         if(threadIdx.x == 0)
         {
