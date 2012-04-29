@@ -1115,7 +1115,7 @@ __launch_bounds__(NTHREAD)
 
       if (tid < nb_i) {
         acc_out     [body_i] = acc_i;
-        ngb_out     [body_i] = ngb_i;
+        ngb_out     [body_i] = -1;
         active_inout[body_i] = 1;
         interactions[body_i].x = apprCount;
         interactions[body_i].y = direCount ;
