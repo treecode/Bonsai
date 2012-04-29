@@ -62,6 +62,12 @@ __device__ int calc_prefix1(int* prefix, int tid, int value)
   return x;
 }
 
+#if 1
+#define _KEPLERCODE_
+#endif
+
+#ifdef _KEPLERCODE_
+
 /****** KEPLER __shfl prefix sum ******/
 
 __device__ __forceinline__ uint shfl_scan_add_step(uint partial, uint up_offset)
@@ -106,9 +112,16 @@ __device__ __forceinline__ int calc_prefix(int* prefix, int tid, int value)
     return x;
   }
 }
+#else
+  template<int DIM2>
+__device__ __forceinline__ int calc_prefix(int* prefix, int tid, int value) 
+{
+    return calc_prefix1<DIM2>(prefix, tid, value);
+}
+#endif
 
 
-template<int DIM2>
+  template<int DIM2>
 __device__ int calc_prefix(int N, int* prefix_in, int tid) 
 {
   const int DIM = 1 << DIM2;
@@ -388,7 +401,7 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 
         bool flag = (split && !leaf) && use_node;                        //Flag = use_node + split + not_a_leaf;Use only non_leaf nodes that are to be split
         if (flag) nodesM[offset] = child;                            //Thread with the node that is about to be split
-                                                                     //writes the first child in the array of nodes
+        //writes the first child in the array of nodes
         /*** in the following 8 lines, we calculate indexes of all the children that have to be walked from the index of the first child***/
         if (flag && nodesM[offset + 1] == 0) nodesM[offset + 1] = child + 1; 
         if (flag && nodesM[offset + 2] == 0) nodesM[offset + 2] = child + 2;
@@ -546,7 +559,7 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 
           //step 2:
           int nl = calc_prefix<DIM2>(nb, &body_list[n_direct], tid);   // inclusive scan to compute number of leaves to process
-                                                                       // to make sure that there is enough shared memory for bodies
+          // to make sure that there is enough shared memory for bodies
           nb = directM[prefix1[nl_pre + nl - 1]];                       // number of bodies stored in these leaves
 
           // step 3:
