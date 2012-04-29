@@ -210,7 +210,10 @@ extern "C" __global__ void correct_particles(const int n_bodies,
                                              real4 *acc1,
                                              real4 *pos,
                                              real4 *pPos,
-                                             real4 *pVel) {
+                                             real4 *pVel,
+                                             uint  *unsorted,
+                                             real4 *acc0_new,
+                                             float2 *time_new) {
   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
   const int tid =  threadIdx.y * blockDim.x + threadIdx.x;
   const int dim =  blockDim.x * blockDim.y;
@@ -224,30 +227,40 @@ extern "C" __global__ void correct_particles(const int n_bodies,
   #endif
 
 
+#if 0
   float4 v  = vel [idx];
   float4 a0 = acc0[idx];
   float4 a1 = acc1[idx];
   float  tb = time[idx].x;
-//   float  dt = time[idx].y;
+  v = pVel[idx];
+#else
+  const uint unsortedIdx = unsorted[idx];
 
-  float dt_cb  = tc - tb;
 
+  float4 a0 = acc0[unsortedIdx];
+  float4 a1 = acc1[idx];
+  float  tb = time[unsortedIdx].x;
+  float4 v  = pVel[unsortedIdx];
 
+#endif
 
   //Store the predicted position as the one to use
   pos[idx] = pPos[idx];
 
-  //Correct the position
-  v = pVel[idx];
 
+  float dt_cb  = tc - tb;
+
+  //Correct the velocity
   dt_cb *= 0.5f;
   v.x += (a1.x - a0.x)*dt_cb;
   v.y += (a1.y - a0.y)*dt_cb;
   v.z += (a1.z - a0.z)*dt_cb;
 
   //Store the corrected velocity, accelaration and the new time step info
-  vel [idx] = v;
-  acc0[idx] = a1; 
+  vel     [idx] = v;
+  acc0_new[idx] = a1; 
+  time_new[idx] = time[unsortedIdx];
+  unsorted[idx] = idx;  //Have to reset it in case we do not resort the particles
 
   //   time[idx] = (float2){tc, tc + dt};
 }
