@@ -41,7 +41,7 @@ void octree::allocateParticleMemory(tree_structure &tree)
 #if 0
   int treeWalkStackSize = (2*LMEM_STACK_SIZE*NTHREAD*nBlocksForTreeWalk) + 4096;
 #else
-  int treeWalkStackSize = (2*LMEM_STACK_SIZE*NTHREAD*nBlocksForTreeWalk) + 4096 + (2*LMEM_EXTRA_SIZE*nBlocksForTreeWalk);
+  int treeWalkStackSize = (2*(LMEM_STACK_SIZE*NTHREAD + LMEM_EXTRA_SIZE)*nBlocksForTreeWalk) + 4096;
 #endif
     
 
