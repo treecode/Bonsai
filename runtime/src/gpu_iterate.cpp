@@ -441,6 +441,11 @@ void octree::approximate_gravity(tree_structure &tree)
     
  
   approxGrav.setWork(-1, NTHREAD, nBlocksForTreeWalk);
+#if 1
+  cudaFuncSetCacheConfig("dev_approximate_gravity", cudaFuncCachePreferShared);
+#else
+  cudaFuncSetCacheConfig("dev_approximate_gravity", cudaFuncCachePreferL1);  /* 2.5x slower on GTX680 */
+#endif
   approxGrav.execute(execStream->s());  //First half
 
   //Print interaction statistics
