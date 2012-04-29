@@ -125,7 +125,8 @@ void octree::load_kernels() {
   convertKey64to96.create("convertKey64to96");
   
   dataReorderR4.load_source("./sortKernels.ptx", pathName.c_str());
-  dataReorderR4.create("dataReorderR4");  
+//  dataReorderR4.create("dataReorderR4");  
+  dataReorderR4.create("dataReorderCombined4");
   
   dataReorderF2.load_source("./sortKernels.ptx", pathName.c_str());
   dataReorderF2.create("dataReorderF2");  
@@ -134,7 +135,9 @@ void octree::load_kernels() {
   dataReorderI1.create("dataReorderI1");        
   
   dataReorderCombined.load_source("./sortKernels.ptx", pathName.c_str());
-  dataReorderCombined.create("dataReorderCombined");    
+  dataReorderCombined.create("dataReorderCombined");
+//  dataReorderCombined.create("dataReorderCombined4");
+  
   
 #else
   compactCount.load_source("scanKernels.cl", "OpenCLKernels");

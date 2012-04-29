@@ -232,7 +232,7 @@ void octree::iterate_setup(IterationData &idata) {
   letRunning = false;
      
   double t1;
-
+  sort_bodies(localTree, true);
   //Initial prediction/acceleration to setup the system
   //Will be at time 0
   //predict localtree
@@ -441,11 +441,6 @@ void octree::approximate_gravity(tree_structure &tree)
     
  
   approxGrav.setWork(-1, NTHREAD, nBlocksForTreeWalk);
-#if 1
-  cudaFuncSetCacheConfig("dev_approximate_gravity", cudaFuncCachePreferShared);
-#else
-  cudaFuncSetCacheConfig("dev_approximate_gravity", cudaFuncCachePreferL1);  /* 2.5x slower on GTX680 */
-#endif
   approxGrav.execute(execStream->s());  //First half
 
   //Print interaction statistics
@@ -653,7 +648,21 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
 
 
 void octree::correct(tree_structure &tree)
-{
+{ 
+  my_dev::dev_mem<float2>  float2Buffer(devContext);
+  my_dev::dev_mem<real4>   real4Buffer1(devContext);
+  float2Buffer.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
+                         tree.generalBuffer1.get_flags(), 
+                         tree.generalBuffer1.get_devMem(),
+                         &tree.generalBuffer1[0], 0,  
+                         tree.n, getAllignmentOffset(0));  
+  real4Buffer1.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
+                         tree.generalBuffer1.get_flags(), 
+                         tree.generalBuffer1.get_devMem(),
+                         &tree.generalBuffer1[2*tree.n], 2*tree.n, 
+                         tree.n, getAllignmentOffset(2*tree.n));   
+ 
+  
   correctParticles.set_arg<int   >(0, &tree.n);
   correctParticles.set_arg<float >(1, &t_current);
   correctParticles.set_arg<cl_mem>(2, tree.bodies_time.p());
@@ -664,9 +673,16 @@ void octree::correct(tree_structure &tree)
   correctParticles.set_arg<cl_mem>(7, tree.bodies_pos.p());
   correctParticles.set_arg<cl_mem>(8, tree.bodies_Ppos.p());
   correctParticles.set_arg<cl_mem>(9, tree.bodies_Pvel.p());
+  correctParticles.set_arg<cl_mem>(10, tree.oriParticleOrder.p());
+  correctParticles.set_arg<cl_mem>(11, real4Buffer1.p());
+  correctParticles.set_arg<cl_mem>(12, float2Buffer.p());
 
   correctParticles.setWork(tree.n, 128);
   correctParticles.execute();
+  
+  tree.bodies_acc0.copy(real4Buffer1, tree.n);
+  tree.bodies_time.copy(float2Buffer, float2Buffer.get_size()); 
+  
 
   #ifdef DO_BLOCK_TIMESTEP
     computeDt.set_arg<int>(0,    &tree.n);

@@ -169,103 +169,148 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
   devContext.stopTiming("Sorting", 0);  
 
   //Call the reorder data functions
-  //First generate some memory buffers
-  //generalBuffer is always at least 3xfloat4*N
-  my_dev::dev_mem<real4>  real4Buffer1(devContext);
-  my_dev::dev_mem<real4>  real4Buffer2(devContext);
-  my_dev::dev_mem<real4>  real4Buffer3(devContext);
-  
-  real4Buffer1.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                         tree.generalBuffer1.get_flags(), 
-                         tree.generalBuffer1.get_devMem(),
-                         &tree.generalBuffer1[0], 0,  
-                         tree.n, getAllignmentOffset(0));  
-    
-  real4Buffer2.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                         tree.generalBuffer1.get_flags(), 
-                         tree.generalBuffer1.get_devMem(),
-                         &tree.generalBuffer1[4*tree.n], 4*tree.n, 
-                         tree.n, getAllignmentOffset(4*tree.n));   
-  int prevOffset = getAllignmentOffset(4*tree.n);
-  
-  real4Buffer3.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                         tree.generalBuffer1.get_flags(), 
-                         tree.generalBuffer1.get_devMem(),
-                         &tree.generalBuffer1[8*tree.n], 8*tree.n, 
-                         tree.n, prevOffset + getAllignmentOffset(8*tree.n+prevOffset));   
-  
-  
   devContext.startTiming();
-  
-  dataReorderCombined.set_arg<int>(0,      &tree.n);
-  dataReorderCombined.set_arg<cl_mem>(1,   tree.bodies_key.p());  
-  dataReorderCombined.setWork(tree.n, 512);   
-//   dataReorderCombined.setWork(tree.n, 512, 240);  //256 threads and 120 blocks in total
-  
-  
-  //Position, velocity and acc0
-  dataReorderCombined.set_arg<cl_mem>(2,   tree.bodies_pos.p());
-  dataReorderCombined.set_arg<cl_mem>(3,   real4Buffer1.p()); 
-  dataReorderCombined.set_arg<cl_mem>(4,   tree.bodies_vel.p()); 
-  dataReorderCombined.set_arg<cl_mem>(5,   real4Buffer2.p()); 
-  dataReorderCombined.set_arg<cl_mem>(6,   tree.bodies_acc0.p()); 
-  dataReorderCombined.set_arg<cl_mem>(7,   real4Buffer3.p()); 
-  dataReorderCombined.execute();
-  tree.bodies_pos.copy(real4Buffer1,  tree.n);
-  tree.bodies_vel.copy(real4Buffer2,  tree.n);
-  tree.bodies_acc0.copy(real4Buffer3, tree.n);
-  
-  //Acc1, Predicted position and velocity
-  dataReorderCombined.set_arg<cl_mem>(2,   tree.bodies_acc1.p()); 
-  dataReorderCombined.set_arg<cl_mem>(3,   real4Buffer1.p()); 
-  dataReorderCombined.set_arg<cl_mem>(4,   tree.bodies_Ppos.p());
-  dataReorderCombined.set_arg<cl_mem>(5,   real4Buffer2.p()); 
-  dataReorderCombined.set_arg<cl_mem>(6,   tree.bodies_Pvel.p()); 
-  dataReorderCombined.set_arg<cl_mem>(7,   real4Buffer3.p());   
-  dataReorderCombined.execute();
-
-  tree.bodies_acc1.copy(real4Buffer1, tree.n);
-  tree.bodies_Ppos.copy(real4Buffer2,  tree.n);
-  tree.bodies_Pvel.copy(real4Buffer3, tree.n);   
 
   
-  my_dev::dev_mem<int>  intBuffer(devContext);
-  intBuffer.cmalloc_copy(tree.generalBuffer1.get_pinned(),   
-                         tree.generalBuffer1.get_flags(), 
-                         tree.generalBuffer1.get_devMem(),
-                         &tree.generalBuffer1[4*tree.n], 4*tree.n,
-                         tree.n, getAllignmentOffset(4*tree.n));  
-  
-  
-  my_dev::dev_mem<float2>  float2Buffer(devContext);
-  my_dev::dev_mem<int> sortPermutation(devContext);
-  float2Buffer.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                         tree.generalBuffer1.get_flags(), 
-                         tree.generalBuffer1.get_devMem(),
-                         &tree.generalBuffer1[0], 0,  
-                         tree.n, getAllignmentOffset(0)); 
-  sortPermutation.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                         tree.generalBuffer1.get_flags(), 
-                         tree.generalBuffer1.get_devMem(),
-                         &tree.generalBuffer1[2*tree.n], 2*tree.n, 
-                         tree.n, getAllignmentOffset(2*tree.n)); 
-  
-  dataReorderF2.set_arg<int>(0,      &tree.n);
-  dataReorderF2.set_arg<cl_mem>(1,   tree.bodies_key.p());  
-  
-  dataReorderF2.set_arg<cl_mem>(2,   tree.bodies_time.p());
-  dataReorderF2.set_arg<cl_mem>(3,   float2Buffer.p()); //Reuse as destination1
-  dataReorderF2.set_arg<cl_mem>(4,   tree.bodies_ids.p()); 
-  dataReorderF2.set_arg<cl_mem>(5,   sortPermutation.p()); //Reuse as destination2  
-  dataReorderF2.setWork(tree.n, 512);   
-  dataReorderF2.execute();
-  
-  
-  tree.bodies_time.copy(float2Buffer, float2Buffer.get_size()); 
-  tree.bodies_ids.copy(sortPermutation, sortPermutation.get_size());  
+  static int oneRunFull = 0;
 
+  //JB this if statement is required untill I fix the order 
+  //of functions in main.cpp  
+  if(oneRunFull == 1)
+  {
+    my_dev::dev_mem<real4>  real4Buffer1(devContext);
+    my_dev::dev_mem<int>    sortPermutation(devContext);
 
+  
+    real4Buffer1.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
+                          tree.generalBuffer1.get_flags(), 
+                          tree.generalBuffer1.get_devMem(),
+                          &tree.generalBuffer1[0], 0,  
+                          tree.n, getAllignmentOffset(0));  
+    
+    my_dev::dev_mem<int>  intBuffer1(devContext);
+    intBuffer1.cmalloc_copy(tree.generalBuffer1.get_pinned(),   
+                          tree.generalBuffer1.get_flags(), 
+                          tree.generalBuffer1.get_devMem(),
+                          &tree.generalBuffer1[4*tree.n], 4*tree.n,
+                          tree.n, getAllignmentOffset(4*tree.n)); 
 
-  devContext.stopTiming("Data-reordering", 1);    
+    
+    dataReorderR4.set_arg<int>(0,      &tree.n);
+    dataReorderR4.set_arg<cl_mem>(1,   tree.bodies_key.p());  
+    dataReorderR4.setWork(tree.n, 512);   
+
+    //Position, velocity and acc0
+    dataReorderR4.set_arg<cl_mem>(2,   tree.bodies_Ppos.p());
+    dataReorderR4.set_arg<cl_mem>(3,   real4Buffer1.p()); 
+    dataReorderR4.set_arg<cl_mem>(4,   tree.bodies_ids.p()); 
+    dataReorderR4.set_arg<cl_mem>(5,   intBuffer1.p()); 
+    dataReorderR4.set_arg<cl_mem>(6,   tree.oriParticleOrder.p()); 
+    dataReorderR4.execute();
+    
+    tree.bodies_Ppos.copy(real4Buffer1,  tree.n);
+    tree.bodies_ids.copy (intBuffer1,    tree.n);   
+  }
+  else
+  {
+    oneRunFull = 1;
+    //Call the reorder data functions
+    //First generate some memory buffers
+    //generalBuffer is always at least 3xfloat4*N
+    my_dev::dev_mem<real4>  real4Buffer1(devContext);
+    my_dev::dev_mem<real4>  real4Buffer2(devContext);
+    my_dev::dev_mem<real4>  real4Buffer3(devContext);
+    
+    real4Buffer1.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
+                          tree.generalBuffer1.get_flags(), 
+                          tree.generalBuffer1.get_devMem(),
+                          &tree.generalBuffer1[0], 0,  
+                          tree.n, getAllignmentOffset(0));  
+      
+    real4Buffer2.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
+                          tree.generalBuffer1.get_flags(), 
+                          tree.generalBuffer1.get_devMem(),
+                          &tree.generalBuffer1[4*tree.n], 4*tree.n, 
+                          tree.n, getAllignmentOffset(4*tree.n));   
+    int prevOffset = getAllignmentOffset(4*tree.n);
+    
+    real4Buffer3.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
+                          tree.generalBuffer1.get_flags(), 
+                          tree.generalBuffer1.get_devMem(),
+                          &tree.generalBuffer1[8*tree.n], 8*tree.n, 
+                          tree.n, prevOffset + getAllignmentOffset(8*tree.n+prevOffset));   
+    
+    
+    dataReorderCombined.set_arg<int>(0,      &tree.n);
+    dataReorderCombined.set_arg<cl_mem>(1,   tree.bodies_key.p());  
+    dataReorderCombined.setWork(tree.n, 512);   
+  //   dataReorderCombined.setWork(tree.n, 512, 240);  //256 threads and 120 blocks in total
+    
+    
+    //Position, velocity and acc0
+    dataReorderCombined.set_arg<cl_mem>(2,   tree.bodies_pos.p());
+    dataReorderCombined.set_arg<cl_mem>(3,   real4Buffer1.p()); 
+    dataReorderCombined.set_arg<cl_mem>(4,   tree.bodies_vel.p()); 
+    dataReorderCombined.set_arg<cl_mem>(5,   real4Buffer2.p()); 
+    dataReorderCombined.set_arg<cl_mem>(6,   tree.bodies_acc0.p()); 
+    dataReorderCombined.set_arg<cl_mem>(7,   real4Buffer3.p()); 
+    dataReorderCombined.execute();
+    tree.bodies_pos.copy(real4Buffer1,  tree.n);
+    tree.bodies_vel.copy(real4Buffer2,  tree.n);
+    tree.bodies_acc0.copy(real4Buffer3, tree.n);
+    
+    //Acc1, Predicted position and velocity
+    dataReorderCombined.set_arg<cl_mem>(2,   tree.bodies_acc1.p()); 
+    dataReorderCombined.set_arg<cl_mem>(3,   real4Buffer1.p()); 
+    dataReorderCombined.set_arg<cl_mem>(4,   tree.bodies_Ppos.p());
+    dataReorderCombined.set_arg<cl_mem>(5,   real4Buffer2.p()); 
+    dataReorderCombined.set_arg<cl_mem>(6,   tree.bodies_Pvel.p()); 
+    dataReorderCombined.set_arg<cl_mem>(7,   real4Buffer3.p());   
+    dataReorderCombined.execute();
+
+    tree.bodies_acc1.copy(real4Buffer1, tree.n);
+    tree.bodies_Ppos.copy(real4Buffer2,  tree.n);
+    tree.bodies_Pvel.copy(real4Buffer3, tree.n);   
+
+    
+    my_dev::dev_mem<int>  intBuffer(devContext);
+    intBuffer.cmalloc_copy(tree.generalBuffer1.get_pinned(),   
+                          tree.generalBuffer1.get_flags(), 
+                          tree.generalBuffer1.get_devMem(),
+                          &tree.generalBuffer1[4*tree.n], 4*tree.n,
+                          tree.n, getAllignmentOffset(4*tree.n));  
+    
+    
+    my_dev::dev_mem<float2>  float2Buffer(devContext);
+    my_dev::dev_mem<int> sortPermutation(devContext);
+    float2Buffer.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
+                          tree.generalBuffer1.get_flags(), 
+                          tree.generalBuffer1.get_devMem(),
+                          &tree.generalBuffer1[0], 0,  
+                          tree.n, getAllignmentOffset(0)); 
+    sortPermutation.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
+                          tree.generalBuffer1.get_flags(), 
+                          tree.generalBuffer1.get_devMem(),
+                          &tree.generalBuffer1[2*tree.n], 2*tree.n, 
+                          tree.n, getAllignmentOffset(2*tree.n)); 
+    
+    dataReorderF2.set_arg<int>(0,      &tree.n);
+    dataReorderF2.set_arg<cl_mem>(1,   tree.bodies_key.p());  
+    
+    dataReorderF2.set_arg<cl_mem>(2,   tree.bodies_time.p());
+    dataReorderF2.set_arg<cl_mem>(3,   float2Buffer.p()); //Reuse as destination1
+    dataReorderF2.set_arg<cl_mem>(4,   tree.bodies_ids.p()); 
+    dataReorderF2.set_arg<cl_mem>(5,   sortPermutation.p()); //Reuse as destination2  
+    dataReorderF2.setWork(tree.n, 512);   
+    dataReorderF2.execute();
+    
+    
+    tree.bodies_time.copy(float2Buffer, float2Buffer.get_size()); 
+    tree.bodies_ids.copy(sortPermutation, sortPermutation.get_size());  
+
+  } //end if
+  
+  devContext.stopTiming("Data-reordering", 1);   
+   
 }
 

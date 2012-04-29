@@ -105,6 +105,29 @@ extern "C" __global__ void dataReorderCombined(const int N, uint4 *keyAndPerm,
 //   destination1[idx] = source1[newIndex];    
 }
 
+
+extern "C" __global__ void dataReorderCombined4(const int N, 
+                                      uint4 *keyAndPerm,
+                                      real4 *source1,  real4* destination1,
+                                      int *source2,    int*   destination2,
+                                      int *oldOrder) {
+  const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
+  const int tid = threadIdx.y * blockDim.x + threadIdx.x;
+  const int dim =  blockDim.x * blockDim.y;
+  
+  int idx = bid * dim + tid;
+  if (idx >= N) return;
+
+  int newIndex      = keyAndPerm[idx].w;
+  destination1[idx] = source1[newIndex];
+  destination2[idx] = source2[newIndex];  
+  oldOrder[idx]     = newIndex;
+}
+
+
+
+
+
 extern "C" __global__ void dataReorderCombined2(const int N, uint4 *keyAndPerm,
                                       real4 *source1, real4* destination1,
                                       real4 *source2, real4* destination2,
