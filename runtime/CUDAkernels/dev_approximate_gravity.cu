@@ -166,10 +166,10 @@ __device__ __forceinline__ int inclusive_segscan_warp(int value, const int dista
   
   const int SIZE = 1 << SIZE2; 
 
-#if 0
+#if 0  /* this one forces lmem usage to 236 bytes of lmem */
   for (int i = 1; i <= SIZE; i <<= 1) 
     value += __shfl_up(value, i, SIZE) & BTEST(laneId >= i && i <= distance);
-#else
+#else  /* this one uses only 40 bytes of lmem, any idea why ?!? */
   for (int i = 0; i < SIZE2; i++)
     value += __shfl_up(value, 1 << i, SIZE) & BTEST(laneId >= (1<<i)) & BTEST((1<<i) <= distance);
 #endif
@@ -363,7 +363,7 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 
   int *directS = shmem;                              //  0*DIM,  1*DIM,  1*DIM
   int *nodesS  = directS + DIM;                      //  1*DIM, 10*DIM,  9*DIM
-  int *prefix  = nodesS  + DIM*9;                    // 10*DIM, 11*DIM,  1*DIM
+  int *prefix  = nodesS  + DIM*8;                    //  9*DIM, 10*DIM,  1*DIM
 
   const int NJMAX = DIM*3;
   int    *body_list = (int*   )&nodesS   [  DIM]; //  2*DIM,   5*DIM,  2*DIM
@@ -771,24 +771,28 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
   __syncthreads();
 
 
+#if 0  /* below breaks the code */
   //Sum the interaction counters
-  float  *sh_ds2 = (float*)&sh_acc[DIM];
-  int    *sh_ngb = (int*  )&sh_ds2[DIM];
-  sh_ds2[tid] = direCount;
-  sh_ngb[tid] = apprCount;
+  int *sh_dire = (int*)&sh_mass;
+  int *sh_appr = (int*  )&sh_pot;
+  sh_dire[tid] = direCount;
+  sh_appr[tid] = apprCount;
 
   __syncthreads();
 
 
-  if (ty == 0) {
+  if (ty == 0) 
+  {
 #pragma unroll
-    for (int i = 1; i < DIMy; i++){
-      int idx = (i << DIM2x) + tx;
-      direCount  += sh_ds2[idx];
-      apprCount  += sh_ngb[idx];
+    for (int i = 1; i < DIMy; i++)
+    {
+      const int idx = (i << DIM2x) + tx;
+      direCount  += sh_dire[idx];
+      apprCount  += sh_appr[idx];
     }
   }
   __syncthreads();
+#endif
 
   return acc_i;
 }
@@ -817,7 +821,7 @@ __launch_bounds__(NTHREAD)
 
 
     const int blockDim2 = NTHREAD2;
-    __shared__ int shmem[11*(1 << blockDim2)];
+    __shared__ int shmem[10*(1 << blockDim2)];
     //    __shared__ int shmem[24*(1 << blockDim2)]; is possible on FERMI
     //    int             lmem[LMEM_STACK_SIZE];
 
