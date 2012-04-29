@@ -9,6 +9,14 @@ PROF_MODULE(dev_approximate_gravity);
 #define M_PI        3.14159265358979323846264338328
 #endif
 
+#define WARP_SIZE2 5
+#define WARP_SIZE  32
+
+#if 1
+#define laneId (threadIdx.x & (WARP_SIZE - 1))
+#define warpId (threadIdx.x >> WARP_SIZE2)
+#endif
+
 __forceinline__ __device__ float Wkernel(const float q)
 {
   const float sigma = 8.0f/M_PI;
@@ -102,8 +110,6 @@ __device__ __forceinline__ int calc_prefix(int* prefix, int tid, int value)
     return calc_prefix1<DIM2>(prefix, tid, value);
   else
   {
-    const int WARP_SIZE2 = 5;
-    const int WARP_SIZE  = 1 << WARP_SIZE2;
     prefix[tid] = inclusive_scan_warp<WARP_SIZE2>(value);
     __syncthreads();
 
@@ -145,6 +151,110 @@ __device__ int calc_prefix(int N, int* prefix_in, int tid)
   return y;
 } 
 
+/************************************/
+/********* SEGMENTED SCAN ***********/
+/************************************/
+
+ 
+#ifdef _KEPLERCODE_
+  template<const int SIZE2>
+__device__ __forceinline__ int inclusive_segscan_warp(int value, const int distance)
+{
+#if 0
+  const unsigned int laneId = threadIdx.x & (WARP_SIZE - 1);
+#endif
+  
+  const int SIZE = 1 << SIZE2; 
+
+#if 0
+  for (int i = 1; i <= SIZE; i <<= 1) 
+    value += __shfl_up(value, i, SIZE) & BTEST(laneId >= i && i <= distance);
+#else
+  for (int i = 0; i < SIZE2; i++)
+    value += __shfl_up(value, 1 << i, SIZE) & BTEST(laneId >= (1<<i)) & BTEST((1<<i) <= distance);
+#endif
+
+  return value;
+}
+#else /* !_KEPLERCODE_ */
+#error "Only _KEPLERCODE_ is supported at this time"
+#endif
+
+
+__device__ __forceinline__ int bfi(const int x, const int y, const int bit, const int numBits) 
+{
+	int ret;
+	asm("bfi.b32 %0, %1, %2, %3, %4;" : 
+		"=r"(ret) : "r"(y), "r"(x), "r"(bit), "r"(numBits));
+	return ret;
+}
+
+template<const int DIM2>
+__device__ __forceinline__ int inclusive_segscan_block64(
+    int *shmem, const int tid, const int packed_value, int &dist_block, int &nseg)
+{
+#if 0
+  const int laneId = tid & (WARP_SIZE - 1);
+  const int warpId = tid >> WARP_SIZE2;
+#endif
+
+  const int  flag = packed_value < 0;
+  const int  mask = BTEST(flag);
+  const int value = (mask & (-1-packed_value)) + (~mask & 1);
+  
+  shmem[(warpId << WARP_SIZE2) + WARP_SIZE - 1 - laneId] = flag;
+  const int flags1 = __ballot(shmem[tid]);
+  shmem[tid] = __popc(flags1);
+  __syncthreads();
+  nseg += shmem[0] + shmem[WARP_SIZE];
+  __syncthreads();
+  
+  shmem[tid] = __clz (flags1);
+  __syncthreads();
+
+  const int flags = __ballot(flag) & bfi(0, 0xffffffff, 0, laneId + 1);
+	const int distance = __clz(flags) + laneId - 31;
+
+  int dist0  = shmem[WARP_SIZE];
+  dist_block = shmem[0] + (BTEST(shmem[0] == WARP_SIZE) & dist0);
+  
+  __syncthreads();
+
+  shmem[tid] = inclusive_segscan_warp<WARP_SIZE2>(value, distance);
+  __syncthreads();
+ 
+  shmem[tid] += shmem[WARP_SIZE - 1] & BTEST(tid >= WARP_SIZE) & BTEST(tid < WARP_SIZE + dist0);
+  __syncthreads();
+
+  const int val = shmem[(1 << DIM2) - 1];
+  __syncthreads();
+
+  return val;
+}
+
+/* does not work if segment size > 64 (= thead block size) */
+template<const int DIM2>
+__device__ __forceinline__ int inclusive_segscan_array(int *shmem_in, const int N, const int tid)
+{
+  const int DIM = 1 << DIM2;
+
+  int dist, nseg = 0;
+  int y  = inclusive_segscan_block64<DIM2>(shmem_in, tid, shmem_in[tid], dist, nseg);
+  if (N <= DIM) return nseg;
+
+  for (int p = DIM; p < N; p += DIM)
+  {
+    int *shmem = shmem_in + p;
+    int y1  = inclusive_segscan_block64<DIM2>(shmem, tid, shmem[tid], dist, nseg);
+    shmem[tid] += y & BTEST(tid < dist);
+    y = y1;
+  }
+
+  return nseg;
+}
+
+
+/*************** Tree walk ************/
 
 
   template<int SHIFT>
@@ -213,9 +323,6 @@ __device__ bool split_node_grav_impbh(
 
 
 #define TEXTURES
-#if 0
-#define _ORIG_SHMEM_
-#endif
 
 
 template<int DIM2, int SHIFT>
@@ -251,50 +358,21 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 
   //  begin,    end,   size
   // -----------------------
-#ifdef _ORIG_SHMEM_
-
-  int *approxS = (int*)&shmem  [     0];            //  0*DIM,  2*DIM,  2*DIM
-  int *directS = (int*)&approxS[ 2*DIM];            //  2*DIM,  3*DIM,  1*DIM
-  int *nodesS = (int*)&directS [   DIM];            //  3*DIM, 12*DIM,  9*DIM
-  int *prefix = (int*)&nodesS  [9 *DIM];            // 12*DIM, 14*DIM,  2*DIM
-  int *sh_body = &approxS[DIM];
-
-  int *prefix0 = &prefix[  0];
-  int *prefix1 = &prefix[DIM];
-
-  const int NJMAX = DIM*2;
-  int    *body_list = (int*   )&nodesS   [  DIM]; //  4*DIM,  6*DIM,  2*DIM
-  float  *sh_mass   = (float* )&body_list[NJMAX]; //  6*DIM,  7*DIM,  1*DIM
-  float3 *sh_pos    = (float3*)&sh_mass  [  DIM]; //  7*DIM, 10*DIM   3*DIM
-
-  int *approxM = approxS;
-  int *directM = directS;
-  int * nodesM =  nodesS;
-
-#else   /* !_ORIG_SHMEM_ */
-
   const int stack_sz = (LMEM_STACK_SIZE << SHIFT) << DIM2;  /* stack allocated per thread-block */
   int *approxL = lmem + stack_sz; 
 
   int *directS = shmem;                              //  0*DIM,  1*DIM,  1*DIM
   int *nodesS  = directS + DIM;                      //  1*DIM, 10*DIM,  9*DIM
-  int *prefixS = nodesS  + DIM*9;                    // 10*DIM, 12*DIM,  2*DIM
-
-  int *prefix  = prefixS;
-  int *prefix0 = prefixS;
-  int *prefix1 = prefixS + DIM;
+  int *prefix  = nodesS  + DIM*9;                    // 10*DIM, 11*DIM,  1*DIM
 
   const int NJMAX = DIM*3;
   int    *body_list = (int*   )&nodesS   [  DIM]; //  2*DIM,   5*DIM,  2*DIM
   float  *sh_mass   = (float* )&body_list[NJMAX]; //  5*DIM,   6*DIM,  1*DIM
   float3 *sh_pos    = (float3*)&sh_mass  [  DIM]; //  6*DIM,   9*DIM   3*DIM
-  int    *sh_body   = nodesS + DIM*8;             //  9*DIM,  10*DIM,  1*DIM
 
   int *approxM = approxL;
   int *directM = directS;
   int * nodesM =  nodesS;
-
-#endif /* _ORIG_SHMEM_ */
 
 
   float  *node_mon0 = sh_mass;
@@ -481,27 +559,6 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
           node_mon1[tid] = make_float3(monopole.x,  monopole.y,  monopole.z);
           __syncthreads();
 
-#if 0
-          const float f_dm   = 0.0f;
-          const float f_star = 1.0f
-            const float darkMatterMass = f_dm   * octopole1.w;
-          /* eg: we need to be careful with the line below to avoid truncation error due to 
-             subtraction of two large numbers, monopole.w and darkMatterMass both could be
-             very large.
-             Instead, we can use octopole1.w to be stellar mass, and DM mass to be 
-             monopole.w, then we add the two together to get total mass, but this will
-             require more changes to the kernel */
-          const float    stellarMass = f_star * (monopole.w - darkMatterMass);
-          const float hinv = 1.0f/hi;   /* eg: this can be precomputing to avoid division */
-          density += interact(
-              make_float3(pos_i.x, pos_i.y, pos_i.z), h, hinv,
-              make_float3(monopole.x, monople.y, monopole.z), darkMatterMass + stellarMass);
-          /* eg: the interact function still calls sqrtf(f), which invloves 1 div and 1 rsqrtf,
-             so ideally we would like to take advantage of rsqrtf in add_acc, and then we only
-             do 1 div */
-#endif
-
-
 #if 1
 #pragma unroll 16
           for (int i = 0; i < DIMx; i++)
@@ -519,28 +576,27 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
         /***********************************/
 
 
-        flag         = split && leaf && use_node;                                //flag = split + leaf + use_node
-        int  jbody   = node_data & BODYMASK;                                     //the first body in the leaf
-        int  nbody   = (((node_data & INVBMASK) >> LEAFBIT)+1) & BTEST(flag);    //number of bodies in the leaf masked with the flag
+        flag            = split && leaf && use_node;                                //flag = split + leaf + use_node
+        const int jbody = node_data & BODYMASK;                                     //the first body in the leaf
+        const int nbody = (((node_data & INVBMASK) >> LEAFBIT)+1) & BTEST(flag);    //number of bodies in the leaf masked with the flag
 
         body_list[tid] = directM[tid];                                            //copy list of bodies from previous pass to body_list
-        sh_body  [tid] = jbody;                                                  //store the leafs first body id into shared memory
 
         // step 1
         calc_prefix<DIM2>(prefix, tid, flag);                                // inclusive scan on flags to construct array
-        offset = prefix[tid];
-
-        if (flag) prefix1[offset - 1] = tid;                             //with tidś whose leaves have to be opened
-        __syncthreads();                                                      //thread barrier, make sure all warps completed the job
-
+        const int offset1 = prefix[tid];
+        
         // step 2
         int n_bodies  = calc_prefix<DIM2>(prefix, tid, nbody);              // inclusive scan to compute memory offset for each body
         offset = prefix[tid];
+        __syncthreads();
+
+        if (flag) prefix[offset1 - 1] = tid;                             //with tidś whose leaves have to be opened
+        __syncthreads();                                                      //thread barrier, make sure all warps completed the job
 
         directM[tid]  = offset;                                       //Store a copy of inclusive scan in direct
         offset       -= nbody;                                              //convert inclusive int oexclusive scan
         offset       += 1;                                                  //add unity, since later prefix0[tid] == 0 used to check barrier
-        prefix0[tid]  = offset;
 
         int nl_pre = 0;                                                     //Number of leaves that have already been processed
 
@@ -550,44 +606,33 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
           //the amount of allocated shared memory
 
           // step 0                                                      //nullify part of the body_list that will be filled with bodies
-          for (int i = n_direct; i < n_direct + nb; i += DIM){           //from the leaves that are being processed
+          for (int i = n_direct; i < n_direct + nb; i += DIM)            //from the leaves that are being processed
             body_list[i + tid] = 0;
-          }
           __syncthreads();
 
           //step 1:
-          if (flag && (directM[tid] <= nb) && (prefix0[tid] > 0))        //make sure that the thread indeed carries a leaf
-            body_list[n_direct + prefix0[tid] - 1] = 1;                 //whose bodies will be extracted
+          if (flag && (directM[tid] <= nb) && (offset > 0))        //make sure that the thread indeed carries a leaf
+            body_list[n_direct + offset- 1] = -1-jbody;            //whose bodies will be extracted
           __syncthreads();
 
-          //step 2:
-          int nl = calc_prefix<DIM2>(nb, &body_list[n_direct], tid);   // inclusive scan to compute number of leaves to process
-          // to make sure that there is enough shared memory for bodies
-          nb = directM[prefix1[nl_pre + nl - 1]];                       // number of bodies stored in these leaves
-
-          // step 3:
-          for (int i = n_direct; i < n_direct + nb; i += DIM) {          //segmented fill of the body_list
-            int j = prefix1[nl_pre + body_list[i + tid] - 1];            // compute the first body in shared j-body array
-            body_list[i + tid] = (i + tid - n_direct) -                 //add to the index of the first j-body in a child
-              (prefix0[j] - 1) + sh_body[j];         //the index of the first child in body_list array
-          }
+          // step 2:
+          const int nl = inclusive_segscan_array<DIM2>(&body_list[n_direct], nb, tid);
+          nb = directM[prefix[nl_pre + nl - 1]];                       // number of bodies stored in these leaves
           __syncthreads();
 
 
-          /**************************************************
-           *  example of what is accomplished in steps 0-4   *
-           *       ---------------------------               *
-           * step 0: body_list = 000000000000000000000       *
-           * step 1: body_list = 100010001000000100100       *
-           * step 2: body_list = 111122223333333444555       *
-           * step 3: body_list = 012301230123456012012       *
-           *         assuming that sh_body[j] = 0            *
-           ***************************************************/
+          /*****************************************************************************
+           *  example of what is accomplished in steps 0-2                             *
+           *       ---------------------------                                         *
+           * step 0: body_list = 000000000000000000000                                 *
+           * step 1: body_list = n000m000p000000q00r00 n,m,.. = -1-jbody_n,m...        *
+           * step 2: body_list = n n+1 n+2 n+3 m m+1 m+2 m+3 p p+1 p+2 p+3 p+4 p+5 ... *
+           *****************************************************************************/
 
           n_bodies     -= nb;                                   //subtract from n_bodies number of bodies that have been extracted
           nl_pre       += nl;                                   //increase the number of leaves that where processed
           directM[tid] -= nb;                                   //subtract the number of extracted bodies in this pass
-          prefix0[tid] = max(prefix0[tid] - nb, 0);             //same here, but do not let the number be negative (GT200 bug!?)
+          offset        = max(offset - nb, 0);
           n_direct     += nb;                                  //increase the number of bodies to be procssed
 
           while(n_direct >= DIM) 
@@ -772,11 +817,7 @@ __launch_bounds__(NTHREAD)
 
 
     const int blockDim2 = NTHREAD2;
-#ifdef _ORIG_SHMEM_
-    __shared__ int shmem[15*(1 << blockDim2)];
-#else
-    __shared__ int shmem[12*(1 << blockDim2)];
-#endif
+    __shared__ int shmem[11*(1 << blockDim2)];
     //    __shared__ int shmem[24*(1 << blockDim2)]; is possible on FERMI
     //    int             lmem[LMEM_STACK_SIZE];
 
@@ -807,11 +848,7 @@ __launch_bounds__(NTHREAD)
 
       //   volatile int *lmem = &MEM_BUF[blockIdx.x*LMEM_STACK_SIZE*blockDim.x + threadIdx.x*LMEM_STACK_SIZE];
       //   int *lmem = &MEM_BUF[blockIdx.x*LMEM_STACK_SIZE*blockDim.x + threadIdx.x*LMEM_STACK_SIZE];
-#ifdef _ORIG_SHMEM_
-      int *lmem = &MEM_BUF[blockIdx.x* LMEM_STACK_SIZE*blockDim.x];
-#else
       int *lmem = &MEM_BUF[blockIdx.x*(LMEM_STACK_SIZE*blockDim.x + LMEM_EXTRA_SIZE)];
-#endif
 
 
       /*********** set necessary thread constants **********/
@@ -919,11 +956,7 @@ __launch_bounds__(NTHREAD)
 
         __syncthreads();
 
-#ifdef _ORIG_SHMEM_
-        lmem = &MEM_BUF[gridDim.x*LMEM_STACK_SIZE*blockDim.x];    //Use the extra large buffer
-#else
         lmem = &MEM_BUF[gridDim.x*(LMEM_STACK_SIZE*blockDim.x + LMEM_EXTRA_SIZE)];    //Use the extra large buffer
-#endif
         apprCount = direCount = 0;
         acc_i = approximate_gravity<blockDim2, 8>( DIM2x, DIM2y, tid, tx, ty,
             body_i, pos_i, group_pos,
@@ -931,12 +964,7 @@ __launch_bounds__(NTHREAD)
             multipole_data, body_pos,
             shmem, lmem, ngb_i, apprCount, direCount, boxSizeInfo, curGroupSize, boxCenterInfo,
             group_eps, body_vel);
-
-#ifdef _ORIG_SHMEM_
-        lmem = &MEM_BUF[blockIdx.x* LMEM_STACK_SIZE*blockDim.x]; //Back to normal location
-#else
         lmem = &MEM_BUF[blockIdx.x*(LMEM_STACK_SIZE*blockDim.x + LMEM_EXTRA_SIZE)];
-#endif
 
         if(threadIdx.x == 0)
         {
