@@ -544,8 +544,10 @@ void main()                                                        \n
 {                                                                  \n
     vec4 c;
 	c= texture2D(tex, gl_TexCoord[0].xy);                    \n
-	c += texture2D(blurTexH, gl_TexCoord[0].xy) * starIntensity;
-	c += texture2D(blurTexV, gl_TexCoord[0].xy) * starIntensity;
+    if (starIntensity > 0) {
+	    c += texture2D(blurTexH, gl_TexCoord[0].xy) * starIntensity;
+	    c += texture2D(blurTexV, gl_TexCoord[0].xy) * starIntensity;
+    }
     c += texture2D(glowTex, gl_TexCoord[0].xy) * glowIntensity;
     c.rgb *= scale;
 	c.rgb = pow(c.rgb, gamma);
