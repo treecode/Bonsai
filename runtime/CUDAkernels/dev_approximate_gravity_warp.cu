@@ -13,7 +13,7 @@ PROF_MODULE(dev_approximate_gravity);
 #define WARP_SIZE2 5
 #define WARP_SIZE  32
 
-#if NCRIT > WARP_SIZE
+#if NCRIT > 2*WARP_SIZE
 #error "NCRIT in include/node_specs.h must be <= WARP_SIZE"
 #endif
 
@@ -209,9 +209,9 @@ __device__ bool split_node_grav_impbh(
 /*******************************/
 
 
-template<int SHIFT, int BLOCKDIM2>
-__device__ float4 approximate_gravity(
-    int body_i, float4 pos_i,
+template<const int SHIFT, const int BLOCKDIM2, const int NI>
+__device__ __forceinline__ void approximate_gravity(
+    float4 pos_i[NI],
     real4 group_pos,
     float eps2,
     uint2 node_begend,
@@ -225,10 +225,8 @@ __device__ float4 approximate_gravity(
     float4 groupSize,
     volatile float4 *boxCenterInfo,
     float group_eps,
-    real4 *body_vel) 
+    real4 acc_i[NI])
 {
-
-  float4 acc_i = {0.0f, 0.0f, 0.0f, 0.0f};
 
 
   /*********** set necessary thread constants **********/
@@ -386,7 +384,7 @@ __device__ float4 approximate_gravity(
           {
             //We overwrote our current stack
             apprCount = -1; 
-            return acc_i;	 
+            return;
           }
         }
 
@@ -432,8 +430,9 @@ __device__ float4 approximate_gravity(
 
 #pragma unroll 16
           for (int i = 0; i < WARP_SIZE; i++)
-            acc_i = add_acc(acc_i, pos_i, sh_mass[offs + i], sh_pos[offs+i], eps2);
-          apprCount += WARP_SIZE;
+            for (int k = 0; k < NI; k++)
+              acc_i[k] = add_acc(acc_i[k], pos_i[k], sh_mass[offs + i], sh_pos[offs+i], eps2);
+          apprCount += WARP_SIZE*NI;
         }
 #endif
 
@@ -511,8 +510,9 @@ __device__ float4 approximate_gravity(
 
 #pragma unroll 16
             for (int j = 0; j < WARP_SIZE; j++)
-              acc_i = add_acc(acc_i, pos_i, sh_mass[offs + j], sh_pos[offs + j], eps2);
-            direCount += WARP_SIZE;
+              for (int k = 0; k < NI; k++)
+                acc_i[k] = add_acc(acc_i[k], pos_i[k], sh_mass[offs + j], sh_pos[offs + j], eps2);
+            direCount += WARP_SIZE*NI;
           }
 
         }
@@ -529,7 +529,7 @@ __device__ float4 approximate_gravity(
         {
           //We overwrote our current stack
           apprCount = -1; 
-          return acc_i;	 
+          return;
         }
       }
 
@@ -573,8 +573,9 @@ __device__ float4 approximate_gravity(
     }
 #pragma unroll 16
     for (int i = 0; i < WARP_SIZE; i++)
-      acc_i = add_acc(acc_i, pos_i, sh_mass[offs + i], sh_pos[offs+i],eps2);
-    apprCount += WARP_SIZE;
+      for (int k = 0; k < NI; k++)
+        acc_i[k] = add_acc(acc_i[k], pos_i[k], sh_mass[offs + i], sh_pos[offs+i],eps2);
+    apprCount += WARP_SIZE*NI;
 
   } //if n_approx > 0
 
@@ -595,17 +596,16 @@ __device__ float4 approximate_gravity(
 
 #pragma unroll 16
     for (int j = 0; j < WARP_SIZE; j++) 
-      acc_i = add_acc(acc_i, pos_i, sh_mass[offs + j], sh_pos[offs + j], eps2);
-    direCount += WARP_SIZE;
+      for (int k = 0; k < NI; k++)
+        acc_i[k] = add_acc(acc_i[k], pos_i[k], sh_mass[offs + j], sh_pos[offs + j], eps2);
+    direCount += WARP_SIZE*NI;
   }
-
-  return acc_i;
 }
 
 
-  extern "C" __global__ void
+extern "C" __global__ void
 #if 0 /* casues 164 bytes spill to lmem with NTHREAD = 128 */
- __launch_bounds__(NTHREAD)
+__launch_bounds__(NTHREAD)
 #endif
   dev_approximate_gravity(
       const int n_active_groups,
@@ -626,128 +626,155 @@ __device__ float4 approximate_gravity(
       real4   *body_vel,
       int     *MEM_BUF) 
 {
-    const int blockDim2 = NTHREAD2;
-    const int shMemSize = 10 * (1 << blockDim2);
-    __shared__ int shmem_pool[shMemSize];
+  const int blockDim2 = NTHREAD2;
+  const int shMemSize = 10 * (1 << blockDim2);
+  __shared__ int shmem_pool[shMemSize];
 
-    const int nWarps2 = blockDim2 - WARP_SIZE2;
-    const int sh_offs = (shMemSize >> nWarps2) * warpId;
-    int *shmem = shmem_pool + sh_offs;
+  const int nWarps2 = blockDim2 - WARP_SIZE2;
+  const int sh_offs = (shMemSize >> nWarps2) * warpId;
+  int *shmem = shmem_pool + sh_offs;
 
-    /*********** check if this block is linked to a leaf **********/
+  /*********** check if this block is linked to a leaf **********/
 
-    int *lmem = &MEM_BUF[blockIdx.x*(LMEM_STACK_SIZE*blockDim.x + LMEM_EXTRA_SIZE)];
-    int  bid  = gridDim.x * blockIdx.y + blockIdx.x;
+  int *lmem = &MEM_BUF[blockIdx.x*(LMEM_STACK_SIZE*blockDim.x + LMEM_EXTRA_SIZE)];
+  int  bid  = gridDim.x * blockIdx.y + blockIdx.x;
 
-    while(true)
+  while(true)
+  {
+
+    if(laneId == 0)
     {
+      bid         = atomicAdd(&active_inout[n_bodies], 1);
+      shmem[0]    = bid;
+    }
 
-#if 0
-      if(threadIdx.x == 0)
-      {
-        bid         = atomicAdd(&active_inout[n_bodies], 1);
-        shmem[0]    = bid;
-      }
-#else
-      if(laneId == 0)
-      {
-        bid         = atomicAdd(&active_inout[n_bodies], 1);
-        shmem[0]    = bid;
-      }
-#endif
+    bid   = shmem[0];
 
-      bid   = shmem[0];
+    if (bid >= n_active_groups) return;
 
-      if (bid >= n_active_groups) return;
+    int grpOffset = 0;
 
-      int grpOffset = 0;
-
-      /*********** set necessary thread constants **********/
+    /*********** set necessary thread constants **********/
 #ifdef DO_BLOCK_TIMESTEP
-      real4 curGroupSize    = groupSizeInfo[active_groups[bid + grpOffset]];
+    real4 curGroupSize    = groupSizeInfo[active_groups[bid + grpOffset]];
 #else
-      real4 curGroupSize    = groupSizeInfo[bid + grpOffset];
+    real4 curGroupSize    = groupSizeInfo[bid + grpOffset];
 #endif
-      int   groupData       = __float_as_int(curGroupSize.w);
-      uint body_i           =   groupData & CRITMASK;
-      uint nb_i             = ((groupData & INVCMASK) >> CRITBIT) + 1;
+    const int   groupData       = __float_as_int(curGroupSize.w);
+    const uint body_addr        =   groupData & CRITMASK;
+    const uint nb_i             = ((groupData & INVCMASK) >> CRITBIT) + 1;
 
 #ifdef DO_BLOCK_TIMESTEP
-      real4 group_pos       = groupCenterInfo[active_groups[bid + grpOffset]];
+    real4 group_pos       = groupCenterInfo[active_groups[bid + grpOffset]];
 #else
-      real4 group_pos       = groupCenterInfo[bid + grpOffset];
+    real4 group_pos       = groupCenterInfo[bid + grpOffset];
 #endif
 
-      body_i += laneId%nb_i;
+    uint body_i[2];
+    int ni = nb_i <= WARP_SIZE ? 1 : 2;
+    body_i[0] = body_addr + laneId%nb_i;
+    body_i[1] = body_addr + WARP_SIZE + laneId%(nb_i - WARP_SIZE);
 
-      float4 pos_i = body_pos[body_i];
+    float4 pos_i[2];
+    float4 acc_i[2];
 
-      int ngb_i;
+    pos_i[0] = body_pos[body_i[0]];
+    pos_i[1] = body_pos[body_i[1]];
+    acc_i[0] = acc_i[1] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
 
-      float4 acc_i = {0.0f, 0.0f, 0.0f, 0.0f};
+    int ngb_i;
 
-      const float group_eps  = 0;
+    const float group_eps  = 0;
 
-      int apprCount = 0;
-      int direCount = 0;
+    int apprCount = 0;
+    int direCount = 0;
 
-
-      acc_i = approximate_gravity<0, blockDim2>(
-          body_i, pos_i, group_pos,
+    if (ni == 1)
+      approximate_gravity<0, blockDim2, 1>(
+          pos_i, group_pos,
           eps2, node_begend,
           multipole_data, body_pos,
           shmem, lmem, ngb_i, apprCount, direCount, boxSizeInfo, curGroupSize, boxCenterInfo,
-          group_eps, body_vel);
+          group_eps, 
+          acc_i);
+    else
+      approximate_gravity<0, blockDim2, 2>(
+          pos_i, group_pos,
+          eps2, node_begend,
+          multipole_data, body_pos,
+          shmem, lmem, ngb_i, apprCount, direCount, boxSizeInfo, curGroupSize, boxCenterInfo,
+          group_eps, 
+          acc_i);
 
-#if 0
-      if(apprCount < 0)
+#if 0 /* this increase lmem spill count */
+    if(apprCount < 0)
+    {
+
+      //Try to get access to the big stack, only one block per time is allowed
+      if(laneId == 0)
       {
-
-        //Try to get access to the big stack, only one block per time is allowed
-        if(laneId == 0)
+        int res = atomicExch(&active_inout[n_bodies+1], 1); //If the old value (res) is 0 we can go otherwise sleep
+        int waitCounter  = 0;
+        while(res != 0)
         {
-          int res = atomicExch(&active_inout[n_bodies+1], 1); //If the old value (res) is 0 we can go otherwise sleep
-          int waitCounter  = 0;
-          while(res != 0)
+          //Sleep
+          for(int i=0; i < (1024); i++)
           {
-            //Sleep
-            for(int i=0; i < (1024); i++)
-            {
-              waitCounter += 1;
-            }
-            //Test again
-            shmem[0] = waitCounter;
-            res = atomicExch(&active_inout[n_bodies+1], 1); 
+            waitCounter += 1;
           }
+          //Test again
+          shmem[0] = waitCounter;
+          res = atomicExch(&active_inout[n_bodies+1], 1); 
         }
+      }
 
-        lmem = &MEM_BUF[gridDim.x*(LMEM_STACK_SIZE*blockDim.x + LMEM_EXTRA_SIZE)];    //Use the extra large buffer
-        apprCount = direCount = 0;
-        acc_i = approximate_gravity<8, blockDim2>(
-            body_i, pos_i, group_pos,
+      lmem = &MEM_BUF[gridDim.x*(LMEM_STACK_SIZE*blockDim.x + LMEM_EXTRA_SIZE)];    //Use the extra large buffer
+      apprCount = direCount = 0;
+      acc_i[0] = acc_i[1] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+      if (ni == 1)
+        approximate_gravity<0, blockDim2, 1>(
+            pos_i, group_pos,
             eps2, node_begend,
             multipole_data, body_pos,
             shmem, lmem, ngb_i, apprCount, direCount, boxSizeInfo, curGroupSize, boxCenterInfo,
-            group_eps, body_vel);
-        lmem = &MEM_BUF[blockIdx.x*(LMEM_STACK_SIZE*blockDim.x + LMEM_EXTRA_SIZE)];
+            group_eps, 
+            acc_i);
+      else
+        approximate_gravity<0, blockDim2, 2>(
+            pos_i, group_pos,
+            eps2, node_begend,
+            multipole_data, body_pos,
+            shmem, lmem, ngb_i, apprCount, direCount, boxSizeInfo, curGroupSize, boxCenterInfo,
+            group_eps, 
+            acc_i);
 
-        if(threadIdx.x == 0)
-        {
-          atomicExch(&active_inout[n_bodies+1], 0); //Release the lock
-        }
-      }//end if apprCount < 0
+      lmem = &MEM_BUF[blockIdx.x*(LMEM_STACK_SIZE*blockDim.x + LMEM_EXTRA_SIZE)];
+
+      if(threadIdx.x == 0)
+      {
+        atomicExch(&active_inout[n_bodies+1], 0); //Release the lock
+      }
+    }//end if apprCount < 0
 #endif
 
-      if (laneId < nb_i) 
+    if (laneId < nb_i) 
+    {
+      const int addr = body_i[0];
+      acc_out     [addr] = acc_i[0];
+      ngb_out     [addr] = ngb_i;
+      active_inout[addr] = 1;
+      interactions[addr].x = apprCount;
+      interactions[addr].y = direCount ;
+      if (ni == 2)
       {
-        acc_out     [body_i] = acc_i;
-        ngb_out     [body_i] = ngb_i;
-        active_inout[body_i] = 1;
-        interactions[body_i].x = apprCount;
-        interactions[body_i].y = direCount ;
+        const int addr = body_i[1];
+        acc_out     [addr] = acc_i[1];
+        ngb_out     [addr] = ngb_i;
+        active_inout[addr] = 1;     
+        interactions[addr].x = 0; // apprCount;    to avoid doubling the intearction count
+        interactions[addr].y = 0; // direCount ;
       }
+    }
+  }     //end while
+}
 
-
-    }     //end while
-
-  }
