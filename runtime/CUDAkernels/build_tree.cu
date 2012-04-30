@@ -502,7 +502,7 @@ extern "C" __global__ void build_group_list2(int    n_particles,
   //Compact the node_level_list
   if(bid == 0)
   {
-    if(threadIdx.x < 32)
+    if(threadIdx.x < (MAXLEVELS*2))
     {
       shmem[threadIdx.x] = node_level_list[threadIdx.x];
     }
@@ -510,7 +510,7 @@ extern "C" __global__ void build_group_list2(int    n_particles,
     __syncthreads(); //Can most likely do without since its one warp
 
     //Only selection writes
-    if(threadIdx.x < 32)
+    if(threadIdx.x < MAXLEVELS)
     {
       node_level_list[threadIdx.x]  = shmem[threadIdx.x*2];
       if(threadIdx.x == treeDepth-1)
