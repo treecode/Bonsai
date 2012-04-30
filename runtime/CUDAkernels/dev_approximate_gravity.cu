@@ -12,10 +12,13 @@ PROF_MODULE(dev_approximate_gravity);
 #define WARP_SIZE2 5
 #define WARP_SIZE  32
 
-#if 1
+#if 0
+#define tid    (threadIdx.x)
+#else
+#define tid    (threadIdx.y*blockDim.x + threadIdx.x)
+#endif
 #define laneId (threadIdx.x & (WARP_SIZE - 1))
 #define warpId (threadIdx.x >> WARP_SIZE2)
-#endif
 
 __forceinline__ __device__ float Wkernel(const float q)
 {
@@ -51,7 +54,7 @@ __forceinline__ __device__ float interact(
 #define BTEST(x) (-(int)(x))
 
   template<int DIM2>
-__device__ int calc_prefix1(int* prefix, int tid, int value)
+__device__ int calc_prefix1(int* prefix, int value)
 {
   int  x;
 
@@ -82,6 +85,7 @@ __device__ int calc_prefix1(int* prefix, int tid, int value)
 
 /****** KEPLER __shfl prefix sum ******/
 
+#if 1  /* uses inlined assembly */
 __device__ __forceinline__ uint shfl_scan_add_step(uint partial, uint up_offset)
 {
   uint result;
@@ -103,11 +107,32 @@ __device__ __forceinline__ uint inclusive_scan_warp(int mysum)
   return mysum;
 }
 
+#else /* uses code from CUDA 4.2 Manual Appendix B13 */
+
+  template <const int BLOCKDIM2>
+__device__ __forceinline__ int inclusive_scan_warp(int value)
+{
+  const int BLOCKDIM = 1 << BLOCKDIM2;
+  for (int i=1; i<=BLOCKDIM-1; i <<= 1)
+  {
+#if 0  /* uses *if* version, generate too manu spills, 240 bytes */
+    int n = __shfl_up(value, i, BLOCKDIM);
+    if (laneId >= i)
+      value += n;
+#else  /* uses masking via BTEST, only 32 bytes spills to lmem */
+    value += __shfl_up(value, i, BLOCKDIM) & BTEST(laneId >= i);
+#endif
+  }
+
+  return value;
+}
+#endif /* inlined assebly */
+
 template<int DIM2>
-__device__ __forceinline__ int calc_prefix(int* prefix, int tid, int value) 
+__device__ __forceinline__ int calc_prefix(int* prefix, int value) 
 {
   if (DIM2 != 6)  /* should never be called */
-    return calc_prefix1<DIM2>(prefix, tid, value);
+    return calc_prefix1<DIM2>(prefix, value);
   else
   {
     prefix[tid] = inclusive_scan_warp<WARP_SIZE2>(value);
@@ -124,25 +149,25 @@ __device__ __forceinline__ int calc_prefix(int* prefix, int tid, int value)
 }
 #else
   template<int DIM2>
-__device__ __forceinline__ int calc_prefix(int* prefix, int tid, int value) 
+__device__ __forceinline__ int calc_prefix(int* prefix, int value) 
 {
-    return calc_prefix1<DIM2>(prefix, tid, value);
+    return calc_prefix1<DIM2>(prefix, value);
 }
 #endif
 
 
   template<int DIM2>
-__device__ int calc_prefix(int N, int* prefix_in, int tid) 
+__device__ int calc_prefix(int N, int* prefix_in) 
 {
   const int DIM = 1 << DIM2;
 
-  int y = calc_prefix<DIM2>(prefix_in, tid, prefix_in[tid]);
+  int y = calc_prefix<DIM2>(prefix_in, prefix_in[tid]);
   if (N <= DIM) return y;
 
   for (int p = DIM; p < N; p += DIM) 
   {
     int *prefix = &prefix_in[p];
-    const int y1 = calc_prefix<DIM2>(prefix, tid, prefix[tid]);
+    const int y1 = calc_prefix<DIM2>(prefix, prefix[tid]);
     prefix[tid] += y;
     y += y1;
   }
@@ -198,13 +223,8 @@ __device__ __forceinline__ int lanemask_le()
 
 template<const int DIM2>
 __device__ __forceinline__ int inclusive_segscan_block64(
-    int *shmem, const int tid, const int packed_value, int &dist_block, int &nseg)
+    int *shmem, const int packed_value, int &dist_block, int &nseg)
 {
-#if 0
-  const int laneId = tid & (WARP_SIZE - 1);
-  const int warpId = tid >> WARP_SIZE2;
-#endif
-
   const int  flag = packed_value < 0;
   const int  mask = BTEST(flag);
   const int value = (mask & (-1-packed_value)) + (~mask & 1);
@@ -249,18 +269,18 @@ __device__ __forceinline__ int inclusive_segscan_block64(
 
 /* does not work if segment size > 64 (= thead block size) */
 template<const int DIM2>
-__device__ __forceinline__ int inclusive_segscan_array(int *shmem_in, const int N, const int tid)
+__device__ __forceinline__ int inclusive_segscan_array(int *shmem_in, const int N)
 {
   const int DIM = 1 << DIM2;
 
   int dist, nseg = 0;
-  int y  = inclusive_segscan_block64<DIM2>(shmem_in, tid, shmem_in[tid], dist, nseg);
+  int y  = inclusive_segscan_block64<DIM2>(shmem_in, shmem_in[tid], dist, nseg);
   if (N <= DIM) return nseg;
 
   for (int p = DIM; p < N; p += DIM)
   {
     int *shmem = shmem_in + p;
-    int y1  = inclusive_segscan_block64<DIM2>(shmem, tid, shmem[tid], dist, nseg);
+    int y1  = inclusive_segscan_block64<DIM2>(shmem, shmem[tid], dist, nseg);
     shmem[tid] += y & BTEST(tid < dist);
     y = y1;
   }
@@ -342,7 +362,7 @@ __device__ bool split_node_grav_impbh(
 
 template<int DIM2, int SHIFT>
 __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
-    int tid, int tx, int ty,
+    int tx, int ty,
     int body_i, float4 pos_i,
     real4 group_pos,
     float eps2,
@@ -486,7 +506,7 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
          ***/
 
 
-        int n_total = calc_prefix<DIM2>(prefix, tid,  nchild);              // inclusive scan to compute memory offset of each child (return total # of children)
+        int n_total = calc_prefix<DIM2>(prefix,  nchild);              // inclusive scan to compute memory offset of each child (return total # of children)
         int offset  = prefix[tid];
         offset     += n_offset - nchild;                                  // convert inclusive into exclusive scan for referencing purpose
         __syncthreads();                                                   // thread barrier
@@ -545,7 +565,7 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
         /******       APPROX          ******/
         /***********************************/
 
-        n_total = calc_prefix<DIM2>(prefix, tid,  1 - (split || !use_node));
+        n_total = calc_prefix<DIM2>(prefix, 1 - (split || !use_node));
         offset = prefix[tid];
 
         if (!split && use_node) approxM[n_approx + offset - 1] = node;
@@ -598,11 +618,11 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
         body_list[tid] = directM[tid];                                            //copy list of bodies from previous pass to body_list
 
         // step 1
-        calc_prefix<DIM2>(prefix, tid, flag);                                // inclusive scan on flags to construct array
+        calc_prefix<DIM2>(prefix, flag);                                // inclusive scan on flags to construct array
         const int offset1 = prefix[tid];
         
         // step 2
-        int n_bodies  = calc_prefix<DIM2>(prefix, tid, nbody);              // inclusive scan to compute memory offset for each body
+        int n_bodies  = calc_prefix<DIM2>(prefix, nbody);              // inclusive scan to compute memory offset for each body
         offset = prefix[tid];
         __syncthreads();
 
@@ -631,7 +651,7 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
           __syncthreads();
 
           // step 2:
-          const int nl = inclusive_segscan_array<DIM2>(&body_list[n_direct], nb, tid);
+          const int nl = inclusive_segscan_array<DIM2>(&body_list[n_direct], nb);
           nb = directM[prefix[nl_pre + nl - 1]];                       // number of bodies stored in these leaves
           __syncthreads();
 
@@ -861,7 +881,7 @@ __launch_bounds__(NTHREAD)
       if (bid >= n_active_groups) return;
 
 
-      int tid = threadIdx.y * blockDim.x + threadIdx.x;
+//      int tid = threadIdx.y * blockDim.x + threadIdx.x;
 
       int grpOffset = 0;
 
@@ -946,7 +966,7 @@ __launch_bounds__(NTHREAD)
       int direCount = 0;
 
 
-      acc_i = approximate_gravity<blockDim2, 0>( DIM2x, DIM2y, tid, tx, ty,
+      acc_i = approximate_gravity<blockDim2, 0>( DIM2x, DIM2y, tx, ty,
           body_i, pos_i, group_pos,
           eps2, node_begend,
           multipole_data, body_pos,
@@ -977,7 +997,7 @@ __launch_bounds__(NTHREAD)
 
         lmem = &MEM_BUF[gridDim.x*(LMEM_STACK_SIZE*blockDim.x + LMEM_EXTRA_SIZE)];    //Use the extra large buffer
         apprCount = direCount = 0;
-        acc_i = approximate_gravity<blockDim2, 8>( DIM2x, DIM2y, tid, tx, ty,
+        acc_i = approximate_gravity<blockDim2, 8>( DIM2x, DIM2y, tx, ty,
             body_i, pos_i, group_pos,
             eps2, node_begend,
             multipole_data, body_pos,
