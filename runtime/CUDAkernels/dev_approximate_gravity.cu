@@ -208,8 +208,9 @@ __device__ __forceinline__ int inclusive_segscan_block64(
   const int  flag = packed_value < 0;
   const int  mask = BTEST(flag);
   const int value = (mask & (-1-packed_value)) + (~mask & 1);
- 
+
   int flags = __ballot(flag);
+#if 1  /* this uses 36 bytes of lmem */
   shmem[tid] = __popc(flags);
   __syncthreads();
   nseg += shmem[0] + shmem[WARP_SIZE];
@@ -218,18 +219,22 @@ __device__ __forceinline__ int inclusive_segscan_block64(
   shmem[tid] = __clz(__brev(flags));
   __syncthreads();
 
-#if 0
-  flags &= bfi(0, 0xffffffff, 0, laneId + 1);
-#else
-  flags &= lanemask_le();
-#endif
-	const int distance = __clz(flags) + laneId - 31;
-
   int dist0  = shmem[WARP_SIZE];
   dist_block = shmem[0] + (BTEST(shmem[0] == WARP_SIZE) & dist0);
+#else  /* this uses 236 bytes of lmem */
+  const int popc1 = __popc(flags);
+  const int popc2 = __clz(__brev(flags));
+  if (tid ==  0) {shmem[0] = popc1; shmem[2] = popc2;}
+  if (tid == 32) {shmem[1] = popc1; shmem[3] = popc2;}
+  __syncthreads();
+  nseg += shmem[0] + shmem[1];
+  int  dist0 = shmem[3];
+  dist_block = shmem[2];
+#endif
   
   __syncthreads();
 
+	const int distance = __clz(flags & lanemask_le()) + laneId - 31;
   shmem[tid] = inclusive_segscan_warp<WARP_SIZE2>(value, distance);
   __syncthreads();
  
