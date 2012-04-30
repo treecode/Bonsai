@@ -365,7 +365,7 @@ __device__ bool split_node_grav_impbh(
 
 
 template<int DIM2, int SHIFT>
-__device__ float4 approximate_gravity(int DIM2x, int DIM2y,
+__device__ __forceinline__ float4 approximate_gravity(int DIM2x, int DIM2y,
     int tx, int ty,
     int body_i, float4 pos_i,
     real4 group_pos,
@@ -701,9 +701,7 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 #pragma unroll 16
             for (int j = 0; j < DIMx; j++)
               acc_i = add_acc(acc_i, pos_i, sh_mass[offs + j], sh_pos[offs + j], eps2);
-#if 0
             direCount += DIMx;
-#endif
             __syncthreads();
 #endif
           }
@@ -794,9 +792,7 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 #pragma unroll
     for (int j = 0; j < DIMx; j++) 
       acc_i = add_acc(acc_i, pos_i, sh_mass[offs + j], sh_pos[offs + j], eps2);
-#if 0
     direCount += DIMx;
-#endif
     __syncthreads();
   }
 
@@ -822,11 +818,10 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 
 #if 0  /* below breaks the code */
   //Sum the interaction counters
-  int *sh_dire = (int*)&sh_mass;
-  int *sh_appr = (int*  )&sh_pot;
+  int *sh_dire = (int*)&sh_pot;
+  int *sh_appr = (int*)&sh_acc;
   sh_dire[tid] = direCount;
   sh_appr[tid] = apprCount;
-
   __syncthreads();
 
 
