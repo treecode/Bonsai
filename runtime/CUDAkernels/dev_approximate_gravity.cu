@@ -5,12 +5,16 @@ PROF_MODULE(dev_approximate_gravity);
 
 #include "node_specs.h"
 
+#define WARP_SIZE2 5
+#define WARP_SIZE  32
+
+#if NTHREAD != 2*WARP_SIZE
+#error "NTHREAD in include/node_specs.h must be = 2*WARP_SIZE"
+#endif
+
 #ifdef WIN32
 #define M_PI        3.14159265358979323846264338328
 #endif
-
-#define WARP_SIZE2 5
-#define WARP_SIZE  32
 
 #if 0
 #define tid    (threadIdx.x)
@@ -517,14 +521,24 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 
         bool flag = (split && !leaf) && use_node;                        //Flag = use_node + split + not_a_leaf;Use only non_leaf nodes that are to be split
         if (flag) nodesM[offset] = child;                            //Thread with the node that is about to be split
+        /*** WARNING: The __syncthreads() must be here to avoid warp race
+         * conditions. If removed, the result will be changing from run to run
+         * */
+        __syncthreads();
         //writes the first child in the array of nodes
         /*** in the following 8 lines, we calculate indexes of all the children that have to be walked from the index of the first child***/
         if (flag && nodesM[offset + 1] == 0) nodesM[offset + 1] = child + 1; 
+        __syncthreads();
         if (flag && nodesM[offset + 2] == 0) nodesM[offset + 2] = child + 2;
+        __syncthreads();
         if (flag && nodesM[offset + 3] == 0) nodesM[offset + 3] = child + 3;
+        __syncthreads();
         if (flag && nodesM[offset + 4] == 0) nodesM[offset + 4] = child + 4;
+        __syncthreads();
         if (flag && nodesM[offset + 5] == 0) nodesM[offset + 5] = child + 5;
+        __syncthreads();
         if (flag && nodesM[offset + 6] == 0) nodesM[offset + 6] = child + 6;
+        __syncthreads();
         if (flag && nodesM[offset + 7] == 0) nodesM[offset + 7] = child + 7;
         __syncthreads();
 
@@ -834,7 +848,9 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 
 
   extern "C" __global__ void
+#if 0
 __launch_bounds__(NTHREAD)
+#endif
   dev_approximate_gravity(const int n_active_groups,
       int    n_bodies,
       float eps2,
