@@ -1,7 +1,7 @@
 #include "octree.h"
 
 // #define USE_THRUST
-// #define USE_THRUST_96
+#define USE_THRUST_96
 
 #ifdef USE_THRUST
   extern "C" void thrust_sort_32b(my_dev::context &devContext, 
