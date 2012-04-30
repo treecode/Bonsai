@@ -189,6 +189,13 @@ __device__ __forceinline__ int bfi(const int x, const int y, const int bit, cons
 	return ret;
 }
 
+__device__ __forceinline__ int lanemask_le()
+{
+  int mask;
+  asm("mov.u32 %0, %lanemask_le;" : "=r" (mask));
+  return mask;
+}
+
 template<const int DIM2>
 __device__ __forceinline__ int inclusive_segscan_block64(
     int *shmem, const int tid, const int packed_value, int &dist_block, int &nseg)
@@ -201,18 +208,21 @@ __device__ __forceinline__ int inclusive_segscan_block64(
   const int  flag = packed_value < 0;
   const int  mask = BTEST(flag);
   const int value = (mask & (-1-packed_value)) + (~mask & 1);
-  
-  shmem[(warpId << WARP_SIZE2) + WARP_SIZE - 1 - laneId] = flag;
-  const int flags1 = __ballot(shmem[tid]);
-  shmem[tid] = __popc(flags1);
+ 
+  int flags = __ballot(flag);
+  shmem[tid] = __popc(flags);
   __syncthreads();
   nseg += shmem[0] + shmem[WARP_SIZE];
   __syncthreads();
-  
-  shmem[tid] = __clz (flags1);
+
+  shmem[tid] = __clz(__brev(flags));
   __syncthreads();
 
-  const int flags = __ballot(flag) & bfi(0, 0xffffffff, 0, laneId + 1);
+#if 0
+  flags &= bfi(0, 0xffffffff, 0, laneId + 1);
+#else
+  flags &= lanemask_le();
+#endif
 	const int distance = __clz(flags) + laneId - 31;
 
   int dist0  = shmem[WARP_SIZE];
