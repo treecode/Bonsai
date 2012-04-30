@@ -406,6 +406,7 @@ void octree::build (tree_structure &tree) {
   tree.n_groups = validCount/2;
   //Now compact validList to get the list of group ids
   tree.group_list_test.cmalloc(tree.n_groups , false);  
+  tree.n_active_groups = tree.n_groups; //Set all groups active in shared-time-step mode
   
   store_groups.set_arg<int>(0, &tree.n);  
   store_groups.set_arg<int>(1, &tree.n_groups);  
