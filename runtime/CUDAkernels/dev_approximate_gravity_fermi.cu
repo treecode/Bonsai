@@ -534,7 +534,7 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
         __syncthreads();                                                 //Thread barrier to make sure all warps finished writing data
 
         bool flag = (split && !leaf) && use_node;                        //Flag = use_node + split + not_a_leaf;Use only non_leaf nodes that are to be split
-#if 0
+#if 1
         if (flag) nodesM[prefix[tid]] = child;                            //Thread with the node that is about to be split
         __syncthreads();                                                 //writes the first child in the array of nodes
 
@@ -776,9 +776,7 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 #pragma unroll 16
             for (int j = 0; j < DIMx; j++)
               acc_i = add_acc(acc_i, pos_i, sh_mass[offs + j], sh_pos[offs + j], eps2);
-#if 0
             direCount += DIMx;
-#endif
             __syncthreads();
 #endif
           }
@@ -869,9 +867,7 @@ __device__ float4 approximate_gravity(int DIM2x, int DIM2y,
 #pragma unroll
     for (int j = 0; j < DIMx; j++) 
       acc_i = add_acc(acc_i, pos_i, sh_mass[offs + j], sh_pos[offs + j], eps2);
-#if 0
     direCount += DIMx;
-#endif
     __syncthreads();
   }
 
