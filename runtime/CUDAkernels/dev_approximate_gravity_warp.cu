@@ -48,29 +48,54 @@ __device__ __forceinline__ uint inclusive_scan_warp(int mysum)
   return mysum;
 }
 
-__device__ __forceinline__ int calc_prefix(int* prefix, int value) 
+/* inclusive prefix sum for a warp */
+__device__ __forceinline__ int inclusive_scan_warp(int* prefix, int value) 
 {
   prefix[laneId] = inclusive_scan_warp<WARP_SIZE2>(value);
   return prefix[WARP_SIZE-1];
 }
 
 
-__device__ int calc_prefix(int N, int* prefix_in) 
+/* inclusive prefix sum for an array */
+__device__ int inclusive_scan_array(int N, int* prefix_in) 
 {
 
-  int y = calc_prefix(prefix_in, prefix_in[laneId]);
+  int y = inclusive_scan_warp(prefix_in, prefix_in[laneId]);
   if (N <= WARP_SIZE) return y;
 
   for (int p = WARP_SIZE; p < N; p += WARP_SIZE) 
   {
     int *prefix = &prefix_in[p];
-    const int y1 = calc_prefix(prefix, prefix[laneId]);
+    const int y1 = inclusive_scan_warp(prefix, prefix[laneId]);
     prefix[laneId] += y;
     y += y1;
   }
 
   return y;
 } 
+
+/**** binary scans ****/
+
+__device__ __forceinline__ int lanemask_lt()
+{
+  int mask;
+  asm("mov.u32 %0, %lanemask_lt;" : "=r" (mask));
+  return mask;
+}
+
+
+__device__ int warp_exclusive_scan(const bool p, int &psum)
+{
+  const unsigned int b = __ballot(p);
+  psum = __popc(b & lanemask_lt());
+  return __popc(b);
+}
+
+__device__ int warp_exclusive_scan(const bool p)
+{
+  const int b = __ballot(p);
+  return __popc(b & lanemask_lt());
+}
 
 /************************************/
 /********* SEGMENTED SCAN ***********/
@@ -92,7 +117,7 @@ __device__ __forceinline__ int ShflSegScanStepB(
   return partial;
 }
   template<const int SIZE2>
-__device__ __forceinline__ int inclusive_segscan_warp(int value, const int distance)
+__device__ __forceinline__ int inclusive_segscan_warp_step(int value, const int distance)
 {
 
 #if 0
@@ -115,7 +140,7 @@ __device__ __forceinline__ int lanemask_le()
   return mask;
 }
 
-__device__ __forceinline__ int inclusive_segscan_block64(
+__device__ __forceinline__ int inclusive_segscan_warp(
     int *shmem, const int packed_value, int &dist_block, int &nseg)
 {
   const int  flag = packed_value < 0;
@@ -128,7 +153,7 @@ __device__ __forceinline__ int inclusive_segscan_block64(
   dist_block = __clz(__brev(flags));
 
   const int distance = __clz(flags & lanemask_le()) + laneId - 31;
-  shmem[laneId] = inclusive_segscan_warp<WARP_SIZE2>(value, distance);
+  shmem[laneId] = inclusive_segscan_warp_step<WARP_SIZE2>(value, distance);
   const int val = shmem[WARP_SIZE - 1];
   return val;
 }
@@ -137,13 +162,13 @@ __device__ __forceinline__ int inclusive_segscan_block64(
 __device__ __forceinline__ int inclusive_segscan_array(int *shmem_in, const int N)
 {
   int dist, nseg = 0;
-  int y  = inclusive_segscan_block64(shmem_in, shmem_in[laneId], dist, nseg);
+  int y  = inclusive_segscan_warp(shmem_in, shmem_in[laneId], dist, nseg);
   if (N <= WARP_SIZE) return nseg;
 
   for (int p = WARP_SIZE; p < N; p += WARP_SIZE)
   {
     int *shmem = shmem_in + p;
-    int y1  = inclusive_segscan_block64(shmem, shmem[laneId], dist, nseg);
+    int y1  = inclusive_segscan_warp(shmem, shmem[laneId], dist, nseg);
     shmem[laneId] += y & BTEST(laneId < dist);
     y = y1;
   }
@@ -379,7 +404,7 @@ void approximate_gravity(
          ***/
 
 
-        int n_total = calc_prefix(prefix,  nchild);              // inclusive scan to compute memory offset of each child (return total # of children)
+        int n_total = inclusive_scan_warp(prefix,  nchild);               // inclusive scan to compute memory offset of each child (return total # of children)
         int offset  = prefix[laneId];
         offset     += n_offset - nchild;                                  // convert inclusive into exclusive scan for referencing purpose
 
@@ -447,10 +472,11 @@ void approximate_gravity(
         /******       APPROX          ******/
         /***********************************/
 
-        n_total = calc_prefix(prefix, 1 - (split || !use_node));
-        offset = prefix[laneId];
+        /* binary prefix sum */
+        flag = !split && use_node;
+        n_total = warp_exclusive_scan(flag, offset);
+        if (flag) approxM[n_approx + offset] = node;
 
-        if (!split && use_node) approxM[n_approx + offset - 1] = node;
         n_approx += n_total;
 
         while (n_approx >= DIM) 
@@ -495,14 +521,14 @@ void approximate_gravity(
         body_list[laneId] = directM[laneId];                                            //copy list of bodies from previous pass to body_list
 
         // step 1
-        calc_prefix(prefix, flag);                                // inclusive scan on flags to construct array
-        const int offset1 = prefix[laneId];
+        /* binary prefix sum */
 
-        // step 2
-        int n_bodies  = calc_prefix(prefix, nbody);              // inclusive scan to compute memory offset for each body
+        // step 1
+        int n_bodies  = inclusive_scan_warp(prefix, nbody);              // inclusive scan to compute memory offset for each body
         offset = prefix[laneId];
 
-        if (flag) prefix[offset1 - 1] = laneId;                             //with tidś whose leaves have to be opened
+        // step 2
+        if (flag) prefix[warp_exclusive_scan(flag)] = laneId;   //with tidś whose leaves have to be opened
 
         directM[laneId]  = offset;                                       //Store a copy of inclusive scan in direct
         offset       -= nbody;                                              //convert inclusive int oexclusive scan
