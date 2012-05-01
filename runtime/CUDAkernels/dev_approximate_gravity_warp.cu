@@ -319,13 +319,19 @@ void approximate_gravity(
          **** --> fetch the list of nodes rom LMEM
          ***/
         bool use_node = laneId <  n_nodes0;
-#if 0
+#if 1
         { prefix[laneId] = nstack[ACCS<SHIFT>(c_stack0)];   c_stack0++; }
-        int node  = prefix[min(laneId, n_nodes0 - 1)];
+        const int node  = prefix[min(laneId, n_nodes0 - 1)];
 #else  /* eg: seems to work, but I do not remember if that will *always* work */
         int node;
         { node  = nstack[ACCS<SHIFT>(c_stack0)];   c_stack0++; }
 #endif
+
+#if 0   /* if uncommented, give same results, see below */
+        if (blockIdx.x == 0 && warpId == 0)
+          printf("laneId = %d  node= %d \n", laneId, node);
+#endif
+
 
 #if 0
         if(n_nodes0 > 0){       //Work around pre 4.1 compiler bug
@@ -375,11 +381,25 @@ void approximate_gravity(
 
         int n_total = calc_prefix(prefix,  nchild);              // inclusive scan to compute memory offset of each child (return total # of children)
         int offset  = prefix[laneId];
-        for (int i = n_offset; i < n_offset + n_total; i += DIM)         //nullify part of the array that will be filled with children
-          nodesM[laneId + i] = 0;                                          //but do not touch those parts which has already been filled
-#if 1
         offset     += n_offset - nchild;                                  // convert inclusive into exclusive scan for referencing purpose
 
+        for (int i = n_offset; i < n_offset + n_total; i += DIM)         //nullify part of the array that will be filled with children
+          nodesM[laneId + i] = 0;                                          //but do not touch those parts which has already been filled
+
+#if 0  /* the following gives different result than then one in else */
+       /* the results become the same if I uncomment printf above */
+        if (flag)
+        {
+          nodesM[offset] = child; 
+          if (nodesM[offset + 1] == 0) nodesM[offset + 1] = child + 1; 
+          if (nodesM[offset + 2] == 0) nodesM[offset + 2] = child + 2;
+          if (nodesM[offset + 3] == 0) nodesM[offset + 3] = child + 3;
+          if (nodesM[offset + 4] == 0) nodesM[offset + 4] = child + 4;
+          if (nodesM[offset + 5] == 0) nodesM[offset + 5] = child + 5;
+          if (nodesM[offset + 6] == 0) nodesM[offset + 6] = child + 6;
+          if (nodesM[offset + 7] == 0) nodesM[offset + 7] = child + 7;
+        }
+#else
         if (flag) nodesM[offset] = child;                            //Thread with the node that is about to be split
         //writes the first child in the array of nodes
         /*** in the following 8 lines, we calculate indexes of all the children that have to be walked from the index of the first child***/
@@ -390,13 +410,7 @@ void approximate_gravity(
         if (flag && nodesM[offset + 5] == 0) nodesM[offset + 5] = child + 5;
         if (flag && nodesM[offset + 6] == 0) nodesM[offset + 6] = child + 6;
         if (flag && nodesM[offset + 7] == 0) nodesM[offset + 7] = child + 7;
-#else   /* slower */
-        offset     += n_offset - nchild;                                  // convert inclusive into exclusive scan for referencing purpose
-
-        if (flag) nodesM[offset] = -1-child;
-        inclusive_segscan_array(&nodesM[n_offset], n_total);
 #endif
-
         n_offset += n_total;    //Increase the offset in the array by the number of newly added nodes
 
 
