@@ -231,7 +231,7 @@ __device__ bool split_node_grav_impbh(
 
 template<const int SHIFT, const int BLOCKDIM2, const int NI>
 __device__ 
-#if 0
+#if 0 /* __noinline__ crashes the kernel when compled with ABI */
 __noinline__
 #else
 __forceinline__ 
