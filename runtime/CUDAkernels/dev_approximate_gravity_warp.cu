@@ -124,7 +124,7 @@ __device__ __forceinline__ int ShflSegScanStepB(
 __device__ __forceinline__ int inclusive_segscan_warp_step(int value, const int distance)
 {
 
-#if 0
+#if 1
   const int SIZE = 1 << SIZE2; 
 
   for (int i = 0; i < SIZE2; i++)
