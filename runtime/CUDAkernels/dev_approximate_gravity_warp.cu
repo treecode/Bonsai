@@ -76,14 +76,34 @@ __device__ int calc_prefix(int N, int* prefix_in)
 /********* SEGMENTED SCAN ***********/
 /************************************/
 
+__device__ __forceinline__ int ShflSegScanStepB(
+            int partial,
+            uint distance,
+            uint up_offset)
+{
+  asm(
+      "{.reg .u32 r0;"
+      ".reg .pred p;"
+      "shfl.up.b32 r0, %1, %2, 0;"
+      "setp.le.u32 p, %2, %3;"
+      "@p add.u32 %1, r0, %1;"
+      "mov.u32 %0, %1;}"
+      : "=r"(partial) : "r"(partial), "r"(up_offset), "r"(distance));
+  return partial;
+}
   template<const int SIZE2>
 __device__ __forceinline__ int inclusive_segscan_warp(int value, const int distance)
 {
 
+#if 0
   const int SIZE = 1 << SIZE2; 
 
   for (int i = 0; i < SIZE2; i++)
     value += __shfl_up(value, 1 << i, SIZE) & BTEST(laneId >= (1<<i)) & BTEST((1<<i) <= distance);
+#else
+  for (int i = 0; i < SIZE2; i++)
+    value = ShflSegScanStepB(value, distance, 1<<i);
+#endif
 
   return value;
 }
@@ -210,7 +230,13 @@ __device__ bool split_node_grav_impbh(
 
 
 template<const int SHIFT, const int BLOCKDIM2, const int NI>
-__device__ __forceinline__ void approximate_gravity(
+__device__ 
+#if 0
+__noinline__
+#else
+__forceinline__ 
+#endif
+void approximate_gravity(
     float4 pos_i[NI],
     real4 group_pos,
     float eps2,
@@ -337,7 +363,8 @@ __device__ __forceinline__ void approximate_gravity(
         bool leaf       = node_pos.w <= 0;  //Small AND equal incase of a 1 particle cell       //Check if it is a leaf
         //         split = true;
 
-        uint mask    = BTEST((split && !leaf) && use_node);               // mask = #FFFFFFFF if use_node+split+not_a_leaf==true, otherwise zero
+        bool flag    = (split && !leaf) && use_node;                        //Flag = use_node + split + not_a_leaf;Use only non_leaf nodes that are to be split
+        uint mask    = BTEST(flag);                                       // mask = #FFFFFFFF if use_node+split+not_a_leaf==true, otherwise zero
         int child    =    node_data & 0x0FFFFFFF;                         //Index to the first child of the node
         int nchild   = (((node_data & 0xF0000000) >> 28)) & mask;         //The number of children this node has
 
@@ -348,12 +375,11 @@ __device__ __forceinline__ void approximate_gravity(
 
         int n_total = calc_prefix(prefix,  nchild);              // inclusive scan to compute memory offset of each child (return total # of children)
         int offset  = prefix[laneId];
-        offset     += n_offset - nchild;                                  // convert inclusive into exclusive scan for referencing purpose
-
         for (int i = n_offset; i < n_offset + n_total; i += DIM)         //nullify part of the array that will be filled with children
           nodesM[laneId + i] = 0;                                          //but do not touch those parts which has already been filled
+#if 1
+        offset     += n_offset - nchild;                                  // convert inclusive into exclusive scan for referencing purpose
 
-        bool flag = (split && !leaf) && use_node;                        //Flag = use_node + split + not_a_leaf;Use only non_leaf nodes that are to be split
         if (flag) nodesM[offset] = child;                            //Thread with the node that is about to be split
         //writes the first child in the array of nodes
         /*** in the following 8 lines, we calculate indexes of all the children that have to be walked from the index of the first child***/
@@ -364,6 +390,12 @@ __device__ __forceinline__ void approximate_gravity(
         if (flag && nodesM[offset + 5] == 0) nodesM[offset + 5] = child + 5;
         if (flag && nodesM[offset + 6] == 0) nodesM[offset + 6] = child + 6;
         if (flag && nodesM[offset + 7] == 0) nodesM[offset + 7] = child + 7;
+#else   /* slower */
+        offset     += n_offset - nchild;                                  // convert inclusive into exclusive scan for referencing purpose
+
+        if (flag) nodesM[offset] = -1-child;
+        inclusive_segscan_array(&nodesM[n_offset], n_total);
+#endif
 
         n_offset += n_total;    //Increase the offset in the array by the number of newly added nodes
 
