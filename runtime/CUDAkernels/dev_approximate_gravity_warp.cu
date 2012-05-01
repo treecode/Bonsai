@@ -1,4 +1,4 @@
-// #include "support_kernels.cu"
+// #include "support_kernels.cu0
 #include <stdio.h>
 #include "../profiling/bonsai_timing.h"
 PROF_MODULE(dev_approximate_gravity);
@@ -22,6 +22,10 @@ PROF_MODULE(dev_approximate_gravity);
 #define warpId (threadIdx.x >> WARP_SIZE2)
 
 #define BTEST(x) (-(int)(x))
+
+#if 0
+#define _QUADRUPOLE_
+#endif
 
 /************************************/
 /*********   PREFIX SUM   ***********/
@@ -194,7 +198,7 @@ texture<float4, 1, cudaReadModeElementType> texBody;
 
 /*********** Forces *************/
 
-__device__ float4 add_acc(
+__device__ __forceinline__ float4 add_acc(
     float4 acc,  const float4 pos,
     const float massj, const float3 posj,
     const float eps2)
@@ -213,6 +217,63 @@ __device__ float4 add_acc(
   acc.y += mrinv3 * dr.y;
   acc.z += mrinv3 * dr.z;
 #endif
+
+  return acc;
+}
+
+__device__ float4 get_D04(float ds2, int selfGrav = 1) {
+#if 1
+  float ids  = rsqrtf(ds2);  //Does not work with zero-softening
+  //   if(isnan(ids)) ids = 0;               //This does work with zero-softening, few percent performance drop
+  //float ids  = (1.0f / sqrtf(ds2)) * selfGrav; Slower in Pre CUDA4.1
+  ids *= selfGrav;
+#else
+  const float ids = (ds2 > 0.0f) ? rsqrtf(ds2) : 0.0f;
+#endif
+  const float ids2 = ids*ids;
+  float ids3 = ids *ids2;
+  float ids5 = ids3*ids2;
+  float ids7 = ids5*ids2;
+  return make_float4(ids, -ids3, +3.0f*ids5, -15.0f*ids7);
+}  // 9 flops
+
+__device__ __forceinline__ float4 add_acc(
+    float4 acc, 
+    const float4 pos,
+    const float mass, const float3 com,
+    const float4 Q0,  const float4 Q1, float eps2) 
+{
+  const float3 dr = make_float3(pos.x - com.x, pos.y - com.y, pos.z - com.z);
+  const float  r2 = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z + eps2;
+
+  const float rinv  = rsqrtf(r2);
+  const float rinv2 = rinv *rinv;
+  const float rinv3 = rinv *rinv2;
+  const float rinv5 = rinv2*rinv3;
+  const float rinv7 = rinv2*rinv5;
+
+  float  D0  =  rinv*mass;
+  float  D1  = -rinv3*mass;
+  float  D2  =  rinv5*mass*( 3.0f);
+  float  D3  = -rinv7*mass*(15.0f);
+
+  float oct_q11 = Q0.x;
+  float oct_q22 = Q0.y;
+  float oct_q33 = Q0.z;
+  float oct_q12 = Q1.x;
+  float oct_q13 = Q1.y;
+  float oct_q23 = Q1.z;
+
+  float Qii = oct_q11 + oct_q22 + oct_q33;
+  float QijRiRj =
+    (oct_q11*dr.x*dr.x + oct_q22*dr.y*dr.y + oct_q33*dr.z*dr.z) +
+    2.0f*(oct_q12*dr.y*dr.x + oct_q13*dr.z*dr.x + oct_q23*dr.y*dr.z);
+
+  acc.w        -= D0 + 0.5f*D1*Qii + 0.5f*D2*QijRiRj;
+  float C01a    = D1 + 0.5f*D2*Qii + 0.5f*D3*QijRiRj;
+  acc.x         += C01a*dr.x + D2*(oct_q11*dr.x + oct_q12*dr.y + oct_q13*dr.z);
+  acc.y         += C01a*dr.y + D2*(oct_q12*dr.x + oct_q22*dr.y + oct_q23*dr.z);
+  acc.z         += C01a*dr.z + D2*(oct_q13*dr.x + oct_q23*dr.y + oct_q33*dr.z);
 
   return acc;
 }
@@ -282,7 +343,6 @@ void approximate_gravity(
 
   /*********** set necessary thread constants **********/
 
-  const int offs = 0;
   const int DIM2 = WARP_SIZE2;
   const int DIM  = WARP_SIZE;
 
@@ -412,7 +472,7 @@ void approximate_gravity(
           nodesM[laneId + i] = 0;                                          //but do not touch those parts which has already been filled
 
 #if 0  /* the following gives different result than then one in else */
-       /* the results become the same if I uncomment printf above */
+        /* the results become the same if I uncomment printf above */
         if (flag)
         {
           nodesM[offset] = child; 
@@ -485,25 +545,27 @@ void approximate_gravity(
           const int address      = (approxM[n_approx + laneId] << 1) + approxM[n_approx + laneId];
 #ifndef TEXTURES
           const float4 monopole  = multipole_data[address    ];
-#if 0
-          float4 octopole0 = multipole_data[address + 1];
-          float4 octopole1 = multipole_data[address + 2];
-#endif
 #else
           const float4 monopole  = tex1Dfetch(texMultipole, address);
-#if 0
-          float4 octopole0 = tex1Dfetch(texMultipole, address + 1);
-          float4 octopole1 = tex1Dfetch(texMultipole, address + 2);
-#endif
 #endif
 
           sh_mass[laneId] = monopole.w;
           sh_pos [laneId] = make_float3(monopole.x,  monopole.y,  monopole.z);
 
-#pragma unroll 16
+#ifndef _QUADRUPOLE_
           for (int i = 0; i < WARP_SIZE; i++)
             for (int k = 0; k < NI; k++)
-              acc_i[k] = add_acc(acc_i[k], pos_i[k], sh_mass[offs + i], sh_pos[offs+i], eps2);
+              acc_i[k] = add_acc(acc_i[k], pos_i[k], sh_mass[i], sh_pos[i], eps2);
+#else
+          for (int i = 0; i < WARP_SIZE; i++)
+          {
+            const int address = approxM[n_approx + i] * 3;
+            const float4  Q0  = tex1Dfetch(texMultipole, address + 1);
+            const float4  Q1  = tex1Dfetch(texMultipole, address + 2);
+            for (int k = 0; k < NI; k++)
+              acc_i[k] = add_acc(acc_i[k], pos_i[k], sh_mass[i], sh_pos[i], Q0, Q1, eps2);
+          }
+#endif /* _QUADRUPOLE_ */
           apprCount += WARP_SIZE*NI;
         }
 #endif
@@ -580,10 +642,9 @@ void approximate_gravity(
             sh_mass[laneId] = posj.w;
             sh_pos [laneId] = make_float3(posj.x, posj.y, posj.z);
 
-#pragma unroll 16
-            for (int j = 0; j < WARP_SIZE; j++)
+            for (int i = 0; i < WARP_SIZE; i++)
               for (int k = 0; k < NI; k++)
-                acc_i[k] = add_acc(acc_i[k], pos_i[k], sh_mass[offs + j], sh_pos[offs + j], eps2);
+                acc_i[k] = add_acc(acc_i[k], pos_i[k], sh_mass[i], sh_pos[i], eps2);
             direCount += WARP_SIZE*NI;
           }
 
@@ -643,10 +704,25 @@ void approximate_gravity(
       sh_pos [laneId] = make_float3(1.0e10f, 1.0e10f, 1.0e10f);
 
     }
-#pragma unroll 16
+#ifndef _QUADRUPOLE_
     for (int i = 0; i < WARP_SIZE; i++)
       for (int k = 0; k < NI; k++)
-        acc_i[k] = add_acc(acc_i[k], pos_i[k], sh_mass[offs + i], sh_pos[offs+i],eps2);
+        acc_i[k] = add_acc(acc_i[k], pos_i[k], sh_mass[i], sh_pos[i],eps2);
+#else
+    for (int i = 0; i < WARP_SIZE; i++)
+    {
+      float4 Q0, Q1;
+      Q0 = Q1 = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+      if (i < n_approx)
+      {
+        const int address = approxM[i] * 3;
+        Q0 = tex1Dfetch(texMultipole, address + 1);
+        Q1 = tex1Dfetch(texMultipole, address + 2);
+      }
+      for (int k = 0; k < NI; k++)
+        acc_i[k] = add_acc(acc_i[k], pos_i[k], sh_mass[i], sh_pos[i], Q0, Q1, eps2);
+    }
+#endif
     apprCount += WARP_SIZE*NI;
 
   } //if n_approx > 0
@@ -666,10 +742,9 @@ void approximate_gravity(
       sh_pos [laneId] = make_float3(1.0e10f, 1.0e10f, 1.0e10f);
     }
 
-#pragma unroll 16
-    for (int j = 0; j < WARP_SIZE; j++) 
+    for (int i = 0; i < WARP_SIZE; i++) 
       for (int k = 0; k < NI; k++)
-        acc_i[k] = add_acc(acc_i[k], pos_i[k], sh_mass[offs + j], sh_pos[offs + j], eps2);
+        acc_i[k] = add_acc(acc_i[k], pos_i[k], sh_mass[i], sh_pos[i], eps2);
     direCount += WARP_SIZE*NI;
   }
 }
