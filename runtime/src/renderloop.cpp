@@ -79,6 +79,7 @@ public:
 	  m_displayMode(SmokeRenderer::VOLUMETRIC),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.1f),
       m_paused(false),
+      m_renderingEnabled(true),
   	  m_displayBoxes(false), 
 	    m_displaySliders(false),
 	    m_enableGlow(true),
@@ -120,6 +121,7 @@ public:
     //  cycleDisplayMode();
   }
 
+  void toggleRendering() { m_renderingEnabled = !m_renderingEnabled; }
   void togglePause() { m_paused = !m_paused; }
   void toggleBoxes() { m_displayBoxes = !m_displayBoxes; }
   void toggleSliders() { m_displaySliders = !m_displaySliders; }
@@ -141,32 +143,35 @@ public:
   }
 
   void display() { 
-    getBodyData();
-
-    // view transform
+    if (m_renderingEnabled)
     {
-      glMatrixMode(GL_MODELVIEW);
-      glLoadIdentity();
+      getBodyData();
 
-      m_cameraTransLag += (m_cameraTrans - m_cameraTransLag) * m_inertia;
-      m_cameraRotLag += (m_cameraRot - m_cameraRotLag) * m_inertia;
+      // view transform
+      {
+        glMatrixMode(GL_MODELVIEW);
+        glLoadIdentity();
+
+        m_cameraTransLag += (m_cameraTrans - m_cameraTransLag) * m_inertia;
+        m_cameraRotLag += (m_cameraRot - m_cameraRotLag) * m_inertia;
       
-      glTranslatef(m_cameraTransLag.x, m_cameraTransLag.y, m_cameraTransLag.z);
-      glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
-      glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
-    }
+        glTranslatef(m_cameraTransLag.x, m_cameraTransLag.y, m_cameraTransLag.z);
+        glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
+        glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
+      }
 
-    //m_renderer.display(m_displayMode);
-	  m_renderer.render();
 
-    if (m_displayBoxes) {
-      glEnable(GL_DEPTH_TEST);
-      displayOctree();  
-    }
+      //m_renderer.display(m_displayMode);
+	    m_renderer.render();
 
-	if (m_displaySliders) {
-		m_renderer.getParams()->Render(0, 0);
-	}
+      if (m_displayBoxes) {
+        glEnable(GL_DEPTH_TEST);
+        displayOctree();  
+      }
+
+	    if (m_displaySliders) {
+		    m_renderer.getParams()->Render(0, 0);
+	    }
   }
 
   void mouse(int button, int state, int x, int y)
@@ -400,12 +405,14 @@ private:
   bool m_displaySliders;
   bool m_enableGlow;
   bool m_displayLightBuffer;
+  bool m_renderingEnabled;
 };
 
 BonsaiDemo *theDemo = NULL;
 
 void onexit() {
   if (theDemo) delete theDemo;
+  cudaDeviceReset();
 }
 
 void display()
@@ -446,7 +453,7 @@ void key(unsigned char key, int /*x*/, int /*y*/)
   case 27: // escape
   case 'q':
   case 'Q':
-    cudaDeviceReset();
+    displayTimers();
     exit(0);
     break;
   case '`':
@@ -462,8 +469,11 @@ void key(unsigned char key, int /*x*/, int /*y*/)
     break;
   case 'd':
   case 'D':
-    //displayEnabled = !displayEnabled;
- 	theDemo->toggleLightBuffer();
+    theDemo->toggleRendering();
+    break;
+  case 'l':
+  case 'L':
+    theDemo->toggleLightBuffer();
     break;
   case 'f':
   case 'F':

@@ -19,7 +19,7 @@ typedef float4 real4;
 #define LMEM_EXTRA_SIZE            2048
 //#define LMEM_STACK_SIZE            1024         //Number of storage places PER thread, MUST be power 2 !!!!
 //#define LMEM_STACK_SIZE            512         //Number of storage places PER thread, MUST be power 2 !!!!
-#define TREE_WALK_BLOCKS_PER_SM    16           //Number of GPU thread-blocks used for tree-walk
+#define TREE_WALK_BLOCKS_PER_SM    32           //Number of GPU thread-blocks used for tree-walk
                                                 //this is per SM, 8 is ok for Fermi architecture, 16 is save side
 
 #define TEXTURE_BOUNDARY  512   //Fermi architecture boundary for textures
@@ -32,8 +32,8 @@ typedef float4 real4;
 #define  LEVELMASK 0xF8000000
 
 #define NLEAF 16
-#define NCRIT 32
-#define NTHREAD 64
+#define NCRIT 64
+#define NTHREAD 128
 
 #define NLEAFTEST 8
 

@@ -542,7 +542,7 @@ int main(int argc, char** argv)
   float  killDistance   = -1.0;
   float  remoDistance   = -1.0;
   int    snapShotAdd    =  0;
-  int rebuild_tree_rate = 5;
+  int rebuild_tree_rate = 2;
 
 
    if (argc <= 1) {

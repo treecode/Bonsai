@@ -89,7 +89,7 @@ set (CUFILES
 if (COMPILE_SM30)
   set (CUFILES 
     ${CUFILES}
-    CUDAkernels/dev_approximate_gravity.cu  
+    CUDAkernels/dev_approximate_gravity_warp.cu  
     )
   set(GENCODE -gencode=arch=compute_30,code=sm_30 -gencode=arch=compute_30,code=compute_30)
 
