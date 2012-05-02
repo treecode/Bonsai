@@ -78,7 +78,7 @@ public:
       m_displayMode(ParticleRenderer::PARTICLE_SPRITES),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.1f),
       m_paused(false), m_displayBoxes(false), 
-      m_octreeDisplayLevel(3)
+      m_octreeDisplayLevel(3), m_renderingEnabled(true)
   {
     m_windowDims = make_int2(720, 480);
     m_cameraTrans = make_float3(0, -2, -100);
@@ -105,6 +105,7 @@ public:
     //  cycleDisplayMode();
   }
 
+  void toggleRendering() { m_renderingEnabled = !m_renderingEnabled; }
   void togglePause() { m_paused = !m_paused; }
   void toggleBoxes() { m_displayBoxes = !m_displayBoxes; }
   void incrementOctreeDisplayLevel(int inc) { 
@@ -122,26 +123,29 @@ public:
   }
 
   void display() { 
-    getBodyData();
-
-    // view transform
+    if (m_renderingEnabled)
     {
-      glMatrixMode(GL_MODELVIEW);
-      glLoadIdentity();
+      getBodyData();
 
-      m_cameraTransLag += (m_cameraTrans - m_cameraTransLag) * m_inertia;
-      m_cameraRotLag += (m_cameraRot - m_cameraRotLag) * m_inertia;
+      // view transform
+      {
+        glMatrixMode(GL_MODELVIEW);
+        glLoadIdentity();
+
+        m_cameraTransLag += (m_cameraTrans - m_cameraTransLag) * m_inertia;
+        m_cameraRotLag += (m_cameraRot - m_cameraRotLag) * m_inertia;
       
-      glTranslatef(m_cameraTransLag.x, m_cameraTransLag.y, m_cameraTransLag.z);
-      glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
-      glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
-    }
+        glTranslatef(m_cameraTransLag.x, m_cameraTransLag.y, m_cameraTransLag.z);
+        glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
+        glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
+      }
 
-    if (m_displayBoxes) {
-      displayOctree();  
-    }
+      if (m_displayBoxes) {
+        displayOctree();  
+      }
 
-    m_renderer.display(m_displayMode);
+      m_renderer.display(m_displayMode);
+    }
   }
 
   void mouse(int button, int state, int x, int y)
@@ -293,12 +297,14 @@ private:
 
   bool m_paused;
   bool m_displayBoxes;
+  bool m_renderingEnabled;
 };
 
 BonsaiDemo *theDemo = NULL;
 
 void onexit() {
   if (theDemo) delete theDemo;
+  cudaDeviceReset();
 }
 
 void display()
@@ -341,7 +347,6 @@ void key(unsigned char key, int /*x*/, int /*y*/)
   case 'q':
   case 'Q':
     displayTimers();
-    cudaDeviceReset();
     exit(0);
     break;
   /*case '`':
@@ -357,7 +362,7 @@ void key(unsigned char key, int /*x*/, int /*y*/)
     break;
   case 'd':
   case 'D':
-    //displayEnabled = !displayEnabled;
+    theDemo->toggleRendering();
     break;
   case 'f':
   case 'F':

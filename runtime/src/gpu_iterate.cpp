@@ -140,9 +140,9 @@ bool octree::iterate_once(IterationData &idata) {
 
     //Approximate gravity
     t1 = get_time();
-//     devContext.startTiming();
+     devContext.startTiming();
     approximate_gravity(this->localTree);
-//     devContext.stopTiming("Approximation", 4);
+     devContext.stopTiming("Approximation", 4);
     
     
     if(nProcs > 1)  makeLET();
