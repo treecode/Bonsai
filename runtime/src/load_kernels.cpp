@@ -334,7 +334,7 @@ void octree::load_kernels() {
 void octree::gpuCompact(my_dev::context &devContext, 
                         my_dev::dev_mem<uint> &srcValues,
                         my_dev::dev_mem<uint> &output,                        
-                        int N, int *validCount)
+                        int N, int *validCount) // if validCount NULL leave count on device
 {
 
 
@@ -363,6 +363,7 @@ void octree::gpuCompact(my_dev::context &devContext,
   compactCount.set_arg<uint>(2, &N);
   compactCount.set_arg<int>(3, NULL, 128);
   compactCount.set_arg<setupParams>(4, &sParam);
+  compactCount.set_arg<cl_mem>(5, this->devMemCountsx.p());
 
   vector<size_t> localWork(2), globalWork(2);
   globalWork[0] = 32*120;   globalWork[1] = 4;
@@ -376,6 +377,7 @@ void octree::gpuCompact(my_dev::context &devContext,
   exScanBlock.set_arg<int>(1, &blocks);
   exScanBlock.set_arg<cl_mem>(2, this->devMemCountsx.p());
   exScanBlock.set_arg<int>(3, NULL, 512); //shared memory allocation
+  
 
   globalWork[0] = 512; globalWork[1] = 1;
   localWork [0] = 512; localWork [1] = 1;
@@ -390,6 +392,7 @@ void octree::gpuCompact(my_dev::context &devContext,
   compactMove.set_arg<uint>(3, &N);
   compactMove.set_arg<uint>(4, NULL, 192); //Dynamic shared memory
   compactMove.set_arg<setupParams>(5, &sParam);
+  compactMove.set_arg<cl_mem>(6, this->devMemCountsx.p());
 
   globalWork[0] = 120*32;  globalWork[1] = 4;
   localWork [0] = 32;      localWork [1] = 4;
@@ -402,12 +405,12 @@ void octree::gpuCompact(my_dev::context &devContext,
   exScanBlock.execute();
   compactMove.execute();
   
-  this->devMemCountsx.d2h();
-  *validCount = this->devMemCountsx[0];
-  //printf("Total number of valid items: %d \n", countx[0]);
- 
- 
-
+  if (validCount)
+  {
+    this->devMemCountsx.d2h();
+    *validCount = this->devMemCountsx[0];
+    //printf("Total number of valid items: %d \n", countx[0]);
+  }
 }
 
 //Splits an array of integers, the values in srcValid indicate if a

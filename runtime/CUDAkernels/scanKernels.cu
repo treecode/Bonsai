@@ -68,9 +68,11 @@ __device__ void exclusive_scan_blockD(int *ptr, const int N, int *count, volatil
 //N is number of previous blocks in the count call
 extern "C"  __global__ void exclusive_scan_block(int *ptr, const int N, int *count) 
 {
-  extern __shared__ int shmemESB[];
-//   volatile __shared__ int shmemESB[512];
-  exclusive_scan_blockD(ptr, N, count, shmemESB);
+  if (*count != 0) {
+    extern __shared__ int shmemESB[];
+  //   volatile __shared__ int shmemESB[512];
+    exclusive_scan_blockD(ptr, N, count, shmemESB);
+  }
 }
 
 
@@ -227,11 +229,12 @@ __device__ void compact_countD(volatile uint2 *values,
 extern "C" __global__ void compact_count(volatile uint2 *values,
                               uint *counts,  
                               const int N,                             
-                              setupParams sParam) {
-
-
-  extern __shared__  int shmemCC[];
-  compact_countD(values, counts, N, sParam,shmemCC) ;
+                              setupParams sParam,
+                              const uint *workToDo) {
+  if (*workToDo != 0) {
+    extern __shared__  int shmemCC[];
+    compact_countD(values, counts, N, sParam,shmemCC) ;
+  }
 }
 
 
@@ -322,10 +325,13 @@ extern "C"  __global__ void compact_move( uint2 *values,
                              uint *output, 
                              uint *counts,  
                              const int N,
-                            setupParams sParam)
+                            setupParams sParam,
+                            const uint *workToDo)
 {
-  extern __shared__ unsigned int shmemCM[];
-  compact_moveD(values, output, counts,N,sParam,shmemCM);
+  if (*workToDo != 0) {
+    extern __shared__ unsigned int shmemCM[];
+    compact_moveD(values, output, counts,N,sParam,shmemCM);
+  }
 }
 
 

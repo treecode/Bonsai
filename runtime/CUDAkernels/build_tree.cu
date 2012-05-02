@@ -232,7 +232,9 @@ extern "C" __global__ void cl_build_key_list(uint4  *body_key,
 extern "C" __global__ void cl_build_valid_list(int n_bodies,
                                                int level,
                                                uint4  *body_key,
-                                               uint *valid_list){
+                                               uint *valid_list,
+                                               const uint *workToDo) {
+  if (0 == *workToDo) return;
 //                                                uint2 *test_key_data) {
   CUXTIMER("cl_build_valid_list");
   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
@@ -295,12 +297,13 @@ extern "C" __global__ void cl_build_valid_list(int n_bodies,
 //////////////////////////////
 //////////////////////////////
 //////////////////////////////
-
+__device__ uint retirementCountBuildNodes = 0;
 
 extern "C" __global__ void cl_build_nodes(uint level,
-                             uint  compact_list_len,
-                             uint offset,
-                             uint *compact_list,
+                             uint  *compact_list_len,
+                             uint  *level_offset,
+                             uint2 *level_list,
+                             uint  *compact_list,
                              uint4 *bodies_key,
                              uint4 *node_key,
                              uint  *n_children,
@@ -311,26 +314,56 @@ extern "C" __global__ void cl_build_nodes(uint level,
   uint tid = threadIdx.x;
   uint id  = bid * blockDim.x + tid;
 
-  if (id >= compact_list_len) return;
+  uint n = (*compact_list_len)/2;
+  uint offset = *level_offset;
 
-  uint  bi   = compact_list[id*2];
-  uint  bj   = compact_list[id*2+1] + 1;
+  for (; id < n; id += gridDim.x * gridDim.y * blockDim.x)
+  {
+    uint  bi   = compact_list[id*2];
+    uint  bj   = compact_list[id*2+1] + 1;
   
+    uint4 key  = bodies_key[bi];
+    uint4 mask = get_mask(level);
+    key = make_uint4(key.x & mask.x, key.y & mask.y, key.z & mask.z, 0); 
 
-  uint4 key  = bodies_key[bi];
-  uint4 mask = get_mask(level);
-  key = make_uint4(key.x & mask.x, key.y & mask.y, key.z & mask.z, 0); 
-
-
-  node_bodies[offset+id] = make_uint2(bi | (level << BITLEVELS), bj);
-  node_key   [offset+id] = key;
-  n_children [offset+id] = 0;
+    node_bodies[offset+id] = make_uint2(bi | (level << BITLEVELS), bj);
+    node_key   [offset+id] = key;
+    n_children [offset+id] = 0;
   
-  if ((int)level > (int)(LEVEL_MIN - 1)) 
-    if (bj - bi <= NLEAF)                            //Leaf can only have NLEAF particles, if its more there will be a split
-      for (int i = bi; i < bj; i++)
-        bodies_key[i] = make_uint4(0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF); //sets the key to FF to indicate the body is used
+    if ((int)level > (int)(LEVEL_MIN - 1)) 
+      if (bj - bi <= NLEAF)                            //Leaf can only have NLEAF particles, if its more there will be a split
+        for (int i = bi; i < bj; i++)
+          bodies_key[i] = make_uint4(0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF); //sets the key to FF to indicate the body is used
+  }
 
+  //
+  // PHASE 2: Last block updates level list and offset
+  //
+
+  int numBlocks = gridDim.x * gridDim.y;
+  if (numBlocks > 1)
+  {
+    __shared__ bool amLast;
+
+    // Thread 0 takes a ticket
+    if( tid==0 )
+    {
+      unsigned int ticket = atomicInc(&retirementCountBuildNodes, numBlocks);
+      // If the ticket ID is equal to the number of blocks, we are the last block!
+      amLast = (ticket == numBlocks-1);
+    }
+    __syncthreads();
+
+    // The last block sums the results of all other blocks
+    if( amLast && tid == 0)
+    {           
+      level_list[level] = (n > 0) ? make_uint2(offset, offset + n) : make_uint2(0, 0);
+      *level_offset = offset + n;
+
+      // reset retirement count so that next run succeeds
+      retirementCountBuildNodes = 0; 
+    }
+  }
 }
 
 //////////////////////////////
