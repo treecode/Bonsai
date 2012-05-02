@@ -477,7 +477,7 @@ void octree::approximate_gravity(tree_structure &tree)
     cout << "sigma dir: " << sqrt((directSum2  - directSum)/ tree.n) << "\tsigma appr: " << std::sqrt((apprSum2 - apprSum) / tree.n)  <<  endl;    
   #endif
   
-  CU_SAFE_CALL(clFinish(0));
+  //CU_SAFE_CALL(clFinish(0));
   
   
   if(mpiGetNProcs() == 1) //Only do it here if there is only one process
@@ -631,7 +631,7 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
     getNActive.set_arg<cl_mem>(2, this->nactive.p());
     getNActive.set_arg<int>(3, NULL, 128); //Dynamic shared memory , equal to number of threads
     getNActive.setWork(-1, 128, NBLOCK_REDUCE);
-    CU_SAFE_CALL(clFinish(0));
+    //CU_SAFE_CALL(clFinish(0));
     getNActive.execute();
     
     //Reduce the last parts on the host

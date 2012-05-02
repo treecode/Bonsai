@@ -206,6 +206,8 @@ void octree::build (tree_structure &tree) {
 
   my_dev::dev_mem<uint>  validList(devContext);
   my_dev::dev_mem<uint>  compactList(devContext);
+  my_dev::dev_mem<uint>  levelOffset(devContext);
+  my_dev::dev_mem<uint>  maxLevel(devContext);
   
   validList.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
                                     tree.generalBuffer1.get_flags(), 
@@ -220,6 +222,12 @@ void octree::build (tree_structure &tree) {
                                     &tree.generalBuffer1[tree.n*2], tree.n*2,
                                     tree.n*2, getAllignmentOffset(tree.n*2));
                                                                         
+  levelOffset.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
+                                    tree.generalBuffer1.get_flags(), 
+                                    tree.generalBuffer1.get_devMem(),
+                                    &tree.generalBuffer1[tree.n*4], tree.n*4,
+                                    1, getAllignmentOffset(tree.n*4));
+  levelOffset.zeroMem();
 
   
   /******** set kernels parameters **********/
@@ -235,18 +243,22 @@ void octree::build (tree_structure &tree) {
   build_valid_list.set_arg<int>(1, &level);
   build_valid_list.set_arg<cl_mem>(2,  tree.bodies_key.p());
   build_valid_list.set_arg<cl_mem>(3,  validList.p());  
+  build_valid_list.set_arg<cl_mem>(4,  this->devMemCountsx.p());  
   build_valid_list.setWork(tree.n, 128);
   
+  vector<size_t> localWork(2), globalWork(2);
+  globalWork[0] = 120*32;  globalWork[1] = 4;
+  localWork [0] = 128;      localWork [1] = 1;
 
-
-  build_nodes.set_arg<int>(0,     &level);
-  build_nodes.set_arg<int>(1,     &validCount);
-  build_nodes.set_arg<int>(2,     &offset);
-  build_nodes.set_arg<cl_mem>(3,  compactList.p());
-  build_nodes.set_arg<cl_mem>(4,  tree.bodies_key.p());
-  build_nodes.set_arg<cl_mem>(5,  tree.node_key.p());
-  build_nodes.set_arg<cl_mem>(6,  tree.n_children.p());
-  build_nodes.set_arg<cl_mem>(7,  tree.node_bodies.p());
+  build_nodes.setWork(globalWork, localWork);
+  build_nodes.set_arg<cl_mem>(1, this->devMemCountsx.p());
+  build_nodes.set_arg<cl_mem>(2, levelOffset.p());
+  build_nodes.set_arg<cl_mem>(3,  tree.level_list.p());
+  build_nodes.set_arg<cl_mem>(4,  compactList.p());
+  build_nodes.set_arg<cl_mem>(5,  tree.bodies_key.p());
+  build_nodes.set_arg<cl_mem>(6,  tree.node_key.p());
+  build_nodes.set_arg<cl_mem>(7,  tree.n_children.p());
+  build_nodes.set_arg<cl_mem>(8,  tree.node_bodies.p());
 
   link_tree.set_arg<int>(0,     &offset);
   link_tree.set_arg<cl_mem>(1,  tree.n_children.p());
@@ -266,39 +278,37 @@ void octree::build (tree_structure &tree) {
   
   /******  build the levels *********/
   
-  int nodeSum = 0;
+  // set devMemCountsx to 1 because it is used to early out when it hits zero
+  this->devMemCountsx[0] = 1;
+  this->devMemCountsx.h2d(1);
+
+  //int nodeSum = 0;
   for (level = 0; level < MAXLEVELS; level++) {
     // mark bodies to be combined into nodes
     build_valid_list.set_arg<int>(1, &level);
     build_valid_list.execute();
       
     //gpuCompact to get number of created nodes    
-    gpuCompact(devContext, validList, compactList, tree.n*2, &validCount);
-                 
-    nodeSum += validCount / 2;
-    LOG("ValidCount (%d): %d \tSum: %d Offset: %d\n", mpiGetRank(), validCount, nodeSum, offset);
-    
-    validCount /= 2;     
-                  
-    if (validCount == 0) break;                 
-      
-    // asssemble nodes           
-    build_nodes.setWork(validCount, 128);
+    gpuCompact(devContext, validList, compactList, tree.n*2, 0);
+                   
+    // assemble nodes           
     build_nodes.set_arg<int>(0, &level);
-    build_nodes.set_arg<int>(1, &validCount);
-    build_nodes.set_arg<int>(2, &offset);    
     build_nodes.execute();
-                 
-    tree.level_list[level] = make_uint2(offset, offset + validCount);
-    offset += validCount;
-
   } //end for lvl
-  
+
+  // reset counts to 1 so next compact proceeds...
+  this->devMemCountsx[0] = 1;
+  this->devMemCountsx.h2d(1); 
 
   //Put the last level + 1 index to 0,0 
   //so we dont need an extra if statement in the linking phase
-  tree.level_list[level] = make_uint2(0, 0);
-  tree.level_list.h2d();
+  //tree.level_list[level] = make_uint2(0, 0);
+  tree.level_list.d2h();
+  for (level = 0; level < MAXLEVELS; level++)
+    if (0 == (tree.level_list[level].y - tree.level_list[level].x)) break;
+
+  levelOffset.d2h(1);
+  offset = levelOffset[0];
     
   int n_nodes  = offset;
   tree.n_nodes = n_nodes;
