@@ -124,7 +124,7 @@ __device__ __forceinline__ int ShflSegScanStepB(
 __device__ __forceinline__ int inclusive_segscan_warp_step(int value, const int distance)
 {
 
-#if 1
+#if 0
   const int SIZE = 1 << SIZE2; 
 
   for (int i = 0; i < SIZE2; i++)
@@ -157,7 +157,7 @@ __device__ __forceinline__ int inclusive_segscan_warp(
   dist_block = __clz(__brev(flags));
 
   const int distance = __clz(flags & lanemask_le()) + laneId - 31;
-  shmem[laneId] = inclusive_segscan_warp_step<WARP_SIZE2>(value, distance);
+  shmem[laneId] = inclusive_segscan_warp_step<WARP_SIZE2>(value, min(distance, laneId));
   const int val = shmem[WARP_SIZE - 1];
   return val;
 }
