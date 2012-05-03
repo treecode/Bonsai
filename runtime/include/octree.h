@@ -117,6 +117,7 @@ class tree_structure
     int n_nodes;                          //Total number of nodes in the tree (including leafs)
     int n_groups;                         //Number of groups
     int n_levels;                         //Depth of the tree
+    int n_dust;                           //Number of dust particles
     bool needToReorder;			//Set to true if SetN is called so we know we need to change particle order
     my_dev::dev_mem<real4> bodies_pos;    //The particles positions
     my_dev::dev_mem<uint4> bodies_key;    //The particles keys
@@ -185,6 +186,22 @@ class tree_structure
 
     real4 corner;                         //Corner of tree-structure
     real  domain_fac;                     //Domain_fac of tree-structure
+    
+    #ifdef USE_DUST
+      //Dust particle arrays
+      my_dev::dev_mem<real4> dust_pos;    //The particles positions
+      my_dev::dev_mem<real4> dust_Ppos;    //The particles positions
+      my_dev::dev_mem<uint4> dust_key;    //The particles keys
+      my_dev::dev_mem<real4> dust_vel;    //Velocities
+      my_dev::dev_mem<real4> dust_Pvel;    //Velocities
+      my_dev::dev_mem<real4> dust_acc0;    //Acceleration
+      my_dev::dev_mem<real4> dust_acc1;    //Acceleration
+      my_dev::dev_mem<int>   dust_ids;
+    #endif
+    
+    
+    
+    
 
   tree_structure(){ n = 0;}
 
@@ -207,6 +224,10 @@ class tree_structure
     n = particles;
     needToReorder = true;
   }
+  void setNDust(int particles)
+  {
+    n_dust = particles;
+  }  
 
   void setMemoryContexts()
   {
@@ -249,10 +270,24 @@ class tree_structure
     boxCenterInfo.setContext(*devContext);
     groupCenterInfo.setContext(*devContext);
 
-    //General buffer
+    //General buffers
     generalBuffer1.setContext(*devContext);
-
+   
     fullRemoteTree.setContext(*devContext);
+    
+    #ifdef USE_DUST
+      //Dust buffers
+      dust_pos.setContext(*devContext);
+      dust_key.setContext(*devContext);
+      dust_vel.setContext(*devContext);
+      dust_acc0.setContext(*devContext);
+      dust_acc1.setContext(*devContext);
+      dust_ids.setContext(*devContext);
+      dust_Ppos.setContext(*devContext);
+      dust_Pvel.setContext(*devContext);
+    #endif
+    
+    
   }
 
   my_dev::context getContext()
