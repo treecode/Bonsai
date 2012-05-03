@@ -15,6 +15,7 @@
 
 #include <math.h>
 #include <stdlib.h>
+#include <string.h>
 #include "SmokeRenderer.h"
 #include "SmokeShaders.h"
 //#include <nvImage.h>

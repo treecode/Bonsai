@@ -18,7 +18,7 @@
 #include "framebufferObject.h"
 #include "GLSLProgram.h"
 #include "nvMath.h"
-#include "ParamGL.h"
+#include "paramgl.h"
 #include "GpuArray.h"
 
 class SmokeRenderer

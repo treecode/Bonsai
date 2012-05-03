@@ -1,7 +1,11 @@
 #define ENABLE_LOG 0
 
 #if ENABLE_LOG
-#define LOG(fmt, ...) printf(fmt, __VA_ARGS__)
+#ifdef WIN32
+  #define LOG(fmt, ...) printf(fmt, __VA_ARGS__)
+#else
+  #define LOG(...) printf(__VA_ARGS__)        
+#endif
 #define LOGF(file, fmt, ...) fprintf(file, fmt, __VA_ARGS__)
 #else
 #define LOG(fmt, ...) ((void)0)
