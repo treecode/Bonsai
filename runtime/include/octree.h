@@ -117,7 +117,7 @@ class tree_structure
     int n_nodes;                          //Total number of nodes in the tree (including leafs)
     int n_groups;                         //Number of groups
     int n_levels;                         //Depth of the tree
-    int n_dust;                           //Number of dust particles
+
     bool needToReorder;			//Set to true if SetN is called so we know we need to change particle order
     my_dev::dev_mem<real4> bodies_pos;    //The particles positions
     my_dev::dev_mem<uint4> bodies_key;    //The particles keys
@@ -188,15 +188,31 @@ class tree_structure
     real  domain_fac;                     //Domain_fac of tree-structure
     
     #ifdef USE_DUST
+      int n_dust;                           //Number of dust particles
+      int n_dust_groups;                    //Number of dust groups
       //Dust particle arrays
       my_dev::dev_mem<real4> dust_pos;    //The particles positions
-      my_dev::dev_mem<real4> dust_Ppos;    //The particles positions
       my_dev::dev_mem<uint4> dust_key;    //The particles keys
       my_dev::dev_mem<real4> dust_vel;    //Velocities
-      my_dev::dev_mem<real4> dust_Pvel;    //Velocities
       my_dev::dev_mem<real4> dust_acc0;    //Acceleration
       my_dev::dev_mem<real4> dust_acc1;    //Acceleration
       my_dev::dev_mem<int>   dust_ids;
+      
+      my_dev::dev_mem<int>   dust2group_list;
+      my_dev::dev_mem<int2>   dust_group_list;
+      my_dev::dev_mem<int>   active_dust_list;
+      my_dev::dev_mem<int>   activeDustGrouplist;      
+      my_dev::dev_mem<int2>  dust_interactions;
+      
+      my_dev::dev_mem<int>   dust_ngb;
+      my_dev::dev_mem<real4> dust_groupSizeInfo;    
+      my_dev::dev_mem<real4> dust_groupCenterInfo;  
+     
+      void setNDust(int particles)
+      {
+        n_dust = particles;
+      }  
+      
     #endif
     
     
@@ -224,10 +240,7 @@ class tree_structure
     n = particles;
     needToReorder = true;
   }
-  void setNDust(int particles)
-  {
-    n_dust = particles;
-  }  
+
 
   void setMemoryContexts()
   {
@@ -283,8 +296,16 @@ class tree_structure
       dust_acc0.setContext(*devContext);
       dust_acc1.setContext(*devContext);
       dust_ids.setContext(*devContext);
-      dust_Ppos.setContext(*devContext);
-      dust_Pvel.setContext(*devContext);
+      
+      dust2group_list.setContext(*devContext);
+      dust_group_list.setContext(*devContext);
+      active_dust_list.setContext(*devContext);
+      dust_interactions.setContext(*devContext);
+      activeDustGrouplist.setContext(*devContext);
+      
+      dust_ngb.setContext(*devContext);
+      dust_groupSizeInfo.setContext(*devContext);
+      dust_groupCenterInfo.setContext(*devContext);
     #endif
     
     
@@ -647,6 +668,24 @@ public:
   void makeLET();
 
   //End functions for parallel code
+  
+      //Functions related to dust
+  #ifdef USE_DUST 
+    void allocateDustMemory(tree_structure &tree);
+    void sort_dust(tree_structure &tree);
+    void make_dust_groups(tree_structure &tree);
+    void allocateDustGroupBuffers(tree_structure &tree);
+    void predictDustStep(tree_structure &tree);
+    void correctDustStep(tree_structure &tree);
+    void approximate_dust(tree_structure &tree);
+    void setDustGroupProperties(tree_structure &tree);
+    
+    my_dev::kernel define_dust_groups;
+    my_dev::kernel store_dust_groups;
+    my_dev::kernel predictDust;
+    my_dev::kernel correctDust;
+  #endif
+  
   //
 
   //Library interface functions  

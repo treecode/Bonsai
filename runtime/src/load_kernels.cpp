@@ -324,6 +324,29 @@ void octree::load_kernels() {
 
 
 #endif
+  
+#ifdef USE_DUST
+   define_dust_groups.setContext(devContext);
+   define_dust_groups.load_source("./build_tree.ptx", pathName.c_str());
+   define_dust_groups.create("define_dust_groups");
+   
+   store_dust_groups.setContext(devContext);
+   store_dust_groups.load_source("./build_tree.ptx", pathName.c_str());
+   store_dust_groups.create("store_dust_groups");
+   
+   predictDust.setContext(devContext);
+   predictDust.load_source("./build_tree.ptx", pathName.c_str());
+   predictDust.create("predict_dust_particles");   
+   
+   correctDust.setContext(devContext);
+   correctDust.load_source("./build_tree.ptx", pathName.c_str());
+   correctDust.create("correct_dust_particles");     
+   
+   
+   
+#endif  
+  
+  
 
 }
 

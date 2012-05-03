@@ -763,6 +763,7 @@ __launch_bounds__(NTHREAD)
       real4  *body_pos,
       real4  *multipole_data,
       float4 *acc_out,
+      real4  *group_body_pos,           //This can be different from body_pos
       int    *ngb_out,
       int    *active_inout,
       int2   *interactions,
@@ -825,8 +826,8 @@ __launch_bounds__(NTHREAD)
     float4 pos_i[2];
     float4 acc_i[2];
 
-    pos_i[0] = body_pos[body_i[0]];
-    pos_i[1] = body_pos[body_i[1]];
+    pos_i[0] = group_body_pos[body_i[0]];
+    pos_i[1] = group_body_pos[body_i[1]];
     acc_i[0] = acc_i[1] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
 
     int ngb_i;
