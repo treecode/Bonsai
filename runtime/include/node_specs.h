@@ -9,6 +9,8 @@ typedef float4 real4;
 //Uncomment the next line to use thrust radix sort instead of built in one
 // #define USE_THRUST
 
+#define USE_DUST
+
 
 #define IMPBH   //Improved barnes hut opening method
 //#define INDSOFT //Individual softening using cubic spline kernel

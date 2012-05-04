@@ -19,7 +19,7 @@ NVCC      = $(CUDA_TK)/bin/nvcc
 #NVCCFLAGS = -arch sm_20 -ftz=true -prec-div=false -prec-sqrt=false 
 #NVCCFLAGS = -arch sm_20 -g -G 
 #NVCCFLAGS = -arch sm_20 
-NVCCFLAGS = -arch sm_20   -Xptxas -v,-abi=no 
+NVCCFLAGS = -arch sm_30   -Xptxas -v,-abi=no 
 
 
 
@@ -42,13 +42,13 @@ CUDAKERNELSPATH = CUDAkernels
 CUDAKERNELS = build_tree.cu_o \
 		sortKernels.cu_o \
 		timestep.cu_o \
-		dev_approximate_gravity.cu_o \
+		dev_approximate_gravity_warp.cu_o \
 		dev_approximate_gravity_let.cu_o \
 		parallel.cu_o \
 		compute_propertiesD.cu_o 
 
 SRCPATH = src
-SRC = main.cpp octree.cpp load_kernels.cpp build.cpp compute_properties.cpp sort_bodies_gpu.cpp gpu_iterate.cpp parallel.cpp libraryInterface.cpp renderloop.cpp render_particles.cpp
+SRC = main.cpp octree.cpp load_kernels.cpp build.cpp compute_properties.cpp sort_bodies_gpu.cpp gpu_iterate.cpp parallel.cpp libraryInterface.cpp renderloop.cpp render_particles.cpp dustFunctions.cpp
 OBJ = $(SRC:%.cpp=%.o)
 
 PROG = main

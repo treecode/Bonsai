@@ -443,7 +443,7 @@ void octree::build (tree_structure &tree) {
 
 
   printf("Tree built complete!\n");
-
+  
   /*************************/
 
 }

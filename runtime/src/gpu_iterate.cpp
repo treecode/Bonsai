@@ -50,6 +50,7 @@ bool octree::iterate_once(IterationData &idata) {
     devContext.startTiming();
     predict(this->localTree);
     devContext.stopTiming("Predict", 9);
+
     
     bool needDomainUpdate = true;
     
@@ -129,6 +130,16 @@ bool octree::iterate_once(IterationData &idata) {
       
       idata.lastBuildTime   = get_time() - t1;
       idata.totalBuildTime += idata.lastBuildTime;  
+      
+    
+      #ifdef USE_DUST
+        //Predict, sort and set properties
+        predictDustStep(this->localTree);        
+        sort_dust(this->localTree);
+        make_dust_groups(this->localTree);
+        setDustGroupProperties(this->localTree);        
+      #endif          
+              
     }
     else
     {
@@ -136,17 +147,28 @@ bool octree::iterate_once(IterationData &idata) {
       devContext.startTiming();
       this->compute_properties(this->localTree);
       devContext.stopTiming("Compute-properties", 3);
+      
+      #ifdef USE_DUST
+        setDustGroupProperties(this->localTree);
+      #endif          
+              
     }//end rebuild tree
 
     //Approximate gravity
     t1 = get_time();
-     devContext.startTiming();
+    devContext.startTiming();
     approximate_gravity(this->localTree);
-     devContext.stopTiming("Approximation", 4);
+    devContext.stopTiming("Approximation", 4);
     
     
     if(nProcs > 1)  makeLET();
     
+    #ifdef USE_DUST
+      devContext.startTiming();
+      approximate_dust(this->localTree);
+      devContext.stopTiming("Approximation_dust", 4);
+    #endif        
+
     execStream->sync();
     
     idata.lastGravTime   = get_time() - t1;
@@ -160,6 +182,12 @@ bool octree::iterate_once(IterationData &idata) {
     devContext.startTiming();
     correct(this->localTree);
     devContext.stopTiming("Correct", 8);
+    
+
+    #ifdef USE_DUST
+      //Correct
+      correctDustStep(this->localTree);  
+    #endif     
     
     if(nProcs > 1)
     {
@@ -240,9 +268,26 @@ void octree::iterate_setup(IterationData &idata) {
   t1 = get_time();
    
   //Approximate gravity
-//   devContext.startTiming();
+  devContext.startTiming();
   approximate_gravity(this->localTree);
-//   devContext.stopTiming("Approximation", 4);
+  devContext.stopTiming("Approximation", 4);
+  
+  #ifdef USE_DUST
+      //Predict
+      predictDustStep(this->localTree);
+      
+      //Set the group properties of dust
+      setDustGroupProperties(this->localTree);
+      
+      devContext.startTiming();
+      approximate_dust(this->localTree);
+      devContext.stopTiming("Approximatin_dust", 4);
+      //Correct
+      correctDustStep(this->localTree);  
+  #endif
+  
+  
+  
 
   if(nProcs > 1)  makeLET();
 
@@ -417,30 +462,31 @@ void octree::approximate_gravity(tree_structure &tree)
   approxGrav.set_arg<cl_mem>(5, tree.bodies_Ppos.p());
   approxGrav.set_arg<cl_mem>(6, tree.multipole.p());
   approxGrav.set_arg<cl_mem>(7, tree.bodies_acc1.p());
-  approxGrav.set_arg<cl_mem>(8, tree.ngb.p());
-  approxGrav.set_arg<cl_mem>(9, tree.activePartlist.p());
-  approxGrav.set_arg<cl_mem>(10, tree.interactions.p());
-  approxGrav.set_arg<cl_mem>(11, tree.boxSizeInfo.p());
-  approxGrav.set_arg<cl_mem>(12, tree.groupSizeInfo.p());
-  approxGrav.set_arg<cl_mem>(13, tree.boxCenterInfo.p());
-  approxGrav.set_arg<cl_mem>(14, tree.groupCenterInfo.p());
-  approxGrav.set_arg<cl_mem>(15, tree.bodies_Pvel.p());
-  approxGrav.set_arg<cl_mem>(16,  tree.generalBuffer1.p()); //Instead of using Local memory
+  approxGrav.set_arg<cl_mem>(8, tree.bodies_Ppos.p());
+  approxGrav.set_arg<cl_mem>(9, tree.ngb.p());
+  approxGrav.set_arg<cl_mem>(10, tree.activePartlist.p());
+  approxGrav.set_arg<cl_mem>(11, tree.interactions.p());
+  approxGrav.set_arg<cl_mem>(12, tree.boxSizeInfo.p());
+  approxGrav.set_arg<cl_mem>(13, tree.groupSizeInfo.p());
+  approxGrav.set_arg<cl_mem>(14, tree.boxCenterInfo.p());
+  approxGrav.set_arg<cl_mem>(15, tree.groupCenterInfo.p());
+  approxGrav.set_arg<cl_mem>(16, tree.bodies_Pvel.p());
+  approxGrav.set_arg<cl_mem>(17,  tree.generalBuffer1.p()); //Instead of using Local memory
   
   
   
   
-  approxGrav.set_arg<real4>(17, tree.boxSizeInfo, 4, "texNodeSize");
-  approxGrav.set_arg<real4>(18, tree.boxCenterInfo, 4, "texNodeCenter");
-  approxGrav.set_arg<real4>(19, tree.multipole, 4, "texMultipole");
-  approxGrav.set_arg<real4>(20, tree.bodies_Ppos, 4, "texBody");
+  approxGrav.set_arg<real4>(18, tree.boxSizeInfo, 4, "texNodeSize");
+  approxGrav.set_arg<real4>(19, tree.boxCenterInfo, 4, "texNodeCenter");
+  approxGrav.set_arg<real4>(20, tree.multipole, 4, "texMultipole");
+  approxGrav.set_arg<real4>(21, tree.bodies_Ppos, 4, "texBody");
     
  
   approxGrav.setWork(-1, NTHREAD, nBlocksForTreeWalk);
   approxGrav.execute(execStream->s());  //First half
 
   //Print interaction statistics
-  #if 0
+  #if 1
   
   tree.body2group_list.d2h();
   tree.interactions.d2h();
