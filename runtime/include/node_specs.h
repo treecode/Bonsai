@@ -9,6 +9,10 @@ typedef float4 real4;
 //Uncomment the next line to use thrust radix sort instead of built in one
 // #define USE_THRUST
 
+//If you uncomment the next line dust/massless particles will be treated
+//like normal particles and used in the tree-construction
+#define USE_DUST
+
 
 #define IMPBH   //Improved barnes hut opening method
 //#define INDSOFT //Individual softening using cubic spline kernel

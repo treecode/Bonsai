@@ -168,8 +168,12 @@ void read_dumbp_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
 }
 
 
-void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyVelocities,  vector<int> &bodiesIDs,  float eps2,
-                     string fileName, int rank, int procs, int &NTotal2, int &NFirst, int &NSecond, int &NThird, octree *tree)  
+void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyVelocities,
+                              vector<int> &bodiesIDs,  float eps2, string fileName, 
+                              int rank, int procs, int &NTotal2, int &NFirst, 
+                              int &NSecond, int &NThird, octree *tree,
+                              vector<real4> &dustPositions, vector<real4> &dustVelocities,
+                              vector<int> &dustIDs)  
 {
   //Process 0 does the file reading and sends the data
   //to the other processes
@@ -253,9 +257,26 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
       idummy            = s.phi;
     }
     
-    bodyPositions.push_back(positions);
-    bodyVelocities.push_back(velocity);
-    bodiesIDs.push_back(idummy);  
+    #ifdef USE_DUST
+      if(idummy >= 50000000 && idummy < 100000000)
+      {
+        dustPositions.push_back(positions);
+        dustVelocities.push_back(velocity);
+        dustIDs.push_back(idummy);      
+      }
+      else
+      {
+        bodyPositions.push_back(positions);
+        bodyVelocities.push_back(velocity);
+        bodiesIDs.push_back(idummy);  
+      }
+
+    
+    #else
+      bodyPositions.push_back(positions);
+      bodyVelocities.push_back(velocity);
+      bodiesIDs.push_back(idummy);  
+    #endif
     
     particleCount++;
   
@@ -277,7 +298,8 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
 //   bodyPositions.resize(bodyPositions.size()-1);  
 //   NTotal2 = particleCount-1;
   NTotal2 = particleCount;
-  cerr << "NTotal: " << NTotal << "\tper proc: " << perProc << "\tFor ourself:" << bodiesIDs.size() << endl;
+  cerr << "NTotal: " << NTotal << "\tper proc: " << perProc << "\tFor ourself:" << bodiesIDs.size() << "\tNDust: " << dustPositions.size() << endl;
+  cerr << "NTotal: " << NTotal << "\tper proc: " << perProc << "\tFor ourself:" << bodiesIDs.size() << endl;  
 }
 
 
@@ -319,7 +341,7 @@ void euler(vector<real4> &bodyPositions,
 {
   rotmat(inc,omega);
   size_t nobj = bodyPositions.size();
-  for(int i=0; i < nobj; i++)
+  for(uint i=0; i < nobj; i++)
   {
       float r[3], v[3];
       r[0] = bodyPositions[i].x;
@@ -352,7 +374,7 @@ double centerGalaxy(vector<real4> &bodyPositions,
 
     mtot = 0;
     xc = yc = zc = vxc = vyc = vzc = 0;
-    for(int i=0; i< nobj; i++) {
+    for(uint i=0; i< nobj; i++) {
             xc   += bodyPositions[i].w*bodyPositions[i].x;
             yc   += bodyPositions[i].w*bodyPositions[i].y;
             zc   += bodyPositions[i].w*bodyPositions[i].z;
@@ -367,7 +389,7 @@ double centerGalaxy(vector<real4> &bodyPositions,
     vxc /= mtot;
     vyc /= mtot;
     vzc /= mtot;
-    for(int i=0; i< nobj; i++)
+    for(uint i=0; i< nobj; i++)
     {
       bodyPositions[i].x  -= xc;
       bodyPositions[i].y  -= yc;
@@ -389,7 +411,7 @@ int setupMergerModel(vector<real4> &bodyPositions1,
                      vector<real4> &bodyPositions2,
                      vector<real4> &bodyVelocities2,
                      vector<int>   &bodyIDs2){
-        int i;
+        uint i;
         double ds=1.0, vs, ms=1.0;
         double mu1, mu2, vp;
         double b=1.0, rsep=10.0;
@@ -529,6 +551,10 @@ int main(int argc, char** argv)
   vector<real4> bodyVelocities;
   vector<int>   bodyIDs;
 
+  vector<real4> dustPositions;
+  vector<real4> dustVelocities;
+  vector<int>   dustIDs;  
+  
   float eps      = 0.05f;
   float theta    = 0.75f;
   float timeStep = 1.0f / 16.0f;
@@ -659,7 +685,9 @@ int main(int argc, char** argv)
   if(procId == 0)
   {
    #ifdef TIPSYOUTPUT
-      read_tipsy_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, procId, nProcs, NTotal, NFirst, NSecond, NThird, tree);    
+      read_tipsy_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, 
+                               procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
+                               dustPositions, dustVelocities, dustIDs);    
    #else
       read_dumbp_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, procId, nProcs, NTotal, NFirst, NSecond, NThird, tree);
    #endif
@@ -795,6 +823,39 @@ int main(int argc, char** argv)
   tree->build(tree->localTree);
   tree->allocateTreePropMemory(tree->localTree);
   tree->compute_properties(tree->localTree);
+  
+  //If required set the dust particles
+  #ifdef USE_DUST
+    if( (int)dustPositions.size() > 0)
+    {
+      fprintf(stderr, "Allocating dust properties for %d dust particles \n",
+          (int)dustPositions.size());   
+      tree->localTree.setNDust((int)dustPositions.size());
+      tree->allocateDustMemory(tree->localTree);
+      
+      //Load dust data onto the device
+      for(uint i=0; i < dustPositions.size(); i++)
+      {
+        tree->localTree.dust_pos[i] = dustPositions[i];
+        tree->localTree.dust_vel[i] = dustVelocities[i];
+        tree->localTree.dust_ids[i] = dustIDs[i];
+      }
+
+      tree->localTree.dust_pos.h2d();
+      tree->localTree.dust_vel.h2d();
+      tree->localTree.dust_ids.h2d();    
+      
+      //Sort the dust
+      tree->sort_dust(tree->localTree);
+      //make the dust groups
+      tree->make_dust_groups(tree->localTree);
+      
+
+    }
+    
+    
+    
+  #endif //ifdef USE_DUST
   
   //Start the integration
 #ifdef USE_OPENGL

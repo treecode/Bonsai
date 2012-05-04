@@ -924,6 +924,7 @@ __launch_bounds__(NTHREAD)
       real4  *body_pos,
       real4  *multipole_data,
       float4 *acc_out,
+      real4  *group_body_pos,
       int    *ngb_out,
       int    *active_inout,
       int2   *interactions,
@@ -1014,7 +1015,9 @@ __launch_bounds__(NTHREAD)
       //float4 pos_i = tex1Dfetch(bodies_pos_ref, body_i);   // texture read: 4 floats
 
 
-      float4 pos_i = body_pos[body_i];
+//       float4 pos_i = body_pos[body_i];
+      float4 pos_i = group_body_pos[body_i];
+
 
 
       int ngb_i;

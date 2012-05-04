@@ -267,11 +267,10 @@ public:
 
   ParamListGL *getParams() { return m_renderer.getParams(); }
 
-private:
   float  frand() { return rand() / (float) RAND_MAX; }
   float4 randColor(float scale) { return make_float4(frand()*scale, frand()*scale, frand()*scale, 0.0f); }
 
-  void getBodyData() {
+ void getBodyData() {
     m_tree->localTree.bodies_pos.d2h();
     m_tree->localTree.bodies_ids.d2h();
     //m_tree->localTree.bodies_vel.d2h();
@@ -324,6 +323,7 @@ private:
 
     //delete [] colors;
   }
+
 
   void displayOctree() {
     float3 boxMin = make_float3(m_tree->rMinLocalTree);
