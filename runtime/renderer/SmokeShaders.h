@@ -19,3 +19,4 @@ extern const char *downSample4PS, *downSample2PS;
 extern const char *gaussianBlurPS;
 extern const char *floorVS, *floorPS;
 extern const char *volumeVS, *volumePS;
+extern const char *skyboxVS, *skyboxPS;

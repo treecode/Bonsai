@@ -139,6 +139,7 @@ private:
     void drawQuad(float s=1.0f, float z=0.0f);
     void drawVector(nv::vec3f v);
 	void drawBounds();
+    void drawSkybox(GLuint tex);
 
     void initParams();
 
@@ -236,6 +237,7 @@ private:
 	GLSLProgram         *m_volumeProg;
     GLSLProgram         *m_downSampleProg;
     GLSLProgram         *m_gaussianBlurProg;
+    GLSLProgram         *m_skyboxProg;
 
     // image buffers
     FramebufferObject   *m_fbo;
@@ -252,6 +254,7 @@ private:
     GLuint              m_rainbowTex;
     GLuint              m_textureArrayID;
 	GLuint              m_noiseTex;
+    GLuint              m_cubemapTex;
 };
 
 #endif

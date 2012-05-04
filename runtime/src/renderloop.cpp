@@ -259,6 +259,7 @@ public:
   void motion(int x, int y)
   {
     const float translateSpeed = 0.1f;
+    const float zoomSpeed = 0.005f;
     const float rotateSpeed = 0.2f;
 
     float dx = (float)(x - m_ox);
@@ -271,7 +272,11 @@ public:
 
     if (m_buttonState == 3) {
       // left+middle = zoom
-      m_cameraTrans.z += (dy / 100.0f) * 0.5f * fabs(m_cameraTrans.z);
+      float3 v = make_float3(0.0f, 0.0f, dy*zoomSpeed*fabs(m_cameraTrans.z));
+      if (m_flyMode) {
+		v = ixform(v, m_modelView);
+      }
+      m_cameraTrans += v;
     }
     else if (m_buttonState & 2) {
       // middle = translate
@@ -279,9 +284,7 @@ public:
       if (m_flyMode) {
 		v = ixform(v, m_modelView);
       }
-      m_cameraTrans.x += v.x;
-      m_cameraTrans.y += v.y;
-      m_cameraTrans.z += v.z;
+      m_cameraTrans += v;
     }
     else if (m_buttonState & 1) {
       // left = rotate
@@ -298,7 +301,7 @@ public:
     if (!m_flyMode)
       return;
 
-    const float flySpeed = 2.0f;
+    const float flySpeed = 1.0f;
     //float flySpeed = (m_keyModifiers & GLUT_ACTIVE_SHIFT) ? 4.0f : 1.0f;
 
 	// Z
@@ -459,7 +462,7 @@ public:
   float  frand() { return rand() / (float) RAND_MAX; }
   float4 randColor(float scale) { return make_float4(frand()*scale, frand()*scale, frand()*scale, 0.0f); }
 
-#if 0
+#if 1
  void getBodyData() {
     //m_tree->localTree.bodies_pos.d2h();
     m_tree->localTree.bodies_ids.d2h();
@@ -467,14 +470,14 @@ public:
 
     int n = m_tree->localTree.n;
 
-    //float4 starColor = make_float4(1.0f, 0.75f, 0.1f, 1.0f);	// yellowish
-    float4 starColor = make_float4(1.0f, 1.0f, 1.0f, 1.0f);		// white
+    float4 starColor = make_float4(1.0f, 1.0f, 0.5f, 1.0f);	// yellowish
+    //float4 starColor = make_float4(1.0f, 1.0f, 1.0f, 1.0f);		// white
     float4 starColor2 = make_float4(1.0f, 0.2f, 0.5f, 1.0f) * make_float4(100.0f, 100.0f, 100.0f, 1.0f);		// purplish
 
     float overbright = 1.0f;
     starColor *= make_float4(overbright, overbright, overbright, 1.0f);
 
-    float4 dustColor = make_float4(0.0f, 0.1f, 0.25f, 0.0f);	// blue
+    float4 dustColor = make_float4(0.0f, 0.0f, 0.1f, 0.0f);	// blue
     //float4 dustColor = make_float4(0.1f, 0.1f, 0.1f, 0.0f);	// grey
 
     //float4 *colors = new float4[n];
@@ -497,8 +500,7 @@ public:
         //colors[i] = starColor;
 	    } else {
 		    // stars
-		    //colors[i] = dustColor * make_float4(r, r, r, 1.0f);
-		    colors[i] = dustColor;
+		    colors[i] = dustColor * make_float4(r, r, r, 1.0f);
 	    }
 #else
 	    // test sorting
@@ -535,14 +537,14 @@ public:
       memcpy (&combinedIDs      [m_tree->localTree.n], &m_tree->localTree.dust_ids[0],   sizeof(int)   *m_tree->localTree.n_dust);      
     #endif    
     
-    //float4 starColor = make_float4(1.0f, 0.75f, 0.1f, 1.0f);  // yellowish
-    float4 starColor = make_float4(1.0f, 1.0f, 1.0f, 1.0f);               // white
-    float4 starColor2 = make_float4(1.0f, 0.1f, 0.5f, 1.0f) * make_float4(20.0f, 20.0f, 20.0f, 1.0f);             // purplish
+    float4 starColor = make_float4(1.0f, 1.0f, 0.5f, 1.0f);  // yellowish
+    //float4 starColor = make_float4(1.0f, 1.0f, 0.0f, 1.0f);               // white
+    float4 starColor2 = make_float4(1.0f, 0.2f, 0.5f, 1.0f) * make_float4(100.0f, 100.0f, 100.0f, 1.0f);             // purplish
 
     float overbright = 1.0f;
     starColor *= make_float4(overbright, overbright, overbright, 1.0f);
 
-    float4 dustColor = make_float4(0.0f, 0.1f, 0.25f, 0.0f);      // blue
+    float4 dustColor = make_float4(0.0f, 0.0f, 0.1f, 0.0f);      // blue
     //float4 dustColor =  make_float4(0.1f, 0.1f, 0.1f, 0.0f);    // grey
 
     float4 *colors = m_particleColors;

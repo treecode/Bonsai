@@ -146,6 +146,8 @@ if (USE_OPENGL)
   renderer/param.cpp
   renderer/GLSLProgram.cpp
   renderer/framebufferObject.cpp
+  renderer/loadPPM.cpp
+  renderer/Cubemap.cpp  
   )
 
   set (HFILES ${HFILES} 
@@ -155,6 +157,8 @@ if (USE_OPENGL)
   renderer/param.h
   renderer/GLSLProgram.h
   renderer/framebufferObject.h
+  renderer/loadPPM.h
+  renderer/Cubemap.h
   )
 
   add_definitions(-DUSE_OPENGL)

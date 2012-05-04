@@ -689,3 +689,31 @@ void main()                                                                     
     gl_FragColor = vec4(lerp(gl_Color.rgb*n, shadow, indirectLighting) * alpha, alpha);
 }\n
 );
+
+// sky box shader
+const char *skyboxVS = STRINGIFY(
+#version 120\n
+void main()                                                 \n
+{                                                           \n
+    //gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex; \n
+    gl_Position = gl_Vertex; \n
+    //gl_TexCoord[0] = gl_MultiTexCoord0;                     \n
+    //gl_TexCoord[0] = gl_Vertex;
+    //gl_TexCoord[0].xyz = mat3(gl_ModelViewMatrixInverse) * gl_Vertex.xyz; \n
+    vec4 eyePos = gl_ProjectionMatrixInverse * gl_Vertex; \n
+    eyePos.xyz /= eyePos.w;
+    gl_TexCoord[0].xzy = mat3(gl_ModelViewMatrixInverse) * eyePos.xyz;
+    gl_FrontColor = gl_Color;                               \n
+}                                                           \n
+);
+
+const char *skyboxPS = STRINGIFY(
+samplerCube tex;
+void main()                                                 \n
+{                                                           \n
+  vec4 c = textureCube(tex, gl_TexCoord[0].xyz) * gl_Color; \n
+  c.rgb = pow(c.rgb, 2.2);
+  gl_FragColor = c;
+    //gl_FragColor = textureCube(tex, gl_TexCoord[0].xyz) * gl_Color; \n
+}                                                           \n
+);

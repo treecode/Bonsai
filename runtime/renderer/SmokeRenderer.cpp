@@ -20,6 +20,7 @@
 #include "SmokeShaders.h"
 //#include <nvImage.h>
 #include "depthSort.h"
+#include "Cubemap.h"
 
 #if defined(__APPLE__) || defined(MACOSX)
 #include <GLUT/glut.h>
@@ -41,7 +42,7 @@ SmokeRenderer::SmokeRenderer(int numParticles) :
     mVelVbo(0),
     mColorVbo(0),
     mIndexBuffer(0),
-    mParticleRadius(0.25f),
+    mParticleRadius(0.2f),
 	mDisplayMode(SPRITES),
     mWindowW(800),
     mWindowH(600),
@@ -78,10 +79,10 @@ SmokeRenderer::SmokeRenderer(int numParticles) :
 	m_minDepth(0.0f),
 	m_maxDepth(1.0f),
 	m_enableAA(false),
-	m_starBlurRadius(20.0f),
+	m_starBlurRadius(40.0f),
     m_starPower(2.0f),
-	m_starIntensity(0.0f),
-	m_starThreshold(0.9f),
+	m_starIntensity(0.5f),
+	m_starThreshold(0.0f),
     m_glowRadius(10.0f),
     m_glowIntensity(0.5f),
 	m_ageScale(5.0f),
@@ -94,7 +95,8 @@ SmokeRenderer::SmokeRenderer(int numParticles) :
 	m_volumeStart(0.5f),
 	m_volumeWidth(0.1f),
 	m_gamma(1.0f / 2.2f),
-	m_fog(0.001f)
+	m_fog(0.001f),
+    m_cubemapTex(0)
 {
 	// load shader programs
 	m_simpleProg = new GLSLProgram(simpleVS, simplePS);
@@ -120,6 +122,8 @@ SmokeRenderer::SmokeRenderer(int numParticles) :
 	m_downSampleProg = new GLSLProgram(passThruVS, downSample2PS);
     m_gaussianBlurProg = new GLSLProgram(passThruVS, gaussianBlurPS);
 
+    m_skyboxProg = new GLSLProgram(skyboxVS, skyboxPS);
+
     glClampColorARB(GL_CLAMP_VERTEX_COLOR_ARB, GL_FALSE);
     glClampColorARB(GL_CLAMP_FRAGMENT_COLOR_ARB, GL_FALSE);
 
@@ -127,6 +131,7 @@ SmokeRenderer::SmokeRenderer(int numParticles) :
     // create buffer for light shadows
     //createLightBuffer();
 
+    // textures
 //    loadSmokeTextures(32,0,"perlinNoiseTextures2/noise2_");
 //    loadSmokeTextures(8, 0, "noiseTextures3/noise");
 //    m_rainbowTex = loadTexture("data/rainbow.png");
@@ -135,9 +140,12 @@ SmokeRenderer::SmokeRenderer(int numParticles) :
 	glGenTextures(1, &mPosBufferTexture);
 	m_noiseTex = createNoiseTexture(64, 64, 64);
 
+    //m_cubemapTex = loadCubemapCross("images/Carina_cross.ppm");
+    //m_cubemapTex = loadCubemap("images/deepfield%d.ppm");
+
     initParams();
 
-	initCUDA();
+	//initCUDA();
 	mParticlePos.alloc(mMaxParticles, true, false, false);
 	mParticleDepths.alloc(mMaxParticles, false, false, false);
 	mParticleIndices.alloc(mMaxParticles, true, false, true);
@@ -160,6 +168,7 @@ SmokeRenderer::~SmokeRenderer()
 	delete m_starFilterProg;
 	delete m_compositeProg;
     delete m_volumeProg;
+    delete m_skyboxProg;
 
     delete m_fbo;
     glDeleteTextures(2, m_lightTexture);
@@ -170,6 +179,7 @@ SmokeRenderer::~SmokeRenderer()
     glDeleteTextures(1, &m_depthTex);
 
 	glDeleteTextures(1, &m_noiseTex);
+	glDeleteTextures(1, &m_cubemapTex);
 
 	mParticleDepths.free();
 	mParticleIndices.free();
@@ -672,6 +682,8 @@ void SmokeRenderer::drawSlices()
     glClearColor(0.0, 0.0, 0.0, 0.0); 
     glClear(GL_COLOR_BUFFER_BIT);
 
+    drawSkybox(m_cubemapTex);
+
 	/*
 	// bind vbo as buffer texture
 	glBindTexture(GL_TEXTURE_BUFFER_EXT, mPosBufferTexture);
@@ -934,6 +946,9 @@ void SmokeRenderer::renderSprites()
     glClearColor(0.0, 0.0, 0.0, 0.0); 
     //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	glClear(GL_COLOR_BUFFER_BIT);
+
+    glDisable(GL_BLEND);
+    drawSkybox(m_cubemapTex);
 #endif
 
 	glColor4f(1.0, 1.0, 1.0, m_spriteAlpha);
@@ -1229,6 +1244,29 @@ void SmokeRenderer::debugVectors()
 
     glColor3f(1.0, 0.0, 0.0);
     drawVector(m_halfVector);
+}
+
+void SmokeRenderer::drawSkybox(GLuint tex)
+{
+    if (!m_cubemapTex)
+      return;
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, tex);
+    m_skyboxProg->enable();
+    m_skyboxProg->bindTexture("tex", tex, GL_TEXTURE_CUBE_MAP, 0);
+
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glColor3f(0.5f, 0.5f, 0.5f);
+    //glColor3f(1.0f, 1.0f, 1.0f);
+
+    glutSolidCube(2.0);
+
+    m_skyboxProg->disable();
+
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
 }
 
 void SmokeRenderer::initParams()
