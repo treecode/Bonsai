@@ -76,10 +76,6 @@ set (HFILES
 set (CUFILES
   CUDAkernels/build_tree.cu
   CUDAkernels/compute_propertiesD.cu
-  # CUDAkernels/dev_approximate_gravity.cu
-  CUDAkernels/dev_approximate_gravity_fermi.cu
-  CUDAkernels/dev_approximate_gravity_kepler.cu
-  # CUDAkernels/dev_approximate_gravity_let.cu
   CUDAkernels/parallel.cu
   CUDAkernels/sortKernels.cu
   CUDAkernels/timestep.cu
@@ -116,7 +112,7 @@ set (PROFFILES
   profiling/bonsai_timing.h
   )
 
-source_group("CUDA Source Files" FILES ${CUFILES})
+source_group("CUDA Source Files" FILES ${CUFILES} ${CUHFILES})
 source_group("CUDA Include Files" FILES ${CUHFILES})
 source_group("CUDA Profiling Tools" FILES ${PROFFILES})
 
@@ -193,7 +189,7 @@ endif (USE_OPENGL)
 cuda_add_executable(bonsai2
   ${CCFILES} 
   ${HFILES}
-  ${CUFILES} 
+  ${CUFILES}
   ${PROFFILES}
   OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING} ${KEEP}
   )

@@ -373,7 +373,6 @@ void octree::build (tree_structure &tree) {
   gpuCompact(devContext, validList, tree.node_level_list, 
              2*(tree.n_nodes-tree.n_leafs), &levelThing);             
   
-
   ///******   Start building the particle groups *******///////
 
   //Compute the box size, the max length of one of the sides of the rectangle

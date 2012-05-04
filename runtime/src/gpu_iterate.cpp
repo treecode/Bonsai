@@ -212,13 +212,8 @@ bool octree::iterate_once(IterationData &idata) {
       
       return true;
     }
-      
+   
     iter++; 
-    /*if((iter % 50) == 0)
-    {
-      if(removeDistance > 0) checkRemovalDistance(this->localTree);
-    }
-    */
 
     return false;
 }
@@ -302,7 +297,7 @@ void octree::iterate() {
   for(int i=0; i < 10000000; i++) //Large number, limit
   {
     if (true == iterate_once(idata))
-        break;    
+      break;    
   } //end for i
   
   iterate_teardown(idata);
@@ -362,6 +357,14 @@ void octree::predict(tree_structure &tree)
   predictParticles.setWork(tree.n, 128);
   predictParticles.execute();
   
+
+  #ifdef DO_BLOCK_TIMESTEP
+    //Compact the valid list to get a list of valid groups
+    gpuCompact(devContext, tree.activeGrpList, tree.active_group_list,
+              tree.n_groups, &tree.n_active_groups);
+  #else
+    tree.n_active_groups = tree.n_groups;
+  #endif
 
   #ifdef DO_BLOCK_TIMESTEP
     //Compact the valid list to get a list of valid groups
@@ -898,6 +901,5 @@ double octree::compute_energies(tree_structure &tree)
   LOGF(stderr, "iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n", 
 		  iter, this->t_current, Etot, Ekin, Epot, de, de_max, dde, dde_max, get_time() - tinit);          
   }
-
   return de;
 }

@@ -76,7 +76,7 @@ public:
     : m_tree(tree), m_idata(idata), iterationsRemaining(true),
       m_renderer(tree->localTree.n),
       //m_displayMode(ParticleRenderer::PARTICLE_SPRITES_COLOR),
-	  m_displayMode(SmokeRenderer::VOLUMETRIC),
+	    m_displayMode(SmokeRenderer::VOLUMETRIC),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.1f),
       m_paused(false),
       m_renderingEnabled(true),
@@ -160,7 +160,6 @@ public:
         glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
       }
 
-
       //m_renderer.display(m_displayMode);
 	    m_renderer.render();
 
@@ -172,16 +171,17 @@ public:
 	    if (m_displaySliders) {
 		    m_renderer.getParams()->Render(0, 0);
 	    }
+    }
   }
 
   void mouse(int button, int state, int x, int y)
   {
     int mods;
 
-	if (m_displaySliders) {
-		if (m_renderer.getParams()->Mouse(x, y, button, state))
-			return;
-	}
+	  if (m_displaySliders) {
+		  if (m_renderer.getParams()->Mouse(x, y, button, state))
+			  return;
+	  }
 
     if (state == GLUT_DOWN) {
         m_buttonState |= 1<<button;
@@ -208,10 +208,10 @@ public:
     float dx = (float)(x - m_ox);
     float dy = (float)(y - m_oy);
 
-	if (m_displaySliders) {
-	  if (m_renderer.getParams()->Motion(x, y))
-		return;
-	}
+	  if (m_displaySliders) {
+	    if (m_renderer.getParams()->Motion(x, y))
+		    return;
+	  }
 
     if (m_buttonState == 3) {
       // left+middle = zoom
@@ -235,8 +235,8 @@ public:
   void reshape(int w, int h) {
     m_windowDims = make_int2(w, h);
 
-	m_renderer.setFOV(m_fov);
-	m_renderer.setWindowSize(m_windowDims.x, m_windowDims.y);
+	  m_renderer.setFOV(m_fov);
+	  m_renderer.setWindowSize(m_windowDims.x, m_windowDims.y);
 
     fitCamera();
     glMatrixMode(GL_MODELVIEW);
@@ -255,7 +255,7 @@ public:
     float distanceToCenter = radius / sinf(0.5f * fovRads);
     
     m_cameraTrans = center + make_float3(0, 0, - distanceToCenter);
-	m_cameraTransLag = m_cameraTrans;
+	  m_cameraTransLag = m_cameraTrans;
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
@@ -279,48 +279,48 @@ private:
     int n = m_tree->localTree.n;
 
     //float4 starColor = make_float4(1.0f, 0.75f, 0.1f, 1.0f);	// yellowish
-	float4 starColor = make_float4(1.0f, 1.0f, 1.0f, 1.0f);		// white
-	float4 starColor2 = make_float4(1.0f, 0.1f, 0.5f, 1.0f) * make_float4(20.0f, 20.0f, 20.0f, 1.0f);		// purplish
+	  float4 starColor = make_float4(1.0f, 1.0f, 1.0f, 1.0f);		// white
+	  float4 starColor2 = make_float4(1.0f, 0.1f, 0.5f, 1.0f) * make_float4(20.0f, 20.0f, 20.0f, 1.0f);		// purplish
 
-	float overbright = 1.0f;
-	starColor *= make_float4(overbright, overbright, overbright, 1.0f);
+	  float overbright = 1.0f;
+	  starColor *= make_float4(overbright, overbright, overbright, 1.0f);
 
-	float4 dustColor = make_float4(0.0f, 0.1f, 0.25f, 0.0f);	// blue
-	//float4 dustColor = 	make_float4(0.1f, 0.1f, 0.1f, 0.0f);	// grey
+	  float4 dustColor = make_float4(0.0f, 0.1f, 0.25f, 0.0f);	// blue
+	  //float4 dustColor = 	make_float4(0.1f, 0.1f, 0.1f, 0.0f);	// grey
 
     //float4 *colors = new float4[n];
-	float4 *colors = m_particleColors;
+	  float4 *colors = m_particleColors;
 
     for (int i = 0; i < n; i++) {
       int id = m_tree->localTree.bodies_ids[i];
-	  //printf("%d: id %d, mass: %f\n", i, id, m_tree->localTree.bodies_pos[i].w);
-	  srand(id*1783);
+	    //printf("%d: id %d, mass: %f\n", i, id, m_tree->localTree.bodies_pos[i].w);
+	    srand(id*1783);
 #if 1
-	  float r = frand();
-	  if (id >= 0 && id < 100000000) {
-		// dust -- not used yet
-		colors[i] = make_float4(1, 0, 0, 1);
-	  } else if (id >= 100000000 && id < 200000000) {
-	    // dark matter
+	    float r = frand();
+	    if (id >= 0 && id < 100000000) {
+		    // dust -- not used yet
+		    colors[i] = make_float4(1, 0, 0, 1);
+	    } else if (id >= 100000000 && id < 200000000) {
+	      // dark matter
 //         colors[i] = starColor + randColor(0.1f);
 //         colors[i] = starColor; // * powf(r, 2.0f);
-		  colors[i] = (frand() < 0.99f) ? starColor : starColor2;
-	  } else {
-		// stars
-		//colors[i] = dustColor * make_float4(r, r, r, 1.0f);
-		colors[i] = dustColor;
-	  }
+		    colors[i] = (frand() < 0.99f) ? starColor : starColor2;
+	    } else {
+		    // stars
+		    //colors[i] = dustColor * make_float4(r, r, r, 1.0f);
+		    colors[i] = dustColor;
+	    }
 #else
-	  // test sorting
-	  colors[i] = make_float4(frand(), frand(), frand(), 1.0f);
+	    // test sorting
+	    colors[i] = make_float4(frand(), frand(), frand(), 1.0f);
 #endif
     }
 
     //m_renderer.setPositions((float*)&m_tree->localTree.bodies_pos[0], n);
     //m_renderer.setColors((float*)colors, n);
-	m_renderer.setNumParticles(n);
-	m_renderer.setPositions((float*)&m_tree->localTree.bodies_pos[0]);
-	m_renderer.setColors((float*)colors);
+	  m_renderer.setNumParticles(n);
+	  m_renderer.setPositions((float*)&m_tree->localTree.bodies_pos[0]);
+	  m_renderer.setColors((float*)colors);
 
     //delete [] colors;
   }
@@ -351,31 +351,6 @@ private:
     }
   }
 
-  void displayOctree() {
-    float3 boxMin = make_float3(m_tree->rMinLocalTree);
-    float3 boxMax = make_float3(m_tree->rMaxLocalTree);
-
-    drawWireBox(boxMin, boxMax);
-      
-    m_tree->localTree.boxCenterInfo.d2h();
-    m_tree->localTree.boxSizeInfo.d2h();
-    m_tree->localTree.node_level_list.d2h(); //Should not be needed is created on host
-           
-    int displayLevel = min(m_octreeDisplayLevel, m_tree->localTree.n_levels);
-      
-    for(uint i=0; i < m_tree->localTree.level_list[displayLevel].y; i++)
-    {
-      float3 boxMin, boxMax;
-      boxMin.x = m_tree->localTree.boxCenterInfo[i].x-m_tree->localTree.boxSizeInfo[i].x;
-      boxMin.y = m_tree->localTree.boxCenterInfo[i].y-m_tree->localTree.boxSizeInfo[i].y;
-      boxMin.z = m_tree->localTree.boxCenterInfo[i].z-m_tree->localTree.boxSizeInfo[i].z;
-
-      boxMax.x = m_tree->localTree.boxCenterInfo[i].x+m_tree->localTree.boxSizeInfo[i].x;
-      boxMax.y = m_tree->localTree.boxCenterInfo[i].y+m_tree->localTree.boxSizeInfo[i].y;
-      boxMax.z = m_tree->localTree.boxCenterInfo[i].z+m_tree->localTree.boxSizeInfo[i].z;
-      drawWireBox(boxMin, boxMax);
-    }
-  }
   octree *m_tree;
   octree::IterationData &m_idata;
   bool iterationsRemaining;
@@ -444,6 +419,7 @@ void motion(int x, int y)
 }
 
 // commented out to remove unused parameter warnings in Linux
+extern void displayTimers();    // For profiling counter display
 void key(unsigned char key, int /*x*/, int /*y*/)
 {
   switch (key) {

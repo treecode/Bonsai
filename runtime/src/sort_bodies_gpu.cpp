@@ -28,7 +28,6 @@ void octree::getBoundaries(tree_structure &tree, real4 &r_min, real4 &r_max)
     r_max.x = std::max(r_max.x, devMemRMAX[i].x);
     r_max.y = std::max(r_max.y, devMemRMAX[i].y);
     r_max.z = std::max(r_max.z, devMemRMAX[i].z);    
-//     LOG("%f\t%f\t%f\t || \t%f\t%f\t%f\n", rMIN[i].x,rMIN[i].y,rMIN[i].z,rMAX[i].x,rMAX[i].y,rMAX[i].z);    
   }
   
   rMinLocalTree = r_min;
