@@ -93,7 +93,7 @@ if (COMPILE_SM30)
 else (COMPILE_SM30)
   set (CUFILES
     ${CUFILES}
-	CUDAkernels/dev_approximate_gravity_fermi.cu  
+	CUDAkernels/dev_approximate_gravity_warp_fermi.cu  
 	)
   set(GENCODE -gencode=arch=compute_20,code=sm_20 -gencode=arch=compute_20,code=compute_20)
 endif (COMPILE_SM30)
@@ -146,6 +146,8 @@ if (USE_OPENGL)
   renderer/param.cpp
   renderer/GLSLProgram.cpp
   renderer/framebufferObject.cpp
+  renderer/loadPPM.cpp
+  renderer/Cubemap.cpp  
   )
 
   set (HFILES ${HFILES} 
@@ -155,6 +157,8 @@ if (USE_OPENGL)
   renderer/param.h
   renderer/GLSLProgram.h
   renderer/framebufferObject.h
+  renderer/loadPPM.h
+  renderer/Cubemap.h
   )
 
   add_definitions(-DUSE_OPENGL)

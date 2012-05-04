@@ -20,6 +20,7 @@
 #include "SmokeShaders.h"
 //#include <nvImage.h>
 #include "depthSort.h"
+#include "Cubemap.h"
 
 #if defined(__APPLE__) || defined(MACOSX)
 #include <GLUT/glut.h>
@@ -41,14 +42,14 @@ SmokeRenderer::SmokeRenderer(int numParticles) :
     mVelVbo(0),
     mColorVbo(0),
     mIndexBuffer(0),
-    mParticleRadius(0.25f),
+    mParticleRadius(0.2f),
 	mDisplayMode(SPRITES),
     mWindowW(800),
     mWindowH(600),
     mFov(40.0f),
     m_downSample(1),
     m_blurDownSample(2),
-    m_numSlices(128),
+    m_numSlices(64),
 	m_numDisplayedSlices(m_numSlices),
     m_sliceNo(0),
     m_shadowAlpha(0.1f),
@@ -78,10 +79,10 @@ SmokeRenderer::SmokeRenderer(int numParticles) :
 	m_minDepth(0.0f),
 	m_maxDepth(1.0f),
 	m_enableAA(false),
-	m_starBlurRadius(20.0f),
+	m_starBlurRadius(40.0f),
     m_starPower(2.0f),
-	m_starIntensity(0.0f),
-	m_starThreshold(0.9f),
+	m_starIntensity(0.5f),
+	m_starThreshold(0.0f),
     m_glowRadius(10.0f),
     m_glowIntensity(0.5f),
 	m_ageScale(5.0f),
@@ -94,7 +95,8 @@ SmokeRenderer::SmokeRenderer(int numParticles) :
 	m_volumeStart(0.5f),
 	m_volumeWidth(0.1f),
 	m_gamma(1.0f / 2.2f),
-	m_fog(0.001f)
+	m_fog(0.001f),
+    m_cubemapTex(0)
 {
 	// load shader programs
 	m_simpleProg = new GLSLProgram(simpleVS, simplePS);
@@ -108,7 +110,8 @@ SmokeRenderer::SmokeRenderer(int numParticles) :
     m_particleShadowProg = new GLSLProgram(particleVS, particleShadowPS);
 #endif
 
-    m_blurProg = new GLSLProgram(passThruVS, blur2PS);
+    //m_blurProg = new GLSLProgram(passThruVS, blur2PS);
+    m_blurProg = new GLSLProgram(passThruVS, blur3x3PS);
     m_displayTexProg = new GLSLProgram(passThruVS, texture2DPS);
 	m_compositeProg = new GLSLProgram(passThruVS, compositePS);
 
@@ -119,6 +122,8 @@ SmokeRenderer::SmokeRenderer(int numParticles) :
 	m_downSampleProg = new GLSLProgram(passThruVS, downSample2PS);
     m_gaussianBlurProg = new GLSLProgram(passThruVS, gaussianBlurPS);
 
+    m_skyboxProg = new GLSLProgram(skyboxVS, skyboxPS);
+
     glClampColorARB(GL_CLAMP_VERTEX_COLOR_ARB, GL_FALSE);
     glClampColorARB(GL_CLAMP_FRAGMENT_COLOR_ARB, GL_FALSE);
 
@@ -126,6 +131,7 @@ SmokeRenderer::SmokeRenderer(int numParticles) :
     // create buffer for light shadows
     //createLightBuffer();
 
+    // textures
 //    loadSmokeTextures(32,0,"perlinNoiseTextures2/noise2_");
 //    loadSmokeTextures(8, 0, "noiseTextures3/noise");
 //    m_rainbowTex = loadTexture("data/rainbow.png");
@@ -134,10 +140,13 @@ SmokeRenderer::SmokeRenderer(int numParticles) :
 	glGenTextures(1, &mPosBufferTexture);
 	m_noiseTex = createNoiseTexture(64, 64, 64);
 
+    //m_cubemapTex = loadCubemapCross("images/Carina_cross.ppm");
+    //m_cubemapTex = loadCubemap("images/deepfield%d.ppm");
+
     initParams();
 
-	initCUDA();
-	mParticlePos.alloc(mMaxParticles, false, false, false);
+	//initCUDA();
+	mParticlePos.alloc(mMaxParticles, true, false, false);
 	mParticleDepths.alloc(mMaxParticles, false, false, false);
 	mParticleIndices.alloc(mMaxParticles, true, false, true);
 	for(uint i=0; i<mMaxParticles; i++) {
@@ -159,6 +168,7 @@ SmokeRenderer::~SmokeRenderer()
 	delete m_starFilterProg;
 	delete m_compositeProg;
     delete m_volumeProg;
+    delete m_skyboxProg;
 
     delete m_fbo;
     glDeleteTextures(2, m_lightTexture);
@@ -169,6 +179,7 @@ SmokeRenderer::~SmokeRenderer()
     glDeleteTextures(1, &m_depthTex);
 
 	glDeleteTextures(1, &m_noiseTex);
+	glDeleteTextures(1, &m_cubemapTex);
 
 	mParticleDepths.free();
 	mParticleIndices.free();
@@ -267,26 +278,16 @@ void SmokeRenderer::loadSmokeTextures(int nImages, int offset, char* sTexturePre
 
 void SmokeRenderer::setPositions(float *pos)
 {
-	if (!mPosVbo)
-	{
-		// allocate
-		glGenBuffers(1, &mPosVbo);
-		glBindBuffer(GL_ARRAY_BUFFER_ARB, mPosVbo);
-		glBufferData(GL_ARRAY_BUFFER_ARB, mNumParticles * 4 * sizeof(float), pos, GL_STATIC_DRAW_ARB);
-
-		cutilSafeCall(cudaGLRegisterBufferObject(mPosVbo));
-		cutilSafeCall(cudaGLSetBufferObjectMapFlags(mPosVbo, cudaGLMapFlagsWriteDiscard));    // CUDA writes, GL consumes
-	}
-
-	// XX - this is retarted:
 	memcpy(mParticlePos.getHostPtr(), pos, mNumParticles*4*sizeof(float));
 	mParticlePos.copy(GpuArray<float4>::HOST_TO_DEVICE);
-
-	glBindBuffer(GL_ARRAY_BUFFER_ARB, mPosVbo);
-	//glBufferData(GL_ARRAY_BUFFER_ARB, mNumParticles * 4 * sizeof(float), pos, GL_STATIC_DRAW_ARB);
-	glBufferSubData(GL_ARRAY_BUFFER_ARB, 0, mNumParticles * 4 * sizeof(float), pos);
-	glBindBuffer( GL_ARRAY_BUFFER_ARB, 0);
 //  glutReportErrors();
+}
+
+void SmokeRenderer::setPositionsDevice(float *posD)
+{
+    mParticlePos.map();
+    cudaMemcpy(mParticlePos.getDevicePtr(), posD, mNumParticles*4*sizeof(float), cudaMemcpyDeviceToDevice);
+    mParticlePos.unmap();
 }
 
 void SmokeRenderer::setColors(float *color)
@@ -296,11 +297,11 @@ void SmokeRenderer::setColors(float *color)
 		// allocate
 		glGenBuffers(1, &mColorVbo);
 		glBindBuffer(GL_ARRAY_BUFFER_ARB, mColorVbo);
-		glBufferData(GL_ARRAY_BUFFER_ARB, mNumParticles * 4 * sizeof(float), color, GL_STATIC_DRAW_ARB);
+		glBufferData(GL_ARRAY_BUFFER_ARB, mNumParticles * 4 * sizeof(float), color, GL_DYNAMIC_DRAW);
 	}
 
 	glBindBuffer(GL_ARRAY_BUFFER_ARB, mColorVbo);
-	//glBufferData(GL_ARRAY_BUFFER_ARB, mNumParticles * 4 * sizeof(float), color, GL_STATIC_DRAW_ARB);
+	//glBufferData(GL_ARRAY_BUFFER_ARB, mNumParticles * 4 * sizeof(float), color, GL_DYNAMIC_DRAW);
 	glBufferSubData(GL_ARRAY_BUFFER_ARB, 0, mNumParticles * 4 * sizeof(float), color);
 	glBindBuffer( GL_ARRAY_BUFFER_ARB, 0);
 //	glutReportErrors();
@@ -308,23 +309,20 @@ void SmokeRenderer::setColors(float *color)
 
 void SmokeRenderer::depthSort()
 {
-	//float4 *pos;
-	//cutilSafeCall(cudaGLMapBufferObject((void **) &pos, mPosVbo));	// XXX - doesn't work?
-
     mParticleIndices.map();
+    mParticlePos.map();
 
-	float4 modelViewZ = make_float4(m_modelView._array[2], m_modelView._array[6], m_modelView._array[10], m_modelView._array[14]);
-	//depthSortCUDA(pos, mParticleDepths.getDevicePtr(), (int *) mParticleIndices.getDevicePtr(), modelViewZ, mNumParticles);
-	depthSortCUDA(mParticlePos.getDevicePtr(), mParticleDepths.getDevicePtr(), (int *) mParticleIndices.getDevicePtr(), modelViewZ, mNumParticles);
+    float4 modelViewZ = make_float4(m_modelView._array[2], m_modelView._array[6], m_modelView._array[10], m_modelView._array[14]);
+    depthSortCUDA(mParticlePos.getDevicePtr(), mParticleDepths.getDevicePtr(), (int *) mParticleIndices.getDevicePtr(), modelViewZ, mNumParticles);
 
+    mParticlePos.unmap();
     mParticleIndices.unmap();
-	//cutilSafeCall(cudaGLUnmapBufferObject(mPosVbo));
 }
 
 // draw points from vertex buffer objects
 void SmokeRenderer::drawPoints(int start, int count, bool sorted)
 {
-    glBindBufferARB(GL_ARRAY_BUFFER_ARB, mPosVbo);
+    glBindBufferARB(GL_ARRAY_BUFFER_ARB, mParticlePos.getVbo());
     glVertexPointer(4, GL_FLOAT, 0, 0);
     glEnableClientState(GL_VERTEX_ARRAY);                
 
@@ -684,6 +682,8 @@ void SmokeRenderer::drawSlices()
     glClearColor(0.0, 0.0, 0.0, 0.0); 
     glClear(GL_COLOR_BUFFER_BIT);
 
+    drawSkybox(m_cubemapTex);
+
 	/*
 	// bind vbo as buffer texture
 	glBindTexture(GL_TEXTURE_BUFFER_EXT, mPosBufferTexture);
@@ -752,13 +752,13 @@ void SmokeRenderer::blurLightBuffer()
     glDisable(GL_DEPTH_TEST);
 
     for(int i=0; i<m_blurPasses; i++) {
-#if 0
+#if 1
         // single pass
         m_fbo->AttachTexture(GL_TEXTURE_2D, m_lightTexture[1 - m_srcLightTexture], GL_COLOR_ATTACHMENT0_EXT);
 
         m_blurProg->bindTexture("tex", m_lightTexture[m_srcLightTexture], GL_TEXTURE_2D, 0);
-		m_blurProg->setUniform1f("blurRadius", m_blurRadius);
-        //m_blurProg->setUniform1f("blurRadius", m_blurRadius*(i+1));
+		//m_blurProg->setUniform1f("blurRadius", m_blurRadius);
+        m_blurProg->setUniform1f("blurRadius", m_blurRadius*(i+1));
 		//m_blurProg->setUniform1f("blurRadius", m_blurRadius*powf(2.0f, (float) i));
 	    drawQuad();
 
@@ -931,12 +931,12 @@ void SmokeRenderer::renderSprites()
         glBlendFunc(GL_ONE_MINUS_DST_ALPHA, GL_ONE);
     } else {
         // back-to-front
-        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+        //glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
         //glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-        //glBlendFunc(GL_ONE, GL_ONE);
+        glBlendFunc(GL_ONE, GL_ONE);
     }
 
-#if 0
+#if 1
 	// post
     m_fbo->Bind();
     m_fbo->AttachTexture(GL_TEXTURE_2D, m_imageTex[0], GL_COLOR_ATTACHMENT0_EXT);
@@ -946,6 +946,9 @@ void SmokeRenderer::renderSprites()
     glClearColor(0.0, 0.0, 0.0, 0.0); 
     //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	glClear(GL_COLOR_BUFFER_BIT);
+
+    glDisable(GL_BLEND);
+    drawSkybox(m_cubemapTex);
 #endif
 
 	glColor4f(1.0, 1.0, 1.0, m_spriteAlpha);
@@ -953,13 +956,14 @@ void SmokeRenderer::renderSprites()
 	// sort
 	calcVectors();
 	depthSort();
+	//glBlendFunc(GL_SRC_ALPHA, GL_ONE);
 	drawPointSprites(m_particleProg, 0, mNumParticles, true, true);	
 #else
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+    glBlendFunc(GL_ONE, GL_ONE);
 	drawPointSprites(m_particleProg, 0, mNumParticles, true, false);
 #endif
 
-#if 0
+#if 1
     m_fbo->Disable();
 	compositeResult();
 #endif
@@ -1242,11 +1246,35 @@ void SmokeRenderer::debugVectors()
     drawVector(m_halfVector);
 }
 
+void SmokeRenderer::drawSkybox(GLuint tex)
+{
+    if (!m_cubemapTex)
+      return;
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, tex);
+    m_skyboxProg->enable();
+    m_skyboxProg->bindTexture("tex", tex, GL_TEXTURE_CUBE_MAP, 0);
+
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glColor3f(0.5f, 0.5f, 0.5f);
+    //glColor3f(1.0f, 1.0f, 1.0f);
+
+    glutSolidCube(2.0);
+
+    m_skyboxProg->disable();
+
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+}
+
 void SmokeRenderer::initParams()
 {
     m_params = new ParamListGL("render params");
 
-	m_params->AddParam(new Param<int>("displayed slices", m_numDisplayedSlices, 0, 256, 1, &m_numDisplayedSlices));
+	  m_params->AddParam(new Param<int>("slices", m_numSlices, 0, 256, 1, &m_numSlices));
+	  m_params->AddParam(new Param<int>("displayed slices", m_numDisplayedSlices, 0, 256, 1, &m_numDisplayedSlices));
 
     m_params->AddParam(new Param<float>("sprite size", mParticleRadius, 0.0f, 2.0f, 0.01f, &mParticleRadius));
     m_params->AddParam(new Param<float>("dust scale", m_ageScale, 0.0f, 50.0f, 0.1f, &m_ageScale));

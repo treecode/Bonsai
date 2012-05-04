@@ -24,10 +24,11 @@
 #include "SmokeRenderer.h"
 #include "vector_math.h"
 
+extern void displayTimers();    // For profiling counter display
+
 void drawWireBox(float3 boxMin, float3 boxMax) {
-  glLineWidth(1.0);
+#if 0
   glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);  
-  glColor3f(0.0, 1.0, 0.0);
   glBegin(GL_QUADS);
     // Front Face
     glNormal3f( 0.0, 0.0, 1.0);
@@ -67,6 +68,35 @@ void drawWireBox(float3 boxMin, float3 boxMax) {
     glTexCoord2f(0.0, 1.0); glVertex3f(boxMin.x, boxMax.y, boxMin.z);
   glEnd();
   glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);  
+#else
+  glBegin(GL_LINE_LOOP);
+    glVertex3f(boxMin.x, boxMin.y, boxMin.z);
+    glVertex3f(boxMax.x, boxMin.y, boxMin.z);
+    glVertex3f(boxMax.x, boxMax.y, boxMin.z);
+    glVertex3f(boxMin.x, boxMax.y, boxMin.z);
+  glEnd();
+
+  glBegin(GL_LINE_LOOP);
+    glVertex3f(boxMin.x, boxMin.y, boxMax.z);
+    glVertex3f(boxMax.x, boxMin.y, boxMax.z);
+    glVertex3f(boxMax.x, boxMax.y, boxMax.z);
+    glVertex3f(boxMin.x, boxMax.y, boxMax.z);
+  glEnd();
+
+  glBegin(GL_LINES);
+    glVertex3f(boxMin.x, boxMin.y, boxMin.z);
+    glVertex3f(boxMin.x, boxMin.y, boxMin.z);
+
+    glVertex3f(boxMax.x, boxMin.y, boxMin.z);
+    glVertex3f(boxMax.x, boxMin.y, boxMax.z);
+
+    glVertex3f(boxMax.x, boxMax.y, boxMin.z);
+    glVertex3f(boxMax.x, boxMax.y, boxMax.z);
+
+    glVertex3f(boxMin.x, boxMax.y, boxMin.z);
+    glVertex3f(boxMin.x, boxMax.y, boxMax.z);
+  glEnd();
+#endif
 }
 
 class BonsaiDemo
@@ -76,16 +106,17 @@ public:
     : m_tree(tree), m_idata(idata), iterationsRemaining(true),
       m_renderer(tree->localTree.n),
       //m_displayMode(ParticleRenderer::PARTICLE_SPRITES_COLOR),
-	    m_displayMode(SmokeRenderer::VOLUMETRIC),
-      m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.1f),
+	    m_displayMode(SmokeRenderer::SPRITES),
+      m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.2f),
       m_paused(false),
       m_renderingEnabled(true),
   	  m_displayBoxes(false), 
-	    m_displaySliders(false),
-	    m_enableGlow(true),
-	    m_displayLightBuffer(false),
+      m_displaySliders(false),
+      m_enableGlow(true),
+      m_displayLightBuffer(false),
       m_octreeDisplayLevel(3),
-	    m_fov(60.0f)
+      m_flyMode(false),
+	  m_fov(60.0f)
   {
     m_windowDims = make_int2(1024, 768);
     m_cameraTrans = make_float3(0, -2, -100);
@@ -157,30 +188,42 @@ public:
     {
       getBodyData();
 
+      moveCamera();
+      m_cameraTransLag += (m_cameraTrans - m_cameraTransLag) * m_inertia;
+      m_cameraRotLag += (m_cameraRot - m_cameraRotLag) * m_inertia;
+
       // view transform
       {
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
 
-        m_cameraTransLag += (m_cameraTrans - m_cameraTransLag) * m_inertia;
-        m_cameraRotLag += (m_cameraRot - m_cameraRotLag) * m_inertia;
-      
-        glTranslatef(m_cameraTransLag.x, m_cameraTransLag.y, m_cameraTransLag.z);
-        glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
-        glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
-      }
+	    if (m_flyMode) {
+		  glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
+		  glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
+          glRotatef(90.0f, 1.0f, 0.0f, 0.0f); // rotate galaxies into XZ plane
+		  glTranslatef(m_cameraTransLag.x, m_cameraTransLag.y, m_cameraTransLag.z);
+	    } else {
+		  // orbit viwer - rotate around centre, then translate
+          glTranslatef(m_cameraTransLag.x, m_cameraTransLag.y, m_cameraTransLag.z);
+          glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
+          glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
+          glRotatef(90.0f, 1.0f, 0.0f, 0.0f); // rotate galaxies into XZ plane
+        }
 
-      //m_renderer.display(m_displayMode);
+        glGetFloatv(GL_MODELVIEW_MATRIX, m_modelView);
+
+        //m_renderer.display(m_displayMode);
 	    m_renderer.render();
 
-      if (m_displayBoxes) {
-        glEnable(GL_DEPTH_TEST);
-        displayOctree();  
-      }
+        if (m_displayBoxes) {
+          glEnable(GL_DEPTH_TEST);
+          displayOctree();  
+        }
 
-	    if (m_displaySliders) {
-		    m_renderer.getParams()->Render(0, 0);
-	    }
+        if (m_displaySliders) {
+	        m_renderer.getParams()->Render(0, 0);
+        }
+      }
     }
   }
 
@@ -215,38 +258,177 @@ public:
 
   void motion(int x, int y)
   {
+    const float translateSpeed = 0.1f;
+    const float zoomSpeed = 0.005f;
+    const float rotateSpeed = 0.2f;
+
     float dx = (float)(x - m_ox);
     float dy = (float)(y - m_oy);
 
-	  if (m_displaySliders) {
-	    if (m_renderer.getParams()->Motion(x, y))
-		    return;
-	  }
+    if (m_displaySliders) {
+      if (m_renderer.getParams()->Motion(x, y))
+        return;
+    }
 
     if (m_buttonState == 3) {
       // left+middle = zoom
-      m_cameraTrans.z += (dy / 100.0f) * 0.5f * fabs(m_cameraTrans.z);
+      float3 v = make_float3(0.0f, 0.0f, dy*zoomSpeed*fabs(m_cameraTrans.z));
+      if (m_flyMode) {
+		v = ixform(v, m_modelView);
+      }
+      m_cameraTrans += v;
     }
     else if (m_buttonState & 2) {
       // middle = translate
-      m_cameraTrans.x += dx / 10.0f;
-      m_cameraTrans.y -= dy / 10.0f;
+      float3 v = make_float3(dx * translateSpeed, -dy*translateSpeed, 0.0f);
+      if (m_flyMode) {
+		v = ixform(v, m_modelView);
+      }
+      m_cameraTrans += v;
     }
     else if (m_buttonState & 1) {
       // left = rotate
-      m_cameraRot.x += dy / 5.0f;
-      m_cameraRot.y += dx / 5.0f;
+      m_cameraRot.x += dy * rotateSpeed;
+      m_cameraRot.y += dx * rotateSpeed;
     }
 
     m_ox = x;
     m_oy = y;
   }
 
+  void moveCamera()
+  {
+    if (!m_flyMode)
+      return;
+
+    const float flySpeed = 1.0f;
+    //float flySpeed = (m_keyModifiers & GLUT_ACTIVE_SHIFT) ? 4.0f : 1.0f;
+
+	// Z
+    if (m_keyDown['w']) {
+	  // foward
+	  m_cameraTrans.x += m_modelView[2] * flySpeed;
+	  m_cameraTrans.y += m_modelView[6] * flySpeed;
+	  m_cameraTrans.z += m_modelView[10] * flySpeed;
+    }
+    if (m_keyDown['s']) {
+	  // back
+	  m_cameraTrans.x -= m_modelView[2] * flySpeed;
+	  m_cameraTrans.y -= m_modelView[6] * flySpeed;
+	  m_cameraTrans.z -= m_modelView[10] * flySpeed;
+    }
+	// X
+    if (m_keyDown['a']) {
+      // left
+	  m_cameraTrans.x += m_modelView[0] * flySpeed;
+	  m_cameraTrans.y += m_modelView[4] * flySpeed;
+	  m_cameraTrans.z += m_modelView[8] * flySpeed;
+    }
+    if (m_keyDown['d']) {
+	  // right
+	  m_cameraTrans.x -= m_modelView[0] * flySpeed;
+	  m_cameraTrans.y -= m_modelView[4] * flySpeed;
+	  m_cameraTrans.z -= m_modelView[8] * flySpeed;
+    }
+	// Y
+    if (m_keyDown['e']) {
+      // up
+	  m_cameraTrans.x += m_modelView[1] * flySpeed;
+	  m_cameraTrans.y += m_modelView[5] * flySpeed;
+	  m_cameraTrans.z += m_modelView[9] * flySpeed;
+	}
+    if (m_keyDown['q']) {
+      // down
+	  m_cameraTrans.x -= m_modelView[1] * flySpeed;
+	  m_cameraTrans.y -= m_modelView[5] * flySpeed;
+	  m_cameraTrans.z -= m_modelView[9] * flySpeed;
+    }
+  }
+
+  // transform vector by inverse of matrix (assuming orthonormal)
+  float3 ixform(float3 &v, float *m)
+  {
+    float3 r;
+    r.x = v.x*m[0] + v.y*m[1] + v.z*m[2];
+    r.y = v.x*m[4] + v.y*m[5] + v.z*m[6];
+    r.z = v.x*m[8] + v.y*m[9] + v.z*m[10];
+    return r;
+  }
+
+  void key(unsigned char key)
+  {
+    m_keyModifiers = glutGetModifiers();
+
+    switch (key) {
+    case ' ':
+      togglePause();
+      break;
+    case 27: // escape
+    //case 'q':
+    //case 'Q':
+      displayTimers();
+      exit(0);
+      break;
+    case '`':
+       toggleSliders();
+       break;
+    case 'p':
+    case 'P':
+      cycleDisplayMode();
+      break;
+    case 'b':
+    case 'B':
+      toggleBoxes();
+      break;
+    case 'r':
+    case 'R':
+      toggleRendering();
+      break;
+    case 'l':
+    case 'L':
+      toggleLightBuffer();
+      break;
+    case 'c':
+    case 'C':
+      fitCamera();
+      break;
+    case ',':
+    case '<':
+      incrementOctreeDisplayLevel(-1);
+      break;
+    case '.':
+    case '>':
+      incrementOctreeDisplayLevel(+1);
+      break;
+    case 'h':
+  	  toggleSliders();
+      break;
+    case 'g':
+      toggleGlow();
+      break;
+    case 'f':
+      m_flyMode = !m_flyMode;
+      if (m_flyMode) {
+        m_cameraTrans = m_cameraTransLag = ixform(m_cameraTrans, m_modelView);
+      } else {
+        fitCamera();
+      }
+      break;
+    }
+
+    m_keyDown[key] = true;
+  }
+
+  void keyUp(unsigned char key) {
+    m_keyDown[key] = false;
+    m_keyModifiers = 0;
+  }
+
   void reshape(int w, int h) {
     m_windowDims = make_int2(w, h);
 
-	  m_renderer.setFOV(m_fov);
-	  m_renderer.setWindowSize(m_windowDims.x, m_windowDims.y);
+	m_renderer.setFOV(m_fov);
+	m_renderer.setWindowSize(m_windowDims.x, m_windowDims.y);
 
     fitCamera();
     glMatrixMode(GL_MODELVIEW);
@@ -264,8 +446,8 @@ public:
 
     float distanceToCenter = radius / sinf(0.5f * fovRads);
     
-    m_cameraTrans = center + make_float3(0, 0, - distanceToCenter);
-	  m_cameraTransLag = m_cameraTrans;
+    m_cameraTrans = center + make_float3(0, 0, -distanceToCenter*0.2f);
+	m_cameraTransLag = m_cameraTrans;
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
@@ -280,26 +462,26 @@ public:
   float  frand() { return rand() / (float) RAND_MAX; }
   float4 randColor(float scale) { return make_float4(frand()*scale, frand()*scale, frand()*scale, 0.0f); }
 
-#if 0
+#if 1
  void getBodyData() {
-    m_tree->localTree.bodies_pos.d2h();
+    //m_tree->localTree.bodies_pos.d2h();
     m_tree->localTree.bodies_ids.d2h();
     //m_tree->localTree.bodies_vel.d2h();
 
     int n = m_tree->localTree.n;
 
-    //float4 starColor = make_float4(1.0f, 0.75f, 0.1f, 1.0f);	// yellowish
-	  float4 starColor = make_float4(1.0f, 1.0f, 1.0f, 1.0f);		// white
-	  float4 starColor2 = make_float4(1.0f, 0.1f, 0.5f, 1.0f) * make_float4(20.0f, 20.0f, 20.0f, 1.0f);		// purplish
+    float4 starColor = make_float4(1.0f, 1.0f, 0.5f, 1.0f);	// yellowish
+    //float4 starColor = make_float4(1.0f, 1.0f, 1.0f, 1.0f);		// white
+    float4 starColor2 = make_float4(1.0f, 0.2f, 0.5f, 1.0f) * make_float4(100.0f, 100.0f, 100.0f, 1.0f);		// purplish
 
-	  float overbright = 1.0f;
-	  starColor *= make_float4(overbright, overbright, overbright, 1.0f);
+    float overbright = 1.0f;
+    starColor *= make_float4(overbright, overbright, overbright, 1.0f);
 
-	  float4 dustColor = make_float4(0.0f, 0.1f, 0.25f, 0.0f);	// blue
-	  //float4 dustColor = 	make_float4(0.1f, 0.1f, 0.1f, 0.0f);	// grey
+    float4 dustColor = make_float4(0.0f, 0.0f, 0.1f, 0.0f);	// blue
+    //float4 dustColor = make_float4(0.1f, 0.1f, 0.1f, 0.0f);	// grey
 
     //float4 *colors = new float4[n];
-	  float4 *colors = m_particleColors;
+    float4 *colors = m_particleColors;
 
     for (int i = 0; i < n; i++) {
       int id = m_tree->localTree.bodies_ids[i];
@@ -314,11 +496,11 @@ public:
 	      // dark matter
 //         colors[i] = starColor + randColor(0.1f);
 //         colors[i] = starColor; // * powf(r, 2.0f);
-		    colors[i] = (frand() < 0.99f) ? starColor : starColor2;
+		  colors[i] = (frand() < 0.999f) ? starColor * r : starColor2;
+        //colors[i] = starColor;
 	    } else {
 		    // stars
-		    //colors[i] = dustColor * make_float4(r, r, r, 1.0f);
-		    colors[i] = dustColor;
+		    colors[i] = dustColor * make_float4(r, r, r, 1.0f);
 	    }
 #else
 	    // test sorting
@@ -328,9 +510,10 @@ public:
 
     //m_renderer.setPositions((float*)&m_tree->localTree.bodies_pos[0], n);
     //m_renderer.setColors((float*)colors, n);
-	  m_renderer.setNumParticles(n);
-	  m_renderer.setPositions((float*)&m_tree->localTree.bodies_pos[0]);
-	  m_renderer.setColors((float*)colors);
+    m_renderer.setNumParticles(n);
+    //m_renderer.setPositions((float*)&m_tree->localTree.bodies_pos[0]);
+    m_renderer.setPositionsDevice((float*) m_tree->localTree.bodies_pos.d());
+    m_renderer.setColors((float*)colors);
 
     //delete [] colors;
   }//end getBodyData
@@ -354,14 +537,14 @@ public:
       memcpy (&combinedIDs      [m_tree->localTree.n], &m_tree->localTree.dust_ids[0],   sizeof(int)   *m_tree->localTree.n_dust);      
     #endif    
     
-    //float4 starColor = make_float4(1.0f, 0.75f, 0.1f, 1.0f);  // yellowish
-    float4 starColor = make_float4(1.0f, 1.0f, 1.0f, 1.0f);               // white
-    float4 starColor2 = make_float4(1.0f, 0.1f, 0.5f, 1.0f) * make_float4(20.0f, 20.0f, 20.0f, 1.0f);             // purplish
+    float4 starColor = make_float4(1.0f, 1.0f, 0.5f, 1.0f);  // yellowish
+    //float4 starColor = make_float4(1.0f, 1.0f, 0.0f, 1.0f);               // white
+    float4 starColor2 = make_float4(1.0f, 0.2f, 0.5f, 1.0f) * make_float4(100.0f, 100.0f, 100.0f, 1.0f);             // purplish
 
     float overbright = 1.0f;
     starColor *= make_float4(overbright, overbright, overbright, 1.0f);
 
-    float4 dustColor = make_float4(0.0f, 0.1f, 0.25f, 0.0f);      // blue
+    float4 dustColor = make_float4(0.0f, 0.0f, 0.1f, 0.0f);      // blue
     //float4 dustColor =  make_float4(0.1f, 0.1f, 0.1f, 0.0f);    // grey
 
     float4 *colors = m_particleColors;
@@ -417,6 +600,14 @@ public:
     float3 boxMin = make_float3(m_tree->rMinLocalTree);
     float3 boxMax = make_float3(m_tree->rMaxLocalTree);
 
+    glLineWidth(1.0);
+    //glColor3f(0.0, 1.0, 0.0);
+    glColor3f(0.0, 0.5, 0.0);
+    glEnable(GL_LINE_SMOOTH);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+    glEnable(GL_BLEND);
+    glDisable(GL_DEPTH_TEST);
+
     drawWireBox(boxMin, boxMax);
       
     m_tree->localTree.boxCenterInfo.d2h();
@@ -437,6 +628,9 @@ public:
       boxMax.z = m_tree->localTree.boxCenterInfo[i].z+m_tree->localTree.boxSizeInfo[i].z;
       drawWireBox(boxMin, boxMax);
     }
+
+    glDisable(GL_BLEND);
+    glDisable(GL_LINE_SMOOTH);
   }
 
   octree *m_tree;
@@ -463,6 +657,7 @@ public:
   float3 m_cameraRot;     
   float3 m_cameraTransLag;
   float3 m_cameraRotLag;
+  float m_modelView[16];
   const float m_inertia;
 
   bool m_paused;
@@ -471,6 +666,10 @@ public:
   bool m_enableGlow;
   bool m_displayLightBuffer;
   bool m_renderingEnabled;
+  bool m_flyMode;
+
+  bool m_keyDown[256];
+  int m_keyModifiers;
 };
 
 BonsaiDemo *theDemo = NULL;
@@ -509,59 +708,15 @@ void motion(int x, int y)
 }
 
 // commented out to remove unused parameter warnings in Linux
-extern void displayTimers();    // For profiling counter display
 void key(unsigned char key, int /*x*/, int /*y*/)
 {
-  switch (key) {
-  case ' ':
-    theDemo->togglePause();
-    break;
-  case 27: // escape
-  case 'q':
-  case 'Q':
-    displayTimers();
-    exit(0);
-    break;
-  case '`':
-     theDemo->toggleSliders();
-     break;
-  case 'p':
-  case 'P':
-    theDemo->cycleDisplayMode();
-    break;
-  case 'b':
-  case 'B':
-    theDemo->toggleBoxes();
-    break;
-  case 'd':
-  case 'D':
-    theDemo->toggleRendering();
-    break;
-  case 'l':
-  case 'L':
-    theDemo->toggleLightBuffer();
-    break;
-  case 'f':
-  case 'F':
-    theDemo->fitCamera();
-    break;
-  case ',':
-  case '<':
-    theDemo->incrementOctreeDisplayLevel(-1);
-    break;
-  case '.':
-  case '>':
-    theDemo->incrementOctreeDisplayLevel(+1);
-    break;
-  case 'h':
-  	theDemo->toggleSliders();
-	  break;
-  case 'g':
-	  theDemo->toggleGlow();
-	  break;
-  }
-
+  theDemo->key(key);
   glutPostRedisplay();
+}
+
+void keyUp(unsigned char key, int /*x*/, int /*y*/)
+{
+  theDemo->keyUp(key);
 }
 
 void special(int key, int x, int y)
@@ -616,6 +771,7 @@ void initGL(int argc, char** argv)
   glutMouseFunc(mouse);
   glutMotionFunc(motion);
   glutKeyboardFunc(key);
+  glutKeyboardUpFunc(keyUp);
   glutSpecialFunc(special);
   glutIdleFunc(idle);
 

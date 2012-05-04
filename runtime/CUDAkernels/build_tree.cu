@@ -717,7 +717,7 @@ extern "C" __global__ void store_dust_groups(int    n_groups,
 
   if(tid == 0)
   {
-     group_list[bid] = (uint2){start,end+1};
+     group_list[bid] = (uint2) make_uint2(start,end+1);
      activeDustGroups[bid] = bid;
   }
 }
