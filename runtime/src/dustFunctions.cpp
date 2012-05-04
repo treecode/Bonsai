@@ -80,8 +80,8 @@ void octree::sort_dust(tree_structure &tree)
   }
   
   
-  printf("Found dust boundarys, number of particles %d : \n", tree.n_dust);
-  printf("min: %f\t%f\t%f\tmax: %f\t%f\t%f \n", r_min.x,r_min.y,r_min.z,r_max.x,r_max.y,r_max.z);
+  LOG("Found dust boundarys, number of particles %d : \n", tree.n_dust);
+  LOG("min: %f\t%f\t%f\tmax: %f\t%f\t%f \n", r_min.x,r_min.y,r_min.z,r_max.x,r_max.y,r_max.z);
 
   //Compute the boundarys of the dust, needed to get the PH key
   real size     = 1.001f*std::max(r_max.z - r_min.z,
@@ -231,8 +231,7 @@ void octree::make_dust_groups(tree_structure &tree)
                                     tree.generalBuffer1.get_devMem(),
                                     &tree.generalBuffer1[n_bodies*2], n_bodies*2,
                                     n_bodies*2, getAllignmentOffset(n_bodies*2));  
-  int prevOffset = getAllignmentOffset(n_bodies*2);  
-  
+   
   // set devMemCountsx to 1 because it is used to early out when it hits zero
   this->devMemCountsx[0] = 1;
   this->devMemCountsx.h2d(1);  
@@ -266,7 +265,7 @@ void octree::make_dust_groups(tree_structure &tree)
   int validCount;
   gpuCompact(devContext, validList, compactList, n_bodies*2, &validCount);
   tree.n_dust_groups = validCount / 2;
-  fprintf(stderr, "Ngroups_dust: %d \n", tree.n_dust_groups);
+  LOGF(stderr, "Ngroups_dust: %d \n", tree.n_dust_groups);
   
   this->allocateDustGroupBuffers(tree);
   

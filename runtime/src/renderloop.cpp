@@ -99,7 +99,15 @@ public:
     //m_renderer.setPointSize(0.00001f);
     tree->iterate_setup(m_idata);
 
-	m_particleColors = new float4[tree->localTree.n];
+    #if 0
+	m_particleColors  = new float4[tree->localTree.n];
+        combinedPositions = new float4[tree->localTree.n];
+        combinedIDs       = new int[tree->localTree.n];
+    #else          
+        m_particleColors  = new float4[tree->localTree.n + tree->localTree.n_dust];
+        combinedPositions = new float4[tree->localTree.n + tree->localTree.n_dust];
+        combinedIDs       = new int   [tree->localTree.n + tree->localTree.n_dust];
+    #endif        
 
 	m_renderer.setFOV(m_fov);
 	m_renderer.setWindowSize(m_windowDims.x, m_windowDims.y);
@@ -109,7 +117,9 @@ public:
   ~BonsaiDemo() {
     m_tree->iterate_teardown(m_idata);
     delete m_tree;
-	delete [] m_particleColors;
+    delete [] m_particleColors;
+    delete [] combinedPositions;
+    delete [] combinedIDs;
   }
 
   void cycleDisplayMode() {
@@ -270,6 +280,7 @@ public:
   float  frand() { return rand() / (float) RAND_MAX; }
   float4 randColor(float scale) { return make_float4(frand()*scale, frand()*scale, frand()*scale, 0.0f); }
 
+#if 0
  void getBodyData() {
     m_tree->localTree.bodies_pos.d2h();
     m_tree->localTree.bodies_ids.d2h();
@@ -322,7 +333,84 @@ public:
 	  m_renderer.setColors((float*)colors);
 
     //delete [] colors;
+  }//end getBodyData
+#else
+ void getBodyData() {
+    m_tree->localTree.bodies_pos.d2h();
+    m_tree->localTree.bodies_ids.d2h();
+    int n = m_tree->localTree.n;
+    
+    #ifdef USE_DUST
+      m_tree->localTree.dust_pos.d2h();
+      m_tree->localTree.dust_ids.d2h();  
+      n    += m_tree->localTree.n_dust;      
+    #endif    
+   
+    memcpy (combinedPositions, &m_tree->localTree.bodies_pos[0], sizeof(float4)*m_tree->localTree.n);
+    memcpy (combinedIDs,       &m_tree->localTree.bodies_ids[0], sizeof(int)   *m_tree->localTree.n);
+     
+    #ifdef USE_DUST     
+      memcpy (&combinedPositions[m_tree->localTree.n], &m_tree->localTree.dust_pos[0],   sizeof(float4)*m_tree->localTree.n_dust);    
+      memcpy (&combinedIDs      [m_tree->localTree.n], &m_tree->localTree.dust_ids[0],   sizeof(int)   *m_tree->localTree.n_dust);      
+    #endif    
+    
+    //float4 starColor = make_float4(1.0f, 0.75f, 0.1f, 1.0f);  // yellowish
+    float4 starColor = make_float4(1.0f, 1.0f, 1.0f, 1.0f);               // white
+    float4 starColor2 = make_float4(1.0f, 0.1f, 0.5f, 1.0f) * make_float4(20.0f, 20.0f, 20.0f, 1.0f);             // purplish
+
+    float overbright = 1.0f;
+    starColor *= make_float4(overbright, overbright, overbright, 1.0f);
+
+    float4 dustColor = make_float4(0.0f, 0.1f, 0.25f, 0.0f);      // blue
+    //float4 dustColor =  make_float4(0.1f, 0.1f, 0.1f, 0.0f);    // grey
+
+    float4 *colors = m_particleColors;
+
+    for (int i = 0; i < n; i++)
+    {
+      int id = combinedIDs[i];
+            //printf("%d: id %d, mass: %f\n", i, id, m_tree->localTree.bodies_pos[i].w);
+            srand(id*1783);
+#if 1
+            float r = frand();
+            
+      if (id >= 0 && id < 50000000)     //Disk
+      {
+        colors[i] = make_float4(1, 0, 0, 1);        
+      } 
+      else if (id >= 50000000 && id < 100000000) //Dust
+      {
+        colors[i] = starColor;
+
+      } 
+      else if (id >= 100000000 && id < 200000000) //Bulge
+      {
+          colors[i] = (frand() < 0.99f) ? starColor : starColor2;          
+      } 
+      else //>= 200000000, Dark matter
+      {
+         colors[i] = dustColor;
+      }            
+      
+#else
+            // test sorting
+            colors[i] = make_float4(frand(), frand(), frand(), 1.0f);
+#endif
+    }
+
+    //m_renderer.setPositions((float*)&m_tree->localTree.bodies_pos[0], n);
+    //m_renderer.setColors((float*)colors, n);
+    m_renderer.setNumParticles(n);
+    
+//     m_renderer.setPositions((float*)&m_tree->localTree.bodies_pos[0]);
+    m_renderer.setPositions((float*)&combinedPositions[0]);    
+    
+    m_renderer.setColors((float*)colors);
+
+    //delete [] colors;
   }
+#endif 
+
 
 
   void displayOctree() {
@@ -362,6 +450,8 @@ public:
   int m_octreeDisplayLevel;
 
   float4 *m_particleColors;
+  float4 *combinedPositions;
+  int    *combinedIDs;
 
   // view params
   int m_ox; // = 0

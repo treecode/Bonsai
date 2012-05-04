@@ -771,6 +771,10 @@ public:
     prevDurStep = -1;   //Set it to negative so we know its the first step
 
     my_dev::base_mem::printMemUsage();   
+    
+    //Init at zero so we can check for n_dust later on
+    localTree.n      = 0;
+    localTree.n_dust = 0;
 
 #ifdef WIN32
     // initialize windows timer
