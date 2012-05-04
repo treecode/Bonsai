@@ -828,6 +828,8 @@ __launch_bounds__(NTHREAD)
 
     pos_i[0] = group_body_pos[body_i[0]];
     pos_i[1] = group_body_pos[body_i[1]];
+//     pos_i[0] = body_pos[body_i[0]];
+//     pos_i[1] = body_pos[body_i[1]];
     acc_i[0] = acc_i[1] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
 
     int ngb_i;

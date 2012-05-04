@@ -270,7 +270,8 @@ void octree::make_dust_groups(tree_structure &tree)
   store_dust_groups.set_arg<int>(0,     &tree.n_dust_groups);  
   store_dust_groups.set_arg<cl_mem>(1,  compactList.p());    
   store_dust_groups.set_arg<cl_mem>(2,  tree.dust2group_list.p());     
-  store_dust_groups.set_arg<cl_mem>(3,  tree.dust_group_list.p());     
+  store_dust_groups.set_arg<cl_mem>(3,  tree.dust_group_list.p()); 
+  store_dust_groups.set_arg<cl_mem>(4,  tree.activeDustGrouplist.p());  
   store_dust_groups.setWork(-1, NCRIT,  tree.n_dust_groups);  
   store_dust_groups.execute();  
   
@@ -279,8 +280,7 @@ void octree::make_dust_groups(tree_structure &tree)
 
 void octree::setDustGroupProperties(tree_structure &tree)
 {
-  fprintf(stderr, "testA");
-    //Set the group properties, note that it is not based on the nodes anymore
+   //Set the group properties, note that it is not based on the nodes anymore
   //but on self created groups based on particle order setPHGroupData    
   copyNodeDataToGroupData.set_arg<int>(0,    &tree.n_dust_groups);
   copyNodeDataToGroupData.set_arg<int>(1,    &tree.n_dust);
@@ -288,9 +288,10 @@ void octree::setDustGroupProperties(tree_structure &tree)
   copyNodeDataToGroupData.set_arg<cl_mem>(3, tree.dust_group_list.p());
   copyNodeDataToGroupData.set_arg<cl_mem>(4, tree.dust_groupCenterInfo.p());  
   copyNodeDataToGroupData.set_arg<cl_mem>(5, tree.dust_groupSizeInfo.p());
+ 
   copyNodeDataToGroupData.setWork(-1, NCRIT, tree.n_dust_groups);    
   copyNodeDataToGroupData.execute();
-  fprintf(stderr, "testB");
+
 /*
   tree.dust_groupCenterInfo.d2h();  
   tree.dust_groupSizeInfo.d2h();
@@ -415,7 +416,7 @@ void octree::approximate_dust(tree_structure &tree)
 
   //Reset the active particles
   tree.active_dust_list.zeroMem();
-  
+
   //Set the kernel parameters, many!
   approxGrav.set_arg<int>(0,     &tree.n_dust_groups);
   approxGrav.set_arg<int>(1,     &tree.n_dust);

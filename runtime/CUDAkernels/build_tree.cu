@@ -699,7 +699,8 @@ extern "C" __global__ void define_dust_groups(int    n_particles,
 extern "C" __global__ void store_dust_groups(int    n_groups,
                                             uint  *validList,
                                             uint  *body2group_list,
-                                            uint2 *group_list)
+                                            uint2 *group_list,
+                                            uint  *activeDustGroups)
 {
   uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   uint tid = threadIdx.x;
@@ -718,6 +719,7 @@ extern "C" __global__ void store_dust_groups(int    n_groups,
   if(tid == 0)
   {
      group_list[bid] = (uint2){start,end+1};
+     activeDustGroups[bid] = bid;
   }
 }
 
