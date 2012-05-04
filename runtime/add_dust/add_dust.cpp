@@ -224,8 +224,8 @@ int main(int argc, char **argv)
 
   /** Generating dust ring **/
 
-  const int Ndust = 30000;
-#if 1
+  const int Ndust = 60000;
+#if 0
   const DustRing ring(Ndust, Ro, D, H, VelCurve, nrScale, nzScale);
 #else
   const DustRing ring(Ndust, Ro, D, H, VelCurve, nrScale, nzScale, DustRing::TORUS);
