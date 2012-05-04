@@ -628,5 +628,174 @@ extern "C" __global__ void store_group_list(int    n_particles,
   }
 }
 
+//////////// Functions specific for dust //////////////////
 
+extern "C" __global__ void define_dust_groups(int    n_particles,
+					      real4  *dust_pos,
+                                              uint  *validList)
+{
+  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
+  uint tid = threadIdx.x;
+  uint idx = bid * blockDim.x + tid;
+
+
+  //Note that we do not include the final particle
+  //Since there is no reason to check it
+  if (idx >= n_particles) return;
+
+ 
+  //Multiples of the preferred group size are _always_ valid
+  int validStart = ((idx     % NCRIT) == 0);
+  int validEnd   = (((idx+1) % NCRIT) == 0);
+
+
+  //Get the current 
+  float4 curPos, nexPos, prevPos;
+
+  curPos  =  dust_pos[idx];
+
+  //Have to check the first and last to prevent out of bound access
+  if(idx+1 == n_particles)
+    nexPos  =  curPos;
+  else
+    nexPos = dust_pos[idx+1];
+
+  if(idx == 0)
+    prevPos = curPos;
+  else
+    prevPos =  dust_pos[idx-1];
+
+  //Compute geometrical distance
+  float dsPlus = ((curPos.x-nexPos.x)*(curPos.x-nexPos.x)) + 
+                 ((curPos.y-nexPos.y)*(curPos.y-nexPos.y)) + 
+                 ((curPos.z-nexPos.z)*(curPos.z-nexPos.z));
+
+  float dsMin = ((curPos.x-prevPos.x)*(curPos.x-prevPos.x)) + 
+                ((curPos.y-prevPos.y)*(curPos.y-prevPos.y)) + 
+                ((curPos.z-prevPos.z)*(curPos.z-prevPos.z));
+
+
+  float DIST = 100;
+  //The extra possible split(s) if the distance between two particles is too large
+  if(dsPlus > DIST) validEnd     = 1;
+  if(dsMin  > DIST) validStart   = 1;
+
+
+  //Last particle is always the end, n_particles dont have to be a multiple of NCRIT
+  //so this is required
+  if(idx+1 == n_particles) validEnd = 1;
+
+  //Set valid
+  if(validStart)
+    validList[2*idx + 0] = (idx)   | (uint)(validStart << 31);
+  if(validEnd)
+    validList[2*idx + 1] = (idx) | (uint)(validEnd   << 31);    
+}
+
+//JB: This one is slightly different from the store_group_list
+//since  in my infinite wisdom I decided to make the comparisons
+//slightly different when making the new define_dust_groups
+extern "C" __global__ void store_dust_groups(int    n_groups,
+                                            uint  *validList,
+                                            uint  *body2group_list,
+                                            uint2 *group_list,
+                                            uint  *activeDustGroups)
+{
+  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
+  uint tid = threadIdx.x;
+//   uint idx = bid * blockDim.x + tid;
+  
+  if(bid >= n_groups) return;
+
+  int start = validList[2*bid];
+  int end   = validList[2*bid+1];
+
+  if((start + tid) <= end)
+  {
+     body2group_list[start + tid] = bid;
+  }
+
+  if(tid == 0)
+  {
+     group_list[bid] = (uint2) make_uint2(start,end+1);
+     activeDustGroups[bid] = bid;
+  }
+}
+
+//This function stores the predicted position and velocity
+//in the original array. This is used since it reduces
+//memory storage and memory reorders after sorting 
+//It is slightly less accurate and therefore not used 
+//for the real bodies. In the correct function we compute back
+extern "C" __global__ void predict_dust_particles(const int n_bodies,
+                                                  float tc,
+                                                  float tp,
+                                                  real4 *pos,
+                                                  real4 *vel,
+                                                  real4 *acc,
+                                                  uint  *body2grouplist,
+                                                  uint  *valid_list){                                          
+  const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
+  const uint tid = threadIdx.x;
+  const uint idx = bid * blockDim.x + tid;
+
+  if (idx >= n_bodies) return;
+
+  float4 p = pos [idx];
+  float4 v = vel [idx];
+  float4 a = acc [idx];
+
+  float dt_cb  = tc - tp;
+
+  p.x += v.x*dt_cb + a.x*dt_cb*dt_cb*0.5f;
+  p.y += v.y*dt_cb + a.y*dt_cb*dt_cb*0.5f;
+  p.z += v.z*dt_cb + a.z*dt_cb*dt_cb*0.5f;
+  
+  v.x += a.x*dt_cb;
+  v.y += a.y*dt_cb;
+  v.z += a.z*dt_cb;
+
+  pos[idx] = p;
+  vel[idx] = v;
+
+  //This is needed to retain compatability with the original 
+  //approximate gravity function
+  int grpID = body2grouplist[idx];
+  valid_list[grpID] = grpID; 
+}
+
+
+
+extern "C" __global__ void correct_dust_particles(const int n_bodies,
+                                                  float dt_cb,
+                                                  uint   *active_list,
+                                                  real4 *vel,
+                                                  real4 *acc0,
+                                                  real4 *acc1) {
+  const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
+  const int tid =  threadIdx.y * blockDim.x + threadIdx.x;
+  const int dim =  blockDim.x * blockDim.y;
+
+  int idx = bid * dim + tid;
+  if (idx >= n_bodies) return;
+
+  //Check if particle is set to active during approx grav
+  #ifdef DO_BLOCK_TIMESTEP
+    if (active_list[idx] != 1) return;
+  #endif
+
+  float4 a0 = acc0[idx];
+  float4 a1 = acc1[idx];
+  float4  v = vel[idx];
+
+  //Correct the velocity
+  dt_cb *= 0.5f;
+  v.x += (a1.x - a0.x)*dt_cb;
+  v.y += (a1.y - a0.y)*dt_cb;
+  v.z += (a1.z - a0.z)*dt_cb;
+
+  //Store the corrected velocity, accelaration and the new time step info
+  vel     [idx] = v;
+  acc0    [idx] = a1;
+}
 

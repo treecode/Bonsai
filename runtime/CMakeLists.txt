@@ -61,6 +61,7 @@ set (CCFILES
   src/octree.cpp
   src/parallel.cpp
   src/sort_bodies_gpu.cpp
+  src/dustFunctions.cpp
   )
 
 set (HFILES

@@ -402,11 +402,11 @@ void octree::build (tree_structure &tree) {
   
    
   //Have to copy it back to host since we need it in compute props
-  printf("Finished level list \n");
+  LOG("Finished level list \n");
   tree.node_level_list.d2h();
   for(int i=0; i < (level); i++)
   {
-    printf("node_level_list: %d \t%d\n", i, tree.node_level_list[i]);
+    LOG("node_level_list: %d \t%d\n", i, tree.node_level_list[i]);
   }
   
   gpuCompact(devContext, validList, compactList, tree.n*2, &validCount);  
@@ -440,7 +440,7 @@ void octree::build (tree_structure &tree) {
 
 
   LOG("Tree built complete!\n");
-
+  
   /*************************/
 
 }

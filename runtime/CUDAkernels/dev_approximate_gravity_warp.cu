@@ -803,6 +803,7 @@ __launch_bounds__(NTHREAD)
       real4  *body_pos,
       real4  *multipole_data,
       float4 *acc_out,
+      real4  *group_body_pos,           //This can be different from body_pos
       int    *ngb_out,
       int    *active_inout,
       int2   *interactions,
@@ -865,8 +866,10 @@ __launch_bounds__(NTHREAD)
     float4 pos_i[2];
     float4 acc_i[2];
 
-    pos_i[0] = body_pos[body_i[0]];
-    pos_i[1] = body_pos[body_i[1]];
+    pos_i[0] = group_body_pos[body_i[0]];
+    pos_i[1] = group_body_pos[body_i[1]];
+//     pos_i[0] = body_pos[body_i[0]];
+//     pos_i[1] = body_pos[body_i[1]];
     acc_i[0] = acc_i[1] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
 
     int ngb_i;
@@ -893,7 +896,7 @@ __launch_bounds__(NTHREAD)
           group_eps, 
           acc_i);
 
-#if 0 /* this increase lmem spill count */
+#if 1 /* this increase lmem spill count */
     if(apprCount < 0)
     {
 
@@ -918,8 +921,8 @@ __launch_bounds__(NTHREAD)
       lmem = &MEM_BUF[gridDim.x*(LMEM_STACK_SIZE*blockDim.x + LMEM_EXTRA_SIZE)];    //Use the extra large buffer
       apprCount = direCount = 0;
       acc_i[0] = acc_i[1] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
-      if (ni == 1)
-        approximate_gravity<0, blockDim2, 1>(
+      if (ni == 1)    
+        approximate_gravity<8, blockDim2, 1>(
             pos_i, group_pos,
             eps2, node_begend,
             multipole_data, body_pos,
@@ -927,7 +930,7 @@ __launch_bounds__(NTHREAD)
             group_eps, 
             acc_i);
       else
-        approximate_gravity<0, blockDim2, 2>(
+        approximate_gravity<8, blockDim2, 2>(
             pos_i, group_pos,
             eps2, node_begend,
             multipole_data, body_pos,

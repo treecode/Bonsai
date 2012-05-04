@@ -19,7 +19,7 @@ NVCC      = $(CUDA_TK)/bin/nvcc
 #NVCCFLAGS = -arch sm_20 -ftz=true -prec-div=false -prec-sqrt=false 
 #NVCCFLAGS = -arch sm_20 -g -G 
 #NVCCFLAGS = -arch sm_20 
-NVCCFLAGS = -arch sm_20   -Xptxas -v,-abi=no 
+NVCCFLAGS = -arch sm_30   -Xptxas -v,-abi=no 
 
 
 
@@ -42,14 +42,14 @@ CUDAKERNELSPATH = CUDAkernels
 CUDAKERNELS = build_tree.cu_o \
 		sortKernels.cu_o \
 		timestep.cu_o \
-		dev_approximate_gravity.cu_o \
+		dev_approximate_gravity_warp.cu_o \
 		dev_approximate_gravity_let.cu_o \
 		parallel.cu_o \
 		compute_propertiesD.cu_o  \
                 depthSort.cu_o
 
 SRCPATH = 
-SRC = src/main.cpp src/octree.cpp src/load_kernels.cpp src/build.cpp src/compute_properties.cpp src/sort_bodies_gpu.cpp src/gpu_iterate.cpp src/parallel.cpp src/libraryInterface.cpp src/renderloop.cpp src/render_particles.cpp renderer/paramgl.cpp renderer/framebufferObject.cpp  renderer/GLSLProgram.cpp  renderer/param.cpp renderer/SmokeRenderer.cpp renderer/SmokeShaders.cpp
+SRC = src/main.cpp src/octree.cpp src/load_kernels.cpp src/build.cpp src/compute_properties.cpp src/sort_bodies_gpu.cpp src/gpu_iterate.cpp src/parallel.cpp src/libraryInterface.cpp src/renderloop.cpp src/render_particles.cpp src/dustFunctions.cpp renderer/paramgl.cpp renderer/framebufferObject.cpp  renderer/GLSLProgram.cpp  renderer/param.cpp renderer/SmokeRenderer.cpp renderer/SmokeShaders.cpp
 
 
 

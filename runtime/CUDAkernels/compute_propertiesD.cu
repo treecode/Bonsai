@@ -338,6 +338,9 @@ extern "C" __global__ void compute_scaling(const int node_count,
   float3 s3     = make_float3((boxCenter.x - mon.x), (boxCenter.y - mon.y), (boxCenter.z - mon.z));
   double s      = sqrt((s3.x*s3.x) + (s3.y*s3.y) + (s3.z*s3.z));
 
+  //If mass-less particles form a node, the s would be huge in opening angle, make it 0
+  if(fabs(mon.w) < 1e-10) s = 0;
+
   //Length of the box, note times 2 since we only computed half the distance before
   float l = 2*fmaxf(boxSize.x, fmaxf(boxSize.y, boxSize.z));
 
