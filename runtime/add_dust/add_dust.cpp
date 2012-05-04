@@ -15,6 +15,7 @@
 #include <vector>
 #include <math.h>
 #include "DustRing.h"
+#include "anyoption.h"
 
 #include "tipsydefs.h"
 
@@ -39,27 +40,125 @@ struct Rotation
   }
 };
 
+void print_help(char *name)
+{
+  fprintf(stderr, " %s infile  outfile N F [Rloc Rscale Zscale nrScale nzScale]\n", name);
+  fprintf(stderr, "  infile  - input file \n");
+  fprintf(stderr, "  outfile - output file \n");
+  fprintf(stderr, "  N       - number of the dust particles \n");
+  fprintf(stderr, "  Rloc    - shift from the ring centre in units of Rscale [0.0 - middle of the galactic disk]\n");
+  fprintf(stderr, "  Rscale  - radial   scale height in units of the disk radial   extent [0.05] \n");
+  fprintf(stderr, "  Zscale  - vertical scale height in units of the disk vertical extent [0.1 ] \n");
+  fprintf(stderr, "  nrScale - number of radial scale heights [3.0] \n");
+  fprintf(stderr, "  nzScale - number of vertical scale heights [3.0] \n");
+  fprintf(stderr, "  T       - use TORUS instead of CYLINDER dust ring [CYLINDER is default]\n");
+}
+
 int main(int argc, char **argv)
 {
-  int i;
 
-  FILE *rv1;
+  AnyOption *opt = new AnyOption();
+        
+  opt->addUsage( "" );
+  opt->addUsage( "Usage: " );
+  opt->addUsage( "" );
+  opt->addUsage( " -h  --help  		        Prints this help " );
+  opt->addUsage( " -i  --infile           Input filename ");
+  opt->addUsage( " -o  --outfile          Output filename ");
+  opt->addUsage( " -N  --Ndust            number of dust particles ");
+  opt->addUsage( " -R  --dRshift 0.0      shift from the disk centre in units of Rscale ");
+  opt->addUsage( " -D  --Rscale   0.05    Radial   scale height in units of disk radial   extent ");
+  opt->addUsage( " -H  --Zscale   0.1     Vertical scale height in units of disk vertical extent ");
+  opt->addUsage( " -r  --nrScale  3.0     Radial   scale height ");
+  opt->addUsage( " -z  --nzScale  3.0     Vertical scale height ");
+  opt->addUsage( " -T  --torus            Enable TORUS dust ring instead of CYLINDER");
+  opt->addUsage( "" );
+        
+  opt->setFlag  (  "help", 'h' );     /* a flag (takes no argument), supporting long and short form */ 
+  opt->setOption(  "infile",  'i'); /* an option (takes an argument), supporting long and short form */
+  opt->setOption(  "outfile", 'o'); 
+  opt->setOption(  "Ndust" , 'N');
+  opt->setOption(  "dRshit", 'R');
+  opt->setOption(  "Rscale", 'D');
+  opt->setOption(  "Zscale", 'H');
+  opt->setOption(  "nrScale", 'r');
+  opt->setOption(  "nzScale", 'z');
+  opt->setFlag  ( "torus", 'T');
+
+  /* for options that will be checked only on the command and line not in option/resource file */
+  opt->setCommandFlag(  "zip" , 'z'); /* a flag (takes no argument), supporting long and short form */
+
+  /* for options that will be checked only from the option/resource file */
+  opt->setFileOption(  "title" ); /* an option (takes an argument), supporting only long form */
+
+  opt->processCommandArgs( argc, argv );
+
+  if( ! opt->hasOptions()) { /* print usage if no options */
+    opt->printUsage();
+    delete opt;
+    exit(0);
+  }
+  
+  if( opt->getFlag( "help" ) || opt->getFlag( 'h' ) ) 
+    opt->printUsage();
+  
+  char *optarg = NULL;
+
+  FILE *rv1 = NULL;
+  FILE *outfile = NULL;
+  if((optarg = opt->getValue('i')))
+    if( !(rv1 = fopen(optarg,"rb")) ) 
+    {
+      fprintf(stderr,"Can't find first file  %s\n", optarg);
+      exit(0);
+    }
+          
+  if((optarg = opt->getValue('o')))
+    if( !(outfile = fopen(optarg,"wb")) ) 
+    {
+      fprintf(stderr,"Can't open output file %s\n", optarg);
+      exit(0);
+    }
+
+
+  int Ndust = 0;
+  real dRshift = 0.0;
+  real Rscale   = 0.05;
+  real Zscale   = 0.1;
+  real nrScale  = 3.0;
+  real nzScale  = 3.0;
+  DustRing::RingType ring_type = DustRing::CYLINDER;
+
+  if ((optarg = opt->getValue('N'))) Ndust = atoi(optarg);
+  if ((optarg = opt->getValue('R'))) dRshift  = atof(optarg);
+  if ((optarg = opt->getValue('D'))) Rscale   = atof(optarg);
+  if ((optarg = opt->getValue('H'))) Zscale   = atof(optarg);
+  if ((optarg = opt->getValue('r'))) nrScale  = atof(optarg);
+  if ((optarg = opt->getValue('z'))) nzScale  = atof(optarg);
+  if (opt->getFlag('T')) ring_type = DustRing::TORUS;
+  
+  if(Ndust == 0 || rv1 == NULL || outfile == NULL)
+  {
+    opt->printUsage();
+    delete opt;
+    exit(0);
+  }
+
+  delete opt;
+
+  fprintf(stderr, " Adding %s dust ring: \n", ring_type == DustRing::CYLINDER ? "CYLINDER" : "TORUS");
+  fprintf(stderr, "   N=       %d \n", Ndust);
+  fprintf(stderr, "   dRshift= %g \n", dRshift);
+  fprintf(stderr, "   Rscale=  %g \n", Rscale);
+  fprintf(stderr, "   Zscale=  %g \n", Zscale);
+  fprintf(stderr, "   nrScale= %g \n", nrScale);
+  fprintf(stderr, "   nzScale= %g \n", nzScale);
+
 
   std::vector<dark_particle> darkMatter;
   std::vector<star_particle> bulge;
   std::vector<star_particle> disk;
   std::vector<star_particle> dust;
-
-  if( argc == 3) {
-    if( !(rv1 = fopen(argv[1],"rb")) ) {
-      fprintf(stderr,"Can't find first file  %s\n",argv[1]);
-      exit(0);
-    }
-  }
-  else {
-    fprintf(stderr,"usage: add_dust inFile outfile\n");
-    exit(0);
-  }
 
   //Read the particle Data of the main galaxy
   //Read the header
@@ -78,12 +177,14 @@ int main(int argc, char **argv)
 
 
   struct dark_particle d;
+#if 0
   double massGalaxy1 = 0;	
   double massGalaxy2 = 0;
-  for(i=0; i < NHalo1; i++)
+#endif
+  for(int i=0; i < NHalo1; i++)
   {
     fread(&d, sizeof(d), 1, rv1);
-    const int pID = (int) d.phi;
+//    const int pID = (int) d.phi;
 
     darkMatter.push_back(d);	 
   }
@@ -92,7 +193,7 @@ int main(int argc, char **argv)
 
   unsigned int maxDustID = 50000000-1; //-1 since we do +1 later on
 
-  for(i=0; i < NBulge1; i++)
+  for(int i=0; i < NBulge1; i++)
   {
     fread(&s, sizeof(s), 1, rv1);
     int pID = (int) s.phi;
@@ -114,12 +215,16 @@ int main(int argc, char **argv)
       NTotal1, (int)darkMatter.size(),
       (int)disk.size(), (int)bulge.size(), (int)dust.size());
 
-
   //Dust magic comes here
   //Dust particles get IDs starting at:
   //50.000.000
   //
   const int Ndisk = disk.size();
+  if (Ndisk == 0)
+  {
+    fprintf(stderr, " FATAL: No disk particles found... Please check your input file\n");
+    exit(0);
+  }
   Vel1D::Vector VelCurve;
   VelCurve.reserve(Ndisk);
   vec3 L(0.0);
@@ -149,7 +254,7 @@ int main(int argc, char **argv)
   L *= 1.0/Mtot;
   fprintf(stderr, " Ncurve= %d :: L= %g %g %g \n", (int)VelCurve.size(), L.x, L.y, L.z);
   fprintf(stderr, "  Rmin= %g  Rmax= %g \n", Rmin, Rmax);
- 
+
 #if 0   /* this is to rotate disk into x-y plane, if the disk is not in x-y plane */
   {
     const vec3 e1(L.x, L.y, 0.0);
@@ -194,11 +299,10 @@ int main(int argc, char **argv)
 #endif
 
   /* setting radial scale height of the dust ring */
-  
-  const Real Ro = (Rmax + Rmin)*0.5;
+
   const Real dR = (Rmax - Rmin)*0.5;
-  const Real D  = 0.05*dR;
-  const Real nrScale = 3.0;
+  const Real D  = Rscale*dR;
+  const Real Ro = (Rmax + Rmin)*0.5 + dRshift * D;
 
   /* determining vertical scale-height of the disk */
   Real Zmin = HUGE;
@@ -219,23 +323,17 @@ int main(int argc, char **argv)
 
   /* setting vertical scale height of the dust ring */
 
-  const Real H = 0.1*dZ;
-  const Real nzScale = 3.0;
+  const Real H = Zscale*dZ;
 
   /** Generating dust ring **/
 
-  const int Ndust = 60000;
-#if 0
-  const DustRing ring(Ndust, Ro, D, H, VelCurve, nrScale, nzScale);
-#else
-  const DustRing ring(Ndust, Ro, D, H, VelCurve, nrScale, nzScale, DustRing::TORUS);
-#endif
+  const DustRing ring(Ndust, Ro, D, H, VelCurve, nrScale, nzScale, ring_type);
 
   /** Adding dust ring **/
-  
+
 
   unsigned int dustID = maxDustID+1;
-//   fprintf(stdout, "%d\n", Ndust);
+  //   fprintf(stdout, "%d\n", Ndust);
   for(int i=0; i < Ndust; i++)
   {
     s.mass = 0;
@@ -247,7 +345,7 @@ int main(int argc, char **argv)
     s.vel[2] = ring.ptcl[i].vel.z;
     s.phi = dustID++;
 
-//     fprintf(stdout, "%g %g %g \n", s.pos[0], s.pos[1], s.pos[2]);
+    //     fprintf(stdout, "%g %g %g \n", s.pos[0], s.pos[1], s.pos[2]);
 
 #if 0
     const real R = std::sqrt(s.pos[0]*s.pos[0] + s.pos[1]*s.pos[1]);
@@ -265,11 +363,6 @@ int main(int argc, char **argv)
 
 
   //Write the data
-  FILE *outfile;
-  if( !(outfile = fopen(argv[2],"wb")) ) {
-    fprintf(stderr,"Can't open output file %s\n",argv[2]);
-    exit(0);
-  }
 
   NTotal1 = (int)darkMatter.size() + (int)disk.size() + (int)bulge.size() + (int)dust.size();
   int NStar = (int)disk.size() + (int)bulge.size() + (int)dust.size();
@@ -283,26 +376,26 @@ int main(int argc, char **argv)
 
   fwrite(&h, sizeof(h), 1, outfile);
   //First write DM Halo of main galaxy
-  for(i=0; i < NHalo1; i++)
+  for(int i=0; i < NHalo1; i++)
   {
     d = darkMatter[i];
     fwrite(&d, sizeof(d), 1, outfile);
   }
 
   //Now write the star particles
-  for(i=0; i < bulge.size(); i++)
+  for(int i=0; i < (int)bulge.size(); i++)
   {
     s = bulge[i];          
     fwrite(&s, sizeof(s), 1, outfile);
   }
   //Now write the disk particles
-  for(i=0; i < disk.size(); i++)
+  for(int i=0; i < (int)disk.size(); i++)
   {
     s = disk[i];          
     fwrite(&s, sizeof(s), 1, outfile);
   }    
   //Now write the dust particles
-  for(i=0; i < dust.size(); i++)
+  for(int i=0; i < (int)dust.size(); i++)
   {
     s = dust[i];          
     fwrite(&s, sizeof(s), 1, outfile);
@@ -311,7 +404,6 @@ int main(int argc, char **argv)
   fprintf(stderr,"Wrote: Total: %d DM: %d Disk: %d Bulge: %d Dust: %d \n",
       NTotal1, (int)darkMatter.size(),
       (int)disk.size(), (int)bulge.size(), (int)dust.size());        
-
 
   return 0;
 }

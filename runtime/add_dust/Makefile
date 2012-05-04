@@ -16,7 +16,7 @@ CXXFLAGS =  -fPIC $(OFLAGS) -Wstrict-aliasing=2 $(OMPFLAGS)
 LDFLAGS = 
 
 SRCPATH = ./
-SRC = add_dust.cpp
+SRC = add_dust.cpp anyoption.cpp
 OBJ = $(SRC:%.cpp=%.o)
 
 PROG  = add_dust
