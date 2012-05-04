@@ -740,6 +740,12 @@ namespace my_dev {
       //Copy on the host
       memcpy (((void*) &host_ptr[0]), ((void*) &src_buffer[0]), n*sizeof(T));                                          
     }
+
+    void copy_devonly(dev_mem &src_buffer, int n, int offset = 0)
+    {
+      //Copy data from src_buffer in our own device buffer
+      CU_SAFE_CALL(cudaMemcpy((void*)(size_t)(hDeviceMem + offset), src_buffer.d(), n*sizeof(T), cudaMemcpyDeviceToDevice));
+    }
     
     /////////
     

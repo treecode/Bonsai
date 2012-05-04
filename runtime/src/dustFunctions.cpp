@@ -20,6 +20,10 @@ void octree::allocateDustMemory(tree_structure &tree)
   
   tree.dust_ngb.cmalloc(n_dust, false);     
 
+  //Increase the position buffer, we will add the dust behind
+  //this when rendering
+  tree.bodies_pos.cresize(tree.n+1+tree.n_dust, false); 
+  tree.bodies_ids.cresize(tree.n+1+tree.n_dust, false); 
 
   tree.dust_acc0.zeroMem();
 

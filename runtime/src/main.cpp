@@ -849,9 +849,7 @@ int main(int argc, char** argv)
       tree->sort_dust(tree->localTree);
       //make the dust groups
       tree->make_dust_groups(tree->localTree);
-      
-
-    }
+   }
     
     
     

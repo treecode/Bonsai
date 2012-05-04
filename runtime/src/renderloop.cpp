@@ -85,7 +85,7 @@ void drawWireBox(float3 boxMin, float3 boxMax) {
 
   glBegin(GL_LINES);
     glVertex3f(boxMin.x, boxMin.y, boxMin.z);
-    glVertex3f(boxMin.x, boxMin.y, boxMin.z);
+    glVertex3f(boxMin.x, boxMin.y, boxMax.z);
 
     glVertex3f(boxMax.x, boxMin.y, boxMin.z);
     glVertex3f(boxMax.x, boxMin.y, boxMax.z);
@@ -104,7 +104,7 @@ class BonsaiDemo
 public:
   BonsaiDemo(octree *tree, octree::IterationData &idata) 
     : m_tree(tree), m_idata(idata), iterationsRemaining(true),
-      m_renderer(tree->localTree.n),
+      m_renderer(tree->localTree.n + tree->localTree.n_dust),
       //m_displayMode(ParticleRenderer::PARTICLE_SPRITES_COLOR),
 	    m_displayMode(SmokeRenderer::SPRITES),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.2f),
@@ -130,16 +130,12 @@ public:
     //m_renderer.setPointSize(0.00001f);
     tree->iterate_setup(m_idata);
 
-    #if 0
-	m_particleColors  = new float4[tree->localTree.n];
-        combinedPositions = new float4[tree->localTree.n];
-        combinedIDs       = new int[tree->localTree.n];
-    #else          
-        m_particleColors  = new float4[tree->localTree.n + tree->localTree.n_dust];
-        combinedPositions = new float4[tree->localTree.n + tree->localTree.n_dust];
-        combinedIDs       = new int   [tree->localTree.n + tree->localTree.n_dust];
-    #endif        
-
+   
+   int arraySize = tree->localTree.n;
+   arraySize    += tree->localTree.n_dust;
+ 
+   m_particleColors  = new float4[arraySize];
+ 
 	m_renderer.setFOV(m_fov);
 	m_renderer.setWindowSize(m_windowDims.x, m_windowDims.y);
 	m_renderer.setDisplayMode(m_displayMode);
@@ -149,8 +145,6 @@ public:
     m_tree->iterate_teardown(m_idata);
     delete m_tree;
     delete [] m_particleColors;
-    delete [] combinedPositions;
-    delete [] combinedIDs;
   }
 
   void cycleDisplayMode() {
@@ -519,23 +513,21 @@ public:
   }//end getBodyData
 #else
  void getBodyData() {
-    m_tree->localTree.bodies_pos.d2h();
-    m_tree->localTree.bodies_ids.d2h();
-    int n = m_tree->localTree.n;
-    
+
+   int n = m_tree->localTree.n + m_tree->localTree.n_dust;   
+   //Above is save since it is 0 if we dont use dust
+ 
+
     #ifdef USE_DUST
-      m_tree->localTree.dust_pos.d2h();
-      m_tree->localTree.dust_ids.d2h();  
-      n    += m_tree->localTree.n_dust;      
+     //We move the dust data into the position data (on the device :) )
+     m_tree->localTree.bodies_pos.copy_devonly(m_tree->localTree.dust_pos,
+                           m_tree->localTree.n_dust, m_tree->localTree.n); 
+     m_tree->localTree.bodies_ids.copy_devonly(m_tree->localTree.dust_ids,
+                           m_tree->localTree.n_dust, m_tree->localTree.n);
     #endif    
-   
-    memcpy (combinedPositions, &m_tree->localTree.bodies_pos[0], sizeof(float4)*m_tree->localTree.n);
-    memcpy (combinedIDs,       &m_tree->localTree.bodies_ids[0], sizeof(int)   *m_tree->localTree.n);
-     
-    #ifdef USE_DUST     
-      memcpy (&combinedPositions[m_tree->localTree.n], &m_tree->localTree.dust_pos[0],   sizeof(float4)*m_tree->localTree.n_dust);    
-      memcpy (&combinedIDs      [m_tree->localTree.n], &m_tree->localTree.dust_ids[0],   sizeof(int)   *m_tree->localTree.n_dust);      
-    #endif    
+
+    m_tree->localTree.bodies_ids.d2h();   
+  
     
     float4 starColor = make_float4(1.0f, 1.0f, 0.5f, 1.0f);  // yellowish
     //float4 starColor = make_float4(1.0f, 1.0f, 0.0f, 1.0f);               // white
@@ -551,11 +543,11 @@ public:
 
     for (int i = 0; i < n; i++)
     {
-      int id = combinedIDs[i];
+      int id =  m_tree->localTree.bodies_ids[i];
             //printf("%d: id %d, mass: %f\n", i, id, m_tree->localTree.bodies_pos[i].w);
             srand(id*1783);
 #if 1
-            float r = frand();
+      float r = frand();
             
       if (id >= 0 && id < 50000000)     //Disk
       {
@@ -581,16 +573,11 @@ public:
 #endif
     }
 
-    //m_renderer.setPositions((float*)&m_tree->localTree.bodies_pos[0], n);
-    //m_renderer.setColors((float*)colors, n);
-    m_renderer.setNumParticles(n);
-    
-//     m_renderer.setPositions((float*)&m_tree->localTree.bodies_pos[0]);
-    m_renderer.setPositions((float*)&combinedPositions[0]);    
-    
+
+    m_renderer.setNumParticles( m_tree->localTree.n + m_tree->localTree.n_dust);    
+    m_renderer.setPositionsDevice((float*) m_tree->localTree.bodies_pos.d());
     m_renderer.setColors((float*)colors);
 
-    //delete [] colors;
   }
 #endif 
 
@@ -644,8 +631,6 @@ public:
   int m_octreeDisplayLevel;
 
   float4 *m_particleColors;
-  float4 *combinedPositions;
-  int    *combinedIDs;
 
   // view params
   int m_ox; // = 0

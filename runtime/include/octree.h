@@ -189,8 +189,11 @@ class tree_structure
     real4 corner;                         //Corner of tree-structure
     real  domain_fac;                     //Domain_fac of tree-structure
     
+    //Number of dust particles, moved decleration outside to get it to work
+    //with renderer
+    int n_dust;                           
     #ifdef USE_DUST
-      int n_dust;                           //Number of dust particles
+
       int n_dust_groups;                    //Number of dust groups
       //Dust particle arrays
       my_dev::dev_mem<real4> dust_pos;    //The particles positions
