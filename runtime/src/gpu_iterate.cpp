@@ -50,6 +50,11 @@ bool octree::iterate_once(IterationData &idata) {
     devContext.startTiming();
     predict(this->localTree);
     devContext.stopTiming("Predict", 9);
+    
+    #ifdef USE_DUST
+      //Predict, sort and set properties
+      predictDustStep(this->localTree);          
+    #endif
 
     
     bool needDomainUpdate = true;
@@ -133,8 +138,7 @@ bool octree::iterate_once(IterationData &idata) {
       
     
       #ifdef USE_DUST
-        //Predict, sort and set properties
-        predictDustStep(this->localTree);        
+        //Sort and set properties      
         sort_dust(this->localTree);
         make_dust_groups(this->localTree);
         setDustGroupProperties(this->localTree);        
@@ -486,7 +490,7 @@ void octree::approximate_gravity(tree_structure &tree)
   approxGrav.execute(execStream->s());  //First half
 
   //Print interaction statistics
-  #if 1
+  #if 0
   
   tree.body2group_list.d2h();
   tree.interactions.d2h();

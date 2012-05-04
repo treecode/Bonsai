@@ -896,7 +896,7 @@ __launch_bounds__(NTHREAD)
           group_eps, 
           acc_i);
 
-#if 0 /* this increase lmem spill count */
+#if 1 /* this increase lmem spill count */
     if(apprCount < 0)
     {
 
@@ -921,8 +921,8 @@ __launch_bounds__(NTHREAD)
       lmem = &MEM_BUF[gridDim.x*(LMEM_STACK_SIZE*blockDim.x + LMEM_EXTRA_SIZE)];    //Use the extra large buffer
       apprCount = direCount = 0;
       acc_i[0] = acc_i[1] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
-      if (ni == 1)
-        approximate_gravity<0, blockDim2, 1>(
+      if (ni == 1)    
+        approximate_gravity<8, blockDim2, 1>(
             pos_i, group_pos,
             eps2, node_begend,
             multipole_data, body_pos,
@@ -930,7 +930,7 @@ __launch_bounds__(NTHREAD)
             group_eps, 
             acc_i);
       else
-        approximate_gravity<0, blockDim2, 2>(
+        approximate_gravity<8, blockDim2, 2>(
             pos_i, group_pos,
             eps2, node_begend,
             multipole_data, body_pos,
@@ -939,6 +939,8 @@ __launch_bounds__(NTHREAD)
             acc_i);
 
       lmem = &MEM_BUF[blockIdx.x*(LMEM_STACK_SIZE*blockDim.x + LMEM_EXTRA_SIZE)];
+
+      printf("ON DEV OVERFLOW %d \n", blockIdx.x);
 
       if(threadIdx.x == 0)
       {

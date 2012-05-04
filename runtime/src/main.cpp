@@ -298,7 +298,8 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
 //   bodyPositions.resize(bodyPositions.size()-1);  
 //   NTotal2 = particleCount-1;
   NTotal2 = particleCount;
-  cerr << "NTotal: " << NTotal << "\tper proc: " << perProc << "\tFor ourself:" << bodiesIDs.size() << endl;
+  cerr << "NTotal: " << NTotal << "\tper proc: " << perProc << "\tFor ourself:" << bodiesIDs.size() << "\tNDust: " << dustPositions.size() << endl;
+  cerr << "NTotal: " << NTotal << "\tper proc: " << perProc << "\tFor ourself:" << bodiesIDs.size() << endl;  
 }
 
 
@@ -340,7 +341,7 @@ void euler(vector<real4> &bodyPositions,
 {
   rotmat(inc,omega);
   size_t nobj = bodyPositions.size();
-  for(int i=0; i < nobj; i++)
+  for(uint i=0; i < nobj; i++)
   {
       float r[3], v[3];
       r[0] = bodyPositions[i].x;
@@ -373,7 +374,7 @@ double centerGalaxy(vector<real4> &bodyPositions,
 
     mtot = 0;
     xc = yc = zc = vxc = vyc = vzc = 0;
-    for(int i=0; i< nobj; i++) {
+    for(uint i=0; i< nobj; i++) {
             xc   += bodyPositions[i].w*bodyPositions[i].x;
             yc   += bodyPositions[i].w*bodyPositions[i].y;
             zc   += bodyPositions[i].w*bodyPositions[i].z;
@@ -388,7 +389,7 @@ double centerGalaxy(vector<real4> &bodyPositions,
     vxc /= mtot;
     vyc /= mtot;
     vzc /= mtot;
-    for(int i=0; i< nobj; i++)
+    for(uint i=0; i< nobj; i++)
     {
       bodyPositions[i].x  -= xc;
       bodyPositions[i].y  -= yc;
@@ -410,7 +411,7 @@ int setupMergerModel(vector<real4> &bodyPositions1,
                      vector<real4> &bodyPositions2,
                      vector<real4> &bodyVelocities2,
                      vector<int>   &bodyIDs2){
-        int i;
+        uint i;
         double ds=1.0, vs, ms=1.0;
         double mu1, mu2, vp;
         double b=1.0, rsep=10.0;

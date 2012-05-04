@@ -1,9 +1,10 @@
 #include "octree.h"
 
+#ifdef USE_DUST
 
 void octree::allocateDustMemory(tree_structure &tree)
 {
-  
+  if(tree.n_dust == 0) return;
   //Dust buffers
   int n_dust = tree.n_dust;  
   tree.dust_pos.cmalloc(n_dust+1, false);     
@@ -26,6 +27,8 @@ void octree::allocateDustMemory(tree_structure &tree)
 
 void octree::allocateDustGroupBuffers(tree_structure &tree)
 {
+  if(tree.n_dust == 0) return;
+  
   bool reduce = false;
   if(tree.dust_group_list.get_size() > 0)
   {
@@ -45,6 +48,8 @@ void octree::allocateDustGroupBuffers(tree_structure &tree)
 
 void octree::sort_dust(tree_structure &tree)
 {
+  if(tree.n_dust == 0) return;
+  
   devContext.startTiming();
 
   //Start reduction to get the boundary's of the dust
@@ -87,9 +92,6 @@ void octree::sort_dust(tree_structure &tree)
                              0.5f*(r_min.z + r_max.z) - 0.5f*size, size); 
        
   float domain_fac   = size/(1 << MAXLEVELS);
-  
-  
-  float idomain_fac = 1.0f/domain_fac;
   
   corner.w = domain_fac;  
   
@@ -206,6 +208,7 @@ void octree::sort_dust(tree_structure &tree)
   
 void octree::make_dust_groups(tree_structure &tree)
 {
+  if(tree.n_dust == 0) return;
   //Split the dust particles into groups
   //This is done slightly different than with the normal 
   //particles. We do an extra split, similar to how we create
@@ -234,7 +237,7 @@ void octree::make_dust_groups(tree_structure &tree)
   this->devMemCountsx[0] = 1;
   this->devMemCountsx.h2d(1);  
     
-  int level =  4; //TODO check this with the original data should not be too deep
+  int level =  5; //This level proofs to be sort of OK. We can tune it depending on the data-set
   build_valid_list.set_arg<int>(0,     &n_bodies);
   build_valid_list.set_arg<int>(1,     &level);
   build_valid_list.set_arg<cl_mem>(2,  tree.dust_key.p());
@@ -280,6 +283,7 @@ void octree::make_dust_groups(tree_structure &tree)
 
 void octree::setDustGroupProperties(tree_structure &tree)
 {
+  if(tree.n_dust == 0) return;
    //Set the group properties, note that it is not based on the nodes anymore
   //but on self created groups based on particle order setPHGroupData    
   copyNodeDataToGroupData.set_arg<int>(0,    &tree.n_dust_groups);
@@ -292,7 +296,8 @@ void octree::setDustGroupProperties(tree_structure &tree)
   copyNodeDataToGroupData.setWork(-1, NCRIT, tree.n_dust_groups);    
   copyNodeDataToGroupData.execute();
 
-/*
+
+  /*
   tree.dust_groupCenterInfo.d2h();  
   tree.dust_groupSizeInfo.d2h();
   
@@ -352,10 +357,10 @@ void octree::setDustGroupProperties(tree_structure &tree)
 
 
 
-  fprintf(stderr, "Group stats Max: %f \t Sum: %f \n",
-		  maxGrpSize, grpSizeSum);
-
-
+  fprintf(stderr, "Group stats Max: %f \t Sum: %f Avg: %f  #groups: %d\n",
+		  maxGrpSize, grpSizeSum, grpSizeSum/tree.n_dust_groups, tree.n_dust_groups);
+*/
+/*
   tree.dust_pos.d2h();
   tree.dust_vel.d2h();
   for(int i=0; i < 20; i++)
@@ -378,6 +383,7 @@ void octree::setDustGroupProperties(tree_structure &tree)
 
 void octree::predictDustStep(tree_structure &tree)
 {
+  if(tree.n_dust == 0) return;
   int idx = 0;
   predictDust.set_arg<int>(idx++,    &tree.n_dust);
   predictDust.set_arg<float>(idx++,  &t_current);
@@ -389,12 +395,12 @@ void octree::predictDustStep(tree_structure &tree)
   predictDust.set_arg<cl_mem>(idx++, tree.activeDustGrouplist.p());
   predictDust.setWork(tree.n_dust, 128);
   predictDust.execute();
-
 } //End predict
 
 
 void octree::correctDustStep(tree_structure &tree)
 {
+  if(tree.n_dust == 0) return;
   //Correct the dust particles
   int idx = 0;
   correctDust.set_arg<int   >(idx++, &tree.n_dust);
@@ -409,6 +415,8 @@ void octree::correctDustStep(tree_structure &tree)
 
 void octree::approximate_dust(tree_structure &tree)
 { 
+  if(tree.n_dust == 0) return;
+  
   uint2 node_begend;
   int level_start = 2;
   node_begend.x   = tree.level_list[level_start].x;
@@ -447,10 +455,8 @@ void octree::approximate_dust(tree_structure &tree)
   approxGrav.setWork(-1, NTHREAD, nBlocksForTreeWalk);
   approxGrav.execute(execStream->s());  //First half
 
-  fprintf(stderr,"testa");
-
   //Print interaction statistics
-  #if 1
+  #if 0
   
     tree.dust_interactions.d2h();
     long long directSum = 0;
@@ -502,4 +508,5 @@ void octree::approximate_dust(tree_structure &tree)
 }
 //end approximate
 
+#endif //USE_DUST
 

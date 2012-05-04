@@ -224,93 +224,31 @@ public:
                    4 * (radius + distanceToCenter));
   }
 
-private:
-  void getBodyData() {
+ void getBodyData() {
     m_tree->localTree.bodies_pos.d2h();
     m_tree->localTree.bodies_ids.d2h();
-    
-    m_tree->localTree.dust_pos.d2h();
-    m_tree->localTree.dust_ids.d2h();    
     //m_tree->localTree.bodies_vel.d2h();
 
-//     int n = m_tree->localTree.n;
-    int n = m_tree->localTree.n_dust;
-    n    += m_tree->localTree.n;
+    int n = m_tree->localTree.n;
 
     float4 darkMatterColor = make_float4(1.0f, 0.0f, 0.0f, 1.0f);
     float4 starColor =       make_float4(0.0f, 0.0f, 1.0f, 1.0f);
-    
-    //float4 starColor = make_float4(1.0f, 0.75f, 0.1f, 1.0f); // yellowish
-//     float4 starColor = make_float4(1.0f, 1.0f, 1.0f, 1.0f); // white
-    float4 starColor2 = make_float4(1.0f, 0.1f, 0.5f, 1.0f) * make_float4(20.0f, 20.0f, 20.0f, 1.0f);     
-    
-    
 
     float4 *colors = new float4[n];
-    
-    float4 *positions = new float4[n];
-    int *ids          = new int[n];
-    
-    memcpy (positions,                       &m_tree->localTree.bodies_pos[0], sizeof(float4)*m_tree->localTree.n);
-    memcpy (&positions[m_tree->localTree.n], &m_tree->localTree.dust_pos[0],   sizeof(float4)*m_tree->localTree.n_dust);    
-    
-    memcpy (ids,                       &m_tree->localTree.bodies_ids[0], sizeof(int)*m_tree->localTree.n);
-    memcpy (&ids[m_tree->localTree.n], &m_tree->localTree.dust_ids[0],   sizeof(int)*m_tree->localTree.n_dust);        
-    
-    
-    for (int i = 0; i < n; i++) 
-    {
-//       int id = m_tree->localTree.bodies_ids[i];
-      int id = ids[i];
-      if (id >= 0 && id < 50000000)
-      {
-        //Disk
-//             colors[i] = starColor;
-        colors[i] = make_float4(0, 1, 0, 1);
-      } else if (id >= 50000000 && id < 100000000)
-      {
-        //Dust
-//         colors[i] = make_float4(0, 1, 0, 1);
-        colors[i] = starColor;
-      } else if (id >= 100000000 && id < 200000000)
-      {
-          //Bulge
-//           colors[i] = (frand() < 0.99f) ? starColor : starColor2;
-//          colors[i] = (frand() < 0.99f) ? starColor : starColor2;
-         colors[i] = starColor2;
-      } else //>= 200000000
-      {
-            // Dark matter
-            colors[i] = darkMatterColor;
-      }
+
+    for (int i = 0; i < n; i++) {
+      int id = m_tree->localTree.bodies_ids[i];
+      if (id >= 0 && id < 100000000) colors[i] = make_float4(0, 0, 0, 0); // dust -- not used yet
+      else if (id >= 100000000 && id < 200000000) colors[i] = darkMatterColor;
+      else colors[i] = starColor;
     }
 
-//     for (int i = 0; i < n; i++) 
-//     {
-//       int id = m_tree->localTree.bodies_ids[i];
-//       if (id >= 0 && id < 100000000)
-//       {
-//         colors[i] = make_float4(0, 0, 0, 0); // dust -- not used yet
-//       }
-//       else if (id >= 100000000 && id < 200000000)
-//       {
-//         colors[i] = darkMatterColor;
-//       }
-//       
-//       else colors[i] = starColor;
-//     }
-
-//       m_renderer.setPositions((float*)&m_tree->localTree.bodies_pos[0], m_tree->localTree.n);
-//     m_renderer.setPositions((float*)&m_tree->localTree.bodies_pos[0], n);
-//     m_renderer.setPositions((float*)&m_tree->localTree.dust_pos[0], n);
-    m_renderer.setPositions((float*)&positions[0], n);
+    m_renderer.setPositions((float*)&m_tree->localTree.bodies_pos[0], n);
     m_renderer.setColors((float*)colors, n);
 
     delete [] colors;
-    delete [] ids;
-    delete [] positions;
-    
   }
+
 
   void displayOctree() {
     float3 boxMin = make_float3(m_tree->rMinLocalTree);

@@ -649,7 +649,6 @@ extern "C" __global__ void define_dust_groups(int    n_particles,
   int validEnd   = (((idx+1) % NCRIT) == 0);
 
 
-
   //Get the current 
   float4 curPos, nexPos, prevPos;
 
@@ -788,9 +787,6 @@ extern "C" __global__ void correct_dust_particles(const int n_bodies,
   float4 a0 = acc0[idx];
   float4 a1 = acc1[idx];
   float4  v = vel[idx];
-
-  //Store the predicted position as the one to use
-  //pos[idx] = pPos[idx];
 
   //Correct the velocity
   dt_cb *= 0.5f;
