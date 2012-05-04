@@ -51,6 +51,7 @@ public:
     void setIndexBuffer(GLuint ib) { mIndexBuffer = ib; }
 
 	void setPositions(float *pos);
+    void setPositionsDevice(float *posD);
 	void setColors(float *color);
 
     void setWindowSize(int w, int h);

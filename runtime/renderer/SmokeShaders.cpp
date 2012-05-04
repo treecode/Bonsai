@@ -225,7 +225,7 @@ void main()                                                        \n
     //N.z = sqrt(1.0-r2);                                            \n
 
 //    float alpha = clamp(1.0 - r2, 0.0, 1.0);                     \n
-    float alpha = exp(-r2*4.0);
+    float alpha = exp(-r2*5.0);
 //    float alpha = texture2DArray(spriteTex, vec3(gl_TexCoord[0].xy, gl_PrimitiveID & 7)).x;
     //alpha *= gl_Color.w;                                           \n
 	alpha *= gl_Color.w * alphaScale;
@@ -285,7 +285,7 @@ void main()                                                        \n
     vec3 shadow = texture2DProj(shadowTex, shadowPos.xyw).xyz;  \n
 
 	//float alpha = clamp(1.0 - r2, 0.0, 1.0);                    \n
-    float alpha = exp(-r2*4.0);
+    float alpha = exp(-r2*5.0);
     //float alpha = texture2DArray(spriteTex, vec3(gl_TexCoord[0].xy, float(gl_PrimitiveID & 7))).x;
     //alpha *= gl_Color.w;                                           \n
 	alpha *= gl_Color.w * alphaScale;
@@ -418,6 +418,32 @@ void main()                                                                     
     c += texture2D(tex, uv + vec2(0.5, 0.5)*texelSize*blurRadius);     \n
     c += texture2D(tex, uv + vec2(-0.5, 0.5)*texelSize*blurRadius);    \n
     c *= 0.25;                                                                        \n
+
+    gl_FragColor = c;                                                                 \n
+}                                                                                     \n
+);
+
+const char *blur3x3PS = STRINGIFY(
+uniform sampler2D tex;                                                                \n
+uniform vec2 texelSize;                                                               \n
+uniform float blurRadius;                                                             \n
+void main()                                                                           \n
+{                                                                                     \n
+    vec4 c;                                                                           \n
+    vec2 uv = gl_TexCoord[0].xy;
+    c = texture2D(tex, uv + vec2(-1, -1)*texelSize*blurRadius);    \n
+    c += texture2D(tex, uv + vec2(0, -1)*texelSize*blurRadius)*2;  \n
+    c += texture2D(tex, uv + vec2(1, -1)*texelSize*blurRadius);    \n
+
+    c += texture2D(tex, uv + vec2(-1, 0)*texelSize*blurRadius)*2;  \n
+    c += texture2D(tex, uv + vec2(0, 0)*texelSize*blurRadius)*4;   \n
+    c += texture2D(tex, uv + vec2(1, 0)*texelSize*blurRadius)*2;   \n
+
+    c += texture2D(tex, uv + vec2(-1, 1)*texelSize*blurRadius);    \n
+    c += texture2D(tex, uv + vec2(0, 1)*texelSize*blurRadius)*2;   \n
+    c += texture2D(tex, uv + vec2(1, 1)*texelSize*blurRadius);     \n
+
+    c /= 16.0;                                                                        \n
 
     gl_FragColor = c;                                                                 \n
 }                                                                                     \n
