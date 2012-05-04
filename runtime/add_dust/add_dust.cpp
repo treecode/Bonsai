@@ -235,19 +235,19 @@ int main(int argc, char **argv)
   
 
   unsigned int dustID = maxDustID+1;
-  fprintf(stdout, "%d\n", Ndust);
+//   fprintf(stdout, "%d\n", Ndust);
   for(int i=0; i < Ndust; i++)
   {
     s.mass = 0;
     s.pos[0] = ring.ptcl[i].pos.x;
     s.pos[1] = ring.ptcl[i].pos.y;
     s.pos[2] = ring.ptcl[i].pos.z;
-    s.vel[0] = ring.ptcl[i].vel.y;
+    s.vel[0] = ring.ptcl[i].vel.x;
     s.vel[1] = ring.ptcl[i].vel.y;
     s.vel[2] = ring.ptcl[i].vel.z;
     s.phi = dustID++;
 
-    fprintf(stdout, "%g %g %g \n", s.pos[0], s.pos[1], s.pos[2]);
+//     fprintf(stdout, "%g %g %g \n", s.pos[0], s.pos[1], s.pos[2]);
 
 #if 0
     const real R = std::sqrt(s.pos[0]*s.pos[0] + s.pos[1]*s.pos[1]);

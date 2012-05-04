@@ -265,11 +265,13 @@ private:
       if (id >= 0 && id < 50000000)
       {
         //Disk
-            colors[i] = starColor;
+//             colors[i] = starColor;
+        colors[i] = make_float4(0, 1, 0, 1);
       } else if (id >= 50000000 && id < 100000000)
       {
         //Dust
-        colors[i] = make_float4(0, 1, 0, 1);
+//         colors[i] = make_float4(0, 1, 0, 1);
+        colors[i] = starColor;
       } else if (id >= 100000000 && id < 200000000)
       {
           //Bulge
