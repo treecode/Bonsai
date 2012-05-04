@@ -124,7 +124,7 @@ __device__ __forceinline__ int ShflSegScanStepB(
 __device__ __forceinline__ int inclusive_segscan_warp_step(int value, const int distance)
 {
 
-#if 1
+#if 0
   const int SIZE = 1 << SIZE2; 
 
   for (int i = 0; i < SIZE2; i++)
@@ -157,7 +157,7 @@ __device__ __forceinline__ int inclusive_segscan_warp(
   dist_block = __clz(__brev(flags));
 
   const int distance = __clz(flags & lanemask_le()) + laneId - 31;
-  shmem[laneId] = inclusive_segscan_warp_step<WARP_SIZE2>(value, distance);
+  shmem[laneId] = inclusive_segscan_warp_step<WARP_SIZE2>(value, min(distance, laneId));
   const int val = shmem[WARP_SIZE - 1];
   return val;
 }
@@ -248,14 +248,16 @@ __device__ __forceinline__ float4 add_acc(
 
   const float rinv  = rsqrtf(r2);
   const float rinv2 = rinv *rinv;
-  const float rinv3 = rinv *rinv2;
-  const float rinv5 = rinv2*rinv3;
-  const float rinv7 = rinv2*rinv5;
+  const float mrinv  =  mass*rinv;
+  const float mrinv3 = rinv2*mrinv;
+  const float mrinv5 = rinv2*mrinv3; 
+  const float mrinv7 = rinv2*mrinv5;   // 16
 
-  float  D0  =  rinv*mass;
-  float  D1  = -rinv3*mass;
-  float  D2  =  rinv5*mass*( 3.0f);
-  float  D3  = -rinv7*mass*(15.0f);
+#if 0
+  float  D0  =  mrinv;
+  float  D1  = -mrinv3;
+  float  D2  =  mrinv5*( 3.0f);
+  float  D3  = -mrinv7*(15.0f);
 
   float oct_q11 = Q0.x;
   float oct_q22 = Q0.y;
@@ -266,7 +268,7 @@ __device__ __forceinline__ float4 add_acc(
 
   float Qii = oct_q11 + oct_q22 + oct_q33;
   float QijRiRj =
-    (oct_q11*dr.x*dr.x + oct_q22*dr.y*dr.y + oct_q33*dr.z*dr.z) +
+         (oct_q11*dr.x*dr.x + oct_q22*dr.y*dr.y + oct_q33*dr.z*dr.z) +
     2.0f*(oct_q12*dr.y*dr.x + oct_q13*dr.z*dr.x + oct_q23*dr.y*dr.z);
 
   acc.w        -= D0 + 0.5f*D1*Qii + 0.5f*D2*QijRiRj;
@@ -274,6 +276,32 @@ __device__ __forceinline__ float4 add_acc(
   acc.x         += C01a*dr.x + D2*(oct_q11*dr.x + oct_q12*dr.y + oct_q13*dr.z);
   acc.y         += C01a*dr.y + D2*(oct_q12*dr.x + oct_q22*dr.y + oct_q23*dr.z);
   acc.z         += C01a*dr.z + D2*(oct_q13*dr.x + oct_q23*dr.y + oct_q33*dr.z);
+#else
+  float  D0  =  mrinv;
+  float  D1  = -mrinv3;
+  float  D2  =  mrinv5*( 3.0f);
+  float  D3  = -mrinv7*(15.0f); // 3
+
+  const float q11 = Q0.x;
+  const float q22 = Q0.y;
+  const float q33 = Q0.z;
+  const float q12 = Q1.x;
+  const float q13 = Q1.y;
+  const float q23 = Q1.z;
+
+  const float  q  = q11 + q22 + q33;
+  const float3 qR = make_float3(
+      q11*dr.x + q12*dr.y + q13*dr.z,
+      q12*dr.x + q22*dr.y + q23*dr.z,
+      q13*dr.x + q23*dr.y + q33*dr.z);
+  const float qRR = qR.x*dr.x + qR.y*dr.y + qR.z*dr.z;  // 22
+
+  acc.w  -= D0 + 0.5f*(D1*q + D2*qRR);
+  float C = D1 + 0.5f*(D2*q + D3*qRR);
+  acc.x  += C*dr.x + D2*qR.x;
+  acc.y  += C*dr.y + D2*qR.y;
+  acc.z  += C*dr.z + D2*qR.z;               // 23
+#endif  /* total: 16 + 3 + 22 + 23 = 64 flops */
 
   return acc;
 }
@@ -557,6 +585,17 @@ void approximate_gravity(
             for (int k = 0; k < NI; k++)
               acc_i[k] = add_acc(acc_i[k], pos_i[k], sh_mass[i], sh_pos[i], eps2);
 #else
+#if 1    /*  a bit faster */
+          const float4  Q0  = tex1Dfetch(texMultipole, address + 1);
+          const float4  Q1  = tex1Dfetch(texMultipole, address + 2);
+          for (int i = 0; i < WARP_SIZE; i++)
+          {
+            const float4 jQ0 = make_float4(__shfl(Q0.x, i), __shfl(Q0.y, i), __shfl(Q0.z, i), 0.0f);
+            const float4 jQ1 = make_float4(__shfl(Q1.x, i), __shfl(Q1.y, i), __shfl(Q1.z, i), 0.0f);
+            for (int k = 0; k < NI; k++)
+              acc_i[k] = add_acc(acc_i[k], pos_i[k], sh_mass[i], sh_pos[i], jQ0, jQ1, eps2);
+          }
+#else
           for (int i = 0; i < WARP_SIZE; i++)
           {
             const int address = approxM[n_approx + i] * 3;
@@ -565,6 +604,7 @@ void approximate_gravity(
             for (int k = 0; k < NI; k++)
               acc_i[k] = add_acc(acc_i[k], pos_i[k], sh_mass[i], sh_pos[i], Q0, Q1, eps2);
           }
+#endif
 #endif /* _QUADRUPOLE_ */
           apprCount += WARP_SIZE*NI;
         }
