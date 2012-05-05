@@ -410,36 +410,47 @@ int setupMergerModel(vector<real4> &bodyPositions1,
                      vector<int>   &bodyIDs1,
                      vector<real4> &bodyPositions2,
                      vector<real4> &bodyVelocities2,
-                     vector<int>   &bodyIDs2){
+                     vector<int>   &bodyIDs2,
+                     double ds = -1,
+                     double ms = -1,
+                     double b  = -1,
+                     double rsep = -1,
+                     double inc1 = -1,
+                     double omega1 = -1,
+                     double inc2  = -1,
+                     double omega2 = -1){
         uint i;
-        double ds=1.0, vs, ms=1.0;
+        double vs;
+        
         double mu1, mu2, vp;
-        double b=1.0, rsep=10.0;
+        //double b=1.0, rsep=10.0;
         double x, y, vx, vy, x1, y1, vx1, vy1 ,  x2, y2, vx2, vy2;
         double theta, tcoll;
-        double inc1=0, omega1=0;
-        double inc2=0, omega2=0;
+        //double inc1=0, omega1=0;
+        //double inc2=0, omega2=0;
 
-
-        cout << "Enter size ratio (for gal2): ";
-        cin >> ds;
-        cout << "Enter mass ratio (for gal2): ";
-        cin >> ms;
-        cout << "Enter relative impact parameter: ";
-        cin >> b;
-        
-        cout << "Enter initial separation: ";
-        cin >> rsep;
-        cout << "Enter Euler angles for first galaxy:\n";
-        cout << "Enter inclination: ";
-        cin >> inc1;
-        cout << "Enter omega: ";
-        cin >> omega1;
-        cout << "Enter Euler angles for second galaxy:\n";
-        cout << "Enter inclination: ";
-        cin >> inc2;
-        cout << "Enter omega: ";
-        cin >> omega2;
+        if(ds < 0)
+        {
+          cout << "Enter size ratio (for gal2): ";
+          cin >> ds;
+          cout << "Enter mass ratio (for gal2): ";
+          cin >> ms;
+          cout << "Enter relative impact parameter: ";
+          cin >> b;
+          
+          cout << "Enter initial separation: ";
+          cin >> rsep;
+          cout << "Enter Euler angles for first galaxy:\n";
+          cout << "Enter inclination: ";
+          cin >> inc1;
+          cout << "Enter omega: ";
+          cin >> omega1;
+          cout << "Enter Euler angles for second galaxy:\n";
+          cout << "Enter inclination: ";
+          cin >> inc2;
+          cout << "Enter omega: ";
+          cin >> omega2;
+        }
 
 
         double inc1_inp, inc2_inp, om2_inp, om1_inp;
@@ -532,9 +543,9 @@ int setupMergerModel(vector<real4> &bodyPositions1,
 
 
         //Put them into one 
-        bodyPositions1.insert(bodyPositions1.end(),  bodyPositions2.begin(), bodyPositions2.end());
-        bodyVelocities1.insert(bodyVelocities1.end(), bodyVelocities2.begin(), bodyVelocities2.end());
-        bodyIDs1.insert(bodyIDs1.end(), bodyIDs2.begin(), bodyIDs2.end());
+        //bodyPositions1.insert(bodyPositions1.end(),  bodyPositions2.begin(), bodyPositions2.end());
+        //bodyVelocities1.insert(bodyVelocities1.end(), bodyVelocities2.begin(), bodyVelocities2.end());
+        //bodyIDs1.insert(bodyIDs1.end(), bodyIDs2.begin(), bodyIDs2.end());
   
 
         return 0;
@@ -816,14 +827,14 @@ int main(int argc, char** argv)
     
     printf("Initial exchange Took in total: %lg sec\n", tree->get_time()-ttemp);
   }
-  
+
 
   //Start construction of the tree
   tree->sort_bodies(tree->localTree, true);
   tree->build(tree->localTree);
   tree->allocateTreePropMemory(tree->localTree);
   tree->compute_properties(tree->localTree);
-  
+
   //If required set the dust particles
   #ifdef USE_DUST
     if( (int)dustPositions.size() > 0)

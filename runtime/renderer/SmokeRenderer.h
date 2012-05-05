@@ -24,7 +24,7 @@
 class SmokeRenderer
 {
 public:
-    SmokeRenderer(int numParticles);
+    SmokeRenderer(int numParticles, int maxParticles);
     ~SmokeRenderer();
 
     enum DisplayMode
@@ -103,6 +103,42 @@ public:
 
     void render();
     void debugVectors();
+
+
+
+//Stuff added by Jeroen
+
+    float m_ringInclination;
+    float m_ringInclination_old;
+
+    float m_ringShiftFromCenter;
+    float m_ringShiftFromCenter_old;
+
+    float m_ringRscale;
+    float m_ringRscale_old;
+    float m_ringZscale;
+    float m_ringZscale_old;
+
+    float m_ringPhi;
+    float m_ringPhi_old;
+
+    int m_nDustParticles;
+    int m_nDustParticles_old;
+
+    float m_mergSizeRatio;
+    float m_mergSizeRatio_old;
+    float m_mergMassRatio, m_mergMasRatio_old;
+    float m_merImpact, m_mergImpact_old;
+    float m_mergSeperation, m_mergSeperation_old;
+    float m_inclination1,  m_inclination1_old;
+    float m_inclination2,  m_inclination2_old;
+    float m_omega1, m_omega1_old;
+    float m_omega2, m_omega2_old;
+
+
+    void setNumberOfParticles(uint n_particles);
+//End stuff 
+
 
 private:
     //GLuint loadTexture(char *filename);
@@ -225,6 +261,9 @@ private:
     float m_volumeIndirect;
     float m_volumeStart;
     float m_volumeWidth;
+
+
+
 
     ParamListGL         *m_params;
 

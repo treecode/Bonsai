@@ -35,8 +35,8 @@
 
 using namespace nv;
 
-SmokeRenderer::SmokeRenderer(int numParticles) :
-    mMaxParticles(numParticles),
+SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
+    mMaxParticles(maxParticles),
     mNumParticles(numParticles),
     mPosVbo(0),
     mVelVbo(0),
@@ -143,6 +143,24 @@ SmokeRenderer::SmokeRenderer(int numParticles) :
     //m_cubemapTex = loadCubemapCross("images/Carina_cross.ppm");
     //m_cubemapTex = loadCubemap("images/deepfield%d.ppm");
 
+  //Jeroen parameters
+  m_ringInclination     = m_ringInclination_old     = 0;
+  m_ringPhi             = m_ringPhi_old             = 90;
+  m_ringShiftFromCenter = m_ringShiftFromCenter_old = 0.5;
+  m_ringZscale          = m_ringZscale_old          = 0.1f;
+  m_ringRscale          = m_ringRscale_old          = 0.05f;
+  m_nDustParticles      = m_nDustParticles_old      = 30000;
+
+  m_mergSizeRatio       = m_mergSizeRatio_old       = 1.52f;
+  m_mergMassRatio       = m_mergMasRatio_old        = 1.f;
+  m_merImpact           = m_mergImpact_old          = 10.f;
+  m_mergSeperation      = m_mergSeperation_old      = 168.f;
+  m_inclination1        = m_inclination1_old        = 0.f;
+  m_inclination2        = m_inclination2_old        = 180.f;
+  m_omega1              = m_omega1_old              = 0.f;
+  m_omega2              = m_omega2_old              = 0.f;
+  //end Jeroen
+
     initParams();
 
 	//initCUDA();
@@ -155,6 +173,7 @@ SmokeRenderer::SmokeRenderer(int numParticles) :
 	mParticleIndices.copy(GpuArray<uint>::HOST_TO_DEVICE);
 
     glutReportErrors();
+
 }
 
 SmokeRenderer::~SmokeRenderer()
@@ -276,6 +295,20 @@ void SmokeRenderer::loadSmokeTextures(int nImages, int offset, char* sTexturePre
 }
 #endif
 
+void SmokeRenderer::setNumberOfParticles(uint n_particles)
+{
+  if(n_particles > this->mMaxParticles)
+  {
+    //Uhohhh too many particles
+    fprintf(stderr, "Sorry increase the number of maxParticles \n");
+    this->mNumParticles = this->mMaxParticles;
+  }
+  else
+  {
+    this->mNumParticles = n_particles;
+  }
+}
+
 void SmokeRenderer::setPositions(float *pos)
 {
 	memcpy(mParticlePos.getHostPtr(), pos, mNumParticles*4*sizeof(float));
@@ -297,7 +330,9 @@ void SmokeRenderer::setColors(float *color)
 		// allocate
 		glGenBuffers(1, &mColorVbo);
 		glBindBuffer(GL_ARRAY_BUFFER_ARB, mColorVbo);
-		glBufferData(GL_ARRAY_BUFFER_ARB, mNumParticles * 4 * sizeof(float), color, GL_DYNAMIC_DRAW);
+		//glBufferData(GL_ARRAY_BUFFER_ARB, mNumParticles * 4 * sizeof(float), color, GL_DYNAMIC_DRAW);
+    //Jeroen, I allocate the maximum number of particles
+    glBufferData(GL_ARRAY_BUFFER_ARB, mMaxParticles * 4 * sizeof(float), color, GL_DYNAMIC_DRAW);
 	}
 
 	glBindBuffer(GL_ARRAY_BUFFER_ARB, mColorVbo);
@@ -1324,4 +1359,25 @@ void SmokeRenderer::initParams()
     m_params->AddParam(new Param<float>("star intensity", m_starIntensity, 0.0f, 1.0f, 0.1f, &m_starIntensity));
     m_params->AddParam(new Param<float>("glow radius", m_glowRadius, 0.0f, 100.0f, 1.0f, &m_glowRadius));
     m_params->AddParam(new Param<float>("glow intensity", m_glowIntensity, 0.0f, 1.0f, 0.01f, &m_glowIntensity));
+
+//Interactive setup params
+    float nrScale = 4.0f; //make sure this is the same as in renderloop.cpp!!!
+   // m_params->AddParam(new Param<float>("Shift from center", m_ringShiftFromCenter, -1/nrScale, +1/nrScale, 0.01f, &m_ringShiftFromCenter));
+    m_params->AddParam(new Param<float>("Shift from center", m_ringShiftFromCenter, 0.01f, 0.99f, 0.01f, &m_ringShiftFromCenter));
+    m_params->AddParam(new Param<float>("Radial extent", m_ringRscale, 0.0f, 1/nrScale, 0.01f, &m_ringRscale));
+    m_params->AddParam(new Param<float>("Vertical extent", m_ringZscale, 0.0f, 1.0f, 0.01f, &m_ringZscale));
+
+    m_params->AddParam(new Param<float>("Ring Inclination", m_ringInclination, 0.0f, 360.0f, 15.0f, &m_ringInclination));
+    m_params->AddParam(new Param<float>("Ring phi",         m_ringPhi, 0.0f, 360.0f, 15.0f, &m_ringPhi));
+    m_params->AddParam(new Param<int>("N_Dust",             m_nDustParticles, 0, 500000, 5000, &m_nDustParticles));
+
+    m_params->AddParam(new Param<float>("Size ratio ",      m_mergSizeRatio, 0.1f, 4.0f, 0.01f, &m_mergSizeRatio));
+    m_params->AddParam(new Param<float>("Mass ratio ",      m_mergMassRatio, 0.1f, 4.0f, 0.01f, &m_mergMassRatio));
+    m_params->AddParam(new Param<float>("Impact param ",    m_merImpact, 0.1f, 50.0f, 1.f, &m_merImpact));
+    m_params->AddParam(new Param<float>("Seperation ",      m_mergSeperation, 0.1f, 400.f, 5.f, &m_mergSeperation));
+    m_params->AddParam(new Param<float>("Incl gal1",      m_inclination1, 0.f,360.0f, 15.f, &m_inclination1));
+    m_params->AddParam(new Param<float>("Omeg gal1",      m_omega1, 0.f,360.0f, 15.f, &m_omega1));
+    m_params->AddParam(new Param<float>("Incl gal2",      m_inclination2, 0.f,360.0f, 15.f, &m_inclination2));
+    m_params->AddParam(new Param<float>("Omeg gal2",      m_omega2, 0.f,360.0f, 15.f, &m_omega2));
+
 }

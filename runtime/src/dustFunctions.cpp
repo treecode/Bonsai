@@ -23,11 +23,39 @@ void octree::allocateDustMemory(tree_structure &tree)
   //Increase the position buffer, we will add the dust behind
   //this when rendering
   tree.bodies_pos.cresize(tree.n+1+tree.n_dust, false); 
+  tree.bodies_vel.cresize(tree.n+1+tree.n_dust, false); 
   tree.bodies_ids.cresize(tree.n+1+tree.n_dust, false); 
 
   tree.dust_acc0.zeroMem();
-
 }
+
+void octree::resizeDustMemory(tree_structure &tree)
+{
+  if(tree.n_dust == 0) return;
+  //Dust buffers
+  int n_dust = tree.n_dust;  
+  tree.dust_pos.cresize(n_dust+1, false);     
+  tree.dust_key.cresize(n_dust+1, false);     
+  tree.dust_vel.cresize(n_dust, false);
+  tree.dust_acc0.cresize(n_dust, false);     
+  tree.dust_acc1.cresize(n_dust, false);     
+  tree.dust_ids.cresize(n_dust+1, false);     
+  
+  tree.dust2group_list.cresize(n_dust, false);
+  tree.active_dust_list.cresize(n_dust+10, false);      //Extra space for atomics
+  tree.dust_interactions.cresize(n_dust, false);     
+  
+  tree.dust_ngb.cresize(n_dust, false);     
+
+  //Increase the position buffer, we will add the dust behind
+  //this when rendering
+  tree.bodies_pos.cresize(tree.n+1+tree.n_dust, false); 
+  tree.bodies_vel.cresize(tree.n+1+tree.n_dust, false); 
+  tree.bodies_ids.cresize(tree.n+1+tree.n_dust, false); 
+
+  tree.dust_acc0.zeroMem();
+}
+
 
 void octree::allocateDustGroupBuffers(tree_structure &tree)
 {

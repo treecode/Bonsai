@@ -219,12 +219,19 @@ bool octree::iterate_once(IterationData &idata) {
         string fileName; fileName.resize(256);
         sprintf(&fileName[0], "%s_%06d", snapshotFile.c_str(), time + snapShotAdd);
 
+        #ifdef USE_DUST
+          //We move the dust data into the position data (on the device :) )
+          localTree.bodies_pos.copy_devonly(localTree.dust_pos, localTree.n_dust, localTree.n); 
+          localTree.bodies_vel.copy_devonly(localTree.dust_vel, localTree.n_dust, localTree.n);
+          localTree.bodies_ids.copy_devonly(localTree.dust_ids, localTree.n_dust, localTree.n);
+        #endif  
+
         localTree.bodies_pos.d2h();
         localTree.bodies_vel.d2h();
         localTree.bodies_ids.d2h();
 
         write_dumbp_snapshot_parallel(&localTree.bodies_pos[0], &localTree.bodies_vel[0],
-                                      &localTree.bodies_ids[0], localTree.n, fileName.c_str()) ;
+          &localTree.bodies_ids[0], localTree.n + localTree.n_dust, fileName.c_str()) ;
       }
     }
 
@@ -314,12 +321,21 @@ void octree::iterate_setup(IterationData &idata) {
         string fileName; fileName.resize(256);
         sprintf(&fileName[0], "%s_%06d", snapshotFile.c_str(), time + snapShotAdd);
 
+        #ifdef USE_DUST
+          //We move the dust data into the position data (on the device :) )
+          localTree.bodies_pos.copy_devonly(localTree.dust_pos, localTree.n_dust, localTree.n); 
+          localTree.bodies_vel.copy_devonly(localTree.dust_vel, localTree.n_dust, localTree.n);
+          localTree.bodies_ids.copy_devonly(localTree.dust_ids, localTree.n_dust, localTree.n);
+        #endif  
+
         localTree.bodies_pos.d2h();
         localTree.bodies_vel.d2h();
         localTree.bodies_ids.d2h();
 
         write_dumbp_snapshot_parallel(&localTree.bodies_pos[0], &localTree.bodies_vel[0],
-                                      &localTree.bodies_ids[0], localTree.n, fileName.c_str()) ;
+          &localTree.bodies_ids[0], localTree.n + localTree.n_dust, fileName.c_str()) ;
+
+
       }
   }
 
@@ -389,6 +405,15 @@ void octree::predict(tree_structure &tree)
        temp = 1;
   #endif
 
+    fprintf(stderr, "1 %d 2 %d 3 %d 4 %d 5 %d 6 %d 7 %d 8 %d \n",
+       tree.bodies_pos.get_size(),
+       tree.bodies_vel.get_size(),
+       tree.bodies_acc0.get_size(),
+       tree.bodies_time.get_size(),
+       tree.body2group_list.get_size(),
+       tree.activeGrpList.get_size(),
+       tree.bodies_Ppos.get_size(),
+       tree.bodies_Pvel.get_size());
     
   //Set valid list to zero
   predictParticles.set_arg<int>(0,    &tree.n);

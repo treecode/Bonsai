@@ -1246,10 +1246,10 @@ namespace my_dev {
                                      hStream));      
       completeArguments();
 
-//       fprintf(stderr,"Waiting on kernel: %s to finish... ", hKernelName );
+//      fprintf(stderr,"Waiting on kernel: %s to finish... ", hKernelName );
       CU_SAFE_CALL(cudaLaunch(hKernelName));  
 //      CU_SAFE_CALL(cudaDeviceSynchronize());
-//       fprintf(stderr,"finished \n");
+//      fprintf(stderr,"finished \n");
       
     }
     ////

@@ -7,7 +7,14 @@
 #include <algorithm>
 #include "vector3.h"
 
-  
+#ifdef WIN32
+  #define M_PI        3.14159265358979323846264338328
+  #define RAND     (rand()/ (float)RAND_MAX)
+
+#else
+  #define RAND drand48()
+#endif 
+
 typedef float real;
 typedef vector3<real> vec3;
 
@@ -49,7 +56,7 @@ struct Rotation
   {
     const real costh = cos(I);
     const real sinth = sin(I);
-    const real costhm = 1.0 - costh;
+    const real costhm = (real) 1.0 - costh;
 
     const vec3 u(cos(phi), sin(phi), 0.0);  /* rotation around the axis by angle I, default is Y-axis */
 
@@ -74,6 +81,16 @@ struct Rotation
         Azx*v.x + Azy*v.y + Azz*v.z);
   }
 
+  real4 rotate(const real4 &v) const
+  {
+    return make_float4(
+        Axx*v.x + Axy*v.y + Axz*v.z,
+        Ayx*v.x + Ayy*v.y + Ayz*v.z,
+        Azx*v.x + Azy*v.y + Azz*v.z,
+        v.w);
+  }
+
+
   void rotate(Particle::Vector &ptcl) const
   {
     for (Particle::Iterator it = ptcl.begin(); it != ptcl.end(); it++)
@@ -87,7 +104,7 @@ struct Rotation
   
 inline real GaussianDistribution(const real x, const real sigma)
 {
-  return std::exp((-0.5)*x*x/(sigma*sigma));
+  return (real)std::exp((-0.5)*x*x/(sigma*sigma));
 }
 
 
@@ -110,8 +127,8 @@ struct DustRing
       const real _I,               /* ring inclination */
       const Vel1D::Vector &_VelCurve, /* velocity curve to assign velocities to dust particles */
       const real P = M_PI/2.0,     /* axis around which inline the disk, default is Y */
-      const real nrScale = 3.0,    /* number of scale-height in z-direction */
-      const real nzScale = 3.0,    /* number of scale-height in R-direction */
+      real nrScale = 3.0,    /* number of scale-height in z-direction */
+      real nzScale = 3.0,    /* number of scale-height in R-direction */
       const RingType &type = CYLINDER) : 
     Ro(_Ro), D(_D), H(_H), I(_I), VelCurve(_VelCurve), ring_type(type)
   {
@@ -123,21 +140,36 @@ struct DustRing
     const real Rmax = VelCurve.back().R;
 
     assert(Rmax       > Rmin); /* sanity check, outer edge of the disk must be outside the inner */
-    assert(Ro-nzScale > Rmin); /* check that there are enough velocity data points */
-    assert(Ro+nzScale < Rmax); /* to cover the full ring particle distribution */
+    //assert(Ro-nzScale > Rmin); /* check that there are enough velocity data points */
+    //assert(Ro+nzScale < Rmax); /* to cover the full ring particle distribution */
+
+    if (Ro + nrScale*D >= Rmax)
+    { 
+      nrScale = (real)((Rmax - Ro)/D * 0.99);
+      fprintf(stderr,"Adjusting nrScale to: %f \n", nrScale);
+    }
+   
+    if (Ro - nrScale*D <=  Rmin)
+    {
+      nrScale = (real)((Ro - Rmin)/D*0.9);
+      fprintf(stderr,"Adjusting nrScale to: %f \n", nrScale);
+    }
+
+
+
 #endif
 
     ptcl.reserve(N);
     switch(type)
     {
       case CYLINDER:
-        CylinderDust(nrScale, nzScale);
+        CylinderDust((int)nrScale, (int)nzScale);
         break;
       case TORUS:
-        TorusDust(nrScale, nzScale);
+        TorusDust((int)nrScale, (int)nzScale);
         break;
       default:
-        CylinderDust(nrScale, nzScale);
+        CylinderDust((int)nrScale, (int)nzScale);
     };
 
     const Rotation Mat(I, P);
@@ -152,14 +184,13 @@ struct DustRing
 
     while (ptcl.size() != ptcl.capacity())
     {
-      const real M = 2.0*Ro;
-      const real f = drand48() * M;
+      const real M = (real)2.0*Ro;
+      const real f = RAND * M;
+      const real R = (real) (Ro + nrScale * D * (1.0 - 2.0*RAND));
+      const real Z = (real) (     nzScale * H * (1.0 - 2.0*RAND));
 
-      const real R = Ro + nrScale * D * (1.0 - 2.0*drand48());
-      const real Z =      nzScale * H * (1.0 - 2.0*drand48());
-
-      const real nR = GaussianDistribution(R-Ro, D);
-      const real nZ = GaussianDistribution(Z,    H);
+      const real nR = (real) GaussianDistribution(R-Ro, D);
+      const real nZ = (real) GaussianDistribution(Z,    H);
       const real n  = nR*nZ;
       const real dV = R;
       const real dN = n * dV;
@@ -168,7 +199,7 @@ struct DustRing
 
       if (f < n)  /* use von Neuman rejection technique to test whether to accept the position */
       {
-        const real phi = drand48() * 2.0 * M_PI;
+        const real phi = (real)( RAND * 2.0 * M_PI);
         ptcl.push_back(Particle(vec3(R*cos(phi), R*sin(phi), Z)));
       }
     }
@@ -206,12 +237,12 @@ struct DustRing
 
     while (ptcl.size() != ptcl.capacity())
     {
-      const real M = 4.0*Ro;
-      const real f = drand48() * M;
+      const real M = (real)4.0*Ro;
+      const real f = RAND * M;
 
       /* sample point in R-Z section of the "stretched" torus */
-      const real r     = nrScale * D * drand48();
-      const real th    = 2*M_PI*drand48();
+      const real r     = nrScale * D *RAND;
+      const real th    = (real)(2*M_PI*RAND);
       const real costh = cos(th);
       const real sinth = sin(th);
 
@@ -229,7 +260,7 @@ struct DustRing
       {
         const real Z   = z;
         const real R   = x + Ro;
-        const real phi = drand48() * 2.0 * M_PI;
+        const real phi = (real)(RAND * 2.0 * M_PI);
         ptcl.push_back(Particle(vec3(R*cos(phi), R*sin(phi), Z)));
       }
     }

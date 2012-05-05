@@ -24,7 +24,44 @@
 #include "SmokeRenderer.h"
 #include "vector_math.h"
 
+#include "../add_dust/DustRing.h"
+#define M_PI        3.14159265358979323846264338328
+
 extern void displayTimers();    // For profiling counter display
+
+
+
+extern double rot[3][3];
+
+extern void rotmat(double i,double w);
+
+extern void rotate(double rot[3][3],float *vin);
+
+extern void euler(vector<real4> &bodyPositions,
+           vector<real4> &bodyVelocities,
+           double inc, double omega);
+
+extern double centerGalaxy(vector<real4> &bodyPositions,
+                    vector<real4> &bodyVelocities);
+
+extern int setupMergerModel(vector<real4> &bodyPositions1,
+                     vector<real4> &bodyVelocities1,
+                     vector<int>   &bodyIDs1,
+                     vector<real4> &bodyPositions2,
+                     vector<real4> &bodyVelocities2,
+                     vector<int>   &bodyIDs2,
+                     double ds = -1,
+                     double ms = -1,
+                     double b  = -1,
+                     double rsep = -1,
+                     double inc1 = -1,
+                     double omega1 = -1,
+                     double inc2  = -1,
+                     double omega2 = -1);
+
+
+bool modelDoubled = false;
+bool setupMergerComplete = false;
 
 void drawWireBox(float3 boxMin, float3 boxMax) {
 #if 0
@@ -99,12 +136,14 @@ void drawWireBox(float3 boxMin, float3 boxMax) {
 #endif
 }
 
+#define MAX_PARTICLES 5000000
 class BonsaiDemo
 {
 public:
   BonsaiDemo(octree *tree, octree::IterationData &idata) 
     : m_tree(tree), m_idata(idata), iterationsRemaining(true),
-      m_renderer(tree->localTree.n + tree->localTree.n_dust),
+    //Set max particles to 5Million, should be enough for demos
+      m_renderer(tree->localTree.n + tree->localTree.n_dust, MAX_PARTICLES),
       //m_displayMode(ParticleRenderer::PARTICLE_SPRITES_COLOR),
 	    m_displayMode(SmokeRenderer::SPRITES),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.2f),
@@ -134,11 +173,12 @@ public:
    int arraySize = tree->localTree.n;
    arraySize    += tree->localTree.n_dust;
  
-   m_particleColors  = new float4[arraySize];
+   m_particleColors  = new float4[MAX_PARTICLES];
  
-	m_renderer.setFOV(m_fov);
-	m_renderer.setWindowSize(m_windowDims.x, m_windowDims.y);
-	m_renderer.setDisplayMode(m_displayMode);
+	  m_renderer.setFOV(m_fov);
+	  m_renderer.setWindowSize(m_windowDims.x, m_windowDims.y);
+	  m_renderer.setDisplayMode(m_displayMode);
+
   }
 
   ~BonsaiDemo() {
@@ -169,6 +209,10 @@ public:
   }
 
   void step() { 
+
+    if(!setupMergerComplete)
+      return;
+
     if (!m_paused && iterationsRemaining)
     {
       iterationsRemaining = !m_tree->iterate_once(m_idata); 
@@ -177,9 +221,378 @@ public:
       printf("No iterations Remaining!\n");
   }
 
+  vector<real4> original_bodyPositions;
+  vector<real4> original_bodyVelocities;
+  vector<int>   original_bodyIDs; 
+
+
+  vector<real4> bodyPositions;
+  vector<real4> bodyVelocities;
+  vector<int>   bodyIDs; 
+
+  vector<real4> bodyPositions2;
+  vector<real4> bodyVelocities2;
+  vector<int>   bodyIDs2; 
+
+
+ //Put the current galaxy on an orbit (with a copy of itself)
+  void doubleGalaxyModel()
+  {
+    //Make a full copy of the current galaxy and set it up
+    //using some defaults
+    int n_particles = m_tree->localTree.n;
+
+     m_tree->localTree.bodies_ids.d2h();   
+    m_tree->localTree.bodies_pos.d2h();  
+    m_tree->localTree.bodies_vel.d2h();  
+
+    original_bodyPositions.insert(original_bodyPositions.begin(),  
+      &m_tree->localTree.bodies_pos[0],  
+      &m_tree->localTree.bodies_pos[0]+n_particles);
+    original_bodyVelocities.insert(original_bodyVelocities.begin(),  
+      &m_tree->localTree.bodies_vel[0], 
+      &m_tree->localTree.bodies_vel[0]+n_particles);
+    original_bodyIDs.insert(original_bodyIDs.begin(),  
+      &m_tree->localTree.bodies_ids[0], 
+      &m_tree->localTree.bodies_ids[0]+n_particles);
+
+    float sizeRatio = 1.52f;
+    float massRatio = 1;
+    float impact    = 10;
+    float seperation= 168;
+    float angle1  = 0;
+    float angle1b = 0;
+    float angle2  = 180;
+    float angle2b = 0;
+
+    modelDoubled = true;
+    fprintf(stderr, "size %d %d\n", (int)original_bodyPositions.size()*2, m_tree->localTree.n);
+    m_tree->localTree.setN((int)original_bodyPositions.size()*2);
+    m_tree->allocateParticleMemory(m_tree->localTree);
+
+    updateMergerConfiguration(sizeRatio, massRatio, impact, seperation, 
+                              angle1, angle1b, angle2, angle2b);
+
+    m_renderer.setNumberOfParticles(m_tree->localTree.n + m_tree->localTree.n_dust);
+  }
+
+  void updateMergerConfiguration(float sizeRatio, float massRatio, float impact,
+                                 float seperation, float angle1, float angle1b,
+                                 float angle2, float angle2b)
+  {
+
+    bodyPositions.clear();
+    bodyVelocities.clear();
+    bodyIDs.clear();
+    bodyPositions2.clear();
+    bodyVelocities2.clear();
+    bodyIDs2.clear();
+
+
+    //Copy the original galaxy, overwriting the modified ones
+    bodyPositions.insert(bodyPositions.begin(), original_bodyPositions.begin(), original_bodyPositions.end());
+    bodyVelocities.insert(bodyVelocities.begin(), original_bodyVelocities.begin(), original_bodyVelocities.end());
+    bodyIDs.insert(bodyIDs.begin(), original_bodyIDs.begin(), original_bodyIDs.end());
+
+    bodyPositions2.insert(bodyPositions2.begin(), bodyPositions.begin(), bodyPositions.end());
+    bodyVelocities2.insert(bodyVelocities2.begin(), bodyVelocities.begin(), bodyVelocities.end());
+    bodyIDs2.insert(bodyIDs2.begin(), bodyIDs.begin(), bodyIDs.end());
+
+    setupMergerModel(bodyPositions,  bodyVelocities,  bodyIDs,
+                       bodyPositions2, bodyVelocities2, bodyIDs2,
+                       sizeRatio, massRatio, impact, seperation,
+                       angle1, angle1b, angle2, angle2b);
+
+    //Load data onto the device
+    memcpy(&m_tree->localTree.bodies_pos[0], &bodyPositions[0], sizeof(real4)*bodyPositions.size());
+    memcpy(&m_tree->localTree.bodies_vel[0], &bodyVelocities[0], sizeof(real4)*bodyPositions.size());
+    memcpy(&m_tree->localTree.bodies_ids[0], &bodyIDs[0], sizeof(int)*bodyPositions.size());
+      
+    memcpy(&m_tree->localTree.bodies_pos[(int)bodyPositions.size()], &bodyPositions2[0], sizeof(real4)*bodyPositions.size());
+    memcpy(&m_tree->localTree.bodies_Ppos[(int)bodyPositions.size()], &bodyPositions2[0], sizeof(real4)*bodyPositions.size());
+    memcpy(&m_tree->localTree.bodies_vel[(int)bodyPositions.size()], &bodyVelocities2[0], sizeof(real4)*bodyPositions.size());
+    memcpy(&m_tree->localTree.bodies_Pvel[(int)bodyPositions.size()], &bodyVelocities2[0], sizeof(real4)*bodyPositions.size());
+    memcpy(&m_tree->localTree.bodies_ids[(int)bodyPositions.size()], &bodyIDs2[0], sizeof(int)*bodyPositions.size());
+
+    //Only copy whats needed for visualization
+    m_tree->localTree.bodies_pos.h2d();
+    m_tree->localTree.bodies_ids.h2d();   
+  }
+
+  void startSimulation()
+  {
+    //m_tree->localTree.setN((int)bodyPositions.size());
+    //m_tree->allocateParticleMemory(m_tree->localTree);
+
+    m_tree->localTree.bodies_Ppos.h2d();
+    m_tree->localTree.bodies_Pvel.h2d();
+    m_tree->localTree.bodies_vel.h2d();
+    m_tree->localTree.bodies_pos.h2d();
+    m_tree->localTree.bodies_ids.h2d();  
+
+    m_tree->localTree.bodies_acc0.zeroMem();
+
+    //Stupid fix for the predict / set GrpID problem. JB Need to FIX this
+    m_tree->localTree.active_group_list.cresize(m_tree->localTree.n, false);
+    m_tree->localTree.body2group_list.zeroMem();
+
+    m_tree->reset_energy();
+  
+    setupMergerComplete = true;
+  }
+
+
   void display() { 
     if (m_renderingEnabled)
     {
+      
+      //Jeroen 
+      #ifdef USE_DUST //Only works if dust is in seperate array that we can modify
+        
+        int updateRingRegen  = 0;
+        int updateRingRotate = 0;
+        updateRingRotate += (m_renderer.m_ringInclination != m_renderer.m_ringInclination_old);
+        updateRingRotate += (m_renderer.m_ringPhi != m_renderer.m_ringPhi_old);
+        updateRingRegen  += (m_renderer.m_ringShiftFromCenter != m_renderer.m_ringShiftFromCenter_old);
+        updateRingRegen  += (m_renderer.m_ringZscale != m_renderer.m_ringZscale_old);
+        updateRingRegen  += (m_renderer.m_ringRscale != m_renderer.m_ringRscale_old);
+        updateRingRegen  += (m_renderer.m_nDustParticles != m_renderer.m_nDustParticles_old);
+
+        m_renderer.m_ringZscale_old = m_renderer.m_ringZscale;
+        m_renderer.m_ringRscale_old = m_renderer.m_ringRscale;
+        m_renderer.m_ringShiftFromCenter_old = m_renderer.m_ringShiftFromCenter;
+
+
+        if(updateRingRotate)
+        {
+          fprintf(stderr, "old %f %f new: %f %f\n",
+          m_renderer.m_ringInclination_old, m_renderer.m_ringPhi_old,
+          m_renderer.m_ringInclination, m_renderer.m_ringPhi);
+          float incnew = (float)( m_renderer.m_ringInclination * M_PI/180.0);
+          float phinew = (float)( m_renderer.m_ringPhi         * M_PI/180.0);
+          float incold = (float)( m_renderer.m_ringInclination_old * M_PI/180.0);
+          float phiold = (float)( m_renderer.m_ringPhi_old         * M_PI/180.0);
+
+          const Rotation MatOld(-incold, phiold);
+          const Rotation MatNew(incnew,phinew);
+          m_tree->localTree.dust_pos.d2h(); 
+          m_tree->localTree.dust_vel.d2h(); 
+
+          for(int i=0; i < m_tree->localTree.n_dust; i++)
+          {   
+            //Rotate back to standard
+            m_tree->localTree.dust_pos[i] = MatOld.rotate(m_tree->localTree.dust_pos[i]);
+            m_tree->localTree.dust_vel[i] = MatOld.rotate(m_tree->localTree.dust_vel[i]);
+        
+            //New rotation
+            m_tree->localTree.dust_pos[i] = MatNew.rotate(m_tree->localTree.dust_pos[i]);
+            m_tree->localTree.dust_vel[i] = MatNew.rotate(m_tree->localTree.dust_vel[i]);
+          }
+          m_tree->localTree.dust_pos.h2d(); 
+          m_tree->localTree.dust_vel.h2d(); 
+
+        }
+
+       m_renderer.m_ringInclination_old     = m_renderer.m_ringInclination;
+       m_renderer.m_ringPhi_old    = m_renderer.m_ringPhi;
+       m_renderer.m_nDustParticles_old =  m_renderer.m_nDustParticles;
+
+        if(updateRingRegen)
+        {
+          fprintf(stderr, "Update ring\n");
+   
+    
+          //Generate a new ring
+          real dRshift  = m_renderer.m_ringShiftFromCenter;
+          real Rscale   = (real) m_renderer.m_ringRscale;
+          real Zscale   = (real) m_renderer.m_ringZscale;
+          real nrScale  = (real) 4.0;
+          real nzScale  = (real) 4.0;
+          real inclination = (real) m_renderer.m_ringInclination;
+          real phi         = (real) m_renderer.m_ringPhi;
+          DustRing::RingType ring_type = DustRing::CYLINDER;
+          //DustRing::RingType ring_type = DustRing::TORUS;
+          int Ndust = m_renderer.m_nDustParticles;
+          const int Ndisk = 150000;
+
+          fprintf(stderr, " Adding %s dust ring: \n", ring_type == DustRing::CYLINDER ? "CYLINDER" : "TORUS");
+          fprintf(stderr, "   N=       %d \n", Ndust);
+          fprintf(stderr, "   dRshift= %g \n", dRshift);
+          fprintf(stderr, "   Rscale=  %g \n", Rscale);
+          fprintf(stderr, "   Zscale=  %g \n", Zscale);
+          fprintf(stderr, "   incl=    %g  degrees \n", inclination);
+          fprintf(stderr, "   phi=     %g  degrees \n", phi);
+          fprintf(stderr, "   nrScale= %g \n", nrScale);
+          fprintf(stderr, "   nzScale= %g \n", nzScale);
+
+          Vel1D::Vector VelCurve;
+          VelCurve.reserve(Ndisk);
+          vec3 L(0.0);
+          Real Mtot = 0.0;
+          Real Rmin = (Real) HUGE;
+          Real Rmax = 0.0;
+
+          m_tree->localTree.bodies_ids.d2h();   
+          m_tree->localTree.bodies_pos.d2h();   
+
+          for (int i = 0; i < m_tree->localTree.n; i++)
+          {
+            //Only if its a disk particle
+            if(m_tree->localTree.bodies_ids[i] < 50000000)
+            {   
+              real4 pos4 =  m_tree->localTree.bodies_pos[i];
+              real4 vel4 =  m_tree->localTree.bodies_pos[i];
+              const vec3 pos(pos4.x, pos4.y, pos4.z);
+              const vec3 vel(vel4.x, vel4.y, vel4.z);
+              const Real V = std::sqrt(vel.x*vel.x + vel.y*vel.y);
+              if(0.01*V > std::abs(vel.z))
+              {
+                L    += pos4.w * (pos%vel);
+                Mtot += pos4.w;
+                const Real R = std::sqrt(pos.x*pos.x + pos.y*pos.y);
+        
+                VelCurve.push_back(Vel1D(R, V));
+                Rmin = std::min(Rmin, R);
+                Rmax = std::max(Rmax, R);
+              }
+            }
+          }
+          L *= 1.0f/Mtot;
+          fprintf(stderr, " Ncurve= %d :: L= %g %g %g \n", (int)VelCurve.size(), L.x, L.y, L.z);
+          fprintf(stderr, "  Rmin= %g  Rmax= %g \n", Rmin, Rmax);
+
+          /* setting radial scale height of the dust ring */
+
+          const Real dR = (Real)((Rmax - Rmin)*0.5);
+          const Real D  = (Real) Rscale*dR;
+          
+          dRshift      = m_renderer.m_ringShiftFromCenter;
+          //const Real Ro = (Real)( (Rmax + Rmin)*0.5 + dRshift * D);
+          const Real Ro = (Real)( (Rmax + Rmin)*dRshift);
+         
+          /* determining vertical scale-height of the disk */
+          Real Zmin = (Real) HUGE;
+          Real Zmax = 0.0;
+
+          for (int i = 0; i < m_tree->localTree.n; i++)
+          {
+            //Only if its a disk particle
+            if(m_tree->localTree.bodies_ids[i] < 50000000)
+            {  
+              real4 pos =  m_tree->localTree.bodies_pos[i];
+              const Real R = std::sqrt(pos.x*pos.x + pos.y*pos.y);
+              if(R > Ro - nrScale*D && R < Ro + nrScale*D)
+              {
+                Zmin = std::min(Zmin, pos.z);
+                Zmax = std::max(Zmax, pos.z);
+              }
+            }
+          }
+
+          const real dZ = Zmax - Zmin;
+          fprintf(stderr, "Zmin= %g Zmax= %g \n", Zmin, Zmax);
+
+          /* setting vertical scale height of the dust ring */
+
+          const Real H = Zscale*dZ;
+
+          /** Generating dust ring **/
+
+          const DustRing ring(Ndust, Ro, D, H, inclination, VelCurve, phi, nrScale, nzScale, ring_type);
+
+          fprintf(stderr, "Generation complete \n");
+          //Update the dust particles
+          m_tree->localTree.dust_pos.d2h(); 
+          m_tree->localTree.dust_vel.d2h(); 
+
+          if(Ndust > m_tree->localTree.n_dust)
+          {
+            fprintf(stderr, "Resize \n");
+            m_tree->localTree.setNDust(Ndust);
+            m_tree->resizeDustMemory(m_tree->localTree);
+            fprintf(stderr, "Resize complete \n");
+          }
+
+          int dustID = 50000000;
+          for(int i=0; i < Ndust; i++)
+          {   
+              m_tree->localTree.dust_pos[i].x = ring.ptcl[i].pos.x;
+              m_tree->localTree.dust_pos[i].y = ring.ptcl[i].pos.y;
+              m_tree->localTree.dust_pos[i].z = ring.ptcl[i].pos.z;
+              m_tree->localTree.dust_pos[i].w = 0;
+              m_tree->localTree.dust_ids[i] = dustID++;;
+              m_tree->localTree.dust_vel[i].x = ring.ptcl[i].vel.x;
+              m_tree->localTree.dust_vel[i].y = ring.ptcl[i].vel.y;
+              m_tree->localTree.dust_vel[i].z = ring.ptcl[i].vel.z;
+        }
+          m_tree->localTree.dust_pos.h2d(); 
+          m_tree->localTree.dust_vel.h2d(); 
+          m_renderer.setNumberOfParticles(m_tree->localTree.n + m_tree->localTree.n_dust);
+        }//UpdateRing
+      #endif //USE_DUST
+
+      #if 1
+        if(modelDoubled)
+        {
+          //Only check for these settings after we are sure we 
+          //doubled the galaxies
+          int updateMergerConfigurationRequest = 0;
+          updateMergerConfigurationRequest += (m_renderer.m_mergSizeRatio != m_renderer.m_mergSizeRatio_old);
+          updateMergerConfigurationRequest += (m_renderer.m_mergMassRatio != m_renderer.m_mergMasRatio_old);
+          updateMergerConfigurationRequest += (m_renderer.m_merImpact != m_renderer.m_mergImpact_old);
+          updateMergerConfigurationRequest += (m_renderer.m_mergSeperation != m_renderer.m_mergSeperation_old);
+          updateMergerConfigurationRequest += (m_renderer.m_inclination1 != m_renderer.m_inclination1_old);
+          updateMergerConfigurationRequest += (m_renderer.m_inclination2 != m_renderer.m_inclination2_old);
+          updateMergerConfigurationRequest += (m_renderer.m_omega1 != m_renderer.m_omega1_old);
+          updateMergerConfigurationRequest += (m_renderer.m_omega2 != m_renderer.m_omega2_old);
+
+          m_renderer.m_mergSizeRatio_old = m_renderer.m_mergSizeRatio;
+          m_renderer.m_mergMasRatio_old = m_renderer.m_mergMassRatio;
+          m_renderer.m_mergImpact_old = m_renderer.m_merImpact;
+          m_renderer.m_mergSeperation_old = m_renderer.m_mergSeperation;
+          m_renderer.m_inclination1_old = m_renderer.m_inclination1;
+          m_renderer.m_inclination2_old = m_renderer.m_inclination2;
+          m_renderer.m_omega1_old = m_renderer.m_omega1;
+          m_renderer.m_omega2_old = m_renderer.m_omega2;
+
+          if(updateMergerConfigurationRequest)
+          {
+            fprintf(stderr, "Updating! \n");
+            float sizeRatio = 1.52f;
+            float massRatio = 1;
+            float impact    = 10;
+            float seperation= 168;
+            float angle1  = 0;
+            float angle1b = 0;
+            float angle2  = 180;
+            float angle2b = 0;
+
+            sizeRatio =  m_renderer.m_mergSizeRatio;
+            massRatio =  m_renderer.m_mergMassRatio;
+            impact =  m_renderer.m_merImpact;
+            seperation =  m_renderer.m_mergSeperation;
+            angle1 =  m_renderer.m_inclination1;
+            angle2 =  m_renderer.m_inclination2;
+            angle1b =  m_renderer.m_omega1;
+            angle2b =  m_renderer.m_omega2;
+
+            updateMergerConfiguration(sizeRatio, massRatio, impact, seperation, 
+                              angle1, angle1b, angle2, angle2b);
+
+          }
+
+        }
+
+
+
+
+      #endif 
+
+
+
+      //end Jeroen
+
+
       getBodyData();
 
       moveCamera();
@@ -207,7 +620,7 @@ public:
         glGetFloatv(GL_MODELVIEW_MATRIX, m_modelView);
 
         //m_renderer.display(m_displayMode);
-	    m_renderer.render();
+	      m_renderer.render();
 
         if (m_displayBoxes) {
           glEnable(GL_DEPTH_TEST);
@@ -408,6 +821,15 @@ public:
         fitCamera();
       }
       break;
+    case 'M':
+    case 'm':
+      doubleGalaxyModel();
+      break;
+    case 'N':
+    case 'n':
+      startSimulation();
+      break;
+      
     }
 
     m_keyDown[key] = true;
@@ -456,7 +878,7 @@ public:
   float  frand() { return rand() / (float) RAND_MAX; }
   float4 randColor(float scale) { return make_float4(frand()*scale, frand()*scale, frand()*scale, 0.0f); }
 
-#if 1
+#if 0
  void getBodyData() {
     //m_tree->localTree.bodies_pos.d2h();
     m_tree->localTree.bodies_ids.d2h();
@@ -551,7 +973,7 @@ public:
             
       if (id >= 0 && id < 50000000)     //Disk
       {
-        colors[i] = make_float4(1, 0, 0, 1);        
+        colors[i] = make_float4(0, 0, 1, 1);        
       } 
       else if (id >= 50000000 && id < 100000000) //Dust
       {
@@ -573,11 +995,9 @@ public:
 #endif
     }
 
-
     m_renderer.setNumParticles( m_tree->localTree.n + m_tree->localTree.n_dust);    
     m_renderer.setPositionsDevice((float*) m_tree->localTree.bodies_pos.d());
     m_renderer.setColors((float*)colors);
-
   }
 #endif 
 

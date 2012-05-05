@@ -455,6 +455,8 @@ protected:
 public:
    double get_time();
 
+   void reset_energy() {store_energy_flag = true;}
+
    void write_dumbp_snapshot_parallel(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName) ;
    void write_dumbp_snapshot_parallel_tipsy(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName,
                                             int NCombTotal, int NCombFirst, int NCombSecond, int NCombThird);
@@ -684,6 +686,7 @@ public:
     void correctDustStep(tree_structure &tree);
     void approximate_dust(tree_structure &tree);
     void setDustGroupProperties(tree_structure &tree);
+    void resizeDustMemory(tree_structure &tree);
     
     my_dev::kernel define_dust_groups;
     my_dev::kernel store_dust_groups;
