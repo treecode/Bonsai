@@ -7,7 +7,6 @@
 #include <algorithm>
 #include "vector3.h"
 
-
   
 typedef float real;
 typedef vector3<real> vec3;
@@ -39,6 +38,52 @@ struct Particle
   vec3 pos, vel;
   Particle(const vec3 &_pos, const vec3 &_vel = 0.0) : pos(_pos), vel(_vel) {}
 };
+
+
+struct Rotation
+{
+  real Axx, Axy, Axz;
+  real Ayx, Ayy, Ayz;
+  real Azx, Azy, Azz;
+  Rotation(const real I = 0.0)
+  {
+    const real costh = cos(I);
+    const real sinth = sin(I);
+    const real costhm = 1.0 - costh;
+
+    const vec3 u(0.0, 1.0, 0.0);  /* rotation around Y-axis, by angle I */
+
+    Axx = u.x*u.x*costhm +     costh;
+    Axy = u.x*u.y*costhm - u.z*sinth;
+    Axz = u.x*u.z*costhm + u.y*sinth;
+
+    Ayx = u.y*u.x*costhm + u.z*sinth;
+    Ayy = u.y*u.y*costhm +     costh;
+    Ayz = u.y*u.z*costhm - u.x*sinth;
+
+    Azx = u.z*u.x*costhm - u.y*sinth;
+    Azy = u.z*u.y*costhm + u.x*sinth;
+    Azz = u.z*u.z*costhm +     costh;
+  }
+
+  vec3 rotate(const vec3 &v) const
+  {
+    return vec3(
+        Axx*v.x + Axy*v.y + Axz*v.z,
+        Ayx*v.x + Ayy*v.y + Ayz*v.z,
+        Azx*v.x + Azy*v.y + Azz*v.z);
+  }
+
+  void rotate(Particle::Vector &ptcl) const
+  {
+    for (Particle::Iterator it = ptcl.begin(); it != ptcl.end(); it++)
+    {
+      it->pos = rotate(it->pos);
+      it->vel = rotate(it->vel);
+    }
+  }
+
+};
   
 inline real GaussianDistribution(const real x, const real sigma)
 {
@@ -52,21 +97,22 @@ struct DustRing
   real Ro;   /* ring central  region*/
   real D;    /* ring radial   extent */
   real H;    /* ring vertical extend */
+  real I;    /* ring inclination */
   Vel1D::Vector VelCurve; 
   RingType ring_type;
   Particle::Vector ptcl;
-
 
   DustRing(
       const int N, 
       const real _Ro,              /* ring's central region */
       const real _D,               /* density scale height in radial direction */
       const real _H,               /* density scale height in vertical direction */
+      const real _I,               /* ring inclination */
       const Vel1D::Vector &_VelCurve, /* velocity curve to assign velocities to dust particles */
       const real nrScale = 3.0,    /* number of scale-height in z-direction */
       const real nzScale = 3.0,    /* number of scale-height in R-direction */
       const RingType &type = CYLINDER) : 
-    Ro(_Ro), D(_D), H(_H), VelCurve(_VelCurve), ring_type(type)
+    Ro(_Ro), D(_D), H(_H), I(_I), VelCurve(_VelCurve), ring_type(type)
   {
     assert(N > 0);
     std::sort(VelCurve.begin(), VelCurve.end(), cmp_Vel1D());
@@ -92,6 +138,9 @@ struct DustRing
       default:
         CylinderDust(nrScale, nzScale);
     };
+
+    const Rotation Mat(I);
+    Mat.rotate(ptcl);
   }
 
   protected:
