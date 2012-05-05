@@ -35,7 +35,7 @@
   template <int keyIdx>
   struct ExtractBits : public thrust::unary_function<uint4, uint>
   {
-    __host__ __device__ 
+    __host__ __device__ __forceinline__
     uint operator()(uint4 key) const {
       if(keyIdx == 0)
         return key.x;

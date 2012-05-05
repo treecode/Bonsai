@@ -8,6 +8,133 @@ PROF_MODULE(sortKernels);
 //Helper functions
 //Reorders data 
 
+#ifdef USE_B40C
+  #include <b40c/util/multi_buffer.cuh>
+  #include <b40c/radix_sort/enactor.cuh>
+
+  #include <thrust/device_ptr.h>
+  #include <thrust/copy.h>
+  #include <thrust/sort.h>
+  #include <thrust/gather.h>
+  #include <thrust/device_vector.h> 
+  #include <thrust/iterator/transform_iterator.h>
+
+  #include "../include/my_cuda_rt.h"
+  #include "sort.h"
+
+  Sort90::Sort90(uint N) 
+  {
+    // Allocate reusable ping-pong buffers on device.
+    double_buffer = new b40c::util::DoubleBuffer<uint, uint>;
+    sort_enactor = new b40c::radix_sort::Enactor;
+  
+    // The key buffers are opaque.
+    cudaMalloc((void**) &double_buffer->d_keys[0], sizeof(uint) * N);
+    cudaMalloc((void**) &double_buffer->d_keys[1], sizeof(uint) * N);
+  
+    // The current value buffer (double_buffer.d_values[double_buffer.selector])
+    // backs the desired permutation array.
+    cudaMalloc((void**) &double_buffer->d_values[0], sizeof(uint) * N);
+    cudaMalloc((void**) &double_buffer->d_values[1], sizeof(uint) * N);
+  }
+
+  Sort90::~Sort90() 
+  {
+      cudaFree(double_buffer->d_keys[0]);
+      cudaFree(double_buffer->d_keys[1]);
+      cudaFree(double_buffer->d_values[0]);
+      cudaFree(double_buffer->d_values[1]);
+      delete double_buffer;
+      delete sort_enactor;
+  }
+
+  // Apply thrust_permutation
+  template<typename KeyPtr, typename PermutationPtr, typename OutputPtr>
+  void apply_permutation(KeyPtr& thrust_in,
+                         PermutationPtr& thrust_permutation,
+                         OutputPtr& thrust_out,
+                         int N)
+  {
+    // permute the keys into out vector
+    thrust::gather(thrust_permutation, thrust_permutation + N, thrust_in, thrust_out);
+  }
+
+
+  // Extract 32-bit word from uint4
+  template<int keyIdx>
+  struct ExtractBits: public thrust::unary_function<uint4, uint>
+  {
+    __host__ __device__ __forceinline__ uint operator()(uint4 key) const
+    {
+      if      (keyIdx == 0) return key.x;
+      else if (keyIdx == 1) return key.y;
+      else                  return key.z;
+    }
+  };
+
+
+  // Update thrust_permutation
+  template<int keyIdx, typename KeyPtr>
+  void update_permutation(KeyPtr& thrust_src_keys, 
+                          int N,
+                          b40c::util::DoubleBuffer<uint, uint> &double_buffer,
+		                      b40c::radix_sort::Enactor &sort_enactor)
+  {
+    // thrust ptr to thrust_permutation buffer
+    thrust::device_ptr<uint> thrust_permutation = 
+      thrust::device_pointer_cast(double_buffer.d_values[double_buffer.selector]);
+
+    // thrust ptr to temporary 32-bit keys
+    thrust::device_ptr<uint> thust_32bit_temp = 
+      thrust::device_pointer_cast(double_buffer.d_keys[double_buffer.selector]);
+
+    // gather into temporary keys with the current reordering
+    thrust::gather(thrust_permutation,
+                   thrust_permutation + N,
+                   thrust::make_transform_iterator(thrust_src_keys, ExtractBits<keyIdx>()),
+                   thust_32bit_temp);
+
+    // Stable-sort the top 30 bits of the temp keys (and
+    // associated thrust_permutation values)
+    sort_enactor.Sort<30, 0>(double_buffer, N);
+  }
+
+
+  // Back40 90-bit sorting: sorts the lower 30 bits in uint4's key
+  void Sort90::sort(my_dev::dev_mem<uint4> &srcKeys,
+                    my_dev::dev_mem<uint4> &sortedKeys,
+                    int N)
+  {
+    // thrust ptr to srcKeys
+    thrust::device_ptr<uint4> thrust_src_keys = 
+      thrust::device_pointer_cast(srcKeys.raw_p());
+
+    // thrust ptr to sortedKeys
+    thrust::device_ptr<uint4> thrust_out_keys = 
+      thrust::device_pointer_cast(sortedKeys.raw_p());
+
+    // thrust ptr to permutation buffer
+    thrust::device_ptr<uint> thrust_permutation = 
+      thrust::device_pointer_cast(double_buffer->d_values[double_buffer->selector]);
+
+    // initialize values (thrust_permutation) to [0, 1, 2, ... ,N-1]
+    thrust::sequence(thrust_permutation, thrust_permutation + N);
+
+    // sort z, y, x
+    // careful: note 2, 1, 0 key word order, NOT 0, 1, 2.
+    update_permutation<2>(thrust_src_keys, N, *double_buffer, *sort_enactor);
+    update_permutation<1>(thrust_src_keys, N, *double_buffer, *sort_enactor);
+    update_permutation<0>(thrust_src_keys, N, *double_buffer, *sort_enactor);
+
+    // refresh thrust ptr to permutation buffer (may have changed inside ping-pong)
+    thrust_permutation = 
+      thrust::device_pointer_cast(double_buffer->d_values[double_buffer->selector]);
+
+    // Note: thrust_permutation now maps unsorted keys to sorted order
+    apply_permutation(thrust_src_keys, thrust_permutation, thrust_out_keys, N);
+  }
+#endif
+
 
 extern "C" __global__ void dataReorderR4(const int n_particles,
                                          real4 *source,

@@ -7,6 +7,10 @@ void octree::allocateParticleMemory(tree_structure &tree)
   //particles. Eg valid arrays used in tree construction
   int n_bodies = tree.n;
   
+#ifdef USE_B40C
+  sorter = new Sort90(n_bodies);
+#endif
+  
   if(nProcs > 1)                //10% extra space, only in parallel when
     n_bodies = (int)(n_bodies*1.1f);    //number of particles can fluctuate
   

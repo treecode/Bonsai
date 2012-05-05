@@ -1,23 +1,23 @@
 #include "octree.h"
 
-// #define USE_THRUST
+#if defined(USE_B40C)
+#include "sort.h"
+#elif defined(USE_THRUST)
 #define USE_THRUST_96
-
-#ifdef USE_THRUST
   extern "C" void thrust_sort_32b(my_dev::context &devContext, 
-                      my_dev::dev_mem<uint> &srcKeys,     my_dev::dev_mem<uint> &srcValues,
-                      my_dev::dev_mem<int>  &keysOutput,  my_dev::dev_mem<uint> &keysAPing,
-                      my_dev::dev_mem<uint> &valuesOutput,my_dev::dev_mem<uint> &valuesAPing,
-                      int N, int numberOfBits);
+                                  my_dev::dev_mem<uint> &srcKeys,     my_dev::dev_mem<uint> &srcValues,
+                                  my_dev::dev_mem<int>  &keysOutput,  my_dev::dev_mem<uint> &keysAPing,
+                                  my_dev::dev_mem<uint> &valuesOutput,my_dev::dev_mem<uint> &valuesAPing,
+                                  int N, int numberOfBits);
   extern "C" void thrust_sort_96b(my_dev::dev_mem<uint4> &srcKeys, 
                                   my_dev::dev_mem<uint4> &sortedKeys,
                                   my_dev::dev_mem<uint>  &temp_buffer,
                                   my_dev::dev_mem<uint>  &permutation_buffer,
                                   int N);
   extern "C" void thrust_gpuCompact(my_dev::context &devContext, 
-                        my_dev::dev_mem<uint> &srcValues,
-                        my_dev::dev_mem<uint> &output,                        
-                        int N, int *validCount);
+                                    my_dev::dev_mem<uint> &srcValues,
+                                    my_dev::dev_mem<uint> &output,                        
+                                    int N, int *validCount);
 #endif
 
 void octree::set_context( bool disable_timing) {
@@ -531,7 +531,10 @@ void  octree::gpuSort(my_dev::context &devContext,
                       int N, int numberOfBits, int subItems,
                       tree_structure &tree) {
 
-#if defined(USE_THRUST) && defined(USE_THRUST_96)
+#if defined (USE_B40C)
+  sorter->sort(srcValues, output, N);
+
+#elif defined(USE_THRUST) && defined(USE_THRUST_96)
   //Extra buffer values
   my_dev::dev_mem<uint> permutation(devContext);   // Permutation values, for sorting the int4 data
   my_dev::dev_mem<uint> temp_buffer(devContext);  // temporary uint buffer

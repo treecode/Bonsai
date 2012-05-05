@@ -26,6 +26,11 @@ option(USE_THRUST
   "On to use thrust for sorting"
   OFF
   )
+
+option(USE_B40C
+  "On to use B40C sorting"
+  OFF
+  )
   
 option(COMPILE_SM30
   "On to enable SM30 compilation"
@@ -46,6 +51,10 @@ endif (USE_MPI)
 if (USE_THRUST)
   add_definitions(-DUSE_THRUST)
 endif (USE_THRUST)
+
+if (USE_B40C)
+  add_definitions(-DUSE_B40C)
+endif (USE_B40C)
 
 set(CMAKE_DEBUG_POSTFIX "D")
 
@@ -72,6 +81,7 @@ set (HFILES
   include/tipsydefs.h
   include/vector_math.h
   include/depthSort.h
+  include/sort.h
   )
 
 set (CUFILES

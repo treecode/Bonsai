@@ -46,6 +46,9 @@ typedef unsigned int uint;
 
 #define NMAXSAMPLE 20000                //Used by first on host domain division
 
+#ifdef USE_B40C
+#include "sort.h"
+#endif
 
 struct morton_struct {
   uint2 key;
@@ -429,7 +432,10 @@ protected:
   my_dev::kernel insertNewParticles;
   my_dev::kernel internalMove;
 
-
+#ifdef USE_B40C
+  Sort90 *sorter;
+#endif
+  
   ///////////////////////
 
   /////////////////
@@ -723,6 +729,9 @@ public:
          float killDistanceT = -1, int maxDistT = -1, int snapAdd = 0, const int _rebuild = 2)
   : rebuild_tree_rate(_rebuild), procId(0), nProcs(1), thisPartLETExTime(0)
   {
+#if USE_B40C
+    sorter = 0;
+#endif
 
     devContext_flag = false;
     iter = 0;
@@ -797,6 +806,9 @@ public:
     delete[] xhighPrev;
     delete[] domHistoryLow;
     delete[] domHistoryHigh;    
+#if USE_B40C
+    delete sorter;
+#endif
   };
 };
 
