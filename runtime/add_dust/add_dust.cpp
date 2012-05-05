@@ -55,6 +55,7 @@ int main(int argc, char **argv)
   opt->addUsage( " -D  --Rscale   0.05    Radial   scale height in units of disk radial   extent ");
   opt->addUsage( " -H  --Zscale   0.1     Vertical scale height in units of disk vertical extent ");
   opt->addUsage( " -I  --incl     0.0     inclination of the dust ring wrt to the disk in degrees ");
+  opt->addUsage( " -P  --phi      90.0    angle to the rotation axis form X-axis in degrees ");
   opt->addUsage( " -r  --nrScale  3.0     Radial   scale height ");
   opt->addUsage( " -z  --nzScale  3.0     Vertical scale height ");
   opt->addUsage( " -T  --torus            Enable TORUS dust ring instead of CYLINDER");
@@ -70,6 +71,7 @@ int main(int argc, char **argv)
   opt->setOption(  "nrScale", 'r');
   opt->setOption(  "nzScale", 'z');
   opt->setOption(  "incl", 'I');
+  opt->setOption(  "phi", 'P');
   opt->setFlag  ( "torus", 'T');
 
   /* for options that will be checked only on the command and line not in option/resource file */
@@ -115,6 +117,7 @@ int main(int argc, char **argv)
   real nrScale  = 3.0;
   real nzScale  = 3.0;
   real inclination = 0.0;
+  real phi = 90.0;
   DustRing::RingType ring_type = DustRing::CYLINDER;
 
   if ((optarg = opt->getValue('N'))) Ndust = atoi(optarg);
@@ -124,6 +127,7 @@ int main(int argc, char **argv)
   if ((optarg = opt->getValue('r'))) nrScale  = atof(optarg);
   if ((optarg = opt->getValue('z'))) nzScale  = atof(optarg);
   if ((optarg = opt->getValue('I'))) inclination = atof(optarg);
+  if ((optarg = opt->getValue('P'))) phi = atof(optarg);
   if (opt->getFlag('T')) ring_type = DustRing::TORUS;
 
   
@@ -142,10 +146,12 @@ int main(int argc, char **argv)
   fprintf(stderr, "   Rscale=  %g \n", Rscale);
   fprintf(stderr, "   Zscale=  %g \n", Zscale);
   fprintf(stderr, "   incl=    %g  degrees \n", inclination);
+  fprintf(stderr, "   phi=     %g  degrees \n", phi);
   fprintf(stderr, "   nrScale= %g \n", nrScale);
   fprintf(stderr, "   nzScale= %g \n", nzScale);
   
   inclination *= M_PI/180.0;
+  phi         *= M_PI/180.0;
 
 
   std::vector<dark_particle> darkMatter;
@@ -320,7 +326,7 @@ int main(int argc, char **argv)
 
   /** Generating dust ring **/
 
-  const DustRing ring(Ndust, Ro, D, H, inclination, VelCurve, nrScale, nzScale, ring_type);
+  const DustRing ring(Ndust, Ro, D, H, inclination, VelCurve, phi, nrScale, nzScale, ring_type);
 
   /** Adding dust ring **/
 
@@ -338,7 +344,9 @@ int main(int argc, char **argv)
     s.vel[2] = ring.ptcl[i].vel.z;
     s.phi = dustID++;
 
+#if 0
     fprintf(stdout, "%g %g %g \n", s.pos[0], s.pos[1], s.pos[2]);
+#endif
 
 #if 0
     const real R = std::sqrt(s.pos[0]*s.pos[0] + s.pos[1]*s.pos[1]);

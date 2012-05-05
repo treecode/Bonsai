@@ -45,13 +45,13 @@ struct Rotation
   real Axx, Axy, Axz;
   real Ayx, Ayy, Ayz;
   real Azx, Azy, Azz;
-  Rotation(const real I = 0.0)
+  Rotation(const real I = 0.0, const real phi = M_PI/2.0)
   {
     const real costh = cos(I);
     const real sinth = sin(I);
     const real costhm = 1.0 - costh;
 
-    const vec3 u(0.0, 1.0, 0.0);  /* rotation around Y-axis, by angle I */
+    const vec3 u(cos(phi), sin(phi), 0.0);  /* rotation around the axis by angle I, default is Y-axis */
 
     Axx = u.x*u.x*costhm +     costh;
     Axy = u.x*u.y*costhm - u.z*sinth;
@@ -109,6 +109,7 @@ struct DustRing
       const real _H,               /* density scale height in vertical direction */
       const real _I,               /* ring inclination */
       const Vel1D::Vector &_VelCurve, /* velocity curve to assign velocities to dust particles */
+      const real P = M_PI/2.0,     /* axis around which inline the disk, default is Y */
       const real nrScale = 3.0,    /* number of scale-height in z-direction */
       const real nzScale = 3.0,    /* number of scale-height in R-direction */
       const RingType &type = CYLINDER) : 
@@ -139,7 +140,7 @@ struct DustRing
         CylinderDust(nrScale, nzScale);
     };
 
-    const Rotation Mat(I);
+    const Rotation Mat(I, P);
     Mat.rotate(ptcl);
   }
 
