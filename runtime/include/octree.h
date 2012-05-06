@@ -56,30 +56,6 @@ struct morton_struct {
 };
 
 
-inline int cmp_uint2(const uint2 a, const uint2 b) {
-  if      (a.x < b.x) return -1;
-  else if (a.x > b.x) return +1;
-  else {
-    if       (a.y < b.y) return -1;
-    else  if (a.y > b.y) return +1;
-    return 0;
-  }
-}
-
-inline int host_float_as_int(float val)
-{
-      union{float f; int i;} u; //__float_as_int
-      u.f           = val;
-      return u.i;
-}
-
-inline float host_int_as_float(int val)
-{
-      union{int i; float f;} itof; //__int_as_float
-      itof.i           = val;
-      return itof.f;
-}
-
 typedef struct setupParams {
   int jobs;                     //Minimal number of jobs for each 'processor'
   int blocksWithExtraJobs;      //Some ' processors'  do one extra job all with bid < bWEJ
@@ -460,6 +436,8 @@ protected:
 
 public:
    double get_time();
+
+   my_dev::context * getDevContext() { return &devContext; };        //Pointer so destructor is only called once  
 
    void write_dumbp_snapshot_parallel(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName) ;
    void write_dumbp_snapshot_parallel_tipsy(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName,

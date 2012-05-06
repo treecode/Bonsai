@@ -1,4 +1,5 @@
 #include "octree.h"
+#include "build.h"
 
 void octree::allocateParticleMemory(tree_structure &tree)
 {
@@ -194,8 +195,6 @@ void octree::allocateTreePropMemory(tree_structure &tree)
   }
 }
 
-
-
 void octree::build (tree_structure &tree) {
 
   int level      = 0;
@@ -290,6 +289,9 @@ void octree::build (tree_structure &tree) {
   /******  build the levels *********/
   
   // set devMemCountsx to 1 because it is used to early out when it hits zero
+#if 1
+  build_tree_node_levels(*this, validList, compactList, levelOffset, maxLevel);
+#else
   this->devMemCountsx[0] = 1;
   this->devMemCountsx.h2d(1);
 
@@ -310,7 +312,7 @@ void octree::build (tree_structure &tree) {
   // reset counts to 1 so next compact proceeds...
   this->devMemCountsx[0] = 1;
   this->devMemCountsx.h2d(1); 
-
+#endif
   maxLevel.d2h(1);
   level = maxLevel[0];
   

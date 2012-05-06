@@ -4,6 +4,21 @@
 #include "mpi.h"
 #endif
 
+inline int host_float_as_int(float val)
+{
+  union{float f; int i;} u; //__float_as_int
+  u.f           = val;
+  return u.i;
+}
+
+inline float host_int_as_float(int val)
+{
+  union{int i; float f;} itof; //__int_as_float
+  itof.i           = val;
+  return itof.f;
+}
+
+
 void octree::mpiInit(int argc,char *argv[], int &procId, int &nProcs)
 {
 #ifdef USE_MPI
