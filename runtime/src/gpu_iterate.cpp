@@ -40,6 +40,76 @@ void octree::makeLET()
 
 }
 
+#if 0
+bool octree::addGalaxy(int galaxyID)
+{
+  //To add an galaxy we need to have read it in from the host
+  //TODO
+  
+  
+  //First we need to compute the merger parameters
+  //this can be done on host or device or just precomputed
+  //However we need to center the galaxy on their center of mass
+  //which requires some loops, while it should be possible to do on 
+  //the device since the COM info is available in the tree-structure
+  //but the center of mass velocity isnt
+  
+  //So modify the positions to COM of the current galaxy and the new one
+  
+  //Compute merger parameters
+  
+  
+  //Modify the positions/velocity and angles of the galaxy on the device
+  
+  //Modify the to be added galaxy
+  
+  
+  //Now put everything together:  
+  int extraN = 1;
+  int extraDust = 1;
+  int old_n     = this->localTree.n;
+  int old_ndust = this->localTree.n_dust;
+  
+  //Increase the size of the buffers
+  this->localTree.setN(extraN        + this->localTree.n);
+  this->reallocateParticleMemory(this->localTree); //Resize preserves original data
+  
+  
+  #ifdef USE_DUST
+    this->localTree.setNDust(extraDust + this->localTree.n_dust);    
+    //The dust function checks if it needs to resize or malloc
+    this->allocateDustMemory(this->localTree); 
+  #endif  
+    
+  //Get particle data back to the host so we can add our new data
+  this->localTree.bodies_pos.d2h();
+  this->localTree.bodies_acc0.d2h();  
+  this->localTree.bodies_vel.d2h();
+  this->localTree.bodies_time.d2h();
+  this->localTree.bodies_ids.d2h();
+  this->localTree.bodies_Ppos.d2h();
+  this->localTree.bodies_Pvel.d2h();
+  
+  //Copy the new galaxy behind the current galaxy
+  memcpy(&m_tree->localTree.bodies_pos[old_n], 
+         &new_bodyPositions[0], sizeof(real4)*new_bodyPositions.size());
+  memcpy(&m_tree->localTree.bodies_Ppos[old_n], 
+         &new_bodyPositions[0], sizeof(real4)*new_bodyPositions.size());
+  //...etc. 
+  
+
+  //Send everything back to the device
+  
+  //With some luck we can jump directly to iterate_once
+  //if that doesnt work we might have to do some extra steps...to be tested  
+    
+  
+}
+#endif
+
+
+
+
 // returns true if this iteration is the last (t_current >= t_end), false otherwise
 bool octree::iterate_once(IterationData &idata) {
     double t1 = 0;
@@ -262,13 +332,6 @@ void octree::iterate_setup(IterationData &idata) {
   allocateTreePropMemory(localTree);
   compute_properties(localTree);
 
-  //If required set the dust particles
-#ifdef USE_DUST
-  //Sort the dust
-  sort_dust(localTree);
-  //make the dust groups
-  make_dust_groups(localTree);
-#endif //ifdef USE_DUST
 
   letRunning = false;
      
@@ -291,6 +354,10 @@ void octree::iterate_setup(IterationData &idata) {
   devContext.stopTiming("Approximation", 4);
   
   #ifdef USE_DUST
+      //Sort the dust
+      sort_dust(localTree);
+      //make the dust groups
+      make_dust_groups(localTree);
       //Predict
       predictDustStep(this->localTree);
       
@@ -303,7 +370,6 @@ void octree::iterate_setup(IterationData &idata) {
       //Correct
       correctDustStep(this->localTree);  
   #endif
-  
   
   
 
@@ -589,6 +655,7 @@ void octree::approximate_gravity(tree_structure &tree)
       tree.n_active_particles = tree.n;
       LOG("Active particles: %d \n", tree.n_active_particles);
     #endif
+  }
 }
 //end approximate
 
