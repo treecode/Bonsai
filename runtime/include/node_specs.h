@@ -11,7 +11,7 @@ typedef float4 real4;
 
 //If you uncomment the next line dust/massless particles will be treated
 //like normal particles and used in the tree-construction
-//#define USE_DUST
+#define USE_DUST
 
 
 #define IMPBH   //Improved barnes hut opening method

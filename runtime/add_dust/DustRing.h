@@ -163,13 +163,13 @@ struct DustRing
     switch(type)
     {
       case CYLINDER:
-        CylinderDust((int)nrScale, (int)nzScale);
+        CylinderDust(nrScale, nzScale);
         break;
       case TORUS:
-        TorusDust((int)nrScale, (int)nzScale);
+        TorusDust(nrScale, nzScale);
         break;
       default:
-        CylinderDust((int)nrScale, (int)nzScale);
+        CylinderDust(nrScale, nzScale);
     };
 
     const Rotation Mat(I, P);
@@ -178,7 +178,7 @@ struct DustRing
 
   protected:
 
-  void CylinderDust(const int nrScale, const int nzScale)
+  void CylinderDust(const real nrScale, const real nzScale)
   {
     fprintf(stderr, " Generating ring of disk with CYLINDER particle distribution \n");
 
@@ -231,7 +231,7 @@ struct DustRing
 #endif
   }
   
-  void TorusDust(const int nrScale, const int nzScale)
+  void TorusDust(const real nrScale, const real nzScale)
   {
     fprintf(stderr, " Generating ring of disk with TORUS particle distribution \n");
 

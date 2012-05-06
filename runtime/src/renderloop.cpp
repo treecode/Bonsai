@@ -234,6 +234,77 @@ public:
   vector<real4> bodyVelocities2;
   vector<int>   bodyIDs2; 
 
+  void mergeDustWithNormalParticles()
+  {
+    //If we've put the dust into a seperate array
+    //we are now going to merge it with the original galaxy
+    //so that the orbit calculations apply to the dust as well
+    #ifdef USE_DUST
+      int n_dust = m_tree->localTree.n_dust;
+      if(n_dust > 0)
+      {
+        int n_particles = m_tree->localTree.n;
+        m_tree->localTree.bodies_ids.d2h();   
+        m_tree->localTree.bodies_pos.d2h();  
+        m_tree->localTree.bodies_vel.d2h();  
+        m_tree->localTree.dust_ids.d2h();   
+        m_tree->localTree.dust_pos.d2h();  
+        m_tree->localTree.dust_vel.d2h();  
+
+        original_bodyPositions.clear();
+        original_bodyVelocities.clear();
+        original_bodyIDs.clear();
+
+        original_bodyPositions.insert(original_bodyPositions.begin(),  
+            &m_tree->localTree.bodies_pos[0],  
+            &m_tree->localTree.bodies_pos[0]+n_particles);
+        original_bodyVelocities.insert(original_bodyVelocities.begin(),  
+            &m_tree->localTree.bodies_vel[0], 
+            &m_tree->localTree.bodies_vel[0]+n_particles);
+        original_bodyIDs.insert(original_bodyIDs.begin(),  
+            &m_tree->localTree.bodies_ids[0], 
+            &m_tree->localTree.bodies_ids[0]+n_particles);
+
+
+        m_tree->localTree.setN(n_dust + m_tree->localTree.n);
+        m_tree->allocateParticleMemory(m_tree->localTree);
+        
+        original_bodyPositions.insert(original_bodyPositions.end(),
+          &m_tree->localTree.dust_pos[0], 
+          &m_tree->localTree.dust_pos[0]+n_dust);
+
+        original_bodyVelocities.insert(original_bodyVelocities.end(),
+          &m_tree->localTree.dust_vel[0], 
+          &m_tree->localTree.dust_vel[0]+n_dust);
+
+        original_bodyIDs.insert(original_bodyIDs.end(),
+          &m_tree->localTree.dust_ids[0], 
+          &m_tree->localTree.dust_ids[0]+n_dust);
+
+        fprintf(stderr,"original_bodyPositions : %d \n", original_bodyPositions.size());
+        memcpy(&m_tree->localTree.bodies_pos[0], &original_bodyPositions[0], sizeof(real4)*original_bodyPositions.size());
+        memcpy(&m_tree->localTree.bodies_vel[0], &original_bodyVelocities[0], sizeof(real4)*original_bodyVelocities.size());
+        memcpy(&m_tree->localTree.bodies_ids[0], &original_bodyIDs[0], sizeof(int)*original_bodyIDs.size());
+          
+     /*   memcpy(&m_tree->localTree.bodies_pos[(int)bodyPositions.size()], &bodyPositions2[0], sizeof(real4)*bodyPositions.size());
+        memcpy(&m_tree->localTree.bodies_Ppos[(int)bodyPositions.size()], &bodyPositions2[0], sizeof(real4)*bodyPositions.size());
+        memcpy(&m_tree->localTree.bodies_vel[(int)bodyPositions.size()], &bodyVelocities2[0], sizeof(real4)*bodyPositions.size());
+        memcpy(&m_tree->localTree.bodies_Pvel[(int)bodyPositions.size()], &bodyVelocities2[0], sizeof(real4)*bodyPositions.size());
+        memcpy(&m_tree->localTree.bodies_ids[(int)bodyPositions.size()], &bodyIDs2[0], sizeof(int)*bodyPositions.size());
+
+*/
+
+        m_tree->localTree.bodies_ids.h2d();   
+        m_tree->localTree.bodies_pos.h2d();  
+        m_tree->localTree.bodies_vel.h2d(); 
+
+        m_tree->localTree.setNDust(0);
+
+
+      }
+    #endif  
+  }
+
 
  //Put the current galaxy on an orbit (with a copy of itself)
   void doubleGalaxyModel()
@@ -241,6 +312,14 @@ public:
     //Make a full copy of the current galaxy and set it up
     //using some defaults
     int n_particles = m_tree->localTree.n;
+
+    original_bodyPositions.clear();
+    original_bodyVelocities.clear();
+    original_bodyIDs.clear();
+
+
+    mergeDustWithNormalParticles();
+
 
      m_tree->localTree.bodies_ids.d2h();   
     m_tree->localTree.bodies_pos.d2h();  
@@ -400,8 +479,7 @@ public:
         if(updateRingRegen)
         {
           fprintf(stderr, "Update ring\n");
-   
-    
+
           //Generate a new ring
           real dRshift  = m_renderer.m_ringShiftFromCenter;
           real Rscale   = (real) m_renderer.m_ringRscale;
@@ -505,12 +583,10 @@ public:
           m_tree->localTree.dust_pos.d2h(); 
           m_tree->localTree.dust_vel.d2h(); 
 
-          if(Ndust > m_tree->localTree.n_dust)
+         // if(Ndust > m_tree->localTree.n_dust)
           {
-            fprintf(stderr, "Resize \n");
             m_tree->localTree.setNDust(Ndust);
             m_tree->resizeDustMemory(m_tree->localTree);
-            fprintf(stderr, "Resize complete \n");
           }
 
           int dustID = 50000000;
@@ -524,7 +600,8 @@ public:
               m_tree->localTree.dust_vel[i].x = ring.ptcl[i].vel.x;
               m_tree->localTree.dust_vel[i].y = ring.ptcl[i].vel.y;
               m_tree->localTree.dust_vel[i].z = ring.ptcl[i].vel.z;
-        }
+          }
+
           m_tree->localTree.dust_pos.h2d(); 
           m_tree->localTree.dust_vel.h2d(); 
           m_renderer.setNumberOfParticles(m_tree->localTree.n + m_tree->localTree.n_dust);
@@ -578,13 +655,8 @@ public:
 
             updateMergerConfiguration(sizeRatio, massRatio, impact, seperation, 
                               angle1, angle1b, angle2, angle2b);
-
-          }
-
-        }
-
-
-
+          } //updateMergerConfigurationRequest
+        } //modelDoubled
 
       #endif 
 
@@ -829,6 +901,10 @@ public:
     case 'n':
       startSimulation();
       break;
+    case 'J':
+    case 'j':
+      mergeDustWithNormalParticles();
+      break;
       
     }
 
@@ -942,10 +1018,13 @@ public:
 
     #ifdef USE_DUST
      //We move the dust data into the position data (on the device :) )
-     m_tree->localTree.bodies_pos.copy_devonly(m_tree->localTree.dust_pos,
-                           m_tree->localTree.n_dust, m_tree->localTree.n); 
-     m_tree->localTree.bodies_ids.copy_devonly(m_tree->localTree.dust_ids,
-                           m_tree->localTree.n_dust, m_tree->localTree.n);
+     if(m_tree->localTree.n_dust > 0)
+     {
+       m_tree->localTree.bodies_pos.copy_devonly(m_tree->localTree.dust_pos,
+                             m_tree->localTree.n_dust, m_tree->localTree.n); 
+       m_tree->localTree.bodies_ids.copy_devonly(m_tree->localTree.dust_ids,
+                             m_tree->localTree.n_dust, m_tree->localTree.n);
+     }
     #endif    
 
     m_tree->localTree.bodies_ids.d2h();   
