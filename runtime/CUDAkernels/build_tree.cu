@@ -302,6 +302,7 @@ __device__ uint retirementCountBuildNodes = 0;
 extern "C" __global__ void cl_build_nodes(uint level,
                              uint  *compact_list_len,
                              uint  *level_offset,
+                             uint  *last_level,
                              uint2 *level_list,
                              uint  *compact_list,
                              uint4 *bodies_key,
@@ -360,6 +361,9 @@ extern "C" __global__ void cl_build_nodes(uint level,
       level_list[level] = (n > 0) ? make_uint2(offset, offset + n) : make_uint2(0, 0);
       *level_offset = offset + n;
 
+      if ((level > 0) && (n <= 0) && (level_list[level - 1].x > 0))
+        *last_level = level;
+
       // reset retirement count so that next run succeeds
       retirementCountBuildNodes = 0; 
     }
@@ -379,8 +383,7 @@ extern "C" __global__ void cl_link_tree(int n_nodes,
                             uint2 *level_list,           //TODO could make this constant if it proves usefull
                             uint* valid_list,
                             uint4 *node_keys,
-                            uint4 *bodies_key,
-                            int   maxLevel) {
+                            uint4 *bodies_key) {
 
   CUXTIMER("cl_link_tree");
   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
