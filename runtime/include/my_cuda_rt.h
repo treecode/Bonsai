@@ -481,6 +481,8 @@ namespace my_dev {
 
     void setContext(class context &c) {      
       context_flag     = true;
+      //JB: Had to add this to get it to run under Linux ?
+      CU_SAFE_CALL(cudaEventCreate(&asyncCopyEvent));
     }
 
 
