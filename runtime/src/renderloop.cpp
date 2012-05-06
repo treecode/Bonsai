@@ -616,13 +616,18 @@ public:
 
           fprintf(stderr, "Generation complete \n");
           //Update the dust particles
-          m_tree->localTree.dust_pos.d2h(); 
-          m_tree->localTree.dust_vel.d2h(); 
 
-         // if(Ndust > m_tree->localTree.n_dust)
+          if(m_tree->localTree.dust_pos.get_size() > 0)
           {
+            m_tree->localTree.dust_pos.d2h(); 
+            m_tree->localTree.dust_vel.d2h(); 
             m_tree->localTree.setNDust(Ndust);
             m_tree->resizeDustMemory(m_tree->localTree);
+          }
+          else
+          {
+            m_tree->localTree.setNDust(Ndust);
+            m_tree->allocateDustMemory(m_tree->localTree);
           }
 
           int dustID = 50000000;
@@ -640,6 +645,7 @@ public:
 
           m_tree->localTree.dust_pos.h2d(); 
           m_tree->localTree.dust_vel.h2d(); 
+          m_tree->localTree.dust_ids.h2d();
           m_renderer.setNumberOfParticles(m_tree->localTree.n + m_tree->localTree.n_dust);
         }//UpdateRing
       #endif //USE_DUST
