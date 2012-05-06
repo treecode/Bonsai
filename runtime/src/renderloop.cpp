@@ -400,8 +400,7 @@ public:
 
   void startSimulation()
   {
-    //m_tree->localTree.setN((int)bodyPositions.size());
-    //m_tree->allocateParticleMemory(m_tree->localTree);
+    mergeDustWithNormalParticles();
 
     m_tree->localTree.bodies_Ppos.h2d();
     m_tree->localTree.bodies_Pvel.h2d();
@@ -418,6 +417,42 @@ public:
     m_tree->reset_energy();
   
     setupMergerComplete = true;
+
+    //Write the settings
+    FILE *out = fopen("merger_orbit.cfg", "w");
+    fprintf(out,"Size ratio: %f \n", m_renderer.m_mergSizeRatio);
+    fprintf(out,"Mass ratio: %f \n", m_renderer.m_mergMassRatio);
+    fprintf(out,"Impact: %f \n", m_renderer.m_merImpact);
+    fprintf(out,"Seperation: %f \n", m_renderer.m_mergSeperation);
+    fprintf(out,"Inclination 1: %f \n", m_renderer.m_inclination1);
+    fprintf(out,"Omega1: %f \n", m_renderer.m_omega1);
+    fprintf(out,"Inclination2: %f \n", m_renderer.m_inclination2);
+    fprintf(out,"Omega2: %f \n", m_renderer.m_omega2);
+    fclose(out);
+
+    //Store the galaxy
+    string fileName("merger_init.bin");
+    m_tree->localTree.bodies_pos.d2h();
+    m_tree->localTree.bodies_vel.d2h();
+    m_tree->localTree.bodies_ids.d2h();
+
+    m_tree->write_dumbp_snapshot_parallel(&m_tree->localTree.bodies_pos[0], &m_tree->localTree.bodies_vel[0],
+          &m_tree->localTree.bodies_ids[0], m_tree->localTree.n, fileName.c_str()) ;
+
+  }
+
+  void forceSnapshot()
+  {
+       //Store the galaxy
+    string fileName; fileName.resize(256);
+    sprintf(&fileName[0], "merger_snapshot-%d.bin", m_tree->get_iter());
+
+    m_tree->localTree.bodies_pos.d2h();
+    m_tree->localTree.bodies_vel.d2h();
+    m_tree->localTree.bodies_ids.d2h();
+
+    m_tree->write_dumbp_snapshot_parallel(&m_tree->localTree.bodies_pos[0], &m_tree->localTree.bodies_vel[0],
+          &m_tree->localTree.bodies_ids[0], m_tree->localTree.n, fileName.c_str()) ;
   }
 
 
@@ -512,6 +547,7 @@ public:
 
           m_tree->localTree.bodies_ids.d2h();   
           m_tree->localTree.bodies_pos.d2h();   
+          m_tree->localTree.bodies_vel.d2h();   
 
           for (int i = 0; i < m_tree->localTree.n; i++)
           {
@@ -519,7 +555,7 @@ public:
             if(m_tree->localTree.bodies_ids[i] < 50000000)
             {   
               real4 pos4 =  m_tree->localTree.bodies_pos[i];
-              real4 vel4 =  m_tree->localTree.bodies_pos[i];
+              real4 vel4 =  m_tree->localTree.bodies_vel[i];
               const vec3 pos(pos4.x, pos4.y, pos4.z);
               const vec3 vel(vel4.x, vel4.y, vel4.z);
               const Real V = std::sqrt(vel.x*vel.x + vel.y*vel.y);
@@ -905,7 +941,10 @@ public:
     case 'j':
       mergeDustWithNormalParticles();
       break;
-      
+    case 'K':
+    case 'k':
+      forceSnapshot();
+      break;      
     }
 
     m_keyDown[key] = true;

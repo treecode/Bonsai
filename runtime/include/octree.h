@@ -521,6 +521,8 @@ public:
 
     void iterate();
 
+    int get_iter() {return iter;}
+
   struct IterationData {
       IterationData() : Nact_since_last_tree_rebuild(0),
           totalGravTime(0), lastGravTime(0), totalBuildTime(0),
