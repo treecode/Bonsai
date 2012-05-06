@@ -691,8 +691,7 @@ void main()                                                                     
 );
 
 // sky box shader
-const char *skyboxVS = STRINGIFY(
-#version 120\n
+const char *skyboxVS = STRINGIFY( #version 120\n
 void main()                                                 \n
 {                                                           \n
     //gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex; \n
