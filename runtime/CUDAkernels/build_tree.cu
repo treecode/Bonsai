@@ -2,6 +2,7 @@
 // //#include "/home/jbedorf/papers/GBPZ2010/codes/jb/build_tree/CUDA/support_kernels.cu"
 #include "support_kernels.cu"
 #include <stdio.h>
+#include "octree.h"
 
 #include "../profiling/bonsai_timing.h"
 PROF_MODULE(build_tree);
@@ -303,6 +304,7 @@ static __device__ uint retirementCountBuildNodes = 0;
 KERNEL_DECLARE(cl_build_nodes)(uint level,
                              uint  *compact_list_len,
                              uint  *level_offset,
+                             uint  *last_level,
                              uint2 *level_list,
                              uint  *compact_list,
                              uint4 *bodies_key,
@@ -361,10 +363,65 @@ KERNEL_DECLARE(cl_build_nodes)(uint level,
       level_list[level] = (n > 0) ? make_uint2(offset, offset + n) : make_uint2(0, 0);
       *level_offset = offset + n;
 
+      if ((level > 0) && (n <= 0) && (level_list[level - 1].x > 0))
+        *last_level = level;
+
       // reset retirement count so that next run succeeds
       retirementCountBuildNodes = 0; 
     }
   }
+}
+
+void build_tree_node_levels(octree &tree, 
+                            my_dev::dev_mem<uint>  &validList,
+                            my_dev::dev_mem<uint>  &compactList,
+                            my_dev::dev_mem<uint>  &levelOffset,
+                            my_dev::dev_mem<uint>  &maxLevel)
+{
+   // set devMemCountsx to 1 because it is used to early out when it hits zero
+  tree.devMemCountsx[0] = 1;
+  tree.devMemCountsx.h2d(1);
+
+  dim3 grid, block;
+
+  //int nodeSum = 0;
+  for (uint level = 0; level < MAXLEVELS; level++) {
+    // mark bodies to be combined into nodes
+    //Calculate dynamic
+    int ng = (tree.localTree.n) / 128 + 1;
+    grid.x = (int)sqrt((double)ng);
+    grid.y = (ng -1)/grid.x +  1; 
+    grid.z = 1;
+    block.x = 128; block.y = block.z = 1;
+
+    cl_build_valid_list<<<grid, block>>>(tree.localTree.n, 
+                                         level, 
+                                         tree.localTree.bodies_key.raw_p(),
+                                         validList.raw_p(), 
+                                         tree.devMemCountsx.raw_p());
+      
+    //gpuCompact to get number of created nodes    
+    tree.gpuCompact(*tree.getDevContext(), validList, compactList, tree.localTree.n*2, 0);
+                   
+    // assemble nodes   
+    grid.x = (120*32)/128; grid.y = 4; grid.z = 1;
+    block.x = 128; block.y = 1; block.z = 1;
+
+    cl_build_nodes<<<grid, block>>>(level, 
+                                    tree.devMemCountsx.raw_p(), 
+                                    levelOffset.raw_p(), 
+                                    maxLevel.raw_p(),
+                                    tree.localTree.level_list.raw_p(), 
+                                    compactList.raw_p(),
+                                    tree.localTree.bodies_key.raw_p(),
+                                    tree.localTree.node_key.raw_p(),
+                                    tree.localTree.n_children.raw_p(),
+                                    tree.localTree.node_bodies.raw_p());
+  } //end for lvl
+
+  // reset counts to 1 so next compact proceeds...
+  tree.devMemCountsx[0] = 1;
+  tree.devMemCountsx.h2d(1); 
 }
 
 //////////////////////////////
@@ -380,8 +437,7 @@ KERNEL_DECLARE(cl_link_tree)(int n_nodes,
                             uint2 *level_list,           //TODO could make this constant if it proves usefull
                             uint* valid_list,
                             uint4 *node_keys,
-                            uint4 *bodies_key,
-                            int   maxLevel) {
+                            uint4 *bodies_key) {
 
   CUXTIMER("cl_link_tree");
   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;

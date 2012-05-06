@@ -1,4 +1,5 @@
 #include "octree.h"
+#include "build.h"
 
 void octree::allocateParticleMemory(tree_structure &tree)
 {
@@ -194,8 +195,6 @@ void octree::allocateTreePropMemory(tree_structure &tree)
   }
 }
 
-
-
 void octree::build (tree_structure &tree) {
 
   int level      = 0;
@@ -230,8 +229,15 @@ void octree::build (tree_structure &tree) {
                                     tree.generalBuffer1.get_flags(), 
                                     tree.generalBuffer1.get_devMem(),
                                     &tree.generalBuffer1[tree.n*4], tree.n*4,
-                                    1, getAllignmentOffset(tree.n*4));
+                                    256, getAllignmentOffset(tree.n*4));
   levelOffset.zeroMem();
+
+  maxLevel.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
+                                    tree.generalBuffer1.get_flags(), 
+                                    tree.generalBuffer1.get_devMem(),
+                                    &tree.generalBuffer1[tree.n*4+256], tree.n*4+256,
+                                    256, getAllignmentOffset(tree.n*4+256));
+  maxLevel.zeroMem();
 
   
   /******** set kernels parameters **********/
@@ -255,14 +261,15 @@ void octree::build (tree_structure &tree) {
   localWork [0] = 128;      localWork [1] = 1;
 
   build_nodes.setWork(globalWork, localWork);
-  build_nodes.set_arg<cl_mem>(1, this->devMemCountsx.p());
-  build_nodes.set_arg<cl_mem>(2, levelOffset.p());
-  build_nodes.set_arg<cl_mem>(3,  tree.level_list.p());
-  build_nodes.set_arg<cl_mem>(4,  compactList.p());
-  build_nodes.set_arg<cl_mem>(5,  tree.bodies_key.p());
-  build_nodes.set_arg<cl_mem>(6,  tree.node_key.p());
-  build_nodes.set_arg<cl_mem>(7,  tree.n_children.p());
-  build_nodes.set_arg<cl_mem>(8,  tree.node_bodies.p());
+  build_nodes.set_arg<cl_mem>(1,  this->devMemCountsx.p());
+  build_nodes.set_arg<cl_mem>(2,  levelOffset.p());
+  build_nodes.set_arg<cl_mem>(3,  maxLevel.p());
+  build_nodes.set_arg<cl_mem>(4,  tree.level_list.p());
+  build_nodes.set_arg<cl_mem>(5,  compactList.p());
+  build_nodes.set_arg<cl_mem>(6,  tree.bodies_key.p());
+  build_nodes.set_arg<cl_mem>(7,  tree.node_key.p());
+  build_nodes.set_arg<cl_mem>(8,  tree.n_children.p());
+  build_nodes.set_arg<cl_mem>(9,  tree.node_bodies.p());
 
   link_tree.set_arg<int>(0,     &offset);
   link_tree.set_arg<cl_mem>(1,  tree.n_children.p());
@@ -273,7 +280,6 @@ void octree::build (tree_structure &tree) {
   link_tree.set_arg<cl_mem>(6,  validList.p()); 
   link_tree.set_arg<cl_mem>(7,  tree.node_key.p());
   link_tree.set_arg<cl_mem>(8,  tree.bodies_key.p());
-  link_tree.set_arg<int>(9,     &level);
 
 
   /********** build  list of keys ********/
@@ -283,6 +289,9 @@ void octree::build (tree_structure &tree) {
   /******  build the levels *********/
   
   // set devMemCountsx to 1 because it is used to early out when it hits zero
+#if 1
+  build_tree_node_levels(*this, validList, compactList, levelOffset, maxLevel);
+#else
   this->devMemCountsx[0] = 1;
   this->devMemCountsx.h2d(1);
 
@@ -303,25 +312,21 @@ void octree::build (tree_structure &tree) {
   // reset counts to 1 so next compact proceeds...
   this->devMemCountsx[0] = 1;
   this->devMemCountsx.h2d(1); 
-
-  //Put the last level + 1 index to 0,0 
-  //so we dont need an extra if statement in the linking phase
-  //tree.level_list[level] = make_uint2(0, 0);
-  tree.level_list.d2h();
-  for (level = 0; level < MAXLEVELS; level++)
-    if (0 == (tree.level_list[level].y - tree.level_list[level].x)) break;
-
+#endif
+  maxLevel.d2h(1);
+  level = maxLevel[0];
+  
   levelOffset.d2h(1);
   offset = levelOffset[0];
     
   int n_nodes  = offset;
   tree.n_nodes = n_nodes;
-  
+ 
  
   /***** Link the tree ******/
   
   link_tree.set_arg<int>(0, &offset);   //Offset=number of nodes
-  link_tree.set_arg<int>(9, &level);   //level=highest number of levels
+  
   
   //The maximum number of levels that can be used is MAXLEVEl 
   //if max level is larger than that the program will exit
@@ -338,6 +343,7 @@ void octree::build (tree_structure &tree) {
   
   tree.n_levels = level-1;
 
+  tree.level_list.d2h();
   for(int i=0; i < level; i++)
     LOG("%d\t%d\t%d\n", i, tree.level_list[i].x, tree.level_list[i].y);
  
