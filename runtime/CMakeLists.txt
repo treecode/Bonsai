@@ -89,7 +89,7 @@ set (HFILES
 set (CUFILES
   CUDAkernels/build_tree.cu
   CUDAkernels/compute_propertiesD.cu
-  CUDAkernels/parallel.cu
+  CUDAkernels/particles.cu
   CUDAkernels/sortKernels.cu
   CUDAkernels/timestep.cu
   CUDAkernels/depthSort.cu
