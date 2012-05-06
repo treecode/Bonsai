@@ -355,8 +355,10 @@ protected:
   bool devContext_flag;
   
   //Streams
+  my_dev::dev_stream *gravStream;
   my_dev::dev_stream *execStream;
-
+  my_dev::dev_stream *copyStream;
+  
 
   // scan & sort algorithm
   my_dev::kernel  compactCount, exScanBlock, compactMove, splitMove;
@@ -469,6 +471,8 @@ public:
 
    //GPU kernels and functions
    void load_kernels();
+   void resetCompact();
+
    void gpuCompact(my_dev::context&, my_dev::dev_mem<uint> &srcValues,
                    my_dev::dev_mem<uint> &output, int N, int *validCount);
    void gpuSplit(my_dev::context&, my_dev::dev_mem<uint> &srcValues,
@@ -757,6 +761,8 @@ public:
     store_energy_flag = true;
     
     execStream = NULL;
+    gravStream = NULL;
+    copyStream = NULL;
     
     prevDurStep = -1;   //Set it to negative so we know its the first step
 

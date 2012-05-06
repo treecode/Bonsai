@@ -385,8 +385,7 @@ void build_tree_node_levels(octree &tree,
                             my_dev::dev_mem<uint>  &maxLevel)
 {
    // set devMemCountsx to 1 because it is used to early out when it hits zero
-  tree.devMemCountsx[0] = 1;
-  tree.devMemCountsx.h2d(1);
+  tree.resetCompact();
 
   //int nodeSum = 0;
   for (uint level = 0; level < MAXLEVELS; level++) {
@@ -429,8 +428,7 @@ void build_tree_node_levels(octree &tree,
   } //end for level
 
   // reset counts to 1 so next compact proceeds...
-  tree.devMemCountsx[0] = 1;
-  tree.devMemCountsx.h2d(1); 
+  tree.resetCompact();
 }
 
 //////////////////////////////

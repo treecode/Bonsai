@@ -468,6 +468,9 @@ void scan_kernels_gpu_compact(octree &tree,
   //Memory that should be alloced outside the function:
   //devMemCounts and devMemCountsx 
 
+  // make sure previous reset has finished.
+  tree.devMemCountsx.waitForCopyEvent();
+
   //Kernel configuration parameters
   setupParams sParam;
   sParam.jobs = (N / 64) / 480  ; //64=32*2 2 items per look, 480 is 120*4, number of procs

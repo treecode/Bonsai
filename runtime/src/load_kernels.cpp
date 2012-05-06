@@ -350,6 +350,13 @@ void octree::load_kernels() {
 
 }
 
+void octree::resetCompact()
+{
+  // reset counts to 1 so next compact proceeds...
+  this->devMemCountsx[0] = 1;
+  this->devMemCountsx.h2d(1, false, copyStream->s());
+}
+
 //Compacts an array of integers, the values in srcValid indicate if a
 //value is valid (1 == valid anything else is UNvalid) returns the 
 //compacted values in the output array and the total 
@@ -365,14 +372,12 @@ void octree::gpuCompact(my_dev::context &devContext,
 //                   srcValues,
 //                   output,                        
 //                   N, validCount);
-
-
   
-  // In the next step we associate the GPU memory with the Kernel arguments
-  
-//   my_dev::dev_mem<uint> counts(devContext, 512), countx(devContext, 512);
   //Memory that should be alloced outside the function:
   //devMemCounts and devMemCountsx 
+
+  // make sure previous reset has finished.
+  this->devMemCountsx.waitForCopyEvent();
 
   //Kernel configuration parameters
   setupParams sParam;

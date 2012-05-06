@@ -383,6 +383,8 @@ namespace my_dev {
     T           *host_ptr;
     void        *DeviceMemPtr;
     void        *tempDeviceMemPtr;
+
+    cudaEvent_t  asyncCopyEvent;
         
     bool pinned_mem, context_flag, flags;
     bool hDeviceMem_flag;
@@ -422,6 +424,7 @@ namespace my_dev {
       context_flag      = false;
       host_ptr          = NULL;
       childMemory       = false;
+      CU_SAFE_CALL(cudaEventCreate(&asyncCopyEvent));
     }
 
     dev_mem(class context &c) {
@@ -432,6 +435,7 @@ namespace my_dev {
       host_ptr          = NULL;
       childMemory       = false;
       setContext(c);
+      CU_SAFE_CALL(cudaEventCreate(&asyncCopyEvent));
     }
     
     //CUDA has no memory flags like opencl
@@ -447,6 +451,7 @@ namespace my_dev {
       setContext(c);
       if (zero) this->ccalloc(n, pinned, flags);
       else      this->cmalloc(n, pinned, flags);
+      CU_SAFE_CALL(cudaEventCreate(&asyncCopyEvent));
     }
     
 //     dev_mem(class context &c, std::vector<T> data,
@@ -468,7 +473,8 @@ namespace my_dev {
     //////// Destructor
     
     ~dev_mem() {      
-        cuda_free();
+      cudaEventDestroy(asyncCopyEvent);
+      cuda_free();
     }
     
     ///////////
@@ -658,6 +664,7 @@ namespace my_dev {
         //is blocking.
         assert(pinned_mem);
         CU_SAFE_CALL(cudaMemcpyAsync(&host_ptr[0], hDeviceMem, size*sizeof(T),cudaMemcpyDeviceToHost, stream));          
+        CU_SAFE_CALL(cudaEventRecord(asyncCopyEvent, stream));
       }
     }
     
@@ -680,6 +687,7 @@ namespace my_dev {
         //is blocking.
         assert(pinned_mem);
         CU_SAFE_CALL(cudaMemcpyAsync(&host_ptr[0], hDeviceMem, number*sizeof(T),cudaMemcpyDeviceToHost, stream));          
+        CU_SAFE_CALL(cudaEventRecord(asyncCopyEvent, stream));
       }
     }    
     
@@ -698,6 +706,7 @@ namespace my_dev {
         //is blocking.
         assert(pinned_mem);
         CU_SAFE_CALL(cudaMemcpyAsync(hDeviceMem, host_ptr, size*sizeof(T),cudaMemcpyHostToDevice , stream));          
+        CU_SAFE_CALL(cudaEventRecord(asyncCopyEvent, stream));
       }        
     }
     
@@ -719,10 +728,18 @@ namespace my_dev {
         //is blocking.
         assert(pinned_mem);
         CU_SAFE_CALL(cudaMemcpyAsync(hDeviceMem, host_ptr, number*sizeof(T),cudaMemcpyHostToDevice, stream));             
+        CU_SAFE_CALL(cudaEventRecord(asyncCopyEvent, stream));
       }      
     }        
-    
-    
+
+    void waitForCopyEvent() {
+      CU_SAFE_CALL(cudaEventSynchronize(asyncCopyEvent));
+    }    
+
+    void streamWaitForCopyEvent(my_dev::dev_stream &stream) {
+      CU_SAFE_CALL(cudaStreamWaitEvent(stream.s(), asyncCopyEvent, 0));
+    }    
+
     //JB: Modified this so that it copies a device buffer to an other device
     //buffer, and the host buffer to the other host buffer
     void copy(dev_mem &src_buffer, int n, bool OCL_BLOCKING = true)   {

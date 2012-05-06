@@ -109,7 +109,7 @@ void octree::allocateParticleMemory(tree_structure &tree)
   this->devMemCounts.cmalloc(NBLOCK_PREFIX, false);  
 
   this->devMemCountsx.setContext(devContext);
-  this->devMemCountsx.cmalloc(NBLOCK_PREFIX, false);    
+  this->devMemCountsx.cmalloc(NBLOCK_PREFIX, true);    
   
 
   
@@ -292,8 +292,7 @@ void octree::build (tree_structure &tree) {
 #if 1
   build_tree_node_levels(*this, validList, compactList, levelOffset, maxLevel);
 #else
-  this->devMemCountsx[0] = 1;
-  this->devMemCountsx.h2d(1);
+  this->resetCompact();
 
   //int nodeSum = 0;
   for (level = 0; level < MAXLEVELS; level++) {
@@ -310,8 +309,7 @@ void octree::build (tree_structure &tree) {
   } //end for lvl
 
   // reset counts to 1 so next compact proceeds...
-  this->devMemCountsx[0] = 1;
-  this->devMemCountsx.h2d(1); 
+  this->resetCompact();
 #endif
   maxLevel.d2h(1);
   level = maxLevel[0];

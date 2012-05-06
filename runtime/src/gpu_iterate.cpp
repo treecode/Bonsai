@@ -36,7 +36,7 @@ void octree::makeLET()
   fprintf(stderr, "LET Exchange took (%d): %g \n", mpiGetRank(), get_time() - tTest);
   
   letRunning = false;
-  execStream->sync();  //Sync LET execution
+  gravStream->sync();  //Sync LET execution
 
 }
 
@@ -173,7 +173,7 @@ bool octree::iterate_once(IterationData &idata) {
       devContext.stopTiming("Approximation_dust", 4);
     #endif        
 
-    execStream->sync();
+    gravStream->sync();
     
     idata.lastGravTime   = get_time() - t1;
 //     totalGravTime += lastGravTime;
@@ -236,12 +236,6 @@ bool octree::iterate_once(IterationData &idata) {
      
       my_dev::base_mem::printMemUsage();
 
-      if(execStream != NULL)
-      {
-        delete execStream;
-        execStream = NULL;
-      }
-      
       return true;
     }
    
@@ -255,7 +249,27 @@ void octree::iterate_setup(IterationData &idata) {
   
   if(execStream == NULL)
     execStream = new my_dev::dev_stream(0);
+
+  if(gravStream == NULL)
+    gravStream = new my_dev::dev_stream(0);
+
+  if(copyStream == NULL)
+    copyStream = new my_dev::dev_stream(0);
   
+  //Start construction of the tree
+  sort_bodies(localTree, true);
+  build(localTree);
+  allocateTreePropMemory(localTree);
+  compute_properties(localTree);
+
+  //If required set the dust particles
+#ifdef USE_DUST
+  //Sort the dust
+  sort_dust(localTree);
+  //make the dust groups
+  make_dust_groups(localTree);
+#endif //ifdef USE_DUST
+
   letRunning = false;
      
   double t1;
@@ -295,7 +309,7 @@ void octree::iterate_setup(IterationData &idata) {
 
   if(nProcs > 1)  makeLET();
 
-  execStream->sync();  
+  gravStream->sync();  
 
   
   idata.lastGravTime   = get_time() - t1;
@@ -336,6 +350,18 @@ void octree::iterate_teardown(IterationData &idata) {
   {
     delete execStream;
     execStream = NULL;
+  }
+
+  if(gravStream != NULL)
+  {
+    delete gravStream;
+    gravStream = NULL;
+  }
+
+  if(copyStream != NULL)
+  {
+    delete copyStream;
+    copyStream = NULL;
   }
 }
 
@@ -494,7 +520,7 @@ void octree::approximate_gravity(tree_structure &tree)
     
  
   approxGrav.setWork(-1, NTHREAD, nBlocksForTreeWalk);
-  approxGrav.execute(execStream->s());  //First half
+  approxGrav.execute(gravStream->s());  //First half
 
   //Print interaction statistics
   #if 0
@@ -633,13 +659,13 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
   if(letRunning)
   {
     //dont want to overwrite the data of previous LET tree
-    execStream->sync();
+    gravStream->sync();
   }
   
   remoteTree.fullRemoteTree.h2d(bufferSize); //Only copy required data
   tree.activePartlist.zeroMem();
 //   devContext.startTiming();  
-  approxGravLET.execute(execStream->s());
+  approxGravLET.execute(gravStream->s());
 //   devContext.stopTiming("Approximation_let", 5);   
   
   letRunning = true;

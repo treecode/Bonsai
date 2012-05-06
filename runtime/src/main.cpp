@@ -817,13 +817,6 @@ int main(int argc, char** argv)
     printf("Initial exchange Took in total: %lg sec\n", tree->get_time()-ttemp);
   }
   
-
-  //Start construction of the tree
-  tree->sort_bodies(tree->localTree, true);
-  tree->build(tree->localTree);
-  tree->allocateTreePropMemory(tree->localTree);
-  tree->compute_properties(tree->localTree);
-  
   //If required set the dust particles
   #ifdef USE_DUST
     if( (int)dustPositions.size() > 0)
@@ -844,15 +837,7 @@ int main(int argc, char** argv)
       tree->localTree.dust_pos.h2d();
       tree->localTree.dust_vel.h2d();
       tree->localTree.dust_ids.h2d();    
-      
-      //Sort the dust
-      tree->sort_dust(tree->localTree);
-      //make the dust groups
-      tree->make_dust_groups(tree->localTree);
    }
-    
-    
-    
   #endif //ifdef USE_DUST
   
   //Start the integration
