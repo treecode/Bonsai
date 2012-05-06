@@ -6,6 +6,7 @@ F90  = ifort
 .SUFFIXES: .o .cpp .ptx .cu
 
 CUDA_TK  = /usr/local/cuda
+CUDASDK  = $(HOME)/NVIDIA_GPU_Computing_SDK
 
 # OFLAGS = -O0 -g -Wall 
 OFLAGS = -O3 -g -Wall 
@@ -18,15 +19,15 @@ CXXFLAGS =  -fPIC $(OFLAGS) -I$(CUDA_TK)/include -DUSE_OPENGL -Wstrict-aliasing=
 NVCC      = $(CUDA_TK)/bin/nvcc  
 #NVCCFLAGS = -arch sm_20 -ftz=true -prec-div=false -prec-sqrt=false 
 #NVCCFLAGS = -arch sm_20 -g -G 
-#NVCCFLAGS = -arch sm_20 
-NVCCFLAGS = -arch sm_30   -Xptxas -v,-abi=no 
+NVCCFLAGS = -arch sm_20 
+#NVCCFLAGS = -arch sm_30   -Xptxas -v,-abi=no 
 
 
 
 # Use with Mac OS X
 # NVCCFLAGS = -arch sm_12 -Xcompiler="-Duint=unsigned\ int"
 
-LDFLAGS = -lcudart -lOpenCL  -L $(CUDA_TK)/lib64 -lGL -lGLU -lglut -L$(CUDA_TK)/lib64/linuxx -lGLEW
+LDFLAGS = -lcudart -lOpenCL  -L $(CUDA_TK)/lib64 -lGL -lGLU -lglut -L$(CUDASDK)/shared/lib/linux -lGLEW_x86_64
 
 #For tipsy support uncomment the following line
 CXXFLAGS += -DTIPSYOUTPUT
@@ -42,11 +43,11 @@ CUDAKERNELSPATH = CUDAkernels
 CUDAKERNELS = build_tree.cu_o \
 		sortKernels.cu_o \
 		timestep.cu_o \
-		dev_approximate_gravity_warp.cu_o \
+		dev_approximate_gravity_warp_fermi.cu_o \
 		dev_approximate_gravity_let.cu_o \
-		parallel.cu_o \
 		compute_propertiesD.cu_o  \
-                depthSort.cu_o
+                depthSort.cu_o \
+#		parallel.cu_o 
 
 SRCPATH = 
 SRC = src/main.cpp src/octree.cpp src/load_kernels.cpp src/build.cpp src/compute_properties.cpp src/sort_bodies_gpu.cpp src/gpu_iterate.cpp src/parallel.cpp src/libraryInterface.cpp src/renderloop.cpp src/render_particles.cpp src/dustFunctions.cpp renderer/paramgl.cpp renderer/framebufferObject.cpp  renderer/GLSLProgram.cpp  renderer/param.cpp renderer/SmokeRenderer.cpp renderer/SmokeShaders.cpp
@@ -73,7 +74,7 @@ $(CODELIB): $(OBJ) $(CUDAKERNELS)
 
 
 $(PROG): $(OBJ) $(CUDAKERNELS)
-	$(LD) $(LDFLAGS) $^ -o $@ 
+	$(LD)  $^ -o $@  $(LDFLAGS)
 
 %.o: $(SRCPATH)/%.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
