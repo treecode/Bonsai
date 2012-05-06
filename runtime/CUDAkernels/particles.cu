@@ -1,3 +1,4 @@
+#include "bonsai.h"
 // #include "support_kernels.cu"
 #include "../profiling/bonsai_timing.h"
 PROF_MODULE(parallel);
@@ -5,7 +6,7 @@ PROF_MODULE(parallel);
 #include <stdio.h>
 #include "node_specs.h"
 
-__device__ inline int isinbox(real4 pos, double4 xlow, double4 xhigh)
+static __device__ inline int isinbox(real4 pos, double4 xlow, double4 xhigh)
 {  
     if((pos.x < xlow.x)||(pos.x > xhigh.x))          
       return 0;
@@ -18,7 +19,7 @@ __device__ inline int isinbox(real4 pos, double4 xlow, double4 xhigh)
 }
 
 
-extern "C" __global__ void doDomainCheck(int    n_bodies,
+KERNEL_DECLARE(doDomainCheck)(int    n_bodies,
                                            double4  xlow,
                                            double4  xhigh,
                                            real4  *body_pos,
@@ -42,7 +43,7 @@ extern "C" __global__ void doDomainCheck(int    n_bodies,
 //Checks the domain and computes the key list
 //if a particle is outside the domain it gets a special key
 //otherwise the normal key is used
-extern "C" __global__ void doDomainCheckAdvanced(int    n_bodies,
+KERNEL_DECLARE(doDomainCheckAdvanced)(int    n_bodies,
                                            double4  xlow,
                                            double4  xhigh,
                                            real4  *body_pos,
@@ -63,7 +64,7 @@ extern "C" __global__ void doDomainCheckAdvanced(int    n_bodies,
 }
   
 
-extern "C" __global__ void extractSampleParticles(int    n_bodies,
+KERNEL_DECLARE(extractSampleParticles)(int    n_bodies,
                                                   int    sample_freq,
                                                   real4  *body_pos,
                                                   real4  *samplePosition
@@ -80,7 +81,7 @@ extern "C" __global__ void extractSampleParticles(int    n_bodies,
   samplePosition[id] =  body_pos[idx];
 }
 
-extern "C" __global__ void extractOutOfDomainParticlesR4(int n_extract,
+KERNEL_DECLARE(extractOutOfDomainParticlesR4)(int n_extract,
                                                        int *extractList,
                                                        real4 *source,
                                                        real4 *destination)
@@ -112,7 +113,7 @@ typedef struct bodyStruct
 } bodyStruct;
 
 
-extern "C" __global__ void extractOutOfDomainParticlesAdvanced(int n_extract,
+KERNEL_DECLARE(extractOutOfDomainParticlesAdvanced)(int n_extract,
                                                        int *extractList,
                                                        real4 *Ppos,
                                                        real4 *Pvel,
@@ -144,7 +145,7 @@ extern "C" __global__ void extractOutOfDomainParticlesAdvanced(int n_extract,
 }
 
 
-extern "C" __global__ void internalMove(int       n_extract,                                       
+KERNEL_DECLARE(internalMove)(int       n_extract,                                       
                                         int       n_bodies,
                                         double4  xlow,
                                         double4  xhigh,
@@ -187,7 +188,7 @@ extern "C" __global__ void internalMove(int       n_extract,
 
 }
 
-extern "C" __global__ void insertNewParticles(int       n_extract,
+KERNEL_DECLARE(insertNewParticles)(int       n_extract,
                                               int       n_insert,
                                               int       n_oldbodies,
                                               int       offset,
@@ -226,7 +227,7 @@ extern "C" __global__ void insertNewParticles(int       n_extract,
 
 
 
-// extern "C" __global__ void insertNewParticles(int       n_extract,
+// KERNEL_DECLARE(insertNewParticles)(int       n_extract,
 //                                               int       n_insert,
 //                                               int       n_oldbodies,
 //                                               int       *extractList,

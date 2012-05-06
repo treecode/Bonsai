@@ -1,3 +1,4 @@
+#include "bonsai.h"
 // #include "support_kernels.cu"
 #include <stdio.h>
 
@@ -6,7 +7,7 @@ PROF_MODULE(compute_propertiesD);
 
 #include "node_specs.h"
 
-__device__ void sh_MinMax2(int i, int j, float3 *r_min, float3 *r_max, volatile float3 *sh_rmin, volatile  float3 *sh_rmax)
+static __device__ void sh_MinMax2(int i, int j, float3 *r_min, float3 *r_max, volatile float3 *sh_rmin, volatile  float3 *sh_rmax)
 {
   sh_rmin[i].x  = (*r_min).x = fminf((*r_min).x, sh_rmin[j].x);
   sh_rmin[i].y  = (*r_min).y = fminf((*r_min).y, sh_rmin[j].y);
@@ -21,7 +22,7 @@ __device__ void sh_MinMax2(int i, int j, float3 *r_min, float3 *r_max, volatile 
 //////////////////////////////
 
 //Helper functions for leaf-nodes
-__device__ void compute_monopole(double &mass, double &posx,
+static __device__ void compute_monopole(double &mass, double &posx,
                                  double &posy, double &posz,
                                  float4 pos)
 {
@@ -31,7 +32,7 @@ __device__ void compute_monopole(double &mass, double &posx,
   posz += pos.w*pos.z;
 }
 
-__device__ void compute_quadropole(double &oct_q11, double &oct_q22, double &oct_q33,
+static __device__ void compute_quadropole(double &oct_q11, double &oct_q22, double &oct_q33,
                                    double &oct_q12, double &oct_q13, double &oct_q23,
                                    float4 pos)
 {
@@ -43,7 +44,7 @@ __device__ void compute_quadropole(double &oct_q11, double &oct_q22, double &oct
   oct_q23 += pos.w * pos.z*pos.x;
 }
 
-__device__ void compute_bounds(float3 &r_min, float3 &r_max,
+static __device__ void compute_bounds(float3 &r_min, float3 &r_max,
                                float4 pos)
 {
   r_min.x = fminf(r_min.x, pos.x);
@@ -56,7 +57,7 @@ __device__ void compute_bounds(float3 &r_min, float3 &r_max,
 }
 
 //Non-leaf node helper functions
-__device__ void compute_monopole_node(double &mass, double &posx,
+static __device__ void compute_monopole_node(double &mass, double &posx,
                                  double &posy, double &posz,
                                  double4  pos)
 {
@@ -67,7 +68,7 @@ __device__ void compute_monopole_node(double &mass, double &posx,
 }
 
 
-__device__ void compute_quadropole_node(double &oct_q11, double &oct_q22, double &oct_q33,
+static __device__ void compute_quadropole_node(double &oct_q11, double &oct_q22, double &oct_q33,
                                         double &oct_q12, double &oct_q13, double &oct_q23,
                                         double4 Q0, double4 Q1)
 {
@@ -79,7 +80,7 @@ __device__ void compute_quadropole_node(double &oct_q11, double &oct_q22, double
   oct_q23 += Q1.z;
 }
 
-__device__ void compute_bounds_node(float3 &r_min, float3 &r_max,
+static __device__ void compute_bounds_node(float3 &r_min, float3 &r_max,
                                     float4 node_min, float4 node_max)
 {
   r_min.x = fminf(r_min.x, node_min.x);
@@ -92,7 +93,7 @@ __device__ void compute_bounds_node(float3 &r_min, float3 &r_max,
 }
 
 
-extern "C" __global__ void compute_leaf(const int n_leafs,
+KERNEL_DECLARE(compute_leaf)(const int n_leafs,
                                             uint *leafsIdxs,
                                             uint2 *node_bodies,
                                             real4 *body_pos,
@@ -193,7 +194,7 @@ extern "C" __global__ void compute_leaf(const int n_leafs,
 
 //Function goes level by level (starting from deepest) and computes
 //the properties of the non-leaf nodes
-extern "C" __global__ void compute_non_leaf(const int curLevel,         //Level for which we calc
+KERNEL_DECLARE(compute_non_leaf)(const int curLevel,         //Level for which we calc
                                             uint  *leafsIdxs,           //Conversion of ids
                                             uint  *node_level_list,     //Contains the start nodes of each lvl
                                             uint  *n_children,          //Reference from node to first child and number of childs
@@ -274,7 +275,7 @@ extern "C" __global__ void compute_non_leaf(const int curLevel,         //Level 
 
   return;
 }
-extern "C" __global__ void compute_scaling(const int node_count,
+KERNEL_DECLARE(compute_scaling)(const int node_count,
                                            double4 *multipole,
                                            real4 *nodeLowerBounds,
                                            real4 *nodeUpperBounds,
@@ -393,7 +394,7 @@ extern "C" __global__ void compute_scaling(const int node_count,
 }
 
 //Compute the properties for the groups
-extern "C" __global__ void setPHGroupData(const int n_groups,
+KERNEL_DECLARE(setPHGroupData)(const int n_groups,
                                           const int n_particles,   
                                           real4 *bodies_pos,
                                           int2  *group_list,                                                

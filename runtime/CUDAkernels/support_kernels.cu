@@ -1,3 +1,4 @@
+#include "bonsai.h"
 //Definitions
 #ifndef _SUPPORT_KERNELS_
 #define _SUPPORT_KERNELS_
@@ -95,7 +96,7 @@
 #endif
 
 
-__device__ int undilate3(uint2 key) {
+static __device__ int undilate3(uint2 key) {
   int x, value = 0;
   
   key.x = key.x & 0x09249249;
@@ -134,7 +135,7 @@ __device__ int undilate3(uint2 key) {
 }
 
 
-__device__ uint2 dilate3(int value) {
+static __device__ uint2 dilate3(int value) {
   unsigned int x;
   uint2 key;
   
@@ -161,7 +162,7 @@ __device__ uint2 dilate3(int value) {
 
 #if 0
 //Morton order
-__device__ uint2 get_key(int4 crd) {
+static __device__ uint2 get_key(int4 crd) {
   uint2 key, key1;
   key  = dilate3(crd.x);
 
@@ -178,7 +179,7 @@ __device__ uint2 get_key(int4 crd) {
 
 #else
 
-__device__ uint4 get_key(int4 crd)
+static __device__ uint4 get_key(int4 crd)
 {
   const int bits = 30;  //20 to make it same number as morton order
   int i,xi, yi, zi;
@@ -252,7 +253,7 @@ __device__ uint4 get_key(int4 crd)
 #endif
 
 
-__device__ uint4 get_mask(int level) {
+static __device__ uint4 get_mask(int level) {
   int mask_levels = 3*max(MAXLEVELS - level, 0);
   uint4 mask = {0x3FFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,0xFFFFFFFF};
 
@@ -272,13 +273,13 @@ __device__ uint4 get_mask(int level) {
   return mask;
 }
 
-__device__ uint4 get_imask(uint4 mask) {
+static __device__ uint4 get_imask(uint4 mask) {
   return make_uint4(0x3FFFFFFF ^ mask.x, 0xFFFFFFFF ^ mask.y, 0xFFFFFFFF ^ mask.z, 0);
 }
 
 
 
-__device__ int4 get_crd(uint2 key) {
+static __device__ int4 get_crd(uint2 key) {
   int4 crd;
 
   crd.x = undilate3(key);
@@ -288,7 +289,7 @@ __device__ int4 get_crd(uint2 key) {
   return crd;
 }
 
-__device__ inline int cmp_uint2(uint2 a, uint2 b) {
+static __device__ inline int cmp_uint2(uint2 a, uint2 b) {
   if      (a.x < b.x) return -1;
   else if (a.x > b.x) return +1;
   else {
@@ -298,7 +299,7 @@ __device__ inline int cmp_uint2(uint2 a, uint2 b) {
   }  
 }
 
-__device__ int cmp_uint4(uint4 a, uint4 b) {
+static __device__ int cmp_uint4(uint4 a, uint4 b) {
   if      (a.x < b.x) return -1;
   else if (a.x > b.x) return +1;
   else {
@@ -314,7 +315,7 @@ __device__ int cmp_uint4(uint4 a, uint4 b) {
 
 
 //Binary search of the key within certain bounds (cij.x, cij.y)
-__device__ int find_key(uint4 key, uint2 cij, uint4 *keys) {
+static __device__ int find_key(uint4 key, uint2 cij, uint4 *keys) {
   int l = cij.x;
   int r = cij.y - 1;
   while (r - l > 1) {
@@ -333,14 +334,14 @@ __device__ int find_key(uint4 key, uint2 cij, uint4 *keys) {
 
 
 
-__device__ float2 ds_accumulate(float2 a, float b){
+static __device__ float2 ds_accumulate(float2 a, float b){
   float tmp = a.x + b;
   float del = (tmp - a.x) - b;
   a.x = tmp;
   a.y -= del;
   return a;
 }
-__device__ float2 ds_regularise(float2 a){
+static __device__ float2 ds_regularise(float2 a){
   float tmp = a.x + a.y;
   a.y -= (tmp - a.x);
   a.x = tmp;
@@ -348,7 +349,7 @@ __device__ float2 ds_regularise(float2 a){
 }
 
 
-__device__ void sh_MinMax(int i, int j, float3 *r_min, float3 *r_max, 
+static __device__ void sh_MinMax(int i, int j, float3 *r_min, float3 *r_max, 
                           volatile float3 *sh_rmin, volatile  float3 *sh_rmax)
 {
   sh_rmin[i].x  = (*r_min).x = fminf((*r_min).x, sh_rmin[j].x);
@@ -359,7 +360,7 @@ __device__ void sh_MinMax(int i, int j, float3 *r_min, float3 *r_max,
   sh_rmax[i].z  = (*r_max).z = fmaxf((*r_max).z, sh_rmax[j].z);
 }
 
-__device__ void MinMaxPos(float4 pos, float4 &rmax, float4 &rmin)
+static __device__ void MinMaxPos(float4 pos, float4 &rmax, float4 &rmin)
 {
       rmin.x  = fminf(pos.x, rmin.x);
       rmin.y  = fminf(pos.y, rmin.y);
@@ -370,7 +371,7 @@ __device__ void MinMaxPos(float4 pos, float4 &rmax, float4 &rmin)
 }
 
 
-__device__ real4 get_pos(uint2 key, float size, float4 corner) {
+static __device__ real4 get_pos(uint2 key, float size, float4 corner) {
   real4 pos;
   pos.w = size;
   
@@ -389,7 +390,7 @@ __device__ real4 get_pos(uint2 key, float size, float4 corner) {
 ***/
 #define BTEST(x) (-(int)(x))
 template<int DIM2>
-__device__ int calc_prefix(int N, int* prefix_in, int tid) {
+static __device__ int calc_prefix(int N, int* prefix_in, int tid) {
   int x, y = 0;
 
   const int DIM = 1 << DIM2;
@@ -418,7 +419,7 @@ __device__ int calc_prefix(int N, int* prefix_in, int tid) {
 } 
 
 template<int DIM2>
-__device__ int calc_prefix(int* prefix, int tid, int value) {
+static __device__ int calc_prefix(int* prefix, int tid, int value) {
   int  x;
   
   const int DIM = 1 << DIM2;

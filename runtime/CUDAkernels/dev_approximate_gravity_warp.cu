@@ -1,3 +1,4 @@
+#include "bonsai.h"
 // #include "support_kernels.cu0
 #include <stdio.h>
 #include "../profiling/bonsai_timing.h"
@@ -31,7 +32,7 @@ PROF_MODULE(dev_approximate_gravity);
 /*********   PREFIX SUM   ***********/
 /************************************/
 
-__device__ __forceinline__ uint shfl_scan_add_step(uint partial, uint up_offset)
+static __device__ __forceinline__ uint shfl_scan_add_step(uint partial, uint up_offset)
 {
   uint result;
   asm(
@@ -45,7 +46,7 @@ __device__ __forceinline__ uint shfl_scan_add_step(uint partial, uint up_offset)
 }
 
   template <const int levels>
-__device__ __forceinline__ uint inclusive_scan_warp(int mysum)
+static __device__ __forceinline__ uint inclusive_scan_warp(int mysum)
 {
   for(int i = 0; i < levels; ++i)
     mysum = shfl_scan_add_step(mysum, 1 << i);
@@ -53,7 +54,7 @@ __device__ __forceinline__ uint inclusive_scan_warp(int mysum)
 }
 
 /* inclusive prefix sum for a warp */
-__device__ __forceinline__ int inclusive_scan_warp(int* prefix, int value) 
+static __device__ __forceinline__ int inclusive_scan_warp(int* prefix, int value) 
 {
   prefix[laneId] = inclusive_scan_warp<WARP_SIZE2>(value);
   return prefix[WARP_SIZE-1];
@@ -61,7 +62,7 @@ __device__ __forceinline__ int inclusive_scan_warp(int* prefix, int value)
 
 
 /* inclusive prefix sum for an array */
-__device__ int inclusive_scan_array(int N, int* prefix_in) 
+static __device__ int inclusive_scan_array(int N, int* prefix_in) 
 {
 
   int y = inclusive_scan_warp(prefix_in, prefix_in[laneId]);
@@ -80,7 +81,7 @@ __device__ int inclusive_scan_array(int N, int* prefix_in)
 
 /**** binary scans ****/
 
-__device__ __forceinline__ int lanemask_lt()
+static __device__ __forceinline__ int lanemask_lt()
 {
   int mask;
   asm("mov.u32 %0, %lanemask_lt;" : "=r" (mask));
@@ -88,14 +89,14 @@ __device__ __forceinline__ int lanemask_lt()
 }
 
 
-__device__ int warp_exclusive_scan(const bool p, int &psum)
+static __device__ int warp_exclusive_scan(const bool p, int &psum)
 {
   const unsigned int b = __ballot(p);
   psum = __popc(b & lanemask_lt());
   return __popc(b);
 }
 
-__device__ int warp_exclusive_scan(const bool p)
+static __device__ int warp_exclusive_scan(const bool p)
 {
   const int b = __ballot(p);
   return __popc(b & lanemask_lt());
@@ -105,7 +106,7 @@ __device__ int warp_exclusive_scan(const bool p)
 /********* SEGMENTED SCAN ***********/
 /************************************/
 
-__device__ __forceinline__ int ShflSegScanStepB(
+static __device__ __forceinline__ int ShflSegScanStepB(
             int partial,
             uint distance,
             uint up_offset)
@@ -121,7 +122,7 @@ __device__ __forceinline__ int ShflSegScanStepB(
   return partial;
 }
   template<const int SIZE2>
-__device__ __forceinline__ int inclusive_segscan_warp_step(int value, const int distance)
+static __device__ __forceinline__ int inclusive_segscan_warp_step(int value, const int distance)
 {
 
 #if 0
@@ -137,14 +138,14 @@ __device__ __forceinline__ int inclusive_segscan_warp_step(int value, const int 
   return value;
 }
 
-__device__ __forceinline__ int lanemask_le()
+static __device__ __forceinline__ int lanemask_le()
 {
   int mask;
   asm("mov.u32 %0, %lanemask_le;" : "=r" (mask));
   return mask;
 }
 
-__device__ __forceinline__ int inclusive_segscan_warp(
+static __device__ __forceinline__ int inclusive_segscan_warp(
     int *shmem, const int packed_value, int &dist_block, int &nseg)
 {
   const int  flag = packed_value < 0;
@@ -163,7 +164,7 @@ __device__ __forceinline__ int inclusive_segscan_warp(
 }
 
 /* does not work if segment size > WARP_SIZE */
-__device__ __forceinline__ int inclusive_segscan_array(int *shmem_in, const int N)
+static __device__ __forceinline__ int inclusive_segscan_array(int *shmem_in, const int N)
 {
   int dist, nseg = 0;
   int y  = inclusive_segscan_warp(shmem_in, shmem_in[laneId], dist, nseg);
@@ -186,7 +187,7 @@ __device__ __forceinline__ int inclusive_segscan_array(int *shmem_in, const int 
 /**************************************/
 
   template<int SHIFT>
-__forceinline__ __device__ int ACCS(const int i)
+__forceinline__ static __device__ int ACCS(const int i)
 {
   return (i & ((LMEM_STACK_SIZE << SHIFT) - 1))*blockDim.x + threadIdx.x;
 }
@@ -198,7 +199,7 @@ texture<float4, 1, cudaReadModeElementType> texBody;
 
 /*********** Forces *************/
 
-__device__ __forceinline__ float4 add_acc(
+static __device__ __forceinline__ float4 add_acc(
     float4 acc,  const float4 pos,
     const float massj, const float3 posj,
     const float eps2)
@@ -221,7 +222,7 @@ __device__ __forceinline__ float4 add_acc(
   return acc;
 }
 
-__device__ float4 get_D04(float ds2, int selfGrav = 1) {
+static __device__ float4 get_D04(float ds2, int selfGrav = 1) {
 #if 1
   float ids  = rsqrtf(ds2);  //Does not work with zero-softening
   //   if(isnan(ids)) ids = 0;               //This does work with zero-softening, few percent performance drop
@@ -237,7 +238,7 @@ __device__ float4 get_D04(float ds2, int selfGrav = 1) {
   return make_float4(ids, -ids3, +3.0f*ids5, -15.0f*ids7);
 }  // 9 flops
 
-__device__ __forceinline__ float4 add_acc(
+static __device__ __forceinline__ float4 add_acc(
     float4 acc, 
     const float4 pos,
     const float mass, const float3 com,
@@ -312,7 +313,7 @@ __device__ __forceinline__ float4 add_acc(
 /*******************************/
 
 //Improved Barnes Hut criterium
-__device__ bool split_node_grav_impbh(
+static __device__ bool split_node_grav_impbh(
     const float4 nodeCOM, 
     const float4 groupCenter, 
     const float4 groupSize)
@@ -344,7 +345,7 @@ __device__ bool split_node_grav_impbh(
 
 
 template<const int SHIFT, const int BLOCKDIM2, const int NI>
-__device__ 
+static __device__ 
 #if 0 /* __noinline__ crashes the kernel when compled with ABI */
 __noinline__
 #else
@@ -790,11 +791,10 @@ void approximate_gravity(
 }
 
 
-extern "C" __global__ void
 #if 0 /* casues 164 bytes spill to lmem with NTHREAD = 128 */
 __launch_bounds__(NTHREAD)
 #endif
-  dev_approximate_gravity(
+KERNEL_DECLARE(dev_approximate_gravity)(
       const int n_active_groups,
       int    n_bodies,
       float eps2,

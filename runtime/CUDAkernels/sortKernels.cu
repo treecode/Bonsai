@@ -1,3 +1,4 @@
+#include "bonsai.h"
 #include "scanKernels.cu"
 // #include "support_kernels.cu"
 #include "../profiling/bonsai_timing.h"
@@ -136,7 +137,7 @@ PROF_MODULE(sortKernels);
 #endif
 
 
-extern "C" __global__ void dataReorderR4(const int n_particles,
+KERNEL_DECLARE(dataReorderR4)(const int n_particles,
                                          real4 *source,
                                          real4 *destination,
                                          uint  *permutation) {
@@ -151,7 +152,7 @@ extern "C" __global__ void dataReorderR4(const int n_particles,
    destination[idx] = source[newIndex];  
 }
 
-// extern "C" __global__ void dataReorderF2(const int n_particles,
+// KERNEL_DECLARE(dataReorderF2)(const int n_particles,
 //                                          float2 *source,
 //                                          float2 *destination,
 //                                          uint  *permutation) {
@@ -166,7 +167,7 @@ extern "C" __global__ void dataReorderR4(const int n_particles,
 //   destination[idx] = source[newIndex];  
 // }
 
-extern "C" __global__ void dataReorderI1(const int n_particles,
+KERNEL_DECLARE(dataReorderI1)(const int n_particles,
                                          int *source,
                                          int *destination,
                                          uint  *permutation) {
@@ -183,7 +184,7 @@ extern "C" __global__ void dataReorderI1(const int n_particles,
 
 
 //Convert a 64bit key uint2 key into a 96key with a permutation value build in
-extern "C" __global__ void convertKey64to96(uint4 *keys,  uint4 *newKeys, const int N)
+KERNEL_DECLARE(convertKey64to96)(uint4 *keys,  uint4 *newKeys, const int N)
 {
   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
   const int tid = threadIdx.y * blockDim.x + threadIdx.x;
@@ -197,7 +198,7 @@ extern "C" __global__ void convertKey64to96(uint4 *keys,  uint4 *newKeys, const 
   newKeys[idx] = make_uint4(temp.x, temp.y, temp.z, idx);
 }
 
-extern "C" __global__ void extractKeyAndPerm(uint4 *newKeys, uint4 *keys, uint *permutation, const int N)
+KERNEL_DECLARE(extractKeyAndPerm)(uint4 *newKeys, uint4 *keys, uint *permutation, const int N)
 {
   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
   const int tid = threadIdx.y * blockDim.x + threadIdx.x;
@@ -213,7 +214,7 @@ extern "C" __global__ void extractKeyAndPerm(uint4 *newKeys, uint4 *keys, uint *
   permutation[idx] = temp.w;
 }
 
-extern "C" __global__ void dataReorderCombined(const int N, uint4 *keyAndPerm,
+KERNEL_DECLARE(dataReorderCombined)(const int N, uint4 *keyAndPerm,
                                       real4 *source1, real4* destination1,
                                       real4 *source2, real4* destination2,
                                       real4 *source3, real4* destination3) {
@@ -233,7 +234,7 @@ extern "C" __global__ void dataReorderCombined(const int N, uint4 *keyAndPerm,
 }
 
 
-extern "C" __global__ void dataReorderCombined4(const int N, 
+KERNEL_DECLARE(dataReorderCombined4)(const int N, 
                                       uint4 *keyAndPerm,
                                       real4 *source1,  real4* destination1,
                                       int *source2,    int*   destination2,
@@ -255,7 +256,7 @@ extern "C" __global__ void dataReorderCombined4(const int N,
 
 
 
-extern "C" __global__ void dataReorderCombined2(const int N, uint4 *keyAndPerm,
+KERNEL_DECLARE(dataReorderCombined2)(const int N, uint4 *keyAndPerm,
                                       real4 *source1, real4* destination1,
                                       real4 *source2, real4* destination2,
                                       real4 *source3, real4* destination3) {
@@ -285,7 +286,7 @@ extern "C" __global__ void dataReorderCombined2(const int N, uint4 *keyAndPerm,
   }
 }
 
-extern "C" __global__ void dataReorderCombined3(const int N, uint4 *keyAndPerm,
+KERNEL_DECLARE(dataReorderCombined3)(const int N, uint4 *keyAndPerm,
                                       real4 *source1, real4* destination1,
                                       real4 *source2, real4* destination2,
                                       real4 *source3, real4* destination3) {
@@ -309,7 +310,7 @@ extern "C" __global__ void dataReorderCombined3(const int N, uint4 *keyAndPerm,
 }
 
 
-extern "C" __global__ void dataReorderF2(const int N, uint4 *keyAndPerm,
+KERNEL_DECLARE(dataReorderF2)(const int N, uint4 *keyAndPerm,
                                          float2 *source1, float2 *destination1,
                                          int    *source2, int *destination2) {
   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
@@ -328,7 +329,7 @@ extern "C" __global__ void dataReorderF2(const int N, uint4 *keyAndPerm,
 
 
 //Extract 1 of the 4 items of an uint4 key and move it into a 32bit array
-extern "C" __global__ void extractInt2(uint4 *keys,  uint *simpleKeys, const int N, int keyIdx)
+KERNEL_DECLARE(extractInt2)(uint4 *keys,  uint *simpleKeys, const int N, int keyIdx)
 {
   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
   const int tid = threadIdx.y * blockDim.x + threadIdx.x;
@@ -351,7 +352,7 @@ extern "C" __global__ void extractInt2(uint4 *keys,  uint *simpleKeys, const int
   simpleKeys[idx] = simpleTemp;
 }
 
-extern "C" __global__ void extractInt(uint4 *keys,  uint *simpleKeys, 
+KERNEL_DECLARE(extractInt)(uint4 *keys,  uint *simpleKeys, 
                                       uint *sequence,
                                       const int N, int keyIdx)
 {
@@ -380,7 +381,7 @@ extern "C" __global__ void extractInt(uint4 *keys,  uint *simpleKeys,
 
 
 //Create range of 0 to N
-extern "C" __global__ void fillSequence(uint *sequence, const int N)
+KERNEL_DECLARE(fillSequence)(uint *sequence, const int N)
 {
   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
   const int tid = threadIdx.y * blockDim.x + threadIdx.x;
@@ -394,7 +395,7 @@ extern "C" __global__ void fillSequence(uint *sequence, const int N)
 }
 
 //Reorder the data in the arrays according to a given permutation
-extern "C" __global__ void reOrderKeysValues(uint4 *keysSrc, uint4 *keysDest, uint *permutation, const int N)
+KERNEL_DECLARE(reOrderKeysValues)(uint4 *keysSrc, uint4 *keysDest, uint *permutation, const int N)
 {
   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
   const int tid = threadIdx.y * blockDim.x + threadIdx.x;
@@ -408,7 +409,7 @@ extern "C" __global__ void reOrderKeysValues(uint4 *keysSrc, uint4 *keysDest, ui
   keysDest[idx] = keysSrc[newIndex];
 }
 
-extern "C" __global__ void sort_count(volatile uint2 *valid, int *counts, const int N, setupParams sParam, int bitIdx/*, int2 *blaat*/)
+KERNEL_DECLARE(sort_count)(volatile uint2 *valid, int *counts, const int N, setupParams sParam, int bitIdx/*, int2 *blaat*/)
 {
   const int tid    =  threadIdx.x;
   const int bid    =  blockDim.y *  blockIdx.x + threadIdx.y;
@@ -494,7 +495,7 @@ extern "C" __global__ void sort_count(volatile uint2 *valid, int *counts, const 
 }//end compact_count
 
 
-// __device__  __forceinline__ int testTest(volatile unsigned int tmp[], uint val, const int idx, long test)
+// static __device__  __forceinline__ int testTest(volatile unsigned int tmp[], uint val, const int idx, long test)
 // {
 //   tmp[idx-16] = 0; tmp[idx] = val;
 // 
@@ -513,7 +514,7 @@ extern "C" __global__ void sort_count(volatile uint2 *valid, int *counts, const 
 For sorting it turns out that the stage kernels works faster than the non-staged
 Might depend on how much has to be sorted/moved, have to do timings in the actual code
 */
-extern "C" __global__ void sort_move_stage_key_value(uint2 *valid, int *output,
+KERNEL_DECLARE(sort_move_stage_key_value)(uint2 *valid, int *output,
                                           uint2 *srcValues, uint *valuesOut,
                                           int *counts,
                                           const int N, setupParams sParam, int bitIdx)

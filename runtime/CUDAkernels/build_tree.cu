@@ -1,3 +1,4 @@
+#include "bonsai.h"
 // //#include "/home/jbedorf/papers/GBPZ2010/codes/jb/build_tree/CUDA/support_kernels.cu"
 #include "support_kernels.cu"
 #include <stdio.h>
@@ -10,7 +11,7 @@ PROF_MODULE(build_tree);
 //////////////////////////////
 #define LEVEL_MIN 3
 
-extern "C" __global__ void boundaryReduction(const int n_particles,
+KERNEL_DECLARE(boundaryReduction)(const int n_particles,
                                             real4      *positions,
                                             float3     *output_min,
                                             float3     *output_max)
@@ -96,7 +97,7 @@ extern "C" __global__ void boundaryReduction(const int n_particles,
 
 
 //Get the domain size, by taking into account the group size
-extern "C" __global__ void boundaryReductionGroups(const int n_groups,
+KERNEL_DECLARE(boundaryReductionGroups)(const int n_groups,
                                                    real4      *positions,
                                                    real4      *sizes,
                                                    float3     *output_min,
@@ -186,7 +187,7 @@ extern "C" __global__ void boundaryReductionGroups(const int n_groups,
 
 //#define EXACT_KEY
 
-extern "C" __global__ void cl_build_key_list(uint4  *body_key,
+KERNEL_DECLARE(cl_build_key_list)(uint4  *body_key,
                                             real4  *body_pos,
                                             int   n_bodies,
                                             real4  corner) {
@@ -229,7 +230,7 @@ extern "C" __global__ void cl_build_key_list(uint4  *body_key,
     
   
 
-extern "C" __global__ void cl_build_valid_list(int n_bodies,
+KERNEL_DECLARE(cl_build_valid_list)(int n_bodies,
                                                int level,
                                                uint4  *body_key,
                                                uint *valid_list,
@@ -297,9 +298,9 @@ extern "C" __global__ void cl_build_valid_list(int n_bodies,
 //////////////////////////////
 //////////////////////////////
 //////////////////////////////
-__device__ uint retirementCountBuildNodes = 0;
+static __device__ uint retirementCountBuildNodes = 0;
 
-extern "C" __global__ void cl_build_nodes(uint level,
+KERNEL_DECLARE(cl_build_nodes)(uint level,
                              uint  *compact_list_len,
                              uint  *level_offset,
                              uint2 *level_list,
@@ -371,7 +372,7 @@ extern "C" __global__ void cl_build_nodes(uint level,
 //////////////////////////////
 
 
-extern "C" __global__ void cl_link_tree(int n_nodes,
+KERNEL_DECLARE(cl_link_tree)(int n_nodes,
                             uint *n_children,
                             uint2 *node_bodies,
                             real4 *bodies_pos,
@@ -463,7 +464,7 @@ extern "C" __global__ void cl_link_tree(int n_nodes,
 }
 
 //Determines which level of node starts at which offset
-extern "C" __global__ void build_level_list(const int n_nodes,
+KERNEL_DECLARE(build_level_list)(const int n_nodes,
                                             const int n_leafs,
                                             uint *leafsIdxs,
                                             uint2 *node_bodies,                                      
@@ -518,7 +519,7 @@ extern "C" __global__ void build_level_list(const int n_nodes,
 //Finds nodes/leafs that will become groups
 //After executions valid_list contains the 
 //valid nodes/leafs that form groups
-extern "C" __global__ void build_group_list2(int    n_particles,
+KERNEL_DECLARE(build_group_list2)(int    n_particles,
                                              uint  *validList,
                                              real4  *bodies_pos,
                                              const float DIST,
@@ -601,7 +602,7 @@ extern "C" __global__ void build_group_list2(int    n_particles,
  
 //Store per particle the group id it belongs to
 //and the start and end particle number of the groups  
-extern "C" __global__ void store_group_list(int    n_particles,
+KERNEL_DECLARE(store_group_list)(int    n_particles,
                                             int n_groups,
                                             uint  *validList,
                                             uint  *body2group_list,
@@ -630,7 +631,7 @@ extern "C" __global__ void store_group_list(int    n_particles,
 
 //////////// Functions specific for dust //////////////////
 
-extern "C" __global__ void define_dust_groups(int    n_particles,
+KERNEL_DECLARE(define_dust_groups)(int    n_particles,
 					      real4  *dust_pos,
                                               uint  *validList)
 {
@@ -695,7 +696,7 @@ extern "C" __global__ void define_dust_groups(int    n_particles,
 //JB: This one is slightly different from the store_group_list
 //since  in my infinite wisdom I decided to make the comparisons
 //slightly different when making the new define_dust_groups
-extern "C" __global__ void store_dust_groups(int    n_groups,
+KERNEL_DECLARE(store_dust_groups)(int    n_groups,
                                             uint  *validList,
                                             uint  *body2group_list,
                                             uint2 *group_list,
@@ -727,7 +728,7 @@ extern "C" __global__ void store_dust_groups(int    n_groups,
 //memory storage and memory reorders after sorting 
 //It is slightly less accurate and therefore not used 
 //for the real bodies. In the correct function we compute back
-extern "C" __global__ void predict_dust_particles(const int n_bodies,
+KERNEL_DECLARE(predict_dust_particles)(const int n_bodies,
                                                   float tc,
                                                   float tp,
                                                   real4 *pos,
@@ -766,7 +767,7 @@ extern "C" __global__ void predict_dust_particles(const int n_bodies,
 
 
 
-extern "C" __global__ void correct_dust_particles(const int n_bodies,
+KERNEL_DECLARE(correct_dust_particles)(const int n_bodies,
                                                   float dt_cb,
                                                   uint   *active_list,
                                                   real4 *vel,

@@ -1,9 +1,10 @@
+#include "bonsai.h"
 typedef unsigned int uint;
 
 #include "stdio.h"
 
 //Warp based summation
-__device__ int inexclusive_scan_warp(volatile int *ptr,bool inclusive, const unsigned int idx, int value) {
+static __device__ int inexclusive_scan_warp(volatile int *ptr,bool inclusive, const unsigned int idx, int value) {
   const unsigned int lane = idx & 31;
   
   if (lane >=  1) ptr[idx] = value = ptr[idx -  1]   + value;
@@ -21,7 +22,7 @@ __device__ int inexclusive_scan_warp(volatile int *ptr,bool inclusive, const uns
 
 
 //N is number of previous blocks in the count call
-__device__ void exclusive_scan_blockD(int *ptr, const int N, int *count, volatile int *shmemESB) 
+static __device__ void exclusive_scan_blockD(int *ptr, const int N, int *count, volatile int *shmemESB) 
 {
   const unsigned int idx = threadIdx.x;
   const unsigned int lane   = idx & 31;
@@ -66,7 +67,7 @@ __device__ void exclusive_scan_blockD(int *ptr, const int N, int *count, volatil
 }
 
 //N is number of previous blocks in the count call
-extern "C"  __global__ void exclusive_scan_block(int *ptr, const int N, int *count) 
+KERNEL_DECLARE(exclusive_scan_block)(int *ptr, const int N, int *count) 
 {
   if (*count != 0) {
     extern __shared__ int shmemESB[];
@@ -86,8 +87,8 @@ typedef struct setupParams
 
 
 //Warp based prefix sum, using extra buffer space to remove the need for if statements
-// __device__  int hillisSteele4(volatile int *ptr, int *count, uint val, const unsigned int idx)
-__device__  int hillisSteele4(volatile int *ptr, int &count, uint val, const unsigned int idx)
+// static __device__  int hillisSteele4(volatile int *ptr, int *count, uint val, const unsigned int idx)
+static __device__  int hillisSteele4(volatile int *ptr, int &count, uint val, const unsigned int idx)
 {
   //  const unsigned int lane   = idx & 31;  
   //We don't require lane here since idx is always < 32 in the way we start the blocks/threads
@@ -111,8 +112,8 @@ __device__  int hillisSteele4(volatile int *ptr, int &count, uint val, const uns
 }
 
 //Warp based prefix sum, using extra buffer space to remove the need for if statements
-// __device__  int hillisSteele4(volatile int *ptr, int *count, uint val, const unsigned int idx)
-__device__  __forceinline__ int hillisSteele5(volatile unsigned int tmp[], int &count, uint val, const int idx)
+// static __device__  int hillisSteele4(volatile int *ptr, int *count, uint val, const unsigned int idx)
+static __device__  __forceinline__ int hillisSteele5(volatile unsigned int tmp[], int &count, uint val, const int idx)
 {
   //  const unsigned int lane   = idx & 31;  
   //We don't require lane here since idx is always < 32 in the way we start the blocks/threads
@@ -138,7 +139,7 @@ __device__  __forceinline__ int hillisSteele5(volatile unsigned int tmp[], int &
 }
 
 
-__device__ void reduce_block2(int tid, volatile int *shmem, int val)
+static __device__ void reduce_block2(int tid, volatile int *shmem, int val)
 {
   //Reduce the 32 block
   if(tid < 16){
@@ -152,7 +153,7 @@ __device__ void reduce_block2(int tid, volatile int *shmem, int val)
 
 
 //Count the number of valid elements in this BLOCK
-__device__ void compact_countD(volatile uint2 *values,
+static __device__ void compact_countD(volatile uint2 *values,
                               uint *counts,  
                               const int N,                             
                               setupParams sParam, volatile int *shmemCC2) {
@@ -239,7 +240,7 @@ extern "C" __global__ void compact_count(volatile uint2 *values,
 
 
 //The kernel that actually moves the data
-__device__ void compact_moveD( uint2 *values,
+static __device__ void compact_moveD( uint2 *values,
                              uint *output, 
                              uint *counts,  
                              const int N,
@@ -321,7 +322,7 @@ __device__ void compact_moveD( uint2 *values,
 }//end compact_move
 
 //The kernel that actually moves the data
-extern "C"  __global__ void compact_move( uint2 *values,
+KERNEL_DECLARE(compact_move)( uint2 *values,
                              uint *output, 
                              uint *counts,  
                              const int N,
@@ -336,7 +337,7 @@ extern "C"  __global__ void compact_move( uint2 *values,
 
 
 //The kernel that actually moves/splits the data
-__device__ void split_moveD( uint2 *valid,
+static __device__ void split_moveD( uint2 *valid,
                                         uint *output, 
                                         uint *counts,  
                                         const int N,                        
@@ -442,7 +443,7 @@ __device__ void split_moveD( uint2 *valid,
 
 
 //The kernel that actually moves/splits the data
-extern "C"  __global__ void split_move( uint2 *valid,
+KERNEL_DECLARE(split_move)( uint2 *valid,
                                         uint *output, 
                                         uint *counts,  
                                         const int N,                        

@@ -1,3 +1,4 @@
+#include "bonsai.h"
 #ifdef __DEVICE_EMULATION__
   #define EMUSYNC __syncthreads();
 #else
@@ -10,7 +11,7 @@ PROF_MODULE(timestep);
 
 
 //Reduce function to get the minimum timestep
-__device__ void get_TnextD(const int n_bodies,
+static __device__ void get_TnextD(const int n_bodies,
                                      float2 *time,
                                      float *tnext, volatile float *sdata) {
   //float2 time : x is time begin, y is time end
@@ -57,7 +58,7 @@ __device__ void get_TnextD(const int n_bodies,
   if (tid == 0) tnext[blockIdx.x] = sdata[0];
 }
 
-extern "C" __global__ void get_Tnext(const int n_bodies,
+KERNEL_DECLARE(get_Tnext)(const int n_bodies,
                                      float2 *time,
                                      float *tnext) {
   extern __shared__ float sdata[];
@@ -66,7 +67,7 @@ extern "C" __global__ void get_Tnext(const int n_bodies,
 
 
 //Reduce function to get the number of active particles
-__device__ void get_nactiveD(const int n_bodies,
+static __device__ void get_nactiveD(const int n_bodies,
                                        uint *valid,
                                        uint *tnact, volatile int *sdataInt) {
   // perform first level of reduction,
@@ -113,14 +114,14 @@ __device__ void get_nactiveD(const int n_bodies,
 }
 
 //Reduce function to get the number of active particles
-extern "C" __global__ void get_nactive(const int n_bodies,
+KERNEL_DECLARE(get_nactive)(const int n_bodies,
                                        uint *valid,
                                        uint *tnact) {
   extern __shared__ int sdataInt[];
   get_nactiveD(n_bodies, valid, tnact, sdataInt);
 }
 
-extern "C" __global__ void predict_particles(const int n_bodies,
+KERNEL_DECLARE(predict_particles)(const int n_bodies,
                                              float tc,
                                              float tp,
                                              real4 *pos,
@@ -201,7 +202,7 @@ extern "C"  __global__ void setActiveGroups(const int n_bodies,
 }     
 
 
-extern "C" __global__ void correct_particles(const int n_bodies,
+KERNEL_DECLARE(correct_particles)(const int n_bodies,
                                              float tc,
                                              float2 *time,                                                                              
                                              uint   *active_list,
@@ -368,7 +369,7 @@ extern "C"  __global__ void compute_dt(const int n_bodies,
 
 
 //Reduce function to get the energy of the system in double precision
-__device__ void compute_energy_doubleD(const int n_bodies,
+static __device__ void compute_energy_doubleD(const int n_bodies,
                                             real4 *pos,
                                             real4 *vel,
                                             real4 *acc,
@@ -449,7 +450,7 @@ __device__ void compute_energy_doubleD(const int n_bodies,
 
 
 //Reduce function to get the energy of the system
-extern "C" __global__ void compute_energy_double(const int n_bodies,
+KERNEL_DECLARE(compute_energy_double)(const int n_bodies,
                                             real4 *pos,
                                             real4 *vel,
                                             real4 *acc,

@@ -1,3 +1,4 @@
+#include "bonsai.h"
 #include <thrust/device_ptr.h>
 #include <thrust/sort.h>
 #include "vector_math.h"
@@ -6,8 +7,7 @@
 #include <cuda_gl_interop.h>
 
 // calculate eye-space depth for each particle
-__global__
-void calcDepthKernel(float4 *pos, float *depth, int *indices, float4 modelViewZ, int numParticles)
+KERNEL_DECLARE(calcDepthKernel)(float4 *pos, float *depth, int *indices, float4 modelViewZ, int numParticles)
 {
     int i = blockIdx.x*blockDim.x + threadIdx.x;
 	if (i >= numParticles) return;
