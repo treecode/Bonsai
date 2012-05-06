@@ -460,13 +460,12 @@ void octree::gpuSplit(my_dev::context &devContext,
   sParam.extraElements = N % 64;
   sParam.extraOffset = N - sParam.extraElements;
   
-
-
   compactCount.set_arg<cl_mem>(0, srcValues.p());
   compactCount.set_arg<cl_mem>(1, this->devMemCounts.p());
   compactCount.set_arg<uint>(2, &N);
   compactCount.set_arg<int>(3, NULL, 128);
   compactCount.set_arg<setupParams>(4, &sParam);
+  compactCount.set_arg<cl_mem>(5, this->devMemCountsx.p());
 
   vector<size_t> localWork(2), globalWork(2);
   globalWork[0] = 32*120;   globalWork[1] = 4;
@@ -494,7 +493,7 @@ void octree::gpuSplit(my_dev::context &devContext,
   splitMove.set_arg<uint>(3, &N);
   splitMove.set_arg<uint>(4, NULL, 192); //Dynamic shared memory
   splitMove.set_arg<setupParams>(5, &sParam);
-
+  
   globalWork[0] = 120*32;  globalWork[1] = 4;
   localWork [0] = 32;      localWork [1] = 4;
 

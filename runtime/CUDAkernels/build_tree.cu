@@ -372,6 +372,12 @@ KERNEL_DECLARE(cl_build_nodes)(uint level,
   }
 }
 
+extern void scan_kernels_gpu_compact(octree &tree,
+                            my_dev::context &devContext, 
+                            my_dev::dev_mem<uint> &srcValues,
+                            my_dev::dev_mem<uint> &output,                        
+                            int N, int *validCount);
+
 void build_tree_node_levels(octree &tree, 
                             my_dev::dev_mem<uint>  &validList,
                             my_dev::dev_mem<uint>  &compactList,
@@ -382,30 +388,29 @@ void build_tree_node_levels(octree &tree,
   tree.devMemCountsx[0] = 1;
   tree.devMemCountsx.h2d(1);
 
-  dim3 grid, block;
-
   //int nodeSum = 0;
   for (uint level = 0; level < MAXLEVELS; level++) {
     // mark bodies to be combined into nodes
     //Calculate dynamic
-    int ng = (tree.localTree.n) / 128 + 1;
-    grid.x = (int)sqrt((double)ng);
-    grid.y = (ng -1)/grid.x +  1; 
-    grid.z = 1;
-    block.x = 128; block.y = block.z = 1;
+    int ng = (tree.localTree.n) / 128;
+    int sqrtng = (int)sqrt((double)ng);
+    dim3 grid(sqrtng, ng / sqrtng + 1, 1);
+    dim3 block(128, 1, 1);
 
     cl_build_valid_list<<<grid, block>>>(tree.localTree.n, 
                                          level, 
                                          tree.localTree.bodies_key.raw_p(),
                                          validList.raw_p(), 
                                          tree.devMemCountsx.raw_p());
+#ifdef DEBUG
+    CU_SAFE_CALL(clFinish(0));
+#endif
       
     //gpuCompact to get number of created nodes    
-    tree.gpuCompact(*tree.getDevContext(), validList, compactList, tree.localTree.n*2, 0);
-                   
+    scan_kernels_gpu_compact(tree, *tree.getDevContext(), validList, compactList, tree.localTree.n*2, 0);
+    
     // assemble nodes   
-    grid.x = (120*32)/128; grid.y = 4; grid.z = 1;
-    block.x = 128; block.y = 1; block.z = 1;
+    grid.x = (120*32)/128; grid.y = 4; 
 
     cl_build_nodes<<<grid, block>>>(level, 
                                     tree.devMemCountsx.raw_p(), 
@@ -417,7 +422,11 @@ void build_tree_node_levels(octree &tree,
                                     tree.localTree.node_key.raw_p(),
                                     tree.localTree.n_children.raw_p(),
                                     tree.localTree.node_bodies.raw_p());
-  } //end for lvl
+#ifdef DEBUG
+     CU_SAFE_CALL(clFinish(0));
+#endif
+      
+  } //end for level
 
   // reset counts to 1 so next compact proceeds...
   tree.devMemCountsx[0] = 1;

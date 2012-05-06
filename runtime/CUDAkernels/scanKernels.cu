@@ -2,6 +2,7 @@
 typedef unsigned int uint;
 
 #include "stdio.h"
+#include "octree.h"
 
 //Warp based summation
 static __device__ int inexclusive_scan_warp(volatile int *ptr,bool inclusive, const unsigned int idx, int value) {
@@ -76,7 +77,7 @@ KERNEL_DECLARE(exclusive_scan_block)(int *ptr, const int N, int *count)
   }
 }
 
-
+#ifndef _OCTREE_H_
 typedef struct setupParams
 {
   int jobs;                     //Minimal number of jobs for each 'processor'
@@ -84,7 +85,7 @@ typedef struct setupParams
   int extraElements;            //The elements that didn't fit completely
   int extraOffset;              //Start of the extra elements
 }setupParams;
-
+#endif
 
 //Warp based prefix sum, using extra buffer space to remove the need for if statements
 // static __device__  int hillisSteele4(volatile int *ptr, int *count, uint val, const unsigned int idx)
@@ -227,12 +228,12 @@ static __device__ void compact_countD(volatile uint2 *values,
 }//end compact_count
 
 //Count the number of valid elements in this BLOCK
-extern "C" __global__ void compact_count(volatile uint2 *values,
+KERNEL_DECLARE(compact_count)(volatile uint2 *values,
                               uint *counts,  
                               const int N,                             
                               setupParams sParam,
                               const uint *workToDo) {
-  if (*workToDo != 0) {
+  if ((workToDo != 0) && (*workToDo != 0)) {
     extern __shared__  int shmemCC[];
     compact_countD(values, counts, N, sParam,shmemCC) ;
   }
@@ -329,7 +330,7 @@ KERNEL_DECLARE(compact_move)( uint2 *values,
                             setupParams sParam,
                             const uint *workToDo)
 {
-  if (*workToDo != 0) {
+  if ((workToDo != 0) && (*workToDo != 0)) {
     extern __shared__ unsigned int shmemCM[];
     compact_moveD(values, output, counts,N,sParam,shmemCM);
   }
@@ -454,3 +455,52 @@ KERNEL_DECLARE(split_move)( uint2 *valid,
 
 }
 
+
+///////////////////////////////////////////////////////////////
+// Plumbing in a not-in-class-octree launch of gpuCompact
+
+void scan_kernels_gpu_compact(octree &tree,
+                              my_dev::context &devContext, 
+                              my_dev::dev_mem<uint> &srcValues,
+                              my_dev::dev_mem<uint> &output,                        
+                              int N, int *validCount) // if validCount NULL leave count on device)
+{  
+  //Memory that should be alloced outside the function:
+  //devMemCounts and devMemCountsx 
+
+  //Kernel configuration parameters
+  setupParams sParam;
+  sParam.jobs = (N / 64) / 480  ; //64=32*2 2 items per look, 480 is 120*4, number of procs
+  sParam.blocksWithExtraJobs = (N / 64) % 480; 
+  sParam.extraElements = N % 64;
+  sParam.extraOffset = N - sParam.extraElements;
+  
+  //Calculate dynamic
+  dim3 grid(120, 1, 1);
+  dim3 block(32, 4, 1);
+  
+  compact_count<<< grid, block, 128*sizeof(int) >>>((volatile uint2 *)srcValues.raw_p(), tree.devMemCounts.raw_p(),
+                                                    N, sParam, tree.devMemCountsx.raw_p());
+#ifdef DEBUG
+  CU_SAFE_CALL(clFinish(0));
+#endif
+
+  int blocks = 120*4;
+  exclusive_scan_block<<< 1, 512, 512*sizeof(int) >>>((int *)tree.devMemCounts.raw_p(), blocks, (int *)tree.devMemCountsx.raw_p());
+#ifdef DEBUG
+  CU_SAFE_CALL(clFinish(0));
+#endif
+  
+  compact_move<<< grid, block, 192*sizeof(int) >>>((uint2 *)srcValues.raw_p(), output.raw_p(), tree.devMemCounts.raw_p(),
+                                                    N, sParam, tree.devMemCountsx.raw_p());
+#ifdef DEBUG
+  CU_SAFE_CALL(clFinish(0));
+#endif
+
+  if (validCount)
+  {
+    tree.devMemCountsx.d2h();
+    *validCount = tree.devMemCountsx[0];
+    //printf("Total number of valid items: %d \n", countx[0]);
+  }
+}
