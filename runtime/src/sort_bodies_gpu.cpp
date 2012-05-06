@@ -10,7 +10,7 @@ void octree::getBoundaries(tree_structure &tree, real4 &r_min, real4 &r_max)
   boundaryReduction.set_arg<cl_mem>(3, devMemRMAX.p());
 
   boundaryReduction.setWork(tree.n, NTHREAD_BOUNDARY, NBLOCK_BOUNDARY);  //256 threads and 120 blocks in total
-  boundaryReduction.execute();
+  boundaryReduction.execute(execStream->s());
   
    
   devMemRMIN.d2h();     //Need to be defined and initialized somewhere outside this function
@@ -47,7 +47,7 @@ void octree::getBoundariesGroups(tree_structure &tree, real4 &r_min, real4 &r_ma
   boundaryReductionGroups.set_arg<cl_mem>(4, devMemRMAX.p());
 
   boundaryReductionGroups.setWork(tree.n_groups, NTHREAD_BOUNDARY, NBLOCK_BOUNDARY);  //256 threads and 120 blocks in total
-  boundaryReductionGroups.execute();
+  boundaryReductionGroups.execute(execStream->s());
 
    
   devMemRMIN.d2h();     //Need to be defined and initialized somewhere outside this function
@@ -159,7 +159,7 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
   build_key_list.set_arg<real4>(3,    &tree.corner);
   
   build_key_list.setWork(tree.n, 128); //128 threads per block
-  build_key_list.execute();  
+  build_key_list.execute(execStream->s());  
   
   // If srcValues and buffer are different, then the original values
   // are preserved, if they are the same srcValues will be overwritten  
@@ -205,7 +205,7 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
     dataReorderR4.set_arg<cl_mem>(4,   tree.bodies_ids.p()); 
     dataReorderR4.set_arg<cl_mem>(5,   intBuffer1.p()); 
     dataReorderR4.set_arg<cl_mem>(6,   tree.oriParticleOrder.p()); 
-    dataReorderR4.execute();
+    dataReorderR4.execute(execStream->s());
     
     tree.bodies_Ppos.copy(real4Buffer1,  tree.n);
     tree.bodies_ids.copy (intBuffer1,    tree.n);   
@@ -253,7 +253,7 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
     dataReorderCombined.set_arg<cl_mem>(5,   real4Buffer2.p()); 
     dataReorderCombined.set_arg<cl_mem>(6,   tree.bodies_acc0.p()); 
     dataReorderCombined.set_arg<cl_mem>(7,   real4Buffer3.p()); 
-    dataReorderCombined.execute();
+    dataReorderCombined.execute(execStream->s());
     tree.bodies_pos.copy(real4Buffer1,  tree.n);
     tree.bodies_vel.copy(real4Buffer2,  tree.n);
     tree.bodies_acc0.copy(real4Buffer3, tree.n);
@@ -265,7 +265,7 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
     dataReorderCombined.set_arg<cl_mem>(5,   real4Buffer2.p()); 
     dataReorderCombined.set_arg<cl_mem>(6,   tree.bodies_Pvel.p()); 
     dataReorderCombined.set_arg<cl_mem>(7,   real4Buffer3.p());   
-    dataReorderCombined.execute();
+    dataReorderCombined.execute(execStream->s());
 
     tree.bodies_acc1.copy(real4Buffer1, tree.n);
     tree.bodies_Ppos.copy(real4Buffer2,  tree.n);
@@ -301,7 +301,7 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
     dataReorderF2.set_arg<cl_mem>(4,   tree.bodies_ids.p()); 
     dataReorderF2.set_arg<cl_mem>(5,   sortPermutation.p()); //Reuse as destination2  
     dataReorderF2.setWork(tree.n, 512);   
-    dataReorderF2.execute();
+    dataReorderF2.execute(execStream->s());
     
     
     tree.bodies_time.copy(float2Buffer, float2Buffer.get_size()); 

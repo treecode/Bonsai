@@ -395,7 +395,7 @@ void octree::predict(tree_structure &tree)
     getTNext.set_arg<cl_mem>(2, tnext.p());
     getTNext.set_arg<float>(3,  NULL, 128); //Dynamic shared memory
     getTNext.setWork(-1, 128, blockSize);
-    getTNext.execute();
+    getTNext.execute(execStream->s());
 
     //Reduce the last parts on the host
     tnext.d2h();
@@ -430,7 +430,7 @@ void octree::predict(tree_structure &tree)
   predictParticles.set_arg<cl_mem>(10, tree.bodies_Pvel.p());  
 
   predictParticles.setWork(tree.n, 128);
-  predictParticles.execute();
+  predictParticles.execute(execStream->s());
   
 
   #ifdef DO_BLOCK_TIMESTEP
@@ -467,7 +467,7 @@ void octree::setActiveGrpsFunc(tree_structure &tree)
   setActiveGrps.set_arg<cl_mem>(4, tree.activeGrpList.p());
 
   setActiveGrps.setWork(tree.n, 128);
-  setActiveGrps.execute();
+  setActiveGrps.execute(execStream->s());
 
   //Compact the valid list to get a list of valid groups
   gpuCompact(devContext, tree.activeGrpList, tree.active_group_list,
@@ -568,7 +568,7 @@ void octree::approximate_gravity(tree_structure &tree)
       getNActive.set_arg<cl_mem>(2, this->nactive.p());
       getNActive.set_arg<int>(3,    NULL, 128); //Dynamic shared memory , equal to number of threads
       getNActive.setWork(-1, 128,   NBLOCK_REDUCE);
-      getNActive.execute();
+      getNActive.execute(execStream->s());
       
       //Reduce the last parts on the host
       this->nactive.d2h();
@@ -711,7 +711,7 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
     getNActive.set_arg<int>(3, NULL, 128); //Dynamic shared memory , equal to number of threads
     getNActive.setWork(-1, 128, NBLOCK_REDUCE);
     //CU_SAFE_CALL(clFinish(0));
-    getNActive.execute();
+    getNActive.execute(execStream->s());
     
     //Reduce the last parts on the host
     this->nactive.d2h();
@@ -757,7 +757,7 @@ void octree::correct(tree_structure &tree)
   correctParticles.set_arg<cl_mem>(12, float2Buffer.p());
 
   correctParticles.setWork(tree.n, 128);
-  correctParticles.execute();
+  correctParticles.execute(execStream->s());
   
   tree.bodies_acc0.copy(real4Buffer1, tree.n);
   tree.bodies_time.copy(float2Buffer, float2Buffer.get_size()); 
@@ -778,7 +778,7 @@ void octree::correct(tree_structure &tree)
     computeDt.set_arg<float >(11, &timeStep);
 
     computeDt.setWork(tree.n, 128);
-    computeDt.execute();
+    computeDt.execute(execStream->s());
   #endif
 
 }
@@ -928,7 +928,7 @@ double octree::compute_energies(tree_structure &tree)
   computeEnergy.set_arg<double>(5, NULL, 128*2); //Dynamic shared memory, equal to number of threads times 2
 
   computeEnergy.setWork(-1, 128, blockSize);
-  computeEnergy.execute();
+  computeEnergy.execute(execStream->s());
 
   //Reduce the last parts on the host
   energy.d2h();

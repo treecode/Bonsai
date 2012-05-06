@@ -63,7 +63,7 @@ void octree::sort_dust(tree_structure &tree)
   boundaryReduction.set_arg<cl_mem>(3, devMemRMAX.p());
 
   boundaryReduction.setWork(tree.n, NTHREAD_BOUNDARY, NBLOCK_BOUNDARY);  //256 threads and 120 blocks in total
-  boundaryReduction.execute();
+  boundaryReduction.execute(execStream->s());
   
    
   devMemRMIN.d2h();     //Need to be defined and initialized somewhere outside this function
@@ -117,7 +117,7 @@ void octree::sort_dust(tree_structure &tree)
   build_key_list.set_arg<int>(2,      &tree.n_dust);
   build_key_list.set_arg<real4>(3,    &corner);
   build_key_list.setWork(tree.n_dust, 128); //128 threads per block
-  build_key_list.execute();  
+  build_key_list.execute(execStream->s());  
   
   // If srcValues and buffer are different, then the original values
   // are preserved, if they are the same srcValues will be overwritten  
@@ -165,7 +165,7 @@ void octree::sort_dust(tree_structure &tree)
   dataReorderCombined.set_arg<cl_mem>(5,   real4Buffer2.p()); 
   dataReorderCombined.set_arg<cl_mem>(6,   tree.dust_acc0.p()); 
   dataReorderCombined.set_arg<cl_mem>(7,   real4Buffer3.p()); 
-  dataReorderCombined.execute();
+  dataReorderCombined.execute(execStream->s());
   tree.dust_pos.copy(real4Buffer1,  tree.n_dust);
   tree.dust_vel.copy(real4Buffer2,  tree.n_dust);
   tree.dust_acc0.copy(real4Buffer3, tree.n_dust);
@@ -200,7 +200,7 @@ void octree::sort_dust(tree_structure &tree)
   dataReorderF2.set_arg<cl_mem>(4,   tree.dust_ids.p()); 
   dataReorderF2.set_arg<cl_mem>(5,   sortPermutation.p()); //Reuse as destination2  
   dataReorderF2.setWork(tree.n_dust, 512);   
-  dataReorderF2.execute();
+  dataReorderF2.execute(execStream->s());
 
   tree.dust_ids.copy(sortPermutation, sortPermutation.get_size());  
   
@@ -247,7 +247,7 @@ void octree::make_dust_groups(tree_structure &tree)
   build_valid_list.set_arg<cl_mem>(3,  validList.p());  
   build_valid_list.set_arg<cl_mem>(4,  this->devMemCountsx.p());  
   build_valid_list.setWork(tree.n, 128);
-  build_valid_list.execute();
+  build_valid_list.execute(execStream->s());
   
   
   //Now we reuse the results of the build_valid_list
@@ -259,7 +259,7 @@ void octree::make_dust_groups(tree_structure &tree)
   define_dust_groups.set_arg<cl_mem>(1, tree.dust_pos.p());    
   define_dust_groups.set_arg<cl_mem>(2, validList.p());    
   define_dust_groups.setWork(n_bodies, 256);  
-  define_dust_groups.execute();  
+  define_dust_groups.execute(execStream->s());  
   
   
   // reset counts to 1 so next compact proceeds...
@@ -279,7 +279,7 @@ void octree::make_dust_groups(tree_structure &tree)
   store_dust_groups.set_arg<cl_mem>(3,  tree.dust_group_list.p()); 
   store_dust_groups.set_arg<cl_mem>(4,  tree.activeDustGrouplist.p());  
   store_dust_groups.setWork(-1, NCRIT,  tree.n_dust_groups);  
-  store_dust_groups.execute();  
+  store_dust_groups.execute(execStream->s());  
   
 }
 
@@ -297,7 +297,7 @@ void octree::setDustGroupProperties(tree_structure &tree)
   copyNodeDataToGroupData.set_arg<cl_mem>(5, tree.dust_groupSizeInfo.p());
  
   copyNodeDataToGroupData.setWork(-1, NCRIT, tree.n_dust_groups);    
-  copyNodeDataToGroupData.execute();
+  copyNodeDataToGroupData.execute(execStream->s());
 
 
   /*
@@ -397,7 +397,7 @@ void octree::predictDustStep(tree_structure &tree)
   predictDust.set_arg<cl_mem>(idx++, tree.dust2group_list.p());
   predictDust.set_arg<cl_mem>(idx++, tree.activeDustGrouplist.p());
   predictDust.setWork(tree.n_dust, 128);
-  predictDust.execute();
+  predictDust.execute(execStream->s());
 } //End predict
 
 
@@ -413,7 +413,7 @@ void octree::correctDustStep(tree_structure &tree)
   correctDust.set_arg<cl_mem>(idx++, tree.dust_acc0.p());
   correctDust.set_arg<cl_mem>(idx++, tree.dust_acc1.p());  
   correctDust.setWork(tree.n_dust, 128);
-  correctDust.execute();
+  correctDust.execute(execStream->s());
 }
 
 void octree::approximate_dust(tree_structure &tree)
@@ -456,7 +456,7 @@ void octree::approximate_dust(tree_structure &tree)
     
  
   approxGrav.setWork(-1, NTHREAD, nBlocksForTreeWalk);
-  approxGrav.execute(execStream->s());  //First half
+  approxGrav.execute(gravStream->s());  //First half
 
   //Print interaction statistics
   #if 0

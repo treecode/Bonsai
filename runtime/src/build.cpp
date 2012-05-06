@@ -290,7 +290,7 @@ void octree::build (tree_structure &tree) {
   
   // set devMemCountsx to 1 because it is used to early out when it hits zero
 #if 1
-  build_tree_node_levels(*this, validList, compactList, levelOffset, maxLevel);
+  build_tree_node_levels(*this, validList, compactList, levelOffset, maxLevel, execStream->s());
 #else
   this->resetCompact();
 
@@ -298,19 +298,20 @@ void octree::build (tree_structure &tree) {
   for (level = 0; level < MAXLEVELS; level++) {
     // mark bodies to be combined into nodes
     build_valid_list.set_arg<int>(1, &level);
-    build_valid_list.execute();
+    build_valid_list.execute(execStream->s());
       
     //gpuCompact to get number of created nodes    
     gpuCompact(devContext, validList, compactList, tree.n*2, 0);
                    
     // assemble nodes           
     build_nodes.set_arg<int>(0, &level);
-    build_nodes.execute();
+    build_nodes.execute(execStream->s());
   } //end for lvl
 
   // reset counts to 1 so next compact proceeds...
   this->resetCompact();
 #endif
+  
   maxLevel.d2h(1);
   level = maxLevel[0];
   
@@ -346,7 +347,7 @@ void octree::build (tree_structure &tree) {
     LOG("%d\t%d\t%d\n", i, tree.level_list[i].x, tree.level_list[i].y);
  
   //Link the tree      
-  link_tree.execute();
+  link_tree.execute(execStream->s());
   
 
   //After executing link_tree, the id_list contains for each node
@@ -375,7 +376,7 @@ void octree::build (tree_structure &tree) {
 
   //Build the level list based on the leafIdx list
   //required for easy access in the compute node properties
-  build_level_list.execute();  
+  build_level_list.execute(execStream->s());  
 
   int levelThing;  
   gpuCompact(devContext, validList, tree.node_level_list, 
@@ -406,7 +407,7 @@ void octree::build (tree_structure &tree) {
   define_groups.set_arg<cl_mem>(4, tree.node_level_list.p());
   define_groups.set_arg<int>   (5, &level);
   define_groups.setWork(tree.n, 128);  
-  define_groups.execute();
+  define_groups.execute(execStream->s());
   
    
   //Have to copy it back to host since we need it in compute props
@@ -431,7 +432,7 @@ void octree::build (tree_structure &tree) {
   store_groups.set_arg<cl_mem>(3, tree.body2group_list.p());     
   store_groups.set_arg<cl_mem>(4, tree.group_list_test.p());     
   store_groups.setWork(-1, NCRIT, tree.n_groups);  
-  store_groups.execute();  
+  store_groups.execute(execStream->s());  
 
   //Memory allocation for the valid group lists
   if(tree.active_group_list.get_size() > 0)

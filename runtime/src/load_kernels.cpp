@@ -353,6 +353,7 @@ void octree::load_kernels() {
 void octree::resetCompact()
 {
   // reset counts to 1 so next compact proceeds...
+  cudaStreamSynchronize(execStream->s()); // must make sure any outstanding compact is finished  
   this->devMemCountsx[0] = 1;
   this->devMemCountsx.h2d(1, false, copyStream->s());
 }
@@ -364,9 +365,9 @@ void octree::resetCompact()
 void octree::gpuCompact(my_dev::context &devContext, 
                         my_dev::dev_mem<uint> &srcValues,
                         my_dev::dev_mem<uint> &output,                        
-                        int N, int *validCount) // if validCount NULL leave count on device
+                        int N, 
+                        int *validCount) // if validCount NULL leave count on device
 {
-
 
 // thrust_gpuCompact(devContext, 
 //                   srcValues,
@@ -429,9 +430,9 @@ void octree::gpuCompact(my_dev::context &devContext,
 
   ////////////////////
 
-  compactCount.execute();
-  exScanBlock.execute();
-  compactMove.execute();
+  compactCount.execute(execStream->s());
+  exScanBlock.execute(execStream->s());
+  compactMove.execute(execStream->s());
   
   if (validCount)
   {
@@ -447,9 +448,10 @@ void octree::gpuCompact(my_dev::context &devContext,
 //number and then the invalid ones) and the total
 //number of valid items is stored in 'count' 
 void octree::gpuSplit(my_dev::context &devContext, 
-                        my_dev::dev_mem<uint> &srcValues,
-                        my_dev::dev_mem<uint> &output,                        
-                        int N, int *validCount)
+                      my_dev::dev_mem<uint> &srcValues,
+                      my_dev::dev_mem<uint> &output,                        
+                      int N, 
+                      int *validCount)  // if validCount NULL leave count on device
 {
 
   //In the next step we associate the GPU memory with the Kernel arguments
@@ -457,6 +459,8 @@ void octree::gpuSplit(my_dev::context &devContext,
   //Memory that should be alloced outside the function:
   //devMemCounts and devMemCountsx 
   
+  // make sure previous reset has finished.
+  this->devMemCountsx.waitForCopyEvent();
 
   //Kernel configuration parameters
   setupParams sParam;
@@ -471,7 +475,7 @@ void octree::gpuSplit(my_dev::context &devContext,
   compactCount.set_arg<int>(3, NULL, 128);
   compactCount.set_arg<setupParams>(4, &sParam);
   compactCount.set_arg<cl_mem>(5, this->devMemCountsx.p());
-
+  
   vector<size_t> localWork(2), globalWork(2);
   globalWork[0] = 32*120;   globalWork[1] = 4;
   localWork [0] = 32;       localWork[1] = 4;   
@@ -505,12 +509,14 @@ void octree::gpuSplit(my_dev::context &devContext,
   splitMove.setWork(globalWork, localWork);
 
   ////////////////////
-  compactCount.execute();
-  exScanBlock.execute();
-  splitMove.execute();
+  compactCount.execute(execStream->s());
+  exScanBlock.execute(execStream->s());
+  splitMove.execute(execStream->s());
 
-  this->devMemCountsx.d2h();
-  *validCount = this->devMemCountsx[0];
+  if (validCount) {
+    this->devMemCountsx.d2h();
+    *validCount = this->devMemCountsx[0];
+  }
 }
 
 
@@ -629,7 +635,7 @@ void  octree::gpuSort(my_dev::context &devContext,
   reOrderKeysValues.set_arg<cl_mem>(2, valuesOutput.p());
   reOrderKeysValues.set_arg<uint>(3, &N);
 
-  extractInt.execute();
+  extractInt.execute(execStream->s());
   
   #ifdef USE_THRUST
   
@@ -652,7 +658,7 @@ void  octree::gpuSort(my_dev::context &devContext,
     
   //Now reorder the main keys
   //Use output as the new output/src value thing buffer
-  reOrderKeysValues.execute();
+  reOrderKeysValues.execute(execStream->s());
   
   if(subItems == 1)
   {
@@ -671,7 +677,7 @@ void  octree::gpuSort(my_dev::context &devContext,
   
   extractInt.set_arg<cl_mem>(0, output.p());
   extractInt.set_arg<int>(4, &intIdx);//smem size
-  extractInt.execute();
+  extractInt.execute(execStream->s());
 
   #ifdef USE_THRUST
   
@@ -693,7 +699,7 @@ void  octree::gpuSort(my_dev::context &devContext,
 
   reOrderKeysValues.set_arg<cl_mem>(0, output.p());
   reOrderKeysValues.set_arg<cl_mem>(1, buffer.p());
-  reOrderKeysValues.execute();
+  reOrderKeysValues.execute(execStream->s());
 
   if(subItems == 2)
   {
@@ -713,7 +719,7 @@ void  octree::gpuSort(my_dev::context &devContext,
  
   extractInt.set_arg<cl_mem>(0, buffer.p());
   extractInt.set_arg<int>(4, &intIdx);//integer idx
-  extractInt.execute();
+  extractInt.execute(execStream->s());
 
 
   //Now sort the final set of 32bit keys
@@ -734,7 +740,7 @@ void  octree::gpuSort(my_dev::context &devContext,
   
   reOrderKeysValues.set_arg<cl_mem>(0, buffer.p());
   reOrderKeysValues.set_arg<cl_mem>(1, output.p());
-  reOrderKeysValues.execute();  
+  reOrderKeysValues.execute(execStream->s());  
 #endif // USE_THRUST_96
 }
 
@@ -805,9 +811,9 @@ void octree::gpuSort_32b(my_dev::context &devContext,
 
   //Execute bitIdx 0
 
-  sortCount.execute();
-  exScanBlock.execute();
-  sortMove.execute();  
+  sortCount.execute(execStream->s());
+  exScanBlock.execute(execStream->s());
+  sortMove.execute(execStream->s());  
 
   //Swap buffers
   sortCount.set_arg<cl_mem>(0, keysOutput.p());
@@ -823,10 +829,10 @@ void octree::gpuSort_32b(my_dev::context &devContext,
     sortCount.set_arg<int>(5, &bitIdx);
     sortMove.set_arg<int>(10, &bitIdx);
 
-    sortCount.execute();
-    exScanBlock.execute(); 
+    sortCount.execute(execStream->s());
+    exScanBlock.execute(execStream->s()); 
     
-    sortMove.execute();
+    sortMove.execute(execStream->s());
 
     //Switch buffers
     if(pingPong)

@@ -1266,7 +1266,7 @@ void octree::gpuRedistributeParticles()
   domainCheck.set_arg<cl_mem>(3,  localTree.bodies_Ppos.p());          
   domainCheck.set_arg<cl_mem>(4,  validList.p());
   domainCheck.setWork(localTree.n, 128);
-  domainCheck.execute();            
+  domainCheck.execute(execStream->s());            
   
   //Create a list of valid and invalid particles
   int validCount;
@@ -1322,7 +1322,7 @@ void octree::gpuRedistributeParticles()
   extractOutOfDomainBody.set_arg<cl_mem>(9, localTree.bodies_ids.p());
   extractOutOfDomainBody.set_arg<cl_mem>(10, bodyBuffer.p());
   extractOutOfDomainBody.setWork(validCount, 128);
-  extractOutOfDomainBody.execute();
+  extractOutOfDomainBody.execute(execStream->s());
   
   bodyBuffer.d2h(validCount);      
   
@@ -1544,7 +1544,7 @@ int octree::gpu_exchange_particles_with_overflow_check(tree_structure &tree,
       insertNewParticles.set_arg<cl_mem>(11, localTree.bodies_ids.p());
       insertNewParticles.set_arg<cl_mem>(12, bodyBuffer.p());
       insertNewParticles.setWork(items, 128);
-      insertNewParticles.execute(); 
+      insertNewParticles.execute(execStream->s()); 
     }
     
     insertOffset += items;    

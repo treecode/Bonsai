@@ -64,7 +64,7 @@ void octree::compute_properties(tree_structure &tree) {
   
   propsLeafD.setWork(tree.n_leafs, 128);
   LOG("PropsLeaf: "); propsLeafD.printWorkSize();
-  propsLeafD.execute(); 
+  propsLeafD.execute(execStream->s()); 
    
   
   int temp = tree.n_nodes-tree.n_leafs;
@@ -93,7 +93,7 @@ void octree::compute_properties(tree_structure &tree) {
         propsNonLeafD.printWorkSize();
       }      
       propsNonLeafD.set_arg<int>(0,    &i); //set the level
-      propsNonLeafD.execute();     
+      propsNonLeafD.execute(execStream->s());     
   }
   
 
@@ -112,7 +112,7 @@ void octree::compute_properties(tree_structure &tree) {
   
   propsScalingD.setWork(tree.n_nodes, 128);
   LOG("propsScaling: \t "); propsScalingD.printWorkSize();
-  propsScalingD.execute();   
+  propsScalingD.execute(execStream->s());   
 
 
   #ifdef INDSOFT
@@ -134,7 +134,7 @@ void octree::compute_properties(tree_structure &tree) {
   copyNodeDataToGroupData.set_arg<cl_mem>(5, tree.groupSizeInfo.p());
   copyNodeDataToGroupData.setWork(-1, NCRIT, tree.n_groups);    
   copyNodeDataToGroupData.printWorkSize();
-  copyNodeDataToGroupData.execute();
+  copyNodeDataToGroupData.execute(execStream->s());
   
   #ifdef INDSOFT  
     memCpyStream.sync();  

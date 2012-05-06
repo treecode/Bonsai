@@ -461,6 +461,7 @@ KERNEL_DECLARE(split_move)( uint2 *valid,
 
 void scan_kernels_gpu_compact(octree &tree,
                               my_dev::context &devContext, 
+                              cudaStream_t     stream,
                               my_dev::dev_mem<uint> &srcValues,
                               my_dev::dev_mem<uint> &output,                        
                               int N, int *validCount) // if validCount NULL leave count on device)
@@ -482,21 +483,30 @@ void scan_kernels_gpu_compact(octree &tree,
   dim3 grid(120, 1, 1);
   dim3 block(32, 4, 1);
   
-  compact_count<<< grid, block, 128*sizeof(int) >>>((volatile uint2 *)srcValues.raw_p(), tree.devMemCounts.raw_p(),
-                                                    N, sParam, tree.devMemCountsx.raw_p());
-#ifdef DEBUG
+  compact_count<<< grid, block, 128*sizeof(int), stream >>>((volatile uint2 *)srcValues.raw_p(), 
+                                                            tree.devMemCounts.raw_p(),
+                                                            N, 
+                                                            sParam, 
+                                                            tree.devMemCountsx.raw_p());
+#ifdef _DEBUG
   CU_SAFE_CALL(clFinish(0));
 #endif
 
   int blocks = 120*4;
-  exclusive_scan_block<<< 1, 512, 512*sizeof(int) >>>((int *)tree.devMemCounts.raw_p(), blocks, (int *)tree.devMemCountsx.raw_p());
-#ifdef DEBUG
+  exclusive_scan_block<<< 1, 512, 512*sizeof(int), stream >>>((int *)tree.devMemCounts.raw_p(), 
+                                                              blocks, 
+                                                              (int *)tree.devMemCountsx.raw_p());
+#ifdef _DEBUG
   CU_SAFE_CALL(clFinish(0));
 #endif
   
-  compact_move<<< grid, block, 192*sizeof(int) >>>((uint2 *)srcValues.raw_p(), output.raw_p(), tree.devMemCounts.raw_p(),
-                                                    N, sParam, tree.devMemCountsx.raw_p());
-#ifdef DEBUG
+  compact_move<<< grid, block, 192*sizeof(int), stream >>>((uint2 *)srcValues.raw_p(), 
+                                                           output.raw_p(), 
+                                                           tree.devMemCounts.raw_p(),
+                                                           N, 
+                                                           sParam, 
+                                                           tree.devMemCountsx.raw_p());
+#ifdef _DEBUG
   CU_SAFE_CALL(clFinish(0));
 #endif
 

@@ -373,7 +373,8 @@ KERNEL_DECLARE(cl_build_nodes)(uint level,
 }
 
 extern void scan_kernels_gpu_compact(octree &tree,
-                            my_dev::context &devContext, 
+                            my_dev::context &devContext,
+                            cudaStream_t     stream,
                             my_dev::dev_mem<uint> &srcValues,
                             my_dev::dev_mem<uint> &output,                        
                             int N, int *validCount);
@@ -382,12 +383,16 @@ void build_tree_node_levels(octree &tree,
                             my_dev::dev_mem<uint>  &validList,
                             my_dev::dev_mem<uint>  &compactList,
                             my_dev::dev_mem<uint>  &levelOffset,
-                            my_dev::dev_mem<uint>  &maxLevel)
+                            my_dev::dev_mem<uint>  &maxLevel,
+                            cudaStream_t           stream)
 {
-   // set devMemCountsx to 1 because it is used to early out when it hits zero
-  tree.resetCompact();
+  // could move this earlier to distance it from following wait event
+  tree.resetCompact(); 
 
-  //int nodeSum = 0;
+  // make sure reset has completed since we use devMemCountsx 
+  // in more than just compact below
+  tree.devMemCountsx.waitForCopyEvent();  
+
   for (uint level = 0; level < MAXLEVELS; level++) {
     // mark bodies to be combined into nodes
     //Calculate dynamic
@@ -396,32 +401,32 @@ void build_tree_node_levels(octree &tree,
     dim3 grid(sqrtng, ng / sqrtng + 1, 1);
     dim3 block(128, 1, 1);
 
-    cl_build_valid_list<<<grid, block>>>(tree.localTree.n, 
-                                         level, 
-                                         tree.localTree.bodies_key.raw_p(),
-                                         validList.raw_p(), 
-                                         tree.devMemCountsx.raw_p());
-#ifdef DEBUG
+    cl_build_valid_list<<<grid, block, 0, stream>>>(tree.localTree.n, 
+                                                    level, 
+                                                    tree.localTree.bodies_key.raw_p(),
+                                                    validList.raw_p(), 
+                                                    tree.devMemCountsx.raw_p());
+#ifdef _DEBUG
     CU_SAFE_CALL(clFinish(0));
 #endif
       
     //gpuCompact to get number of created nodes    
-    scan_kernels_gpu_compact(tree, *tree.getDevContext(), validList, compactList, tree.localTree.n*2, 0);
-    
+    scan_kernels_gpu_compact(tree, *tree.getDevContext(), stream, validList, compactList, tree.localTree.n*2, 0);
+
     // assemble nodes   
     grid.x = (120*32)/128; grid.y = 4; 
 
-    cl_build_nodes<<<grid, block>>>(level, 
-                                    tree.devMemCountsx.raw_p(), 
-                                    levelOffset.raw_p(), 
-                                    maxLevel.raw_p(),
-                                    tree.localTree.level_list.raw_p(), 
-                                    compactList.raw_p(),
-                                    tree.localTree.bodies_key.raw_p(),
-                                    tree.localTree.node_key.raw_p(),
-                                    tree.localTree.n_children.raw_p(),
-                                    tree.localTree.node_bodies.raw_p());
-#ifdef DEBUG
+    cl_build_nodes<<<grid, block, 0, stream>>>(level, 
+                                               tree.devMemCountsx.raw_p(), 
+                                               levelOffset.raw_p(), 
+                                               maxLevel.raw_p(),
+                                               tree.localTree.level_list.raw_p(), 
+                                               compactList.raw_p(),
+                                               tree.localTree.bodies_key.raw_p(),
+                                               tree.localTree.node_key.raw_p(),
+                                               tree.localTree.n_children.raw_p(),
+                                               tree.localTree.node_bodies.raw_p());
+#ifdef _DEBUG
      CU_SAFE_CALL(clFinish(0));
 #endif
       

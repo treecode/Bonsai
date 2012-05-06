@@ -5,6 +5,7 @@ void build_tree_node_levels(octree &tree,
                             my_dev::dev_mem<uint>  &validList,
                             my_dev::dev_mem<uint>  &compactList,
                             my_dev::dev_mem<uint>  &levelOffset,
-                            my_dev::dev_mem<uint>  &maxLevel);
+                            my_dev::dev_mem<uint>  &maxLevel,
+                            cudaStream_t           stream);
 
 #endif
