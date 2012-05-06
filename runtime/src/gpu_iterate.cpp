@@ -561,15 +561,23 @@ void octree::approximate_gravity(tree_structure &tree)
   
   if(mpiGetNProcs() == 1) //Only do it here if there is only one process
   {
-    #ifdef DO_BLOCK_TIMESTEP  
+   //#ifdef DO_BLOCK_TIMESTEP  
+  #if 0 //Demo mode
       //Reduce the number of valid particles    
       getNActive.set_arg<int>(0,    &tree.n);
       getNActive.set_arg<cl_mem>(1, tree.activePartlist.p());
       getNActive.set_arg<cl_mem>(2, this->nactive.p());
       getNActive.set_arg<int>(3,    NULL, 128); //Dynamic shared memory , equal to number of threads
       getNActive.setWork(-1, 128,   NBLOCK_REDUCE);
+      
+      //JB Need a sync here This is required otherwise the gravity overlaps the reduction
+      //and we get incorrect numbers. 
+      //Note Disabled this whole function for demo!
+      gravStream->sync(); 
       getNActive.execute(execStream->s());
       
+      
+
       //Reduce the last parts on the host
       this->nactive.d2h();
       tree.n_active_particles = this->nactive[0];
@@ -579,8 +587,8 @@ void octree::approximate_gravity(tree_structure &tree)
       LOG("Active particles: %d \n", tree.n_active_particles);
     #else
       tree.n_active_particles = tree.n;
+      LOG("Active particles: %d \n", tree.n_active_particles);
     #endif
-  }
 }
 //end approximate
 
