@@ -51,6 +51,7 @@ endif (USE_MPI)
 if (USE_THRUST)
   add_definitions(-DUSE_THRUST)
 endif (USE_THRUST)
+include_directories(${CUDA_TOOLKIT_ROOT_DIR}/../../thrust)
 
 if (USE_B40C)
   add_definitions(-DUSE_B40C)
