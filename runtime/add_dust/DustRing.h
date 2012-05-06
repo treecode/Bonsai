@@ -123,8 +123,8 @@ struct DustRing
     const real Rmax = VelCurve.back().R;
 
     assert(Rmax       > Rmin); /* sanity check, outer edge of the disk must be outside the inner */
-    assert(Ro-nzScale > Rmin); /* check that there are enough velocity data points */
-    assert(Ro+nzScale < Rmax); /* to cover the full ring particle distribution */
+    assert(Ro-D*nrScale > Rmin); /* check that there are enough velocity data points */
+    assert(Ro+D*nrScale < Rmax); /* to cover the full ring particle distribution */
 #endif
 
     ptcl.reserve(N);
