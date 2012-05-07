@@ -602,29 +602,29 @@ int main(int argc, char** argv)
 
 		std::stringstream oss;
 
-#define ADDUSAGE(OSS) {opt.addUsage(OSS.str()); OSS.str(std::string());}
+#define ADDUSAGE(line) {{std::stringstream oss; oss << line; opt.addUsage(oss.str());}}
 
-		oss << " "; ADDUSAGE(oss);
-		oss << "Usage"; ADDUSAGE(oss);
-		oss << " "; ADDUSAGE(oss);
-		oss << " -h  --help             Prints this help "; ADDUSAGE(oss);
-		oss << " -i  --infile #         Input snapshot filename ";  ADDUSAGE(oss);
-		oss << "     --logfile #        Log filename ["<< logFileName <<"] "; ADDUSAGE(oss);
-		oss << "     --dev #            Device ID [" << devID << "] "; ADDUSAGE(oss);
-		oss << " -t  --dt #             time step [" << timeStep << "]"; ADDUSAGE(oss);
-		oss << " -T  --tend #           N-body end time ["<< tEnd <<"] "; ADDUSAGE(oss);
-		oss << " -e  --eps #            softening (will be squared) [" << eps << "] "; ADDUSAGE(oss);
-		oss << " -o  --theta #          opening angle (theta) ["<<theta <<"] "; ADDUSAGE(oss);
-		oss << "     --snapname #       snapshot base name (N-body time is appended in 000000 format) ["<<snapshotFile<<"] "; ADDUSAGE(oss);
-		oss << "     --snapiter #       snapshot iteration (N-body time) [" << snapshotIter << "] "; ADDUSAGE(oss);
-		oss << "     --killdist #       kill distance (-1 to disable) ["<<killDistance<<"] "; ADDUSAGE(oss);
-		oss << "     --rmdist #         Particle removal distance (-1 to disable) ["<<remoDistance<<"] "; ADDUSAGE(oss);
-		oss << "     --valueadd #       value to add to the snapshot ["<<snapShotAdd << "] "; ADDUSAGE(oss);
-		oss << " -r  --rebuild #        rebuild tree every # steps ["<<rebuild_tree_rate<<"] "; ADDUSAGE(oss);
+		ADDUSAGE(" ");
+		ADDUSAGE("Usage");
+		ADDUSAGE(" ");
+		ADDUSAGE(" -h  --help             Prints this help ");
+		ADDUSAGE(" -i  --infile #         Input snapshot filename ");
+		ADDUSAGE("     --logfile #        Log filename [" << logFileName << "]");
+		ADDUSAGE("     --dev #            Device ID [" << devID << "]");
+		ADDUSAGE(" -t  --dt #             time step [" << timeStep << "]");
+		ADDUSAGE(" -T  --tend #           N-body end time [" << tEnd << "]");
+		ADDUSAGE(" -e  --eps #            softening (will be squared) [" << eps << "]");
+		ADDUSAGE(" -o  --theta #          opening angle (theta) [" <<theta << "]");
+		ADDUSAGE("     --snapname #       snapshot base name (N-body time is appended in 000000 format) [" << snapshotFile << "]");
+		ADDUSAGE("     --snapiter #       snapshot iteration (N-body time) [" << snapshotIter << "]");
+		ADDUSAGE("     --killdist #       kill distance (-1 to disable) [" << killDistance << "]");
+		ADDUSAGE("     --rmdist #         Particle removal distance (-1 to disable) [" << remoDistance << "]");
+		ADDUSAGE("     --valueadd #       value to add to the snapshot [" << snapShotAdd << "]");
+		ADDUSAGE(" -r  --rebuild #        rebuild tree every # steps [" << rebuild_tree_rate << "]");
 #if ENABLE_LOG
-    oss << "     --log              enable logging "; ADDUSAGE(oss);
+    ADDUSAGE("     --log              enable logging ");
 #endif
-		oss << " "; ADDUSAGE(oss);
+		ADDUSAGE(" ");
 
 
 		opt.setFlag( "help" ,   'h');
