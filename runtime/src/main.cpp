@@ -608,19 +608,19 @@ int main(int argc, char** argv)
 		oss << "Usage"; ADDUSAGE(oss);
 		oss << " "; ADDUSAGE(oss);
 		oss << " -h  --help             Prints this help "; ADDUSAGE(oss);
-		oss << " -i  --infile           Input filename ";  ADDUSAGE(oss);
-		oss << "     --logfile          Log filename ["<< logFileName <<"] "; ADDUSAGE(oss);
-		oss << "     --dev              Device ID [" << devID << "] "; ADDUSAGE(oss);
-		oss << " -t  --dt               time step [" << timeStep << "]"; ADDUSAGE(oss);
-		oss << " -T  --tend             N-body end time ["<< tEnd <<"] "; ADDUSAGE(oss);
-		oss << " -e  --eps              softening (will be squared) [" << eps << "] "; ADDUSAGE(oss);
-		oss << " -o  --theta            opening angle (theta) ["<<theta <<"] "; ADDUSAGE(oss);
-		oss << "     --snapname         snapshot base name (N-body time is appended in 000000 format) ["<<snapshotFile<<"] "; ADDUSAGE(oss);
-		oss << "     --snapiter         snapshot iteration (N-body time) [" << snapshotIter << "] "; ADDUSAGE(oss);
-		oss << "     --killdist         kill distance (-1 to disable) ["<<killDistance<<"] "; ADDUSAGE(oss);
-		oss << "     --rmdist           Particle removal distance (-1 to disable) ["<<remoDistance<<"] "; ADDUSAGE(oss);
-		oss << "     --valueadd         value to add to the snapshot ["<<snapShotAdd << "] "; ADDUSAGE(oss);
-		oss << " -r  --rebuild          rebuild tree every # steps ["<<rebuild_tree_rate<<"] "; ADDUSAGE(oss);
+		oss << " -i  --infile #         Input snapshot filename ";  ADDUSAGE(oss);
+		oss << "     --logfile #        Log filename ["<< logFileName <<"] "; ADDUSAGE(oss);
+		oss << "     --dev #            Device ID [" << devID << "] "; ADDUSAGE(oss);
+		oss << " -t  --dt #             time step [" << timeStep << "]"; ADDUSAGE(oss);
+		oss << " -T  --tend #           N-body end time ["<< tEnd <<"] "; ADDUSAGE(oss);
+		oss << " -e  --eps #            softening (will be squared) [" << eps << "] "; ADDUSAGE(oss);
+		oss << " -o  --theta #          opening angle (theta) ["<<theta <<"] "; ADDUSAGE(oss);
+		oss << "     --snapname #       snapshot base name (N-body time is appended in 000000 format) ["<<snapshotFile<<"] "; ADDUSAGE(oss);
+		oss << "     --snapiter #       snapshot iteration (N-body time) [" << snapshotIter << "] "; ADDUSAGE(oss);
+		oss << "     --killdist #       kill distance (-1 to disable) ["<<killDistance<<"] "; ADDUSAGE(oss);
+		oss << "     --rmdist #         Particle removal distance (-1 to disable) ["<<remoDistance<<"] "; ADDUSAGE(oss);
+		oss << "     --valueadd #       value to add to the snapshot ["<<snapShotAdd << "] "; ADDUSAGE(oss);
+		oss << " -r  --rebuild #        rebuild tree every # steps ["<<rebuild_tree_rate<<"] "; ADDUSAGE(oss);
 #if ENABLE_LOG
     oss << "     --log              enable logging "; ADDUSAGE(oss);
 #endif
