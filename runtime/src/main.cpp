@@ -419,27 +419,40 @@ int setupMergerModel(vector<real4> &bodyPositions1,
         double theta, tcoll;
         double inc1=0, omega1=0;
         double inc2=0, omega2=0;
-
-
-        cout << "Enter size ratio (for gal2): ";
-        cin >> ds;
-        cout << "Enter mass ratio (for gal2): ";
-        cin >> ms;
-        cout << "Enter relative impact parameter: ";
-        cin >> b;
         
-        cout << "Enter initial separation: ";
-        cin >> rsep;
-        cout << "Enter Euler angles for first galaxy:\n";
-        cout << "Enter inclination: ";
-        cin >> inc1;
-        cout << "Enter omega: ";
-        cin >> omega1;
-        cout << "Enter Euler angles for second galaxy:\n";
-        cout << "Enter inclination: ";
-        cin >> inc2;
-        cout << "Enter omega: ";
-        cin >> omega2;
+        
+        ds = 1.52;
+        ms = 1.0;
+        b = 10;
+        rsep = 168;
+        inc1 = 0;
+        omega1 = 0;
+        inc2 = 180;
+        omega2 = 0;
+
+
+        if(ds < 0)
+        {
+          cout << "Enter size ratio (for gal2): ";
+          cin >> ds;
+          cout << "Enter mass ratio (for gal2): ";
+          cin >> ms;
+          cout << "Enter relative impact parameter: ";
+          cin >> b;
+          
+          cout << "Enter initial separation: ";
+          cin >> rsep;
+          cout << "Enter Euler angles for first galaxy:\n";
+          cout << "Enter inclination: ";
+          cin >> inc1;
+          cout << "Enter omega: ";
+          cin >> omega1;
+          cout << "Enter Euler angles for second galaxy:\n";
+          cout << "Enter inclination: ";
+          cin >> inc2;
+          cout << "Enter omega: ";
+          cin >> omega2;
+        }
 
 
         double inc1_inp, inc2_inp, om2_inp, om1_inp;

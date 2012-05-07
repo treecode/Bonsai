@@ -456,7 +456,7 @@ public:
   float  frand() { return rand() / (float) RAND_MAX; }
   float4 randColor(float scale) { return make_float4(frand()*scale, frand()*scale, frand()*scale, 0.0f); }
 
-#if 1
+#if 0
  void getBodyData() {
     //m_tree->localTree.bodies_pos.d2h();
     m_tree->localTree.bodies_ids.d2h();
@@ -551,7 +551,7 @@ public:
             
       if (id >= 0 && id < 50000000)     //Disk
       {
-        colors[i] = make_float4(1, 0, 0, 1);        
+        colors[i] = make_float4(0, 0, 1, 1);        
       } 
       else if (id >= 50000000 && id < 100000000) //Dust
       {

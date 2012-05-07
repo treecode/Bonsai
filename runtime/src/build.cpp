@@ -156,7 +156,7 @@ void octree::reallocateParticleMemory(tree_structure &tree)
   
   tree.oriParticleOrder.cresize(n_bodies, reduce);     //To desort the bodies tree later on         
   //iteration properties / information
-  tree.activePartlist.cresize(n_bodies+1, reduce);      //+1 since we use the last value as a atomicCounter
+  tree.activePartlist.cresize(n_bodies+2, reduce);      //+1 since we use the last value as a atomicCounter
   tree.ngb.cresize(n_bodies, reduce);  
   tree.interactions.cresize(n_bodies, reduce);
   
@@ -175,6 +175,22 @@ void octree::reallocateParticleMemory(tree_structure &tree)
   tree.node_key.cresize(n_bodies, reduce);
   tree.n_children.cresize(n_bodies, reduce);
   tree.node_bodies.cresize(n_bodies, reduce);  
+  
+  
+  //Dont forget to resize the generalBuffer....
+#if 0
+  int treeWalkStackSize = (2*LMEM_STACK_SIZE*NTHREAD*nBlocksForTreeWalk) + 4096;
+#else
+  int treeWalkStackSize = (2*(LMEM_STACK_SIZE*NTHREAD + LMEM_EXTRA_SIZE)*nBlocksForTreeWalk) + 4096;
+#endif
+    
+  int tempSize   = max(n_bodies, 4096);   //Use minium of 4096 to prevent offsets mess up with small N
+  tempSize       = 3*tempSize *4 + 4096;  //Add 4096 to give some space for memory allignment  
+  tempSize = max(tempSize, treeWalkStackSize);
+  
+  //General buffer is used at multiple locations and reused in different functions
+  tree.generalBuffer1.cresize(tempSize, reduce);    
+  
   
   my_dev::base_mem::printMemUsage();
 }
