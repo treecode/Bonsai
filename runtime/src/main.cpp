@@ -660,7 +660,7 @@ int main(int argc, char** argv)
 		if ((optarg = opt->getValue("killdist")))     killDistance      = atof  (optarg);
 		if ((optarg = opt->getValue("rmdist")))       remoDistance      = atof  (optarg);
 		if ((optarg = opt->getValue("valueadd")))     snapShotAdd       = atoi  (optarg);
-		if ((optarg = opt->getValue("reuild")))       rebuild_tree_rate = atoi  (optarg);
+		if ((optarg = opt->getValue("rebuild")))      rebuild_tree_rate = atoi  (optarg);
 
 		if (fileName.empty()) 
 		{
@@ -673,7 +673,6 @@ int main(int argc, char** argv)
 
 #undef ADDUSAGE
 	}
-
 #endif
 	/************** end - command line arguments ********/
 
