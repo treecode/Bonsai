@@ -64,14 +64,17 @@ bool octree::addGalaxy(int galaxyID)
     vector<real4> newGalaxy_pos;
     vector<real4> newGalaxy_vel;
     vector<int> newGalaxy_ids;
+    vector<real4> currentGalaxy_pos;
+    vector<real4> currentGalaxy_vel;
+    vector<int>   currentGalaxy_ids;    
     
     int n_particles = this->localTree.n;
-    newGalaxy_pos.insert(newGalaxy_pos.begin(), &this->localTree.bodies_pos[0],
+    currentGalaxy_pos.insert(currentGalaxy_pos.begin(), &this->localTree.bodies_pos[0],
                           &this->localTree.bodies_pos[0]+n_particles);
     
-    newGalaxy_vel.insert(newGalaxy_vel.begin(), &this->localTree.bodies_vel[0],
+    currentGalaxy_vel.insert(currentGalaxy_vel.begin(), &this->localTree.bodies_vel[0],
                           &this->localTree.bodies_vel[0]+n_particles);
-    newGalaxy_ids.insert(newGalaxy_ids.begin(), &this->localTree.bodies_ids[0],
+    currentGalaxy_ids.insert(newGalaxy_ids.begin(), &this->localTree.bodies_ids[0],
                           &this->localTree.bodies_ids[0]+n_particles);    
     
     vector<real4> newGalaxy_pos_dust;
@@ -86,9 +89,7 @@ bool octree::addGalaxy(int galaxyID)
                              rank, procs, NTotal, NFirst, NSecond, NThird, this,
                              newGalaxy_pos_dust, newGalaxy_vel_dust, newGalaxy_ids_dust);
     
-    
-    setupMergerModel(newGalaxy_pos, newGalaxy_vel, newGalaxy_ids,
-                     newGalaxy_pos_dust, newGalaxy_vel_dust, newGalaxy_ids_dust);    
+
     
   
   //First we need to compute the merger parameters
@@ -109,15 +110,19 @@ bool octree::addGalaxy(int galaxyID)
   
   
   //Now put everything together:  
-  int extraN = newGalaxy_pos.size() - this->localTree.n;
+  int extraN = newGalaxy_pos.size();
   int extraDust = 1;
   int old_n     = this->localTree.n;
   int old_ndust = this->localTree.n_dust;
+  
   
   //Increase the size of the buffers
   this->localTree.setN(extraN+ this->localTree.n);
   this->reallocateParticleMemory(this->localTree); //Resize preserves original data
   
+
+  setupMergerModel(currentGalaxy_pos,currentGalaxy_vel ,currentGalaxy_ids ,
+                   newGalaxy_pos, newGalaxy_vel, newGalaxy_ids);      
   
   #ifdef USE_DUST
     this->localTree.setNDust(extraDust + this->localTree.n_dust);    
@@ -134,13 +139,13 @@ bool octree::addGalaxy(int galaxyID)
   this->localTree.bodies_Ppos.d2h();
   this->localTree.bodies_Pvel.d2h();
   
-  memcpy(&this->localTree.bodies_pos[0], &newGalaxy_pos[0], sizeof(real4)*newGalaxy_pos.size());
-  memcpy(&this->localTree.bodies_Ppos[0], &newGalaxy_pos[0], sizeof(real4)*newGalaxy_pos.size());
+  memcpy(&this->localTree.bodies_pos[0], &currentGalaxy_pos[0], sizeof(real4)*currentGalaxy_pos.size());
+  memcpy(&this->localTree.bodies_Ppos[0], &currentGalaxy_pos[0], sizeof(real4)*currentGalaxy_pos.size());
   
-  memcpy(&this->localTree.bodies_vel[0], &newGalaxy_vel[0], sizeof(real4)*newGalaxy_vel.size());
-  memcpy(&this->localTree.bodies_vel[0], &newGalaxy_vel[0], sizeof(real4)*newGalaxy_vel.size());
+  memcpy(&this->localTree.bodies_vel[0], &currentGalaxy_vel[0], sizeof(real4)*currentGalaxy_vel.size());
+  memcpy(&this->localTree.bodies_vel[0], &currentGalaxy_vel[0], sizeof(real4)*currentGalaxy_vel.size());
   
-  memcpy(&this->localTree.bodies_ids[0], &newGalaxy_ids[0], sizeof(int)*newGalaxy_ids.size());
+  memcpy(&this->localTree.bodies_ids[0], &currentGalaxy_ids[0], sizeof(int)*currentGalaxy_ids.size());
   
   float2 curTime = this->localTree.bodies_time[0];
   for(int i=0; i < this->localTree.n; i++)
@@ -202,7 +207,7 @@ bool octree::iterate_once(IterationData &idata) {
     
     if(iter == 5)
     {
-//       addGalaxy(0);
+//        addGalaxy(0);
       forceTreeRebuild = true;
     }
 

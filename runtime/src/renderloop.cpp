@@ -99,12 +99,14 @@ void drawWireBox(float3 boxMin, float3 boxMax) {
 #endif
 }
 
+#define MAX_PARTICLES 5000000
 class BonsaiDemo
 {
 public:
   BonsaiDemo(octree *tree, octree::IterationData &idata) 
     : m_tree(tree), m_idata(idata), iterationsRemaining(true),
-      m_renderer(tree->localTree.n + tree->localTree.n_dust),
+//       m_renderer(tree->localTree.n + tree->localTree.n_dust),
+      m_renderer(tree->localTree.n + tree->localTree.n_dust, MAX_PARTICLES),
       //m_displayMode(ParticleRenderer::PARTICLE_SPRITES_COLOR),
 	    m_displayMode(SmokeRenderer::SPRITES),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.2f),
@@ -134,7 +136,8 @@ public:
    int arraySize = tree->localTree.n;
    arraySize    += tree->localTree.n_dust;
  
-   m_particleColors  = new float4[arraySize];
+//    m_particleColors  = new float4[arraySize];
+   m_particleColors  = new float4[MAX_PARTICLES];   
  
 	m_renderer.setFOV(m_fov);
 	m_renderer.setWindowSize(m_windowDims.x, m_windowDims.y);
@@ -180,7 +183,17 @@ public:
   void display() { 
     if (m_renderingEnabled)
     {
+      //Check if we need to update the number of particles
+      if((m_tree->localTree.n + m_tree->localTree.n_dust) > m_renderer.getNumberOfParticles())
+      {
+        //Update the particle count in the renderer
+        m_renderer.setNumberOfParticles(m_tree->localTree.n + m_tree->localTree.n_dust);
+        fitCamera(); //Try to get the model back in view
+      }
+            
       getBodyData();
+      
+
 
       moveCamera();
       m_cameraTransLag += (m_cameraTrans - m_cameraTransLag) * m_inertia;
