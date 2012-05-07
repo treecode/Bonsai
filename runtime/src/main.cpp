@@ -599,9 +599,6 @@ int main(int argc, char** argv)
 	{
 		AnyOption opt;
 
-
-		std::stringstream oss;
-
 #define ADDUSAGE(line) {{std::stringstream oss; oss << line; opt.addUsage(oss.str());}}
 
 		ADDUSAGE(" ");
