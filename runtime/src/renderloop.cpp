@@ -554,13 +554,12 @@ public:
 
     float4 *colors = m_particleColors;
 
+		srand48(1783);  /* keep this srand out of the loop, otherwise it get WAY TOO SLOW on LINUX */
     for (int i = 0; i < n; i++)
     {
       int id =  m_tree->localTree.bodies_ids[i];
             //printf("%d: id %d, mass: %f\n", i, id, m_tree->localTree.bodies_pos[i].w);
-            srand(id*1783);
 #if 1
-      float r = frand();
             
       if (id >= 0 && id < 50000000)     //Disk
       {
@@ -573,7 +572,11 @@ public:
       } 
       else if (id >= 100000000 && id < 200000000) //Bulge
       {
-          colors[i] = (frand() < 0.99f) ? starColor : starColor2;          
+#if 0      /* no need to drand48()< just use id to pick same particles :) */
+          colors[i] = (drand48() < 0.99f) ? starColor : starColor2;          
+#else
+          colors[i] = ((id%100) == 0) ? starColor : starColor2;          
+#endif
       } 
       else //>= 200000000, Dark matter
       {
