@@ -54,8 +54,9 @@ extern int setupMergerModel(vector<real4> &bodyPositions1,      vector<real4> &b
 
 bool octree::addGalaxy(int galaxyID)
 {
-  //To add an galaxy we need to have read it in from the host
-  //TODO
+    //To add an galaxy we need to have read it in from the host
+    
+
   
     this->localTree.bodies_pos.d2h();
     this->localTree.bodies_vel.d2h();
@@ -383,13 +384,20 @@ bool octree::iterate_once(IterationData &idata) {
         nextSnapTime += snapshotIter;
         string fileName; fileName.resize(256);
         sprintf(&fileName[0], "%s_%06d", snapshotFile.c_str(), time + snapShotAdd);
+        
+        #ifdef USE_DUST
+          //We move the dust data into the position data (on the device :) )
+          localTree.bodies_pos.copy_devonly(localTree.dust_pos, localTree.n_dust, localTree.n);
+          localTree.bodies_vel.copy_devonly(localTree.dust_vel, localTree.n_dust, localTree.n);
+          localTree.bodies_ids.copy_devonly(localTree.dust_ids, localTree.n_dust, localTree.n);
+        #endif         
 
         localTree.bodies_pos.d2h();
         localTree.bodies_vel.d2h();
         localTree.bodies_ids.d2h();
 
         write_dumbp_snapshot_parallel(&localTree.bodies_pos[0], &localTree.bodies_vel[0],
-                                      &localTree.bodies_ids[0], localTree.n, fileName.c_str()) ;
+              &localTree.bodies_ids[0], localTree.n + localTree.n_dust, fileName.c_str()) ;
       }
     }
 
@@ -488,13 +496,20 @@ void octree::iterate_setup(IterationData &idata) {
         nextSnapTime += snapshotIter;
         string fileName; fileName.resize(256);
         sprintf(&fileName[0], "%s_%06d", snapshotFile.c_str(), time + snapShotAdd);
+        
+        #ifdef USE_DUST
+          //We move the dust data into the position data (on the device :) )
+          localTree.bodies_pos.copy_devonly(localTree.dust_pos, localTree.n_dust, localTree.n);
+          localTree.bodies_vel.copy_devonly(localTree.dust_vel, localTree.n_dust, localTree.n);
+          localTree.bodies_ids.copy_devonly(localTree.dust_ids, localTree.n_dust, localTree.n);
+        #endif         
 
         localTree.bodies_pos.d2h();
         localTree.bodies_vel.d2h();
         localTree.bodies_ids.d2h();
 
         write_dumbp_snapshot_parallel(&localTree.bodies_pos[0], &localTree.bodies_vel[0],
-                                      &localTree.bodies_ids[0], localTree.n, fileName.c_str()) ;
+          &localTree.bodies_ids[0], localTree.n + localTree.n_dust, fileName.c_str()) ;
       }
   }
 

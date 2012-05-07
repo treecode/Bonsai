@@ -47,7 +47,7 @@ void octree::allocateDustMemory(tree_structure &tree)
   //this when rendering
   tree.bodies_pos.cresize(tree.n+1+tree.n_dust, false); 
   tree.bodies_ids.cresize(tree.n+1+tree.n_dust, false); 
-
+  tree.bodies_vel.cresize(tree.n+1+tree.n_dust, false); 
   tree.dust_acc0.zeroMem();
 
 }
