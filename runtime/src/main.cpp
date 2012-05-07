@@ -25,6 +25,8 @@ http://github.com/treecode/Bonsai
 #include <stdlib.h>
 #include <vector>
 #include <fstream>
+#include <sstream>
+#include "anyoption.h"
 
 using namespace std;
 
@@ -559,7 +561,6 @@ long long my_dev::base_mem::maxMemUsage;
 
 int main(int argc, char** argv)
 {
-
   vector<real4> bodyPositions;
   vector<real4> bodyVelocities;
   vector<int>   bodyIDs;
@@ -571,7 +572,7 @@ int main(int argc, char** argv)
   float eps      = 0.05f;
   float theta    = 0.75f;
   float timeStep = 1.0f / 16.0f;
-  int  tEnd      = 1000;
+  float  tEnd      = 1;
   int devID      = 0;
 
   string fileName       =  "";
@@ -583,78 +584,180 @@ int main(int argc, char** argv)
   int    snapShotAdd    =  0;
   int rebuild_tree_rate = 2;
 
+	/************** beg - command line arguments ********/
+#if 1
+	{
+		AnyOption *opt = new AnyOption();
 
-   if (argc <= 1) {
-    cout << "Arguments: (in between [] are optional \n";
-    cout << "\t-inputFile (dumbp format) \n";
-    cout << "\t-[gpulogfile  (gpuLog.log is default)] \n";
-    cout << "\t-[device id (0 is default, tries any other device if 0 fails)]\n";
-    cout << "\t-[Timestep value  (1/16 is default)]\n";
-    cout << "\t-[N-body end time (1000 is default)]\n";
-    cout << "\t-[eps  (Will be squared) (0.05 is default)]\n";
-    cout << "\t-[theta (0.75 is fefault)]\n";
-    cout << "\t-[snapshot base filename (N-body time is appended in 000000 format) ('snapshot_' is default]\n";
-    cout << "\t-[snapshot iteration (Nbody time)  (-1 to disable, is also default)]\n";
-    cout << "\t-[Killlll distance  (-1 to disable, is also default)]\n";
-    cout << "\t-[Particle removal distance  (-1 to disable, is also default)]\n";
-    cout << "\t-[Value to add to the snapshot value (0 is default)] \n";
-    cout << "\t-[Rebuild tree every # steps (2 is default)] \n";
 
-    exit(0);
-  }
+		std::stringstream oss;
 
-  if (argc > 1) {
-    fileName = string(argv[1]);
-  }
-  if (argc > 2) {
-    logFileName = string(argv[2]);
-  }
-  if (argc > 3) {
-    devID = atoi(argv[3]);
-  }
-  if (argc > 4) {
-    timeStep = (float)atof(argv[4]);
-  }
-  if (argc > 5) {
-    tEnd = atoi(argv[5]);
-  }
-  if (argc > 6) {
-    eps = (float)atof(argv[6]);
-  }
-  if (argc > 7) {
-    theta = (float)atof(argv[7]);
-  }
-  if(argc > 8)
-  {
-    snapshotFile = string(argv[8]);
-  }
-  if(argc > 9)
-  {
-    snapshotIter = atoi(argv[9]);
-  }
-  if (argc > 10) {
-    killDistance = (float)atof(argv[10]);
-  }
-  if (argc > 11) {
-    remoDistance = (float)atof(argv[11]);
-  }
-  if(argc > 12)
-  {
-    snapShotAdd = atoi(argv[12]);
-  }
-  if(argc > 13)
-  {
-    rebuild_tree_rate = atoi(argv[13]);
-  }
+#define ADDUSAGE(OSS) {opt->addUsage(OSS.str()); OSS.str(std::string());}
+
+		oss << " "; ADDUSAGE(oss);
+		oss << "Usage"; ADDUSAGE(oss);
+		oss << " "; ADDUSAGE(oss);
+		oss << " -h  --help             Prints this help "; ADDUSAGE(oss);
+		oss << " -i  --infile           Input filename ";  ADDUSAGE(oss);
+		oss << "     --logfile          Log filename ["<< logFileName <<"] "; ADDUSAGE(oss);
+		oss << "     --dev              Device ID [" << devID << "] "; ADDUSAGE(oss);
+		oss << " -t  --dt               time step [" << timeStep << "]"; ADDUSAGE(oss);
+		oss << " -T  --tend             N-body end time ["<< tEnd <<"] "; ADDUSAGE(oss);
+		oss << " -e  --eps              softening (will be squared) [" << eps << "] "; ADDUSAGE(oss);
+		oss << " -o  --theta            opening angle (theta) ["<<theta <<"] "; ADDUSAGE(oss);
+		oss << "     --snapname         snapshot base name (N-body time is appended in 000000 format) ["<<snapshotFile<<"] "; ADDUSAGE(oss);
+		oss << "     --snapiter         snapshot iteration (N-body time) [" << snapshotIter << "] "; ADDUSAGE(oss);
+		oss << "     --killdist         kill distance (-1 to disable) ["<<killDistance<<"] "; ADDUSAGE(oss);
+		oss << "     --rmdist           Particle removal distance (-1 to disable) ["<<remoDistance<<"] "; ADDUSAGE(oss);
+		oss << "     --valueadd         value to add to the snapshot ["<<snapShotAdd << "] "; ADDUSAGE(oss);
+		oss << " -r  --rebuild          rebuild tree every # steps ["<<rebuild_tree_rate<<"] "; ADDUSAGE(oss);
+		oss << " "; ADDUSAGE(oss);
+
+
+		opt->setFlag( "help" ,   'h');
+		opt->setOption( "infile",  'i');
+		opt->setOption( "dt",      't' );
+		opt->setOption( "tend",    'T' );
+		opt->setOption( "eps",     'e' );
+		opt->setOption( "theta",   'o' );
+		opt->setOption( "rebuild", 'r' );
+		opt->setOption( "dev" );
+		opt->setOption( "logfile" );
+		opt->setOption( "snapname");
+		opt->setOption( "snapiter");
+		opt->setOption( "killdist");
+		opt->setOption( "rmdist");
+		opt->setOption( "valueadd");
   
-  cout << "Used settings: \n";
-  cout << "Theta: \t\t"             << theta        << "\t\teps: \t\t"          << eps << endl;
-  cout << "Timestep: \t"          << timeStep     << "\t\ttEnd: \t\t"         << tEnd << endl;
-  cout << "snapshotFile: \t"      << snapshotFile << "\tsnapshotIter: \t" << snapshotIter << endl;
-  cout << "Input file: \t"        << fileName     << "\t\tdevID: \t\t"        << devID << endl;
-  cout << "Kill distance: \t"      << killDistance     << "\t\tRemove dist: \t"   << remoDistance << endl;
-  cout << "Snapshot Addition: \t"  << snapShotAdd << endl;
-  cout << "Rebuild tree every " << rebuild_tree_rate << " timestep\n";
+		opt->processCommandArgs( argc, argv );
+
+
+		if( ! opt->hasOptions()) { /* print usage if no options */
+			opt->printUsage();
+			delete opt;
+			exit(0);
+		}
+		
+		if( opt->getFlag( "help" ) || opt->getFlag( 'h' ) ) 
+		{
+			opt->printUsage();
+			delete opt;
+			exit(0);
+		}
+
+
+
+		char *optarg = NULL;
+		if ((optarg = opt->getValue("infile")))       fileName          = string(optarg);
+		if ((optarg = opt->getValue("logfile")))      logFileName       = string(optarg);
+		if ((optarg = opt->getValue("dev")))          devID             = atoi  (optarg);
+		if ((optarg = opt->getValue("dt")))           timeStep          = atof  (optarg);
+		if ((optarg = opt->getValue("tend")))         tEnd              = atof  (optarg);
+		if ((optarg = opt->getValue("eps")))          eps               = atof  (optarg);
+		if ((optarg = opt->getValue("theta")))        theta             = atof  (optarg);
+		if ((optarg = opt->getValue("snapname")))     snapshotFile      = string(optarg);
+		if ((optarg = opt->getValue("snapiter")))     snapshotIter      = atoi  (optarg);
+		if ((optarg = opt->getValue("killdist")))     killDistance      = atof  (optarg);
+		if ((optarg = opt->getValue("rmdist")))       remoDistance      = atof  (optarg);
+		if ((optarg = opt->getValue("valueadd")))     snapShotAdd       = atoi  (optarg);
+		if ((optarg = opt->getValue("reuild")))       rebuild_tree_rate = atoi  (optarg);
+
+		if (fileName.empty()) 
+		{
+			opt->printUsage();
+			delete opt;
+			exit(0);
+		}
+
+		delete opt;	
+
+#undef ADDUSAGE
+	}
+
+#endif
+	/************** end - command line arguments ********/
+
+
+#if 0
+	{
+		if (argc <= 1) {
+			cout << "Arguments: (in between [] are optional \n";
+			cout << "\t-inputFile (dumbp format) \n";
+			cout << "\t-[gpulogfile  (gpuLog.log is default)] \n";
+			cout << "\t-[device id (0 is default, tries any other device if 0 fails)]\n";
+			cout << "\t-[Timestep value  (1/16 is default)]\n";
+			cout << "\t-[N-body end time (1000 is default)]\n";
+			cout << "\t-[eps  (Will be squared) (0.05 is default)]\n";
+			cout << "\t-[theta (0.75 is fefault)]\n";
+			cout << "\t-[snapshot base filename (N-body time is appended in 000000 format) ('snapshot_' is default]\n";
+			cout << "\t-[snapshot iteration (Nbody time)  (-1 to disable, is also default)]\n";
+			cout << "\t-[Killlll distance  (-1 to disable, is also default)]\n";
+			cout << "\t-[Particle removal distance  (-1 to disable, is also default)]\n";
+			cout << "\t-[Value to add to the snapshot value (0 is default)] \n";
+			cout << "\t-[Rebuild tree every # steps (2 is default)] \n";
+
+			exit(0);
+		}
+
+		if (argc > 1) {
+			fileName = string(argv[1]);
+		}
+		if (argc > 2) {
+			logFileName = string(argv[2]);
+		}
+		if (argc > 3) {
+			devID = atoi(argv[3]);
+		}
+		if (argc > 4) {
+			timeStep = (float)atof(argv[4]);
+		}
+		if (argc > 5) {
+			tEnd = atoi(argv[5]);
+		}
+		if (argc > 6) {
+			eps = (float)atof(argv[6]);
+		}
+		if (argc > 7) {
+			theta = (float)atof(argv[7]);
+		}
+		if(argc > 8)
+		{
+			snapshotFile = string(argv[8]);
+		}
+		if(argc > 9)
+		{
+			snapshotIter = atoi(argv[9]);
+		}
+		if (argc > 10) {
+			killDistance = (float)atof(argv[10]);
+		}
+		if (argc > 11) {
+			remoDistance = (float)atof(argv[11]);
+		}
+		if(argc > 12)
+		{
+			snapShotAdd = atoi(argv[12]);
+		}
+		if(argc > 13)
+		{
+			rebuild_tree_rate = atoi(argv[13]);
+		}
+	}
+#endif
+
+	cout << "Used settings: \n";
+	cout << "Input filename " << fileName << endl;
+	cout << "Log filename " << logFileName << endl;
+	cout << "Theta: \t\t"             << theta        << "\t\teps: \t\t"          << eps << endl;
+	cout << "Timestep: \t"          << timeStep     << "\t\ttEnd: \t\t"         << tEnd << endl;
+	cout << "snapshotFile: \t"      << snapshotFile << "\tsnapshotIter: \t" << snapshotIter << endl;
+	cout << "Input file: \t"        << fileName     << "\t\tdevID: \t\t"        << devID << endl;
+	cout << "Kill distance: \t"      << killDistance     << "\t\tRemove dist: \t"   << remoDistance << endl;
+	cout << "Snapshot Addition: \t"  << snapShotAdd << endl;
+	cout << "Rebuild tree every " << rebuild_tree_rate << " timestep\n";
+
+	exit(0);
+
 
   int NTotal, NFirst, NSecond, NThird;
   NTotal = NFirst = NSecond = NThird = 0;
