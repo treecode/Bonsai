@@ -889,7 +889,8 @@ __launch_bounds__(NTHREAD)
     {
       const int addr = body_i[0];
       acc_out     [addr] = acc_i[0];
-      ngb_out     [addr] = ngb_i;
+//       ngb_out     [addr] = ngb_i;
+      ngb_out     [addr] = addr; //JB Fixed this for demo 
       active_inout[addr] = 1;
       interactions[addr].x = apprCount;
       interactions[addr].y = direCount ;
@@ -897,7 +898,8 @@ __launch_bounds__(NTHREAD)
       {
         const int addr = body_i[1];
         acc_out     [addr] = acc_i[1];
-        ngb_out     [addr] = ngb_i;
+//       ngb_out     [addr] = ngb_i;
+        ngb_out     [addr] = addr; //JB Fixed this for demo 
         active_inout[addr] = 1;     
         interactions[addr].x = 0; // apprCount;    to avoid doubling the intearction count
         interactions[addr].y = 0; // direCount ;

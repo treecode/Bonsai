@@ -438,6 +438,8 @@ protected:
 
 public:
    double get_time();
+   
+   void resetEnergy() {store_energy_flag = true;}
 
    my_dev::context * getDevContext() { return &devContext; };        //Pointer so destructor is only called once  
 
@@ -680,6 +682,9 @@ public:
   #endif
   
   //
+  //Function for setting up the mergers
+  bool addGalaxy(int galaxyID);
+
 
   //Library interface functions  
   void  setEps(float eps);
