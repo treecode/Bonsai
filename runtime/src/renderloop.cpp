@@ -554,7 +554,9 @@ public:
 
     float4 *colors = m_particleColors;
 
+#if 0
 		srand48(1783);  /* keep this srand out of the loop, otherwise it get WAY TOO SLOW on LINUX */
+#endif
     for (int i = 0; i < n; i++)
     {
       int id =  m_tree->localTree.bodies_ids[i];
