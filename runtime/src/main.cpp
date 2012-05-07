@@ -26,7 +26,13 @@ http://github.com/treecode/Bonsai
 #include <vector>
 #include <fstream>
 #include <sstream>
+#include "log.h"
 #include "anyoption.h"
+
+
+#if ENABLE_LOG
+bool ENABLE_RUNTIME_LOG;
+#endif
 
 using namespace std;
 
@@ -584,6 +590,10 @@ int main(int argc, char** argv)
   int    snapShotAdd    =  0;
   int rebuild_tree_rate = 2;
 
+#if ENABLE_LOG
+  ENABLE_RUNTIME_LOG = false;
+#endif
+
 	/************** beg - command line arguments ********/
 #if 1
 	{
@@ -611,6 +621,9 @@ int main(int argc, char** argv)
 		oss << "     --rmdist           Particle removal distance (-1 to disable) ["<<remoDistance<<"] "; ADDUSAGE(oss);
 		oss << "     --valueadd         value to add to the snapshot ["<<snapShotAdd << "] "; ADDUSAGE(oss);
 		oss << " -r  --rebuild          rebuild tree every # steps ["<<rebuild_tree_rate<<"] "; ADDUSAGE(oss);
+#if ENABLE_LOG
+    oss << "     --log              enable logging "; ADDUSAGE(oss);
+#endif
 		oss << " "; ADDUSAGE(oss);
 
 
@@ -628,6 +641,9 @@ int main(int argc, char** argv)
 		opt.setOption( "killdist");
 		opt.setOption( "rmdist");
 		opt.setOption( "valueadd");
+#if ENABLE_LOG
+		opt.setFlag("log");
+#endif
   
 		opt.processCommandArgs( argc, argv );
 
@@ -643,6 +659,9 @@ int main(int argc, char** argv)
 			exit(0);
 		}
 
+#if ENABLE_LOG
+    if (opt.getFlag("log")) ENABLE_RUNTIME_LOG = true;
+#endif
 
 
 		char *optarg = NULL;
@@ -749,6 +768,12 @@ int main(int argc, char** argv)
 	cout << "Kill distance: \t"      << killDistance     << "\t\tRemove dist: \t"   << remoDistance << endl;
 	cout << "Snapshot Addition: \t"  << snapShotAdd << endl;
 	cout << "Rebuild tree every " << rebuild_tree_rate << " timestep\n";
+#if ENABLE_LOG
+  if (ENABLE_RUNTIME_LOG)
+    cout << " Runtime logging is ENABLED \n";
+  else
+    cout << " Runtime logging is DISABLED \n";
+#endif
 	
   cerr << "Used settings: \n";
 	cerr << "Input filename " << fileName << endl;
@@ -761,6 +786,12 @@ int main(int argc, char** argv)
 	cerr << "Snapshot Addition: \t"  << snapShotAdd << endl;
 	cerr << "Rebuild tree every " << rebuild_tree_rate << " timestep\n";
 
+#if ENABLE_LOG
+  if (ENABLE_RUNTIME_LOG)
+    cerr << " Runtime logging is ENABLED \n";
+  else
+    cerr << " Runtime logging is DISABLED \n";
+#endif
 
 
   int NTotal, NFirst, NSecond, NThird;
