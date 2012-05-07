@@ -62,7 +62,7 @@ static __device__ __forceinline__ int inclusive_scan_warp(int* prefix, int value
 
 
 /* inclusive prefix sum for an array */
-static __device__ int inclusive_scan_array(int N, int* prefix_in) 
+/*static __device__ int inclusive_scan_array(int N, int* prefix_in) 
 {
 
   int y = inclusive_scan_warp(prefix_in, prefix_in[laneId]);
@@ -77,7 +77,7 @@ static __device__ int inclusive_scan_array(int N, int* prefix_in)
   }
 
   return y;
-} 
+} */
 
 /**** binary scans ****/
 
@@ -222,7 +222,7 @@ static __device__ __forceinline__ float4 add_acc(
   return acc;
 }
 
-static __device__ float4 get_D04(float ds2, int selfGrav = 1) {
+/*static __device__ float4 get_D04(float ds2, int selfGrav = 1) {
 #if 1
   float ids  = rsqrtf(ds2);  //Does not work with zero-softening
   //   if(isnan(ids)) ids = 0;               //This does work with zero-softening, few percent performance drop
@@ -236,9 +236,9 @@ static __device__ float4 get_D04(float ds2, int selfGrav = 1) {
   float ids5 = ids3*ids2;
   float ids7 = ids5*ids2;
   return make_float4(ids, -ids3, +3.0f*ids5, -15.0f*ids7);
-}  // 9 flops
+}  // 9 flops*/
 
-static __device__ __forceinline__ float4 add_acc(
+/*static __device__ __forceinline__ float4 add_acc(
     float4 acc, 
     const float4 pos,
     const float mass, const float3 com,
@@ -302,10 +302,10 @@ static __device__ __forceinline__ float4 add_acc(
   acc.x  += C*dr.x + D2*qR.x;
   acc.y  += C*dr.y + D2*qR.y;
   acc.z  += C*dr.z + D2*qR.z;               // 23
-#endif  /* total: 16 + 3 + 22 + 23 = 64 flops */
+#endif  // total: 16 + 3 + 22 + 23 = 64 flops 
 
   return acc;
-}
+}*/
 
 
 /*******************************/

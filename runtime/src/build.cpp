@@ -42,8 +42,8 @@ void octree::allocateParticleMemory(tree_structure &tree)
   
   //This is overkill, but it allows us to execute functions
   //in a more logical order. Can always optimize it later
-  tree.active_group_list.cmalloc(tree.n_groups, false);     
-  tree.activeGrpList.cmalloc(tree.n_groups, false);      
+  tree.active_group_list.cmalloc(tree.n, false);     
+  tree.activeGrpList.cmalloc(tree.n, false);      
   tree.body2group_list.zeroMem();
   
   //The generalBuffer is also used during the tree-walk, so the size has to be at least
@@ -165,8 +165,8 @@ void octree::reallocateParticleMemory(tree_structure &tree)
   
   //This is overkill, but it allows us to execute functions
   //in a more logical order. Can always optimize it later
-  tree.active_group_list.cresize(tree.n_groups, reduce);     
-  tree.activeGrpList.cresize(tree.n_groups, reduce);      
+  tree.active_group_list.cresize(tree.n, reduce);     
+  tree.activeGrpList.cresize(tree.n, reduce);      
   tree.body2group_list.zeroMem();  
   
   //Tree properties, tree size is not known at forehand so
