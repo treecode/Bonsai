@@ -587,12 +587,12 @@ int main(int argc, char** argv)
 	/************** beg - command line arguments ********/
 #if 1
 	{
-		AnyOption *opt = new AnyOption();
+		AnyOption opt;
 
 
 		std::stringstream oss;
 
-#define ADDUSAGE(OSS) {opt->addUsage(OSS.str()); OSS.str(std::string());}
+#define ADDUSAGE(OSS) {opt.addUsage(OSS.str()); OSS.str(std::string());}
 
 		oss << " "; ADDUSAGE(oss);
 		oss << "Usage"; ADDUSAGE(oss);
@@ -614,62 +614,57 @@ int main(int argc, char** argv)
 		oss << " "; ADDUSAGE(oss);
 
 
-		opt->setFlag( "help" ,   'h');
-		opt->setOption( "infile",  'i');
-		opt->setOption( "dt",      't' );
-		opt->setOption( "tend",    'T' );
-		opt->setOption( "eps",     'e' );
-		opt->setOption( "theta",   'o' );
-		opt->setOption( "rebuild", 'r' );
-		opt->setOption( "dev" );
-		opt->setOption( "logfile" );
-		opt->setOption( "snapname");
-		opt->setOption( "snapiter");
-		opt->setOption( "killdist");
-		opt->setOption( "rmdist");
-		opt->setOption( "valueadd");
+		opt.setFlag( "help" ,   'h');
+		opt.setOption( "infile",  'i');
+		opt.setOption( "dt",      't' );
+		opt.setOption( "tend",    'T' );
+		opt.setOption( "eps",     'e' );
+		opt.setOption( "theta",   'o' );
+		opt.setOption( "rebuild", 'r' );
+		opt.setOption( "dev" );
+		opt.setOption( "logfile" );
+		opt.setOption( "snapname");
+		opt.setOption( "snapiter");
+		opt.setOption( "killdist");
+		opt.setOption( "rmdist");
+		opt.setOption( "valueadd");
   
-		opt->processCommandArgs( argc, argv );
+		opt.processCommandArgs( argc, argv );
 
 
-		if( ! opt->hasOptions()) { /* print usage if no options */
-			opt->printUsage();
-			delete opt;
+		if( ! opt.hasOptions()) { /* print usage if no options */
+			opt.printUsage();
 			exit(0);
 		}
 		
-		if( opt->getFlag( "help" ) || opt->getFlag( 'h' ) ) 
+		if( opt.getFlag( "help" ) || opt.getFlag( 'h' ) ) 
 		{
-			opt->printUsage();
-			delete opt;
+			opt.printUsage();
 			exit(0);
 		}
 
 
 
 		char *optarg = NULL;
-		if ((optarg = opt->getValue("infile")))       fileName          = string(optarg);
-		if ((optarg = opt->getValue("logfile")))      logFileName       = string(optarg);
-		if ((optarg = opt->getValue("dev")))          devID             = atoi  (optarg);
-		if ((optarg = opt->getValue("dt")))           timeStep          = atof  (optarg);
-		if ((optarg = opt->getValue("tend")))         tEnd              = atof  (optarg);
-		if ((optarg = opt->getValue("eps")))          eps               = atof  (optarg);
-		if ((optarg = opt->getValue("theta")))        theta             = atof  (optarg);
-		if ((optarg = opt->getValue("snapname")))     snapshotFile      = string(optarg);
-		if ((optarg = opt->getValue("snapiter")))     snapshotIter      = atoi  (optarg);
-		if ((optarg = opt->getValue("killdist")))     killDistance      = atof  (optarg);
-		if ((optarg = opt->getValue("rmdist")))       remoDistance      = atof  (optarg);
-		if ((optarg = opt->getValue("valueadd")))     snapShotAdd       = atoi  (optarg);
-		if ((optarg = opt->getValue("rebuild")))      rebuild_tree_rate = atoi  (optarg);
+		if ((optarg = opt.getValue("infile")))       fileName          = string(optarg);
+		if ((optarg = opt.getValue("logfile")))      logFileName       = string(optarg);
+		if ((optarg = opt.getValue("dev")))          devID             = atoi  (optarg);
+		if ((optarg = opt.getValue("dt")))           timeStep          = atof  (optarg);
+		if ((optarg = opt.getValue("tend")))         tEnd              = atof  (optarg);
+		if ((optarg = opt.getValue("eps")))          eps               = atof  (optarg);
+		if ((optarg = opt.getValue("theta")))        theta             = atof  (optarg);
+		if ((optarg = opt.getValue("snapname")))     snapshotFile      = string(optarg);
+		if ((optarg = opt.getValue("snapiter")))     snapshotIter      = atoi  (optarg);
+		if ((optarg = opt.getValue("killdist")))     killDistance      = atof  (optarg);
+		if ((optarg = opt.getValue("rmdist")))       remoDistance      = atof  (optarg);
+		if ((optarg = opt.getValue("valueadd")))     snapShotAdd       = atoi  (optarg);
+		if ((optarg = opt.getValue("rebuild")))      rebuild_tree_rate = atoi  (optarg);
 
 		if (fileName.empty()) 
 		{
-			opt->printUsage();
-			delete opt;
+			opt.printUsage();
 			exit(0);
 		}
-
-		delete opt;	
 
 #undef ADDUSAGE
 	}
@@ -754,8 +749,6 @@ int main(int argc, char** argv)
 	cout << "Kill distance: \t"      << killDistance     << "\t\tRemove dist: \t"   << remoDistance << endl;
 	cout << "Snapshot Addition: \t"  << snapShotAdd << endl;
 	cout << "Rebuild tree every " << rebuild_tree_rate << " timestep\n";
-
-	exit(0);
 
 
   int NTotal, NFirst, NSecond, NThird;
