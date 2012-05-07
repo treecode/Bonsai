@@ -68,6 +68,7 @@ set (CCFILES
   src/libraryInterface.cpp
   src/load_kernels.cpp
   src/main.cpp
+  src/anyoption.cpp
   src/octree.cpp
   src/parallel.cpp
   src/sort_bodies_gpu.cpp
