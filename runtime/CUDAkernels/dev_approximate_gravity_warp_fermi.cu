@@ -334,9 +334,9 @@ void approximate_gravity(
 
   int *directS = shmem;                              //  0*DIM,  1*DIM,  1*DIM
   int *nodesS  = directS + WARP_SIZE;                //  1*DIM, 10*DIM,  9*DIM
-  int *prefix  = nodesS  + WARP_SIZE*9;              //  9*DIM, 10*DIM,  1*DIM
+  int *prefix  = nodesS  + WARP_SIZE*8;              //  9*DIM, 10*DIM,  1*DIM
 
-  const int NJMAX = WARP_SIZE*4;
+  const int NJMAX = WARP_SIZE*3;
   int    *body_list = (int*   )&nodesS   [WARP_SIZE]; //  2*DIM,   5*DIM,  2*DIM
   float  *sh_mass   = (float* )&body_list[NJMAX]; //  5*DIM,   6*DIM,  1*DIM
   float3 *sh_pos    = (float3*)&sh_mass  [WARP_SIZE]; //  6*DIM,   9*DIM   3*DIM
@@ -753,7 +753,7 @@ __launch_bounds__(NTHREAD)
       int     *MEM_BUF) 
 {
   const int blockDim2 = NTHREAD2;
-  const int shMemSize = 14 * (1 << blockDim2);
+  const int shMemSize = 10 * (1 << blockDim2);
   __shared__ int shmem_pool[shMemSize];
 
   const int nWarps2 = blockDim2 - WARP_SIZE2;

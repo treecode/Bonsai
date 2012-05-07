@@ -370,27 +370,23 @@ void approximate_gravity(
 {
 
 
-  /*********** set necessary thread constants **********/
-
-  const int DIM2 = WARP_SIZE2;
-  const int DIM  = WARP_SIZE;
 
   /*********** shared memory distribution **********/
 
   //  begin,    end,   size
   // -----------------------
-  const int stack_sz = (LMEM_STACK_SIZE << SHIFT) << DIM2;  /* stack allocated per thread-block */
+  const int stack_sz = (LMEM_STACK_SIZE << SHIFT) << BLOCKDIM2;  /* stack allocated per thread-block */
   const int nWarps2 = BLOCKDIM2 - WARP_SIZE2;
   int *approxL = lmem + stack_sz + (LMEM_EXTRA_SIZE >> nWarps2) * warpId;
 
   int *directS = shmem;                              //  0*DIM,  1*DIM,  1*DIM
-  int *nodesS  = directS + DIM;                      //  1*DIM, 10*DIM,  9*DIM
-  int *prefix  = nodesS  + DIM*8;                    //  9*DIM, 10*DIM,  1*DIM
+  int *nodesS  = directS + WARP_SIZE;                      //  1*DIM, 10*DIM,  9*DIM
+  int *prefix  = nodesS  + WARP_SIZE*8;                    //  9*DIM, 10*DIM,  1*DIM
 
-  const int NJMAX = DIM*3;
-  int    *body_list = (int*   )&nodesS   [  DIM]; //  2*DIM,   5*DIM,  2*DIM
+  const int NJMAX = WARP_SIZE*3;
+  int    *body_list = (int*   )&nodesS   [WARP_SIZE]; //  2*DIM,   5*DIM,  2*DIM
   float  *sh_mass   = (float* )&body_list[NJMAX]; //  5*DIM,   6*DIM,  1*DIM
-  float3 *sh_pos    = (float3*)&sh_mass  [  DIM]; //  6*DIM,   9*DIM   3*DIM
+  float3 *sh_pos    = (float3*)&sh_mass  [WARP_SIZE]; //  6*DIM,   9*DIM   3*DIM
 
   int *approxM = approxL;
   int *directM = directS;
@@ -407,9 +403,9 @@ void approximate_gravity(
   int n_direct = 0;
 
 
-  for (int root_node = node_begend.x; root_node < node_begend.y; root_node += DIM) 
+  for (int root_node = node_begend.x; root_node < node_begend.y; root_node += WARP_SIZE) 
   {
-    int n_nodes0 = min(node_begend.y - root_node, DIM);
+    int n_nodes0 = min(node_begend.y - root_node, WARP_SIZE);
     int n_stack0 = 0;
     int n_stack_pre = 0;
 
@@ -449,10 +445,10 @@ void approximate_gravity(
 
 #if 0
         if(n_nodes0 > 0){       //Work around pre 4.1 compiler bug
-          n_nodes0 -= DIM;
+          n_nodes0 -= WARP_SIZE;
         }
 #else
-        n_nodes0 -= DIM;
+        n_nodes0 -= WARP_SIZE;
 #endif
 
         /***
@@ -497,7 +493,7 @@ void approximate_gravity(
         int offset  = prefix[laneId];
         offset     += n_offset - nchild;                                  // convert inclusive into exclusive scan for referencing purpose
 
-        for (int i = n_offset; i < n_offset + n_total; i += DIM)         //nullify part of the array that will be filled with children
+        for (int i = n_offset; i < n_offset + n_total; i += WARP_SIZE)         //nullify part of the array that will be filled with children
           nodesM[laneId + i] = 0;                                          //but do not touch those parts which has already been filled
 
 #if 0  /* the following gives different result than then one in else */
@@ -533,12 +529,12 @@ void approximate_gravity(
          ***/
 
         /*** if half of shared memory or more is filled with the the nodes, dump these into slowmem stack ***/
-        while(n_offset >= DIM) 
+        while(n_offset >= WARP_SIZE) 
         {
-          n_offset -= DIM;
+          n_offset -= WARP_SIZE;
           const int offs1 = ACCS<SHIFT>(n_stack1);
           nstack[offs1] = nodesM[n_offset + laneId];   n_stack1++;
-          n_nodes1 += DIM;
+          n_nodes1 += WARP_SIZE;
 
           if((n_stack1 - c_stack0) >= (LMEM_STACK_SIZE << SHIFT))
           {
@@ -568,9 +564,9 @@ void approximate_gravity(
 
         n_approx += n_total;
 
-        while (n_approx >= DIM) 
+        while (n_approx >= WARP_SIZE) 
         {
-          n_approx -= DIM;
+          n_approx -= WARP_SIZE;
           const int address      = (approxM[n_approx + laneId] << 1) + approxM[n_approx + laneId];
 #ifndef TEXTURES
           const float4 monopole  = multipole_data[address    ];
@@ -645,7 +641,7 @@ void approximate_gravity(
           //the amount of allocated shared memory
 
           // step 0                                                      //nullify part of the body_list that will be filled with bodies
-          for (int i = n_direct; i < n_direct + nb; i += DIM)            //from the leaves that are being processed
+          for (int i = n_direct; i < n_direct + nb; i += WARP_SIZE)            //from the leaves that are being processed
             body_list[i + laneId] = 0;
 
           //step 1:
@@ -671,9 +667,9 @@ void approximate_gravity(
           offset        = max(offset - nb, 0);
           n_direct     += nb;                                  //increase the number of bodies to be procssed
 
-          while(n_direct >= DIM) 
+          while(n_direct >= WARP_SIZE) 
           {
-            n_direct -= DIM;
+            n_direct -= WARP_SIZE;
 
 
             const float4 posj  = body_pos[body_list[n_direct + laneId]];
