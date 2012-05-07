@@ -55,8 +55,12 @@ extern int setupMergerModel(vector<real4> &bodyPositions1,      vector<real4> &b
 bool octree::addGalaxy(int galaxyID)
 {
     //To add an galaxy we need to have read it in from the host
-    
-
+    #ifdef USE_DUST
+      //We move the dust data into the position data (on the device :) )
+      localTree.bodies_pos.copy_devonly(localTree.dust_pos, localTree.n_dust, localTree.n);
+      localTree.bodies_vel.copy_devonly(localTree.dust_vel, localTree.n_dust, localTree.n);
+      localTree.bodies_ids.copy_devonly(localTree.dust_ids, localTree.n_dust, localTree.n);
+    #endif
   
     this->localTree.bodies_pos.d2h();
     this->localTree.bodies_vel.d2h();
@@ -69,7 +73,7 @@ bool octree::addGalaxy(int galaxyID)
     vector<real4> currentGalaxy_vel;
     vector<int>   currentGalaxy_ids;    
     
-    int n_particles = this->localTree.n;
+    int n_particles = this->localTree.n + this->localTree.n_dust;
     currentGalaxy_pos.insert(currentGalaxy_pos.begin(), &this->localTree.bodies_pos[0],
                           &this->localTree.bodies_pos[0]+n_particles);
     
@@ -91,7 +95,12 @@ bool octree::addGalaxy(int galaxyID)
                              newGalaxy_pos_dust, newGalaxy_vel_dust, newGalaxy_ids_dust);
     
 
-    
+    int n_addGalaxy      = newGalaxy_pos.size();
+    int n_addGalaxy_dust = newGalaxy_pos_dust.size();
+    //Put the dust with the main particles for orbit computations
+    newGalaxy_pos.insert(newGalaxy_pos.end(), newGalaxy_pos_dust.begin(), newGalaxy_pos_dust.end());
+    newGalaxy_vel.insert(newGalaxy_vel.end(), newGalaxy_vel_dust.begin(), newGalaxy_vel_dust.end());
+    newGalaxy_ids.insert(newGalaxy_ids.end(), newGalaxy_ids_dust.begin(), newGalaxy_ids_dust.end());
   
   //First we need to compute the merger parameters
   //this can be done on host or device or just precomputed
@@ -111,14 +120,12 @@ bool octree::addGalaxy(int galaxyID)
   
   
   //Now put everything together:  
-  int extraN = newGalaxy_pos.size();
-  int extraDust = 1;
   int old_n     = this->localTree.n;
   int old_ndust = this->localTree.n_dust;
   
   
   //Increase the size of the buffers
-  this->localTree.setN(extraN+ this->localTree.n);
+  this->localTree.setN(n_addGalaxy + this->localTree.n);
   this->reallocateParticleMemory(this->localTree); //Resize preserves original data
   
 
@@ -126,7 +133,7 @@ bool octree::addGalaxy(int galaxyID)
                    newGalaxy_pos, newGalaxy_vel, newGalaxy_ids);      
   
   #ifdef USE_DUST
-    this->localTree.setNDust(extraDust + this->localTree.n_dust);    
+    this->localTree.setNDust(n_addGalaxy_dust + this->localTree.n_dust);    
     //The dust function checks if it needs to resize or malloc
     this->allocateDustMemory(this->localTree); 
   #endif  
@@ -140,14 +147,52 @@ bool octree::addGalaxy(int galaxyID)
   this->localTree.bodies_Ppos.d2h();
   this->localTree.bodies_Pvel.d2h();
   
-  memcpy(&this->localTree.bodies_pos[0], &currentGalaxy_pos[0], sizeof(real4)*currentGalaxy_pos.size());
-  memcpy(&this->localTree.bodies_Ppos[0], &currentGalaxy_pos[0], sizeof(real4)*currentGalaxy_pos.size());
+  //Now we have to do some memory copy magic, IF we have USE_DUST defined the lay-out is like this:
+  //[[tree.n galaxy1][tree.n_dust galaxy1][n_addGalaxy galaxy2][n_addGalaxy_dust galaxy2]]
+  //So lets get that in the right arrays :-)
+  memcpy(&this->localTree.bodies_pos [0], &currentGalaxy_pos[0], sizeof(real4)*old_n);
+  memcpy(&this->localTree.bodies_pos [old_n], &currentGalaxy_pos[old_n + old_ndust], sizeof(real4)*n_addGalaxy);
+
+  memcpy(&this->localTree.bodies_vel [0], &currentGalaxy_vel[0], sizeof(real4)*old_n);
+  memcpy(&this->localTree.bodies_vel [old_n], &currentGalaxy_vel[old_n + old_ndust], sizeof(real4)*n_addGalaxy);
   
-  memcpy(&this->localTree.bodies_vel[0], &currentGalaxy_vel[0], sizeof(real4)*currentGalaxy_vel.size());
-  memcpy(&this->localTree.bodies_vel[0], &currentGalaxy_vel[0], sizeof(real4)*currentGalaxy_vel.size());
+  memcpy(&this->localTree.bodies_ids[0], &currentGalaxy_ids[0], sizeof(int)*old_n);
+  memcpy(&this->localTree.bodies_ids[old_n], &currentGalaxy_ids[old_n + old_ndust], sizeof(int)*n_addGalaxy);
   
-  memcpy(&this->localTree.bodies_ids[0], &currentGalaxy_ids[0], sizeof(int)*currentGalaxy_ids.size());
-  
+  #ifdef USE_DUST
+    if(old_ndust + n_addGalaxy_dust)
+    {
+      fprintf(stderr, "Dust info %d %d \n", old_ndust, n_addGalaxy_dust);
+      memcpy(&this->localTree.dust_pos[0], &currentGalaxy_pos[old_n], sizeof(real4)*old_ndust);
+      memcpy(&this->localTree.dust_pos[old_ndust], 
+            &currentGalaxy_pos[old_n + old_ndust + n_addGalaxy], sizeof(real4)*n_addGalaxy_dust);
+
+      memcpy(&this->localTree.dust_vel [0], &currentGalaxy_vel[old_n], sizeof(real4)*old_ndust);
+      memcpy(&this->localTree.dust_vel [old_ndust], 
+            &currentGalaxy_vel[old_n + old_ndust + n_addGalaxy], sizeof(real4)*n_addGalaxy_dust);
+            
+      memcpy(&this->localTree.dust_ids[0], &currentGalaxy_ids[old_n], sizeof(int)*old_ndust);
+      memcpy(&this->localTree.dust_ids[old_ndust], 
+              &currentGalaxy_ids[old_n + old_ndust + n_addGalaxy], sizeof(int)*n_addGalaxy_dust);
+
+      this->localTree.dust_pos.h2d();
+      this->localTree.dust_vel.h2d();
+      this->localTree.dust_ids.h2d();
+
+      this->localTree.dust_acc0.d2h();
+      for(int i=old_ndust; i < old_ndust + n_addGalaxy_dust; i++)
+      {
+        //Zero the accelerations of the new particles
+        this->localTree.dust_acc0[i] = make_float4(0.0f,0.0f,0.0f,0.0f);
+      }
+
+      this->localTree.dust_acc0.h2d();
+      this->localTree.dust_acc1.zeroMem();
+    }
+
+  #endif
+
+
   float2 curTime = this->localTree.bodies_time[0];
   for(int i=0; i < this->localTree.n; i++)
   {
@@ -166,9 +211,10 @@ bool octree::addGalaxy(int galaxyID)
   this->localTree.bodies_vel.h2d();
   this->localTree.bodies_time.h2d();
   this->localTree.bodies_ids.h2d();
-  this->localTree.bodies_Ppos.h2d();
-  this->localTree.bodies_Pvel.h2d();
   
+  //Fill the predicted arrays
+  this->localTree.bodies_Ppos.copy(this->localTree.bodies_pos, localTree.n);
+  this->localTree.bodies_Pvel.copy(this->localTree.bodies_pos, localTree.n);
   
   resetEnergy();
   
@@ -191,6 +237,7 @@ bool octree::addGalaxy(int galaxyID)
   //With some luck we can jump directly to iterate_once
   //if that doesnt work we might have to do some extra steps...to be tested  
     
+  return true;
   
 }
 #endif
@@ -206,10 +253,10 @@ bool octree::iterate_once(IterationData &idata) {
     
     bool forceTreeRebuild = false;
     
-    if(iter == 5)
+    if((iter % 5) == 0)
     {
-//        addGalaxy(0);
-      forceTreeRebuild = true;
+    //  addGalaxy(0);
+    //  forceTreeRebuild = true;
     }
 
     //predict localtree
