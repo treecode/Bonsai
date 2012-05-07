@@ -26,6 +26,8 @@ void octree::allocateDustMemory(tree_structure &tree)
     tree.dust_ngb.cresize(n_dust, false); 
     
     tree.dust2group_list.zeroMem();
+    
+    tree.activeDustGrouplist.cresize(n_dust, false);
   }
   else
   {
@@ -42,7 +44,9 @@ void octree::allocateDustMemory(tree_structure &tree)
     tree.active_dust_list.cmalloc(n_dust+10, false);      //Extra space for atomics
     tree.dust_interactions.cmalloc(n_dust, false);     
     
-    tree.dust_ngb.cmalloc(n_dust, false);       
+    tree.dust_ngb.cmalloc(n_dust, false); 
+    
+    tree.activeDustGrouplist.cmalloc(n_dust, false);
 
     tree.dust2group_list.zeroMem();
   }
