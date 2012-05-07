@@ -749,6 +749,18 @@ int main(int argc, char** argv)
 	cout << "Kill distance: \t"      << killDistance     << "\t\tRemove dist: \t"   << remoDistance << endl;
 	cout << "Snapshot Addition: \t"  << snapShotAdd << endl;
 	cout << "Rebuild tree every " << rebuild_tree_rate << " timestep\n";
+	
+  cerr << "Used settings: \n";
+	cerr << "Input filename " << fileName << endl;
+	cerr << "Log filename " << logFileName << endl;
+	cerr << "Theta: \t\t"             << theta        << "\t\teps: \t\t"          << eps << endl;
+	cerr << "Timestep: \t"          << timeStep     << "\t\ttEnd: \t\t"         << tEnd << endl;
+	cerr << "snapshotFile: \t"      << snapshotFile << "\tsnapshotIter: \t" << snapshotIter << endl;
+	cerr << "Input file: \t"        << fileName     << "\t\tdevID: \t\t"        << devID << endl;
+	cerr << "Kill distance: \t"      << killDistance     << "\t\tRemove dist: \t"   << remoDistance << endl;
+	cerr << "Snapshot Addition: \t"  << snapShotAdd << endl;
+	cerr << "Rebuild tree every " << rebuild_tree_rate << " timestep\n";
+
 
 
   int NTotal, NFirst, NSecond, NThird;
