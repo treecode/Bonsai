@@ -25,7 +25,9 @@
 #include "vector_math.h"
 
 #include "../add_dust/DustRing.h"
-#define M_PI        3.14159265358979323846264338328
+#ifdef WIN32
+	#define M_PI        3.14159265358979323846264338328
+#endif
 
 extern void displayTimers();    // For profiling counter display
 
@@ -281,7 +283,7 @@ public:
           &m_tree->localTree.dust_ids[0], 
           &m_tree->localTree.dust_ids[0]+n_dust);
 
-        fprintf(stderr,"original_bodyPositions : %d \n", original_bodyPositions.size());
+        fprintf(stderr,"original_bodyPositions : %d \n", (int)original_bodyPositions.size());
         memcpy(&m_tree->localTree.bodies_pos[0], &original_bodyPositions[0], sizeof(real4)*original_bodyPositions.size());
         memcpy(&m_tree->localTree.bodies_vel[0], &original_bodyVelocities[0], sizeof(real4)*original_bodyVelocities.size());
         memcpy(&m_tree->localTree.bodies_ids[0], &original_bodyIDs[0], sizeof(int)*original_bodyIDs.size());
@@ -299,6 +301,10 @@ public:
         m_tree->localTree.bodies_vel.h2d(); 
 
         m_tree->localTree.setNDust(0);
+        
+        original_bodyPositions.clear();
+        original_bodyVelocities.clear();
+        original_bodyIDs.clear();        
 
 
       }
@@ -309,6 +315,7 @@ public:
  //Put the current galaxy on an orbit (with a copy of itself)
   void doubleGalaxyModel()
   {
+    mergeDustWithNormalParticles();    
     //Make a full copy of the current galaxy and set it up
     //using some defaults
     int n_particles = m_tree->localTree.n;
@@ -318,10 +325,10 @@ public:
     original_bodyIDs.clear();
 
 
-    mergeDustWithNormalParticles();
 
 
-     m_tree->localTree.bodies_ids.d2h();   
+
+    m_tree->localTree.bodies_ids.d2h();   
     m_tree->localTree.bodies_pos.d2h();  
     m_tree->localTree.bodies_vel.d2h();  
 
