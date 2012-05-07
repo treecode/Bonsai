@@ -665,14 +665,14 @@ int main(int argc, char** argv)
 		if ((optarg = opt.getValue("infile")))       fileName          = string(optarg);
 		if ((optarg = opt.getValue("logfile")))      logFileName       = string(optarg);
 		if ((optarg = opt.getValue("dev")))          devID             = atoi  (optarg);
-		if ((optarg = opt.getValue("dt")))           timeStep          = atof  (optarg);
-		if ((optarg = opt.getValue("tend")))         tEnd              = atof  (optarg);
-		if ((optarg = opt.getValue("eps")))          eps               = atof  (optarg);
-		if ((optarg = opt.getValue("theta")))        theta             = atof  (optarg);
+		if ((optarg = opt.getValue("dt")))           timeStep          = (float) atof  (optarg);
+		if ((optarg = opt.getValue("tend")))         tEnd              = (float) atof  (optarg);
+		if ((optarg = opt.getValue("eps")))          eps               = (float) atof  (optarg);
+		if ((optarg = opt.getValue("theta")))        theta             = (float) atof  (optarg);
 		if ((optarg = opt.getValue("snapname")))     snapshotFile      = string(optarg);
 		if ((optarg = opt.getValue("snapiter")))     snapshotIter      = atoi  (optarg);
-		if ((optarg = opt.getValue("killdist")))     killDistance      = atof  (optarg);
-		if ((optarg = opt.getValue("rmdist")))       remoDistance      = atof  (optarg);
+		if ((optarg = opt.getValue("killdist")))     killDistance      = (float) atof  (optarg);
+		if ((optarg = opt.getValue("rmdist")))       remoDistance      = (float) atof  (optarg);
 		if ((optarg = opt.getValue("valueadd")))     snapShotAdd       = atoi  (optarg);
 		if ((optarg = opt.getValue("rebuild")))      rebuild_tree_rate = atoi  (optarg);
 
@@ -797,7 +797,7 @@ int main(int argc, char** argv)
   initTimers();
 
   //Creat the octree class and set the properties
-  octree *tree = new octree(argv, devID, theta, eps, snapshotFile, snapshotIter,  timeStep, tEnd, killDistance, (int)remoDistance, snapShotAdd, rebuild_tree_rate);
+  octree *tree = new octree(argv, devID, theta, eps, snapshotFile, snapshotIter,  timeStep, (int)tEnd, killDistance, (int)remoDistance, snapShotAdd, rebuild_tree_rate);
                             
                             
   //Get parallel processing information  

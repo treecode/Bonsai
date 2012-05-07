@@ -72,31 +72,31 @@ bool octree::addGalaxy(int galaxyID)
     vector<real4> currentGalaxy_pos;
     vector<real4> currentGalaxy_vel;
     vector<int>   currentGalaxy_ids;    
-    
+
     int n_particles = this->localTree.n + this->localTree.n_dust;
     currentGalaxy_pos.insert(currentGalaxy_pos.begin(), &this->localTree.bodies_pos[0],
                           &this->localTree.bodies_pos[0]+n_particles);
-    
     currentGalaxy_vel.insert(currentGalaxy_vel.begin(), &this->localTree.bodies_vel[0],
                           &this->localTree.bodies_vel[0]+n_particles);
-    currentGalaxy_ids.insert(newGalaxy_ids.begin(), &this->localTree.bodies_ids[0],
+    currentGalaxy_ids.insert(currentGalaxy_ids.begin(), &this->localTree.bodies_ids[0],
                           &this->localTree.bodies_ids[0]+n_particles);    
     
     vector<real4> newGalaxy_pos_dust;
     vector<real4> newGalaxy_vel_dust;
     vector<int> newGalaxy_ids_dust;    
     
-    string fileName = "model3_child_compact.tipsy";
+    //string fileName = "model3_child_compact.tipsy";
+    string fileName = "modelC30kDust.bin";
     int rank =0;
     int procs = 1;
-    int NTotal, NFirst, NSecond, Nthird;
+    int NTotal, NFirst, NSecond, Nthird = 0;
     read_tipsy_file_parallel(newGalaxy_pos, newGalaxy_vel, newGalaxy_ids, 0, fileName, 
                              rank, procs, NTotal, NFirst, NSecond, NThird, this,
                              newGalaxy_pos_dust, newGalaxy_vel_dust, newGalaxy_ids_dust);
     
 
-    int n_addGalaxy      = newGalaxy_pos.size();
-    int n_addGalaxy_dust = newGalaxy_pos_dust.size();
+    int n_addGalaxy      = (int) newGalaxy_pos.size();
+    int n_addGalaxy_dust = (int) newGalaxy_pos_dust.size();
     //Put the dust with the main particles for orbit computations
     newGalaxy_pos.insert(newGalaxy_pos.end(), newGalaxy_pos_dust.begin(), newGalaxy_pos_dust.end());
     newGalaxy_vel.insert(newGalaxy_vel.end(), newGalaxy_vel_dust.begin(), newGalaxy_vel_dust.end());
@@ -162,19 +162,18 @@ bool octree::addGalaxy(int galaxyID)
   #ifdef USE_DUST
     if(old_ndust + n_addGalaxy_dust)
     {
-      fprintf(stderr, "Dust info %d %d \n", old_ndust, n_addGalaxy_dust);
       memcpy(&this->localTree.dust_pos[0], &currentGalaxy_pos[old_n], sizeof(real4)*old_ndust);
-      memcpy(&this->localTree.dust_pos[old_ndust], 
-            &currentGalaxy_pos[old_n + old_ndust + n_addGalaxy], sizeof(real4)*n_addGalaxy_dust);
-
       memcpy(&this->localTree.dust_vel [0], &currentGalaxy_vel[old_n], sizeof(real4)*old_ndust);
-      memcpy(&this->localTree.dust_vel [old_ndust], 
-            &currentGalaxy_vel[old_n + old_ndust + n_addGalaxy], sizeof(real4)*n_addGalaxy_dust);
-            
       memcpy(&this->localTree.dust_ids[0], &currentGalaxy_ids[old_n], sizeof(int)*old_ndust);
-      memcpy(&this->localTree.dust_ids[old_ndust], 
-              &currentGalaxy_ids[old_n + old_ndust + n_addGalaxy], sizeof(int)*n_addGalaxy_dust);
 
+      if(n_addGalaxy_dust > 0){
+        memcpy(&this->localTree.dust_pos[old_ndust], 
+              &currentGalaxy_pos[old_n + old_ndust + n_addGalaxy], sizeof(real4)*n_addGalaxy_dust);
+        memcpy(&this->localTree.dust_vel [old_ndust], 
+              &currentGalaxy_vel[old_n + old_ndust + n_addGalaxy], sizeof(real4)*n_addGalaxy_dust);
+        memcpy(&this->localTree.dust_ids[old_ndust], 
+              &currentGalaxy_ids[old_n + old_ndust + n_addGalaxy], sizeof(int)*n_addGalaxy_dust);
+      }
       this->localTree.dust_pos.h2d();
       this->localTree.dust_vel.h2d();
       this->localTree.dust_ids.h2d();
@@ -185,8 +184,7 @@ bool octree::addGalaxy(int galaxyID)
         //Zero the accelerations of the new particles
         this->localTree.dust_acc0[i] = make_float4(0.0f,0.0f,0.0f,0.0f);
       }
-
-      this->localTree.dust_acc0.h2d();
+    //  fprintf(stderr, "Dust info %d %d \n", old_ndust, n_addGalaxy_dust);      this->localTree.dust_acc0.h2d();
       this->localTree.dust_acc1.zeroMem();
     }
 
@@ -255,8 +253,8 @@ bool octree::iterate_once(IterationData &idata) {
     
     if((iter % 5) == 0)
     {
-    //  addGalaxy(0);
-    //  forceTreeRebuild = true;
+  //    addGalaxy(0);
+   //   forceTreeRebuild = true;
     }
 
     //predict localtree

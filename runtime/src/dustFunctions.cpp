@@ -23,7 +23,9 @@ void octree::allocateDustMemory(tree_structure &tree)
     tree.active_dust_list.cresize(n_dust+10, false);      //Extra space for atomics
     tree.dust_interactions.cresize(n_dust, false);     
     
-    tree.dust_ngb.cresize(n_dust, false);     
+    tree.dust_ngb.cresize(n_dust, false); 
+    
+    tree.dust2group_list.zeroMem();
   }
   else
   {
@@ -41,6 +43,8 @@ void octree::allocateDustMemory(tree_structure &tree)
     tree.dust_interactions.cmalloc(n_dust, false);     
     
     tree.dust_ngb.cmalloc(n_dust, false);       
+
+    tree.dust2group_list.zeroMem();
   }
 
   //Increase the position buffer, we will add the dust behind
