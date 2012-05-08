@@ -42,7 +42,7 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
     mVelVbo(0),
     mColorVbo(0),
     mIndexBuffer(0),
-    mParticleRadius(0.2f),
+    mParticleRadius(0.1f),
 	mDisplayMode(SPRITES),
     mWindowW(800),
     mWindowH(600),
@@ -53,7 +53,7 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
 	m_numDisplayedSlices(m_numSlices),
     m_sliceNo(0),
     m_shadowAlpha(0.1f),
-    m_spriteAlpha(0.1f),
+    m_spriteAlpha(1.0f),
     m_volumeAlpha(0.2f),
 	m_dustAlpha(1.0f),
     m_volumeColor(0.5f, 0.0f, 0.0f),
@@ -81,11 +81,11 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
 	m_enableAA(false),
 	m_starBlurRadius(40.0f),
 	m_starThreshold(1.0f),
-    m_starPower(2.0f),
-	m_starIntensity(0.0f),
+    m_starPower(1.0f),
+	m_starIntensity(1.0f),
 	m_glowRadius(10.0f),
     m_glowIntensity(0.5f),
-	m_ageScale(5.0f),
+	m_ageScale(10.0f),
 	m_enableVolume(false),
 	m_enableFilters(true),
     m_noiseFreq(0.05f),
@@ -96,7 +96,12 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
 	m_volumeWidth(0.1f),
 	m_gamma(1.0f / 2.2f),
 	m_fog(0.001f),
-    m_cubemapTex(0)
+    m_cubemapTex(0),
+    m_flareThreshold(0.5f),
+    m_flareIntensity(0.0f),
+    m_sourceIntensity(1.0f),
+    m_flareRadius(100.0f),
+    m_skyboxBrightness(0.25f)
 {
 	// load shader programs
 	m_simpleProg = new GLSLProgram(simpleVS, simplePS);
@@ -178,6 +183,7 @@ SmokeRenderer::~SmokeRenderer()
 
     glDeleteTextures(4, m_imageTex);
     glDeleteTextures(1, &m_depthTex);
+    glDeleteTextures(3, m_downSampledTex);
 
 	glDeleteTextures(1, &m_noiseTex);
 	glDeleteTextures(1, &m_cubemapTex);
@@ -834,6 +840,8 @@ void SmokeRenderer::displayTexture(GLuint tex, float scale)
     m_displayTexProg->disable();
 }
 
+#define DIAGONAL_STARS 0
+
 void SmokeRenderer::doStarFilter()
 {
     glViewport(0, 0, m_imageW, m_imageH);
@@ -841,7 +849,7 @@ void SmokeRenderer::doStarFilter()
 #if 1
 	// threshold
 	m_thresholdProg->enable();
-	m_thresholdProg->setUniform1f("intensity", m_starPower);
+	m_thresholdProg->setUniform1f("scale", m_starPower);
 	m_thresholdProg->setUniform1f("threshold", m_starThreshold);
 	processImage(m_thresholdProg, m_imageTex[0], m_imageTex[3]);
 #endif
@@ -850,21 +858,27 @@ void SmokeRenderer::doStarFilter()
 	// horizontal
 	m_starFilterProg->enable();
 	m_starFilterProg->setUniform1f("radius", m_starBlurRadius);
+#if DIAGONAL_STARS
+  m_starFilterProg->setUniform2f("texelSize", 2.0f / (float) m_imageW, 2.0f / (float) m_imageH);	// diagonal
+#else
 	m_starFilterProg->setUniform2f("texelSize", 2.0f / (float) m_imageW, 0.0f);	// axis aligned
-	//m_starFilterProg->setUniform2f("texelSize", 2.0f / (float) m_imageW, 2.0f / (float) m_imageH);	// diagonal
+#endif
     m_starFilterProg->bindTexture("kernelTex", m_rainbowTex, GL_TEXTURE_2D, 1);
 	processImage(m_starFilterProg, m_imageTex[3], m_imageTex[1]);
 	//processImage(m_starFilterProg, m_imageTex[0], m_imageTex[1]);
 
 	// vertical
 	m_starFilterProg->enable();
+#if DIAGONAL_STARS
+	m_starFilterProg->setUniform2f("texelSize", -2.0f / (float) m_imageW, 2.0f / (float) m_imageH);	// diagonal
+#else
 	m_starFilterProg->setUniform2f("texelSize", 0.0f, 2.0f / (float) m_imageW);	// axis aligned
-	//m_starFilterProg->setUniform2f("texelSize", -2.0f / (float) m_imageW, 2.0f / (float) m_imageH);	// diagonal
+#endif
     processImage(m_starFilterProg, m_imageTex[3], m_imageTex[2]);
 	//processImage(m_starFilterProg, m_imageTex[0], m_imageTex[2]);
 }
 
-void SmokeRenderer::doGlowFilter()
+void SmokeRenderer::downSample()
 {
     // downsample
     glViewport(0, 0, m_downSampledW, m_downSampledH);
@@ -872,22 +886,49 @@ void SmokeRenderer::doGlowFilter()
 	//m_downSampleProg->setUniform2f("texelSize", 1.0f / (float) m_imageW, 1.0f / (float) m_imageH);
         processImage(m_downSampleProg, m_imageTex[0], m_downSampledTex[0]);
 	m_downSampleProg->disable();
+}
+
+// anamorphic flare?
+void SmokeRenderer::doFlare()
+{
+#if 1
+	// threshold
+	m_thresholdProg->enable();
+	m_thresholdProg->setUniform1f("scale", 1.0f);
+	m_thresholdProg->setUniform1f("threshold", m_flareThreshold);
+	processImage(m_thresholdProg, m_downSampledTex[0], m_downSampledTex[1]);
+#endif
 
 #if 1
+    m_gaussianBlurProg->enable();
+    m_gaussianBlurProg->setUniform1f("radius", m_flareRadius);
+	m_gaussianBlurProg->setUniform2f("texelSize", 2.0f / (float) m_downSampledW, 0.0f);
+	//m_gaussianBlurProg->setUniform2f("texelSize", 1.0f / (float) m_downSampledW, 0.0f);
+    processImage(m_gaussianBlurProg, m_downSampledTex[1], m_downSampledTex[2]);
+#else
+	m_starFilterProg->enable();
+	m_starFilterProg->setUniform1f("radius", m_flareRadius);
+	m_starFilterProg->setUniform2f("texelSize", 2.0f / (float) m_downSampledW, 0.0f);	// axis aligned
+    m_starFilterProg->bindTexture("kernelTex", m_rainbowTex, GL_TEXTURE_2D, 1);
+	processImage(m_starFilterProg, m_downSampledTex[1], m_downSampledTex[2]);
+#endif
+}
+
+void SmokeRenderer::doGlowFilter()
+{
     // blur
     m_gaussianBlurProg->enable();
     m_gaussianBlurProg->setUniform1f("radius", m_glowRadius);
-	//m_gaussianBlurProg->setUniform2f("texelSize", 2.0f / (float) m_downSampledW, 0.0f);
-	m_gaussianBlurProg->setUniform2f("texelSize", 1.0f / (float) m_downSampledW, 0.0f);
+	m_gaussianBlurProg->setUniform2f("texelSize", 2.0f / (float) m_downSampledW, 0.0f);
+	//m_gaussianBlurProg->setUniform2f("texelSize", 1.0f / (float) m_downSampledW, 0.0f);
     processImage(m_gaussianBlurProg, m_downSampledTex[0], m_downSampledTex[1]);
 
     m_gaussianBlurProg->enable();
-    //m_gaussianBlurProg->setUniform2f("texelSize", 0.0f, 2.0f / (float) m_downSampledH);
-	m_gaussianBlurProg->setUniform2f("texelSize", 0.0f, 1.0f / (float) m_downSampledH);
+    m_gaussianBlurProg->setUniform2f("texelSize", 0.0f, 2.0f / (float) m_downSampledH);
+	//m_gaussianBlurProg->setUniform2f("texelSize", 0.0f, 1.0f / (float) m_downSampledH);
 
     processImage(m_gaussianBlurProg, m_downSampledTex[1], m_downSampledTex[0]);
     m_gaussianBlurProg->disable();
-#endif
 }
 
 // composite final volume image on top of scene
@@ -898,6 +939,12 @@ void SmokeRenderer::compositeResult()
             doStarFilter();
 	    }
 
+        if (m_glowIntensity > 0.0f || m_flareIntensity > 0.0f) {
+          downSample();
+        }
+        if (m_flareIntensity > 0.0f) {
+          doFlare();
+        }
         if (m_glowRadius > 0.0f && m_glowIntensity > 0.0f) {
             doGlowFilter();
         }
@@ -915,9 +962,12 @@ void SmokeRenderer::compositeResult()
 		m_compositeProg->bindTexture("blurTexH", m_imageTex[1], GL_TEXTURE_2D, 1);
 		m_compositeProg->bindTexture("blurTexV", m_imageTex[2], GL_TEXTURE_2D, 2);
 		m_compositeProg->bindTexture("glowTex", m_downSampledTex[0], GL_TEXTURE_2D, 3);
+        m_compositeProg->bindTexture("flareTex", m_downSampledTex[2], GL_TEXTURE_2D, 4);
 		m_compositeProg->setUniform1f("scale", m_imageBrightness);
+		m_compositeProg->setUniform1f("sourceIntensity", m_sourceIntensity);
 		m_compositeProg->setUniform1f("glowIntensity", m_glowIntensity);
 		m_compositeProg->setUniform1f("starIntensity", m_starIntensity);
+		m_compositeProg->setUniform1f("flareIntensity", m_flareIntensity);
 		m_compositeProg->setUniform1f("gamma", m_gamma);
 		drawQuad();
 		m_compositeProg->disable();
@@ -1146,7 +1196,7 @@ void SmokeRenderer::createBuffers(int w, int h)
         glDeleteTextures(4, m_imageTex);
         glDeleteTextures(1, &m_depthTex);
 
-        glDeleteTextures(2, m_downSampledTex);
+        glDeleteTextures(3, m_downSampledTex);
     }
 
     mWindowW = w;
@@ -1175,6 +1225,7 @@ void SmokeRenderer::createBuffers(int w, int h)
 
     m_downSampledTex[0] = createTexture(GL_TEXTURE_2D, m_downSampledW, m_downSampledH, format, GL_RGBA);
     m_downSampledTex[1] = createTexture(GL_TEXTURE_2D, m_downSampledW, m_downSampledH, format, GL_RGBA);
+    m_downSampledTex[2] = createTexture(GL_TEXTURE_2D, m_downSampledW, m_downSampledH, format, GL_RGBA);
 
     createLightBuffer();
 }
@@ -1291,7 +1342,9 @@ void SmokeRenderer::drawSkybox(GLuint tex)
 
     glDisable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
-    glColor3f(0.5f, 0.5f, 0.5f);
+    glColor3f(m_skyboxBrightness, m_skyboxBrightness, m_skyboxBrightness);
+    //glColor3f(0.25f, 0.25f, 0.25f);
+    //glColor3f(0.5f, 0.5f, 0.5f);
     //glColor3f(1.0f, 1.0f, 1.0f);
 
     glutSolidCube(2.0);
@@ -1351,10 +1404,17 @@ void SmokeRenderer::initParams()
     m_params->AddParam(new Param<float>("blur radius", m_blurRadius, 0.0f, 10.0f, 0.1f, &m_blurRadius));
     m_params->AddParam(new Param<int>("blur passes", m_blurPasses, 0, 10, 1, &m_blurPasses));
 
+    m_params->AddParam(new Param<float>("source intensity", m_sourceIntensity, 0.0f, 1.0f, 0.01f, &m_sourceIntensity));
     m_params->AddParam(new Param<float>("star blur radius", m_starBlurRadius, 0.0f, 100.0f, 1.0f, &m_starBlurRadius));
     m_params->AddParam(new Param<float>("star threshold", m_starThreshold, 0.0f, 10.0f, 0.1f, &m_starThreshold));
     m_params->AddParam(new Param<float>("star power", m_starPower, 0.0f, 100.0f, 0.1f, &m_starPower));
     m_params->AddParam(new Param<float>("star intensity", m_starIntensity, 0.0f, 1.0f, 0.1f, &m_starIntensity));
     m_params->AddParam(new Param<float>("glow radius", m_glowRadius, 0.0f, 100.0f, 1.0f, &m_glowRadius));
     m_params->AddParam(new Param<float>("glow intensity", m_glowIntensity, 0.0f, 1.0f, 0.01f, &m_glowIntensity));
+    m_params->AddParam(new Param<float>("flare intensity", m_flareIntensity, 0.0f, 1.0f, 0.01f, &m_flareIntensity));
+    m_params->AddParam(new Param<float>("flare threshold", m_flareThreshold, 0.0f, 10.0f, 0.01f, &m_flareThreshold));
+    m_params->AddParam(new Param<float>("flare radius", m_flareRadius, 0.0f, 100.0f, 0.01f, &m_flareRadius));
+
+    m_params->AddParam(new Param<float>("skybox brightness", m_skyboxBrightness, 0.0f, 1.0f, 0.01f, &m_skyboxBrightness));
+
 }

@@ -69,6 +69,8 @@ public:
     void setLightColor(nv::vec3f c);
     nv::vec3f getLightColor() { return m_lightColor; }
 
+    void setOverbright(float x) { m_overBright = x; }
+
     void setDoBlur(bool b) { m_doBlur = b; }
     void setBlurRadius(float x) { m_blurRadius = x; }
     void setDisplayLightBuffer(bool b) { m_displayLightBuffer = b; }
@@ -129,6 +131,8 @@ private:
 
     void displayTexture(GLuint tex, float scale);
     void doStarFilter();
+    void downSample();
+    void doFlare();
     void doGlowFilter();
     void compositeResult();
     void blurLightBuffer();
@@ -219,8 +223,14 @@ private:
     float m_glowIntensity;
 	float m_gamma;
 
+    float m_sourceIntensity;
+    float m_flareIntensity;
+    float m_flareThreshold;
+    float m_flareRadius;
+
     float m_ageScale;
 	float m_fog;
+    float m_skyboxBrightness;
 
     float m_volumeAlpha;
     nv::vec3f m_volumeColor;
@@ -253,7 +263,7 @@ private:
     GLuint              m_lightDepthTexture;
 
     GLuint              m_imageTex[4], m_depthTex;
-    GLuint              m_downSampledTex[2];
+    GLuint              m_downSampledTex[3];
 
     GLuint              m_rampTex;
     GLuint              m_rainbowTex;

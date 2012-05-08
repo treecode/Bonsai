@@ -49,7 +49,7 @@ void main()                                                 \n
 		// dust
 		pointRadius *= ageScale;	// scale up
 		col.a = dustAlpha;
-	} else if (type == 1.0) {
+	} else if (type == 2.0) {
 		// star
 		col.rgb *= overBright;
 	}
@@ -476,14 +476,14 @@ void main()                                                                     
 const char *thresholdPS = STRINGIFY(
 uniform sampler2D tex;                                                                \n
 uniform float threshold;
-uniform float intensity;
+uniform float scale;
 void main()                                                                           \n
 {
 	vec4 s = texture2D(tex, gl_TexCoord[0].xy);	\n
 	float i = dot(s.rgb, vec3(0.333));
 	s *= smoothstep(threshold, threshold+0.1, i);
-	//s = pow(s, intensity);
-	s *= intensity;
+	s = pow(s, scale);
+	//s *= scale;
 	gl_FragColor = s;
 }
 );
@@ -553,8 +553,8 @@ void main()                                                                     
 {                                                                                     \n
     vec4 c = vec4(0.0, 0.0, 0.0, 0.0);                                                               \n
 	float wsum = 0.0;
-    //vec2 uv = gl_TexCoord[0].xy - texelSize*0.25;
-	vec2 uv = gl_TexCoord[0].xy;
+    vec2 uv = gl_TexCoord[0].xy - texelSize*0.25;
+	//vec2 uv = gl_TexCoord[0].xy;
 	for(int i=-radius; i<=radius; i++) {                                              \n
 		float x = (i / radius)*3.0;
 		float w = exp(-x*x);
@@ -572,17 +572,23 @@ uniform sampler2D tex;                                             \n
 uniform sampler2D blurTexH;                                        \n
 uniform sampler2D blurTexV;                                        \n
 uniform sampler2D glowTex;                                         \n
+uniform sampler2D flareTex;                                        \n
+uniform float sourceIntensity;                                     \n
 uniform float glowIntensity;                                       \n
 uniform float starIntensity;
+uniform float flareIntensity;
 uniform float scale = 1.0;                                         \n
 uniform float gamma;
 void main()                                                        \n
 {                                                                  \n
     vec4 c;
-	c= texture2D(tex, gl_TexCoord[0].xy);                    \n
+	c = texture2D(tex, gl_TexCoord[0].xy) * sourceIntensity;           \n
     if (starIntensity > 0) {
 	    c += texture2D(blurTexH, gl_TexCoord[0].xy) * starIntensity;
 	    c += texture2D(blurTexV, gl_TexCoord[0].xy) * starIntensity;
+    }
+    if (flareIntensity > 0) {
+      c += texture2D(flareTex, gl_TexCoord[0].xy) * flareIntensity;
     }
     c += texture2D(glowTex, gl_TexCoord[0].xy) * glowIntensity;
     c.rgb *= scale;

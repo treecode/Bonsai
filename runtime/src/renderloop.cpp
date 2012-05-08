@@ -133,7 +133,7 @@ public:
 //       m_renderer(tree->localTree.n + tree->localTree.n_dust),
       m_renderer(tree->localTree.n + tree->localTree.n_dust, MAX_PARTICLES),
       //m_displayMode(ParticleRenderer::PARTICLE_SPRITES_COLOR),
-	    m_displayMode(SmokeRenderer::SPRITES),
+	    m_displayMode(SmokeRenderer::VOLUMETRIC),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.2f),
       m_paused(false),
       m_renderingEnabled(true),
@@ -145,7 +145,9 @@ public:
       m_flyMode(false),
 	  m_fov(60.0f),
       m_simTime(0.0),
-      m_renderTime(0.0)
+      m_renderTime(0.0),
+      m_supernova(false),
+      m_overBright(1.0f)
   {
     m_windowDims = make_int2(1024, 768);
     m_cameraTrans = make_float3(0, -2, -100);
@@ -186,6 +188,11 @@ public:
     //m_displayMode = (ParticleRenderer::DisplayMode) ((m_displayMode + 1) % ParticleRenderer::PARTICLE_NUM_MODES);
 	  m_displayMode = (SmokeRenderer::DisplayMode) ((m_displayMode + 1) % SmokeRenderer::NUM_MODES);
 	  m_renderer.setDisplayMode(m_displayMode);
+      if (m_displayMode == SmokeRenderer::SPRITES) {
+        m_renderer.setAlpha(0.1f);
+      } else {
+        m_renderer.setAlpha(1.0f);
+      }
     // MJH todo: add body color support and remove this
     //if (ParticleRenderer::PARTICLE_SPRITES_COLOR == m_displayMode)
     //  cycleDisplayMode();
@@ -289,6 +296,16 @@ public:
 
         glGetFloatv(GL_MODELVIEW_MATRIX, m_modelView);
 
+        if (m_supernova) {
+          if (m_overBright > 1.0f) {
+            m_overBright -= 1.0f;
+          } else {
+            m_overBright = 1.0f;
+            m_supernova = false;
+          }
+          m_renderer.setOverbright(m_overBright);
+        }
+
         //m_renderer.display(m_displayMode);
 	    m_renderer.render();
 
@@ -386,11 +403,12 @@ public:
     if (!m_flyMode)
       return;
 
-    const float flySpeed = 1.0f;
+    //const float flySpeed = 1.0f;
+    const float flySpeed = 0.25f;
     //float flySpeed = (m_keyModifiers & GLUT_ACTIVE_SHIFT) ? 4.0f : 1.0f;
 
 	// Z
-    if (m_keyDown['w'] || (m_buttonState & 1)) {
+    if (m_keyDown['w']) { //  || (m_buttonState & 1)) {
 	  // foward
 	  m_cameraTrans.x += m_modelView[2] * flySpeed;
 	  m_cameraTrans.y += m_modelView[6] * flySpeed;
@@ -499,6 +517,10 @@ public:
         fitCamera();
       }
       break;
+    case 'n':
+      m_supernova = true;
+      m_overBright = 20.0f;
+      break;
     }
 
     m_keyDown[key] = true;
@@ -588,7 +610,7 @@ public:
     float4 starColor2 = make_float4(1.0f, 0.2f, 0.5f, 1.0f) * make_float4(100.0f, 100.0f, 100.0f, 1.0f);             // redish
     float4 starColor3 = make_float4(0.1f, 0.1f, 1.0f, 1.0f) * make_float4(100.0f, 100.0f, 100.0f, 1.0f);             // bluish
 
-    float4 bulgeColor = make_float4(1.0f, 1.0f, 0.5f, 1.0f);  // yellowish
+    float4 bulgeColor = make_float4(1.0f, 1.0f, 0.5f, 2.0f);  // yellowish
 
     //float4 dustColor = make_float4(0.0f, 0.0f, 0.1f, 0.0f);      // blue
     //float4 dustColor =  make_float4(0.1f, 0.1f, 0.1f, 0.0f);    // grey
@@ -611,7 +633,8 @@ public:
       {
         //colors[i] = make_float4(0, 1, 0, 1);
           colors[i] = ((id % 100) != 0) ? 
-						starColor :
+						//starColor * make_float4(r, r, r, 1.0f):
+                        starColor :
 						((id / 100) & 1) ? starColor2 : starColor3;
       } 
       else if (id >= 50000000 && id < 100000000) //Dust
@@ -719,6 +742,9 @@ public:
   int m_keyModifiers;
 
   double m_simTime, m_renderTime;
+
+  bool m_supernova;
+  float m_overBright;
 };
 
 BonsaiDemo *theDemo = NULL;
