@@ -19,14 +19,21 @@ SRCPATH = ./
 SRC = add_dust.cpp anyoption.cpp
 OBJ = $(SRC:%.cpp=%.o)
 
+SRC1 = initorbit.cpp anyoption.cpp
+OBJ1 = $(SRC1:%.cpp=%.o)
+
 PROG  = add_dust
+PROG1 = initorbit
 
 RM = /bin/rm
 
-all:	  $(PROG)
+all:	  $(PROG) $(PROG1)
 
 
 $(PROG): $(OBJ) 
+	$(LD) $(LDFLAGS) $^ -o $@ $(OMPFLAGS)
+
+$(PROG1): $(OBJ1) 
 	$(LD) $(LDFLAGS) $^ -o $@ $(OMPFLAGS)
 
 %.o: $(SRCPATH)/%.cpp

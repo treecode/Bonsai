@@ -1162,6 +1162,20 @@ AnyOption::addUsage( const char *line )
 	usage_lines++;
 }
 
+void 
+AnyOption::addUsage(const std::string &line)
+{
+	usage_string.push_back(line);
+	if( usage_lines >= max_usage_lines ){
+		if( doubleUsageStorage() == false ){
+			addUsageError( usage_string.back().c_str() );
+			exit(1);
+		}
+	}
+	usage[ usage_lines ] = usage_string.back().c_str() ;	
+	usage_lines++;
+}
+
 void
 AnyOption::addUsageError( const char *line )
 {

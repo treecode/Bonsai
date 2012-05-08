@@ -6,6 +6,7 @@
 #include <iostream>
 #include <fstream>
 #include <cstdlib>
+#include <vector>
 #include <string>
 #include <cstring>
 
@@ -150,6 +151,7 @@ public: /* the public interface */
 	void printUsage();
 	void printAutoUsage();
 	void addUsage( const char *line );
+	void addUsage( const std::string &line);
 	void printHelp();
         /* print auto usage printing for unknown options or flag */
 	void autoUsagePrint(bool flag);
@@ -192,6 +194,7 @@ private: /* the hidden data structure */
 
 	/* help and usage */
 	const char **usage; 	/* usage */
+	std::vector<std::string> usage_string;
 	int max_usage_lines;	/* max usage lines reseverd */
 	int usage_lines;	/* number of usage lines */
 
