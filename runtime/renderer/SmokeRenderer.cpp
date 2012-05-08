@@ -35,8 +35,8 @@
 
 using namespace nv;
 
-SmokeRenderer::SmokeRenderer(int numParticles) :
-    mMaxParticles(numParticles),
+SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
+    mMaxParticles(maxParticles),
     mNumParticles(numParticles),
     mPosVbo(0),
     mVelVbo(0),
@@ -277,6 +277,20 @@ void SmokeRenderer::loadSmokeTextures(int nImages, int offset, char* sTexturePre
 }
 #endif
 
+void SmokeRenderer::setNumberOfParticles(uint n_particles)
+{
+  if(n_particles > this->mMaxParticles)
+  {
+    //Uhohhh too many particles
+    fprintf(stderr, "Sorry increase the number of maxParticles \n");
+    this->mNumParticles = this->mMaxParticles;
+  }
+  else
+  {
+    this->mNumParticles = n_particles;
+  }
+}
+
 void SmokeRenderer::setPositions(float *pos)
 {
 	memcpy(mParticlePos.getHostPtr(), pos, mNumParticles*4*sizeof(float));
@@ -298,7 +312,9 @@ void SmokeRenderer::setColors(float *color)
 		// allocate
 		glGenBuffers(1, &mColorVbo);
 		glBindBuffer(GL_ARRAY_BUFFER_ARB, mColorVbo);
-		glBufferData(GL_ARRAY_BUFFER_ARB, mNumParticles * 4 * sizeof(float), color, GL_DYNAMIC_DRAW);
+// 		glBufferData(GL_ARRAY_BUFFER_ARB, mNumParticles * 4 * sizeof(float), color, GL_DYNAMIC_DRAW);
+                //Jeroen, I allocate the maximum number of particles
+                glBufferData(GL_ARRAY_BUFFER_ARB, mMaxParticles * 4 * sizeof(float), color, GL_DYNAMIC_DRAW);                
 	}
 
 	glBindBuffer(GL_ARRAY_BUFFER_ARB, mColorVbo);

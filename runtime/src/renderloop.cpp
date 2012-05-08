@@ -99,12 +99,14 @@ void drawWireBox(float3 boxMin, float3 boxMax) {
 #endif
 }
 
+#define MAX_PARTICLES 5000000
 class BonsaiDemo
 {
 public:
   BonsaiDemo(octree *tree, octree::IterationData &idata) 
     : m_tree(tree), m_idata(idata), iterationsRemaining(true),
-      m_renderer(tree->localTree.n + tree->localTree.n_dust),
+//       m_renderer(tree->localTree.n + tree->localTree.n_dust),
+      m_renderer(tree->localTree.n + tree->localTree.n_dust, MAX_PARTICLES),
       //m_displayMode(ParticleRenderer::PARTICLE_SPRITES_COLOR),
 	    m_displayMode(SmokeRenderer::SPRITES),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.2f),
@@ -134,7 +136,8 @@ public:
    int arraySize = tree->localTree.n;
    arraySize    += tree->localTree.n_dust;
  
-   m_particleColors  = new float4[arraySize];
+//    m_particleColors  = new float4[arraySize];
+   m_particleColors  = new float4[MAX_PARTICLES];   
  
 	m_renderer.setFOV(m_fov);
 	m_renderer.setWindowSize(m_windowDims.x, m_windowDims.y);
@@ -180,7 +183,17 @@ public:
   void display() { 
     if (m_renderingEnabled)
     {
+      //Check if we need to update the number of particles
+      if((m_tree->localTree.n + m_tree->localTree.n_dust) > m_renderer.getNumberOfParticles())
+      {
+        //Update the particle count in the renderer
+        m_renderer.setNumberOfParticles(m_tree->localTree.n + m_tree->localTree.n_dust);
+        fitCamera(); //Try to get the model back in view
+      }
+            
       getBodyData();
+      
+
 
       moveCamera();
 #if 0
@@ -546,20 +559,21 @@ public:
 
     float4 *colors = m_particleColors;
 
+#if 0
+		srand48(1783);  /* keep this srand out of the loop, otherwise it get WAY TOO SLOW on LINUX */
+#endif
     for (int i = 0; i < n; i++)
     {
       int id =  m_tree->localTree.bodies_ids[i];
             //printf("%d: id %d, mass: %f\n", i, id, m_tree->localTree.bodies_pos[i].w);
-            srand(id*1783);
 #if 1
-      float r = frand();
             
       if (id >= 0 && id < 50000000)     //Disk
       {
         //colors[i] = make_float4(0, 1, 0, 1);
-          colors[i] = (frand() < 0.99f) ? 
+          colors[i] = ((id % 100) != 0) ? 
 						starColor :
-						(frand() < 0.5f) ? starColor2 : starColor3;          
+						((id / 100) & 1) ? starColor2 : starColor3;
       } 
       else if (id >= 50000000 && id < 100000000) //Dust
       {

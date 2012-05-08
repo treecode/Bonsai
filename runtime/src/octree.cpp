@@ -224,7 +224,8 @@ void octree::write_dumbp_snapshot_parallel_tipsy(real4 *bodyPositions, real4 *bo
     //Next write the star particles
     for(int i=0; i < NCombTotal ; i++)
     {
-      if(allIds[i] >= 100000000 && allIds[i] < 200000000)
+//       if(allIds[i] >= 100000000 && allIds[i] < 200000000)
+      if(allIds[i] >= 0 && allIds[i] < 200000000)
       {
         //Set particle properties
         star_particle s;
@@ -280,6 +281,10 @@ void octree::write_dumbp_snapshot_parallel(real4 *bodyPositions, real4 *bodyVelo
     NCombSecond = SumOnRootRank(NSecond);
     NCombThird  = SumOnRootRank(NThird);
   //#endif
+    
+    //Since the dust and disk particles are star particles
+    //lets add them
+    NCombSecond += NCombThird;    
   
   #ifdef TIPSYOUTPUT
   //#ifdef INDSOFT

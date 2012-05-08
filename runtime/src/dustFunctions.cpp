@@ -6,6 +6,16 @@ void octree::allocateDustMemory(tree_structure &tree)
 {
   if(tree.n_dust == 0) return;
   
+  #ifdef USE_B40C
+    if(tree.n_dust > tree.n)
+    {
+      delete sorter;
+      sorter = new Sort90(tree.n_dust);
+    }
+  #endif
+        
+  
+  
   if( tree.dust_pos.get_size() > 0)
   {
     //Dust buffers, resize only
@@ -23,12 +33,25 @@ void octree::allocateDustMemory(tree_structure &tree)
     tree.active_dust_list.cresize(n_dust+10, false);      //Extra space for atomics
     tree.dust_interactions.cresize(n_dust, false);     
     
-    tree.dust_ngb.cresize(n_dust, false);     
+    tree.dust_ngb.cresize(n_dust, false); 
+    
+    tree.dust2group_list.zeroMem();
+    
+    tree.activeDustGrouplist.cresize(n_dust, false);
   }
   else
   {
     //Dust buffers
     int n_dust = tree.n_dust;  
+    
+    #ifdef USE_B40C
+      if(tree.n_dust > tree.n)
+      {
+        delete sorter;
+        sorter = new Sort90(tree.n_dust);
+      }
+    #endif    
+    
     tree.dust_pos.cmalloc(n_dust+1, false);     
     tree.dust_key.cmalloc(n_dust+1, false);     
     tree.dust_vel.cmalloc(n_dust, false);
@@ -40,14 +63,18 @@ void octree::allocateDustMemory(tree_structure &tree)
     tree.active_dust_list.cmalloc(n_dust+10, false);      //Extra space for atomics
     tree.dust_interactions.cmalloc(n_dust, false);     
     
-    tree.dust_ngb.cmalloc(n_dust, false);       
+    tree.dust_ngb.cmalloc(n_dust, false); 
+    
+    tree.activeDustGrouplist.cmalloc(n_dust, false);
+
+    tree.dust2group_list.zeroMem();
   }
 
   //Increase the position buffer, we will add the dust behind
   //this when rendering
   tree.bodies_pos.cresize(tree.n+1+tree.n_dust, false); 
   tree.bodies_ids.cresize(tree.n+1+tree.n_dust, false); 
-
+  tree.bodies_vel.cresize(tree.n+1+tree.n_dust, false); 
   tree.dust_acc0.zeroMem();
 
 }

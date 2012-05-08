@@ -24,7 +24,7 @@
 class SmokeRenderer
 {
 public:
-    SmokeRenderer(int numParticles);
+    SmokeRenderer(int numParticles, int maxParticles);
     ~SmokeRenderer();
 
     enum DisplayMode
@@ -103,6 +103,10 @@ public:
 
     void render();
     void debugVectors();
+    
+    //By JB to modify particle count while running
+    void setNumberOfParticles(uint n_particles); 
+    int  getNumberOfParticles() {return this->mNumParticles; }
 
 private:
     //GLuint loadTexture(char *filename);

@@ -137,6 +137,13 @@ void octree::reallocateParticleMemory(tree_structure &tree)
   //particles. Eg valid arrays used in tree construction
   int n_bodies = tree.n;
   
+  #ifdef USE_B40C
+    delete sorter;
+    sorter = new Sort90(n_bodies);
+  #endif
+      
+  
+  
   bool reduce = false;  //Set this to true to limit memory usage by only allocating what
                         //is required. If its false, then memory is not reduced and a larger
                         //buffer is kept
@@ -318,7 +325,7 @@ void octree::build (tree_structure &tree) {
   /******  build the levels *********/
   
   // set devMemCountsx to 1 because it is used to early out when it hits zero
-#if 1
+#if 0
   build_tree_node_levels(*this, validList, compactList, levelOffset, maxLevel, execStream->s());
 #else
   this->resetCompact();
