@@ -191,6 +191,8 @@ int main(int argc, char **argv)
   struct star_particle s;
 
   unsigned int maxDustID = 50000000-1; //-1 since we do +1 later on
+  unsigned int maxMasslessGlowID = 70000000-1; //-1 since we do +1 later on
+  unsigned int maxMassiveGlowID = 40000000-1; //-1 since we do +1 later on
 
   for(int i=0; i < NBulge1; i++)
   {
@@ -326,7 +328,7 @@ int main(int argc, char **argv)
 
   /** Generating dust ring **/
 
-  const DustRing ring(Ndust, Ro, D, H, inclination, VelCurve, phi, nrScale, nzScale, ring_type);
+  const DustRing ring (Ndust, Ro, D, H, inclination, VelCurve, phi, nrScale, nzScale, ring_type);
 
   /** Adding dust ring **/
 
@@ -356,6 +358,45 @@ int main(int argc, char **argv)
 
     dust.push_back(s);
   }
+	
+  /** Adding ring of glowing particles **/
+
+	const int Nglow = Ndust / 33;   /* use less particles */
+	const Real D1   = D/3;          /* make ring less wider */
+	const Real H1   = H/3;          /*          and thinner */
+  const DustRing glow(Nglow, Ro, D1, H1, inclination, VelCurve, phi, nrScale, nzScale, ring_type);
+ 
+#if 0  /* uncomment this if you want massless glowing particles */
+  unsigned int glowID = maxMasslessGlowID+1;
+	for(int i=0; i < Nglow; i++)
+  {
+    s.mass = 1.0e-12;
+    s.pos[0] = glow.ptcl[i].pos.x;
+    s.pos[1] = glow.ptcl[i].pos.y;
+    s.pos[2] = glow.ptcl[i].pos.z;
+    s.vel[0] = glow.ptcl[i].vel.x;
+    s.vel[1] = glow.ptcl[i].vel.y;
+    s.vel[2] = glow.ptcl[i].vel.z;
+    s.phi = glowID++;
+
+    dust.push_back(s);
+  }
+#else /* otherwise they will have mass equal to the disk star particles */
+  unsigned int glowID = maxMassiveGlowID+1;
+	for(int i=0; i < Nglow; i++)
+  {
+    s.mass = disk[0].mass;
+    s.pos[0] = glow.ptcl[i].pos.x;
+    s.pos[1] = glow.ptcl[i].pos.y;
+    s.pos[2] = glow.ptcl[i].pos.z;
+    s.vel[0] = glow.ptcl[i].vel.x;
+    s.vel[1] = glow.ptcl[i].vel.y;
+    s.vel[2] = glow.ptcl[i].vel.z;
+    s.phi = glowID++;
+
+    dust.push_back(s);
+  }
+#endif
 
   //End dust magic
 
