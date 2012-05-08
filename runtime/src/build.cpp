@@ -318,7 +318,7 @@ void octree::build (tree_structure &tree) {
   /******  build the levels *********/
   
   // set devMemCountsx to 1 because it is used to early out when it hits zero
-#if 1
+#if 0
   build_tree_node_levels(*this, validList, compactList, levelOffset, maxLevel, execStream->s());
 #else
   this->resetCompact();
