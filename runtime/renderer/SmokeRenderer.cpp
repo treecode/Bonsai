@@ -80,10 +80,10 @@ SmokeRenderer::SmokeRenderer(int numParticles) :
 	m_maxDepth(1.0f),
 	m_enableAA(false),
 	m_starBlurRadius(40.0f),
+	m_starThreshold(1.0f),
     m_starPower(2.0f),
-	m_starIntensity(0.5f),
-	m_starThreshold(0.0f),
-    m_glowRadius(10.0f),
+	m_starIntensity(0.0f),
+	m_glowRadius(10.0f),
     m_glowIntensity(0.5f),
 	m_ageScale(5.0f),
 	m_enableVolume(false),
@@ -121,6 +121,7 @@ SmokeRenderer::SmokeRenderer(int numParticles) :
     //m_downSampleProg = new GLSLProgram(passThruVS, downSample4PS);
 	m_downSampleProg = new GLSLProgram(passThruVS, downSample2PS);
     m_gaussianBlurProg = new GLSLProgram(passThruVS, gaussianBlurPS);
+	m_thresholdProg = new GLSLProgram(passThruVS, thresholdPS);
 
     m_skyboxProg = new GLSLProgram(skyboxVS, skyboxPS);
 
@@ -175,7 +176,7 @@ SmokeRenderer::~SmokeRenderer()
     glDeleteTextures(1, &m_lightDepthTexture);
 	glDeleteTextures(1, &mPosBufferTexture);
 
-    glDeleteTextures(3, m_imageTex);
+    glDeleteTextures(4, m_imageTex);
     glDeleteTextures(1, &m_depthTex);
 
 	glDeleteTextures(1, &m_noiseTex);
@@ -815,22 +816,30 @@ void SmokeRenderer::doStarFilter()
 {
     glViewport(0, 0, m_imageW, m_imageH);
 
+#if 1
+	// threshold
+	m_thresholdProg->enable();
+	m_thresholdProg->setUniform1f("intensity", m_starPower);
+	m_thresholdProg->setUniform1f("threshold", m_starThreshold);
+	processImage(m_thresholdProg, m_imageTex[0], m_imageTex[3]);
+#endif
+
     // star filter
 	// horizontal
 	m_starFilterProg->enable();
-	m_starFilterProg->setUniform1f("intensity", m_starPower);
-	m_starFilterProg->setUniform1f("threshold", m_starThreshold);
 	m_starFilterProg->setUniform1f("radius", m_starBlurRadius);
 	m_starFilterProg->setUniform2f("texelSize", 2.0f / (float) m_imageW, 0.0f);	// axis aligned
 	//m_starFilterProg->setUniform2f("texelSize", 2.0f / (float) m_imageW, 2.0f / (float) m_imageH);	// diagonal
     m_starFilterProg->bindTexture("kernelTex", m_rainbowTex, GL_TEXTURE_2D, 1);
-	processImage(m_starFilterProg, m_imageTex[0], m_imageTex[1]);
+	processImage(m_starFilterProg, m_imageTex[3], m_imageTex[1]);
+	//processImage(m_starFilterProg, m_imageTex[0], m_imageTex[1]);
 
 	// vertical
 	m_starFilterProg->enable();
 	m_starFilterProg->setUniform2f("texelSize", 0.0f, 2.0f / (float) m_imageW);	// axis aligned
 	//m_starFilterProg->setUniform2f("texelSize", -2.0f / (float) m_imageW, 2.0f / (float) m_imageH);	// diagonal
-    processImage(m_starFilterProg, m_imageTex[0], m_imageTex[2]);
+    processImage(m_starFilterProg, m_imageTex[3], m_imageTex[2]);
+	//processImage(m_starFilterProg, m_imageTex[0], m_imageTex[2]);
 }
 
 void SmokeRenderer::doGlowFilter()
@@ -1111,7 +1120,7 @@ GLuint SmokeRenderer::createNoiseTexture(int w, int h, int d)
 void SmokeRenderer::createBuffers(int w, int h)
 {
     if (m_imageTex[0]) {
-        glDeleteTextures(3, m_imageTex);
+        glDeleteTextures(4, m_imageTex);
         glDeleteTextures(1, &m_depthTex);
 
         glDeleteTextures(2, m_downSampledTex);
@@ -1131,6 +1140,7 @@ void SmokeRenderer::createBuffers(int w, int h)
     m_imageTex[0] = createTexture(GL_TEXTURE_2D, m_imageW, m_imageH, format, GL_RGBA);
     m_imageTex[1] = createTexture(GL_TEXTURE_2D, m_imageW, m_imageH, format, GL_RGBA);
     m_imageTex[2] = createTexture(GL_TEXTURE_2D, m_imageW, m_imageH, format, GL_RGBA);
+    m_imageTex[3] = createTexture(GL_TEXTURE_2D, m_imageW, m_imageH, format, GL_RGBA);
 
     m_depthTex = createTexture(GL_TEXTURE_2D, m_imageW, m_imageH, GL_DEPTH_COMPONENT24_ARB, GL_DEPTH_COMPONENT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -1319,7 +1329,7 @@ void SmokeRenderer::initParams()
     m_params->AddParam(new Param<int>("blur passes", m_blurPasses, 0, 10, 1, &m_blurPasses));
 
     m_params->AddParam(new Param<float>("star blur radius", m_starBlurRadius, 0.0f, 100.0f, 1.0f, &m_starBlurRadius));
-    m_params->AddParam(new Param<float>("star threshold", m_starThreshold, 0.0f, 1.0f, 0.1f, &m_starThreshold));
+    m_params->AddParam(new Param<float>("star threshold", m_starThreshold, 0.0f, 10.0f, 0.1f, &m_starThreshold));
     m_params->AddParam(new Param<float>("star power", m_starPower, 0.0f, 100.0f, 0.1f, &m_starPower));
     m_params->AddParam(new Param<float>("star intensity", m_starIntensity, 0.0f, 1.0f, 0.1f, &m_starIntensity));
     m_params->AddParam(new Param<float>("glow radius", m_glowRadius, 0.0f, 100.0f, 1.0f, &m_glowRadius));

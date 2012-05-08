@@ -238,6 +238,7 @@ private:
     GLSLProgram         *m_downSampleProg;
     GLSLProgram         *m_gaussianBlurProg;
     GLSLProgram         *m_skyboxProg;
+	GLSLProgram         *m_thresholdProg;
 
     // image buffers
     FramebufferObject   *m_fbo;
@@ -247,7 +248,7 @@ private:
     int                 m_srcLightTexture;
     GLuint              m_lightDepthTexture;
 
-    GLuint              m_imageTex[3], m_depthTex;
+    GLuint              m_imageTex[4], m_depthTex;
     GLuint              m_downSampledTex[2];
 
     GLuint              m_rampTex;
