@@ -258,9 +258,9 @@ bool octree::iterate_once(IterationData &idata) {
     }
 
     //predict localtree
-    devContext.startTiming();
+    devContext.startTiming(execStream->s());
     predict(this->localTree);
-    devContext.stopTiming("Predict", 9);
+    devContext.stopTiming("Predict", 9, execStream->s());
     
     #ifdef USE_DUST
       //Predict, sort and set properties
@@ -285,13 +285,13 @@ bool octree::iterate_once(IterationData &idata) {
           //domains
           t1 = get_time();
           
-          devContext.startTiming();
+          devContext.startTiming(execStream->s());
           gpu_updateDomainDistribution(idata.lastGravTime);          
-          devContext.stopTiming("DomainUpdate", 6);
+          devContext.stopTiming("DomainUpdate", 6, execStream->s());
           
-          devContext.startTiming();
+          devContext.startTiming(execStream->s());
           gpuRedistributeParticles();
-          devContext.stopTiming("Exchange", 6);
+          devContext.stopTiming("Exchange", 6, execStream->s());
           
           needDomainUpdate = false;
           
@@ -325,22 +325,22 @@ bool octree::iterate_once(IterationData &idata) {
       //Rebuild the tree
       this->sort_bodies(this->localTree, needDomainUpdate);
 
-      devContext.startTiming();
+      devContext.startTiming(execStream->s());
       this->build(this->localTree);
-      devContext.stopTiming("Tree-construction", 2);
+      devContext.stopTiming("Tree-construction", 2, execStream->s());
 
-      devContext.startTiming();
+      devContext.startTiming(execStream->s());
       this->allocateTreePropMemory(this->localTree);
-      devContext.stopTiming("Memory", 11);      
+      devContext.stopTiming("Memory", 11, execStream->s());      
 
-      devContext.startTiming();
+      devContext.startTiming(execStream->s());
       this->compute_properties(this->localTree);
-      devContext.stopTiming("Compute-properties", 3);
+      devContext.stopTiming("Compute-properties", 3, execStream->s());
 
       #ifdef DO_BLOCK_TIMESTEP
-        devContext.startTiming();
+        devContext.startTiming(execStream->s());
         setActiveGrpsFunc(this->localTree);
-        devContext.stopTiming("setActiveGrpsFunc", 10);      
+        devContext.stopTiming("setActiveGrpsFunc", 10, execStream->s());      
         idata.Nact_since_last_tree_rebuild = 0;
       #endif
       
@@ -359,9 +359,9 @@ bool octree::iterate_once(IterationData &idata) {
     else
     {
       //Dont rebuild only update the current boxes
-      devContext.startTiming();
+      devContext.startTiming(execStream->s());
       this->compute_properties(this->localTree);
-      devContext.stopTiming("Compute-properties", 3);
+      devContext.stopTiming("Compute-properties", 3, execStream->s());
       
       #ifdef USE_DUST
         setDustGroupProperties(this->localTree);
@@ -371,17 +371,17 @@ bool octree::iterate_once(IterationData &idata) {
 
     //Approximate gravity
     t1 = get_time();
-    devContext.startTiming();
+    devContext.startTiming(gravStream->s());
     approximate_gravity(this->localTree);
-    devContext.stopTiming("Approximation", 4);
+    devContext.stopTiming("Approximation", 4, gravStream->s());
     
     
     if(nProcs > 1)  makeLET();
     
     #ifdef USE_DUST
-      devContext.startTiming();
+      devContext.startTiming(gravStream->s());
       approximate_dust(this->localTree);
-      devContext.stopTiming("Approximation_dust", 4);
+      devContext.stopTiming("Approximation_dust", 4, gravStream->s());
     #endif        
 
     gravStream->sync();
@@ -394,9 +394,9 @@ bool octree::iterate_once(IterationData &idata) {
     LOGF(stderr, "APPTIME [%d]: Iter: %d\t%g \n", procId, iter, idata.lastGravTime);
     
     //Corrector
-    devContext.startTiming();
+    devContext.startTiming(execStream->s());
     correct(this->localTree);
-    devContext.stopTiming("Correct", 8);
+    devContext.stopTiming("Correct", 8, execStream->s());
     
 
     #ifdef USE_DUST
@@ -407,9 +407,9 @@ bool octree::iterate_once(IterationData &idata) {
     if(nProcs > 1)
     {
       t1 = get_time();
-      devContext.startTiming();
+      devContext.startTiming(execStream->s());
       mpiSync();
-      devContext.stopTiming("Unbalance", 12);
+      devContext.stopTiming("Unbalance", 12, execStream->s());
       idata.lastWaitTime  += get_time() - t1;
       idata.totalWaitTime += idata.lastWaitTime;
     }
@@ -417,9 +417,9 @@ bool octree::iterate_once(IterationData &idata) {
     idata.Nact_since_last_tree_rebuild += this->localTree.n_active_particles;
 
     //Compute energies
-    devContext.startTiming();
+    devContext.startTiming(execStream->s());
     double de = compute_energies(this->localTree); de=de;
-    devContext.stopTiming("Energy", 7);
+    devContext.stopTiming("Energy", 7, execStream->s());
 
     if(snapshotIter > 0)
     {
@@ -497,9 +497,9 @@ void octree::iterate_setup(IterationData &idata) {
   t1 = get_time();
    
   //Approximate gravity
-  devContext.startTiming();
+  devContext.startTiming(gravStream->s());
   approximate_gravity(this->localTree);
-  devContext.stopTiming("Approximation", 4);
+  devContext.stopTiming("Approximation", 4, gravStream->s());
   
   #ifdef USE_DUST
       //Sort the dust
@@ -512,9 +512,9 @@ void octree::iterate_setup(IterationData &idata) {
       //Set the group properties of dust
       setDustGroupProperties(this->localTree);
       
-      devContext.startTiming();
+      devContext.startTiming(gravStream->s());
       approximate_dust(this->localTree);
-      devContext.stopTiming("Approximatin_dust", 4);
+      devContext.stopTiming("Approximatin_dust", 4, gravStream->s());
       //Correct
       correctDustStep(this->localTree);  
   #endif
@@ -894,9 +894,9 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
   
   remoteTree.fullRemoteTree.h2d(bufferSize); //Only copy required data
   tree.activePartlist.zeroMem();
-//   devContext.startTiming();  
+//   devContext.startTiming(gravStream->s());  
   approxGravLET.execute(gravStream->s());
-//   devContext.stopTiming("Approximation_let", 5);   
+//   devContext.stopTiming("Approximation_let", 5, gravStream->s());   
   
   letRunning = true;
 

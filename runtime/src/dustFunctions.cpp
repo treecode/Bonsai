@@ -107,7 +107,7 @@ void octree::sort_dust(tree_structure &tree)
 {
   if(tree.n_dust == 0) return;
   
-  devContext.startTiming();
+  devContext.startTiming(execStream->s());
 
   //Start reduction to get the boundary's of the dust
   boundaryReduction.set_arg<int>(0, &tree.n_dust);
@@ -259,7 +259,7 @@ void octree::sort_dust(tree_structure &tree)
   
   
   
-  devContext.stopTiming("DustSortReorder", 0);  
+  devContext.stopTiming("DustSortReorder", -1, execStream->s());  
   
 }
   
