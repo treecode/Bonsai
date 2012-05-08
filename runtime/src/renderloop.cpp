@@ -23,6 +23,8 @@
 #include "render_particles.h"
 #include "SmokeRenderer.h"
 #include "vector_math.h"
+#include "timer.h"
+#include "paramgl.h"
 
 extern void displayTimers();    // For profiling counter display
 
@@ -99,6 +101,29 @@ void drawWireBox(float3 boxMin, float3 boxMax) {
 #endif
 }
 
+void beginDeviceCoords(void)
+{
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glOrtho(0, glutGet(GLUT_WINDOW_WIDTH), 0, glutGet(GLUT_WINDOW_HEIGHT), -1, 1);
+
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+}
+
+void glutStrokePrint(float x, float y, const char *s, void *font)
+{
+  glPushMatrix();
+  glTranslatef(x, y, 0.0f);
+  int len = (int) strlen(s);
+  for (int i = 0; i < len; i++) {
+      glutStrokeCharacter(font, s[i]);
+  }
+  glPopMatrix();
+}
+
 #define MAX_PARTICLES 5000000
 class BonsaiDemo
 {
@@ -118,7 +143,9 @@ public:
       m_displayLightBuffer(false),
       m_octreeDisplayLevel(3),
       m_flyMode(false),
-	  m_fov(60.0f)
+	  m_fov(60.0f),
+      m_simTime(0.0),
+      m_renderTime(0.0)
   {
     m_windowDims = make_int2(1024, 768);
     m_cameraTrans = make_float3(0, -2, -100);
@@ -133,15 +160,20 @@ public:
     tree->iterate_setup(m_idata);
 
    
-   int arraySize = tree->localTree.n;
-   arraySize    += tree->localTree.n_dust;
+    int arraySize = tree->localTree.n;
+    arraySize    += tree->localTree.n_dust;
  
-//    m_particleColors  = new float4[arraySize];
-   m_particleColors  = new float4[MAX_PARTICLES];   
- 
+    //m_particleColors  = new float4[arraySize];
+    m_particleColors  = new float4[MAX_PARTICLES];   
+    initBodyColors();
+
 	m_renderer.setFOV(m_fov);
 	m_renderer.setWindowSize(m_windowDims.x, m_windowDims.y);
 	m_renderer.setDisplayMode(m_displayMode);
+
+    for(int i=0; i<256; i++) m_keyDown[i] = false;
+
+    StartTimer();
   }
 
   ~BonsaiDemo() {
@@ -172,15 +204,50 @@ public:
   }
 
   void step() { 
+    double startTime = GetTimer();
     if (!m_paused && iterationsRemaining)
     {
       iterationsRemaining = !m_tree->iterate_once(m_idata); 
     }
+    m_simTime = GetTimer() - startTime;
+
     if (!iterationsRemaining)
       printf("No iterations Remaining!\n");
   }
 
-  void display() { 
+  void drawStats(int bodies, double time)
+  {
+    //beginWinCoords();
+    //glPrint(0, 15, "test", GLUT_BITMAP_9_BY_15);
+
+    beginDeviceCoords();
+    glScalef(0.25f, 0.25f, 1.0f);
+
+    glEnable(GL_LINE_SMOOTH);
+    //glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_BLEND);
+    glDisable(GL_DEPTH_TEST);
+    glColor4f(0.0f, 1.0f, 0.0f, 1.0f);
+
+    float x = 50.0f;
+    float y = 50.0f;
+    char str[256];
+    sprintf(str, "TIME: %.2f ms", time);
+    glutStrokePrint(x, y, str, GLUT_STROKE_ROMAN);
+
+    y += 150.0f;
+    sprintf(str, "BODIES: %d", bodies);
+    glutStrokePrint(x, y, str, GLUT_STROKE_ROMAN);
+
+    glDisable(GL_BLEND);
+    endWinCoords();
+  }
+
+  void display() {
+    double startTime = GetTimer();
+    double getBodyDataTime = startTime;
+
     if (m_renderingEnabled)
     {
       //Check if we need to update the number of particles
@@ -190,13 +257,12 @@ public:
         m_renderer.setNumberOfParticles(m_tree->localTree.n + m_tree->localTree.n_dust);
         fitCamera(); //Try to get the model back in view
       }
-            
-      getBodyData();
       
-
+      getBodyData();
+      getBodyDataTime = GetTimer();
 
       moveCamera();
-#if 0
+#if 1
       m_cameraTransLag += (m_cameraTrans - m_cameraTransLag) * m_inertia;
       m_cameraRotLag += (m_cameraRot - m_cameraRotLag) * m_inertia;
 #else
@@ -236,6 +302,14 @@ public:
         }
       }
     }
+
+    //glFinish();
+    m_renderTime = GetTimer() - startTime;
+    //m_renderTime = getBodyDataTime - startTime;
+
+    // display stats
+    //drawStats(m_tree->localTree.n + m_tree->localTree.n_dust, m_renderTime);
+    drawStats(m_tree->localTree.n + m_tree->localTree.n_dust, m_simTime + m_renderTime);
   }
 
   void mouse(int button, int state, int x, int y)
@@ -316,7 +390,7 @@ public:
     //float flySpeed = (m_keyModifiers & GLUT_ACTIVE_SHIFT) ? 4.0f : 1.0f;
 
 	// Z
-    if (m_keyDown['w']) {
+    if (m_keyDown['w'] || (m_buttonState & 1)) {
 	  // foward
 	  m_cameraTrans.x += m_modelView[2] * flySpeed;
 	  m_cameraTrans.y += m_modelView[6] * flySpeed;
@@ -470,70 +544,34 @@ public:
 
   ParamListGL *getParams() { return m_renderer.getParams(); }
 
-  float  frand() { return rand() / (float) RAND_MAX; }
-  float4 randColor(float scale) { return make_float4(frand()*scale, frand()*scale, frand()*scale, 0.0f); }
+  //float  frand() { return rand() / (float) RAND_MAX; }
+  //float4 randColor(float scale) { return make_float4(frand()*scale, frand()*scale, frand()*scale, 0.0f); }
 
-#if 0
- void getBodyData() {
-    //m_tree->localTree.bodies_pos.d2h();
-    m_tree->localTree.bodies_ids.d2h();
-    //m_tree->localTree.bodies_vel.d2h();
+  // integer hash function (credit: rgba/iq)
+  int ihash(int n)
+  {
+      n=(n<<13)^n;
+      return (n*(n*n*15731+789221)+1376312589) & 0x7fffffff;
+  }
 
-    int n = m_tree->localTree.n;
+  // returns random float between 0 and 1
+  float frand(int n)
+  {
+	  return ihash(n) / 2147483647.0f;
+  }
 
-    float4 starColor = make_float4(1.0f, 1.0f, 0.5f, 1.0f);	// yellowish
-    //float4 starColor = make_float4(1.0f, 1.0f, 1.0f, 1.0f);		// white
-    float4 starColor2 = make_float4(1.0f, 0.2f, 0.5f, 1.0f) * make_float4(100.0f, 100.0f, 100.0f, 1.0f);		// purplish
-
-    float overbright = 1.0f;
-    starColor *= make_float4(overbright, overbright, overbright, 1.0f);
-
-    float4 dustColor = make_float4(0.0f, 0.0f, 0.1f, 0.0f);	// blue
-    //float4 dustColor = make_float4(0.1f, 0.1f, 0.1f, 0.0f);	// grey
-
-    //float4 *colors = new float4[n];
-    float4 *colors = m_particleColors;
-
-    for (int i = 0; i < n; i++) {
-      int id = m_tree->localTree.bodies_ids[i];
-	    //printf("%d: id %d, mass: %f\n", i, id, m_tree->localTree.bodies_pos[i].w);
-	    srand(id*1783);
-#if 1
-	    float r = frand();
-	    if (id >= 0 && id < 100000000) {
-		    // dust -- not used yet
-		    colors[i] = make_float4(1, 0, 0, 1);
-	    } else if (id >= 100000000 && id < 200000000) {
-	      // dark matter
-//         colors[i] = starColor + randColor(0.1f);
-//         colors[i] = starColor; // * powf(r, 2.0f);
-		  colors[i] = (frand() < 0.999f) ? starColor * r : starColor2;
-        //colors[i] = starColor;
-	    } else {
-		    // stars
-		    colors[i] = dustColor * make_float4(r, r, r, 1.0f);
-	    }
-#else
-	    // test sorting
-	    colors[i] = make_float4(frand(), frand(), frand(), 1.0f);
-#endif
+  void initBodyColors()
+  {
+    int n = m_tree->localTree.n + m_tree->localTree.n_dust;   
+    for(int i=0; i<n; i++) {
+      m_particleColors[i] = make_float4(1.0f, 1.0f, 1.0f, 1.0f);
     }
+  }
 
-    //m_renderer.setPositions((float*)&m_tree->localTree.bodies_pos[0], n);
-    //m_renderer.setColors((float*)colors, n);
-    m_renderer.setNumParticles(n);
-    //m_renderer.setPositions((float*)&m_tree->localTree.bodies_pos[0]);
-    m_renderer.setPositionsDevice((float*) m_tree->localTree.bodies_pos.d());
-    m_renderer.setColors((float*)colors);
-
-    //delete [] colors;
-  }//end getBodyData
-#else
- void getBodyData() {
+  void getBodyData() {
 
    int n = m_tree->localTree.n + m_tree->localTree.n_dust;   
-   //Above is save since it is 0 if we dont use dust
- 
+   //Above is safe since it is 0 if we dont use dust
 
     #ifdef USE_DUST
      //We move the dust data into the position data (on the device :) )
@@ -544,30 +582,31 @@ public:
     #endif    
 
     m_tree->localTree.bodies_ids.d2h();   
-  
     
-    float4 starColor = make_float4(1.0f, 1.0f, 0.5f, 1.0f);  // yellowish
-    //float4 starColor = make_float4(1.0f, 1.0f, 0.0f, 1.0f);               // white
+    //float4 starColor = make_float4(1.0f, 1.0f, 0.5f, 1.0f);  // yellowish
+    float4 starColor = make_float4(1.0f, 1.0f, 1.0f, 1.0f);               // white
     float4 starColor2 = make_float4(1.0f, 0.2f, 0.5f, 1.0f) * make_float4(100.0f, 100.0f, 100.0f, 1.0f);             // redish
     float4 starColor3 = make_float4(0.1f, 0.1f, 1.0f, 1.0f) * make_float4(100.0f, 100.0f, 100.0f, 1.0f);             // bluish
 
+    float4 bulgeColor = make_float4(1.0f, 1.0f, 0.5f, 1.0f);  // yellowish
+
     //float4 dustColor = make_float4(0.0f, 0.0f, 0.1f, 0.0f);      // blue
     //float4 dustColor =  make_float4(0.1f, 0.1f, 0.1f, 0.0f);    // grey
-	float4 dustColor = make_float4(0.5f, 0.2f, 0.0f, 1.0f);
+	float4 dustColor = make_float4(0.1f, 0.05f, 0.0f, 0.0f);  // brownish
+    //float4 dustColor = make_float4(0.0f, 0.2f, 0.1f, 0.0f);  // green
+    //float4 dustColor = make_float4(0.0f, 0.0f, 0.0f, 0.0f);  // black
 
-	float4 darkMatterColor = make_float4(0.0f, 0.0f, 0.1f, 0.0f);      // blue
+    float4 darkMatterColor = make_float4(0.0f, 0.2f, 0.4f, 1.0f);      // blue
 
     float4 *colors = m_particleColors;
 
-#if 0
-		srand48(1783);  /* keep this srand out of the loop, otherwise it get WAY TOO SLOW on LINUX */
-#endif
+#if 1
     for (int i = 0; i < n; i++)
     {
       int id =  m_tree->localTree.bodies_ids[i];
-            //printf("%d: id %d, mass: %f\n", i, id, m_tree->localTree.bodies_pos[i].w);
+      //printf("%d: id %d, mass: %f\n", i, id, m_tree->localTree.bodies_pos[i].w);
 #if 1
-            
+      float r = frand(id);
       if (id >= 0 && id < 50000000)     //Disk
       {
         //colors[i] = make_float4(0, 1, 0, 1);
@@ -578,32 +617,32 @@ public:
       else if (id >= 50000000 && id < 100000000) //Dust
       {
         //colors[i] = starColor;
-		colors[i] = dustColor;
+		colors[i] = dustColor * make_float4(r, r, r, 1.0f);
       } 
       else if (id >= 100000000 && id < 200000000) //Bulge
       {
-		  colors[i] = starColor;
+		  //colors[i] = starColor;
+        colors[i] = bulgeColor;
 	  } 
       else //>= 200000000, Dark matter
       {
          //colors[i] = dustColor;
-		  colors[i] = darkMatterColor;
+		  colors[i] = darkMatterColor * make_float4(r, r, r, 1.0f);
       }            
       
 #else
-            // test sorting
-            colors[i] = make_float4(frand(), frand(), frand(), 1.0f);
+      // test sorting
+      colors[i] = make_float4(frand(), frand(), frand(), 1.0f);
 #endif
     }
-
+#endif
 
     m_renderer.setNumParticles( m_tree->localTree.n + m_tree->localTree.n_dust);    
-    m_renderer.setPositionsDevice((float*) m_tree->localTree.bodies_pos.d());
+    m_renderer.setPositionsDevice((float*) m_tree->localTree.bodies_pos.d());   // use d2d copy
+    //m_tree->localTree.bodies_pos.d2h(); m_renderer.setPositions((float *) &m_tree->localTree.bodies_pos[0]);
     m_renderer.setColors((float*)colors);
 
   }
-#endif 
-
 
 
   void displayOctree() {
@@ -678,6 +717,8 @@ public:
 
   bool m_keyDown[256];
   int m_keyModifiers;
+
+  double m_simTime, m_renderTime;
 };
 
 BonsaiDemo *theDemo = NULL;
@@ -694,6 +735,7 @@ void display()
   theDemo->step();
   theDemo->display();
 
+  //glutReportErrors();
   glutSwapBuffers();
 }
 
@@ -793,7 +835,7 @@ void initGL(int argc, char** argv)
 
 
 void initAppRenderer(int argc, char** argv, octree *tree, octree::IterationData &idata) {
-  initGL(argc, argv);
+  //initGL(argc, argv);
   theDemo = new BonsaiDemo(tree, idata);
   glutMainLoop();
 }

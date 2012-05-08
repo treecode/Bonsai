@@ -68,6 +68,7 @@ extern void displayTimers()
 
 #ifdef USE_OPENGL
 #include "renderloop.h"
+#include <cuda_gl_interop.h>
 #endif
 
 void read_dumbp_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyVelocities,  vector<int> &bodiesIDs,  float eps2,
@@ -823,6 +824,12 @@ int main(int argc, char** argv)
   NTotal = NFirst = NSecond = NThird = 0;
 
   initTimers();
+
+#ifdef USE_OPENGL
+  // create OpenGL context first, and register for interop
+  initGL(argc, argv);
+  cudaGLSetGLDevice(devID);
+#endif
 
   //Creat the octree class and set the properties
   octree *tree = new octree(argv, devID, theta, eps, snapshotFile, snapshotIter,  timeStep, (int)tEnd, killDistance, (int)remoDistance, snapShotAdd, rebuild_tree_rate);

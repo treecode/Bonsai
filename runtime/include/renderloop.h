@@ -3,6 +3,7 @@
 
 #include "octree.h"
 
+void initGL(int argc, char** argv);
 void initAppRenderer(int argc, char** argv, octree *tree, octree::IterationData &idata);
 
 #endif // _RENDERLOOP_H_

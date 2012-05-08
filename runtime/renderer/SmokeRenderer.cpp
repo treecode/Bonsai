@@ -293,9 +293,16 @@ void SmokeRenderer::setNumberOfParticles(uint n_particles)
 
 void SmokeRenderer::setPositions(float *pos)
 {
-	memcpy(mParticlePos.getHostPtr(), pos, mNumParticles*4*sizeof(float));
-	mParticlePos.copy(GpuArray<float4>::HOST_TO_DEVICE);
-//  glutReportErrors();
+#if 0
+	//memcpy(mParticlePos.getHostPtr(), pos, mNumParticles*4*sizeof(float));
+	//ParticlePos.copy(GpuArray<float4>::HOST_TO_DEVICE);
+#else
+    // XXX - why is this so much faster?
+    int posVbo = mParticlePos.getVbo();
+    glBindBuffer(GL_ARRAY_BUFFER_ARB, posVbo);
+    glBufferSubData(GL_ARRAY_BUFFER_ARB, 0, mNumParticles * 4 * sizeof(float), pos);
+    glBindBuffer( GL_ARRAY_BUFFER_ARB, 0);
+#endif
 }
 
 void SmokeRenderer::setPositionsDevice(float *posD)
@@ -313,15 +320,14 @@ void SmokeRenderer::setColors(float *color)
 		glGenBuffers(1, &mColorVbo);
 		glBindBuffer(GL_ARRAY_BUFFER_ARB, mColorVbo);
 // 		glBufferData(GL_ARRAY_BUFFER_ARB, mNumParticles * 4 * sizeof(float), color, GL_DYNAMIC_DRAW);
-                //Jeroen, I allocate the maximum number of particles
-                glBufferData(GL_ARRAY_BUFFER_ARB, mMaxParticles * 4 * sizeof(float), color, GL_DYNAMIC_DRAW);                
+        //Jeroen, I allocate the maximum number of particles
+        glBufferData(GL_ARRAY_BUFFER_ARB, mMaxParticles * 4 * sizeof(float), color, GL_DYNAMIC_DRAW);                
 	}
 
 	glBindBuffer(GL_ARRAY_BUFFER_ARB, mColorVbo);
 	//glBufferData(GL_ARRAY_BUFFER_ARB, mNumParticles * 4 * sizeof(float), color, GL_DYNAMIC_DRAW);
 	glBufferSubData(GL_ARRAY_BUFFER_ARB, 0, mNumParticles * 4 * sizeof(float), color);
 	glBindBuffer( GL_ARRAY_BUFFER_ARB, 0);
-//	glutReportErrors();
 }
 
 void SmokeRenderer::depthSort()
@@ -998,12 +1004,13 @@ void SmokeRenderer::render()
 {
 	switch(mDisplayMode) {
 	case POINTS:
-		glPointSize(1.0f);
+		glPointSize(2.0f);
 		glEnable(GL_DEPTH_TEST);
 		glColor4f(1.0, 1.0, 1.0, 1.0f);
 		m_simpleProg->enable();
 		drawPoints(0, mNumParticles, false);
 		m_simpleProg->disable();
+        glPointSize(1.0f);
 		break;
 
 	case SPRITES:
@@ -1030,7 +1037,7 @@ void SmokeRenderer::render()
         glViewport(0, 0, mWindowW, mWindowH);
     }
 
-    glutReportErrors();
+    //glutReportErrors();
 }
 
 // render scene depth to texture
