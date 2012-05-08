@@ -473,13 +473,26 @@ void main()                                                                     
 }                                                                                     \n
 );
 
+const char *thresholdPS = STRINGIFY(
+uniform sampler2D tex;                                                                \n
+uniform float threshold;
+uniform float intensity;
+void main()                                                                           \n
+{
+	vec4 s = texture2D(tex, gl_TexCoord[0].xy);	\n
+	float i = dot(s.rgb, vec3(0.333));
+	s *= smoothstep(threshold, threshold+0.1, i);
+	//s = pow(s, intensity);
+	s *= intensity;
+	gl_FragColor = s;
+}
+);
+
 const char *starFilterPS = STRINGIFY(
 uniform sampler2D tex;                                                                \n
 uniform sampler2D kernelTex;                                                          \n
 uniform vec2 texelSize;                                                               \n
 uniform float radius;																  \n
-uniform float intensity;
-uniform float threshold;
 void main()                                                                           \n
 {                                                                                     \n
     vec4 c = vec4(0.0, 0.0, 0.0, 0.0);                                                               \n
@@ -493,11 +506,8 @@ void main()                                                                     
 		float w = 1.0 - abs(t);	// triangle filter
 		vec4 s = texture2D(tex, uv + i*texelSize);				      \n
         vec4 k = texture2D(kernelTex, vec2(t*2, 0));
-		//s = pow(max(0, s), intensity);
-        s *= smoothstep(threshold, threshold+0.1, s.x);
-		s *= intensity;
-		//c += w * s;
-        c += w * s * (k*0.9 + 0.1);
+		//k.rgb += vec3(0.1);
+		c += w * k * s;
 		wsum += w;
 	}
 	//c /= radius*2+1;

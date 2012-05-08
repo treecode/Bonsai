@@ -196,9 +196,13 @@ public:
 
 
       moveCamera();
+#if 0
       m_cameraTransLag += (m_cameraTrans - m_cameraTransLag) * m_inertia;
       m_cameraRotLag += (m_cameraRot - m_cameraRotLag) * m_inertia;
-
+#else
+	  m_cameraTransLag = m_cameraTrans;
+	  m_cameraRotLag = m_cameraRot;
+#endif
       // view transform
       {
         glMatrixMode(GL_MODELVIEW);
@@ -544,13 +548,14 @@ public:
     
     float4 starColor = make_float4(1.0f, 1.0f, 0.5f, 1.0f);  // yellowish
     //float4 starColor = make_float4(1.0f, 1.0f, 0.0f, 1.0f);               // white
-    float4 starColor2 = make_float4(1.0f, 0.2f, 0.5f, 1.0f) * make_float4(100.0f, 100.0f, 100.0f, 1.0f);             // purplish
+    float4 starColor2 = make_float4(1.0f, 0.2f, 0.5f, 1.0f) * make_float4(100.0f, 100.0f, 100.0f, 1.0f);             // redish
+    float4 starColor3 = make_float4(0.1f, 0.1f, 1.0f, 1.0f) * make_float4(100.0f, 100.0f, 100.0f, 1.0f);             // bluish
 
-    float overbright = 1.0f;
-    starColor *= make_float4(overbright, overbright, overbright, 1.0f);
-
-    float4 dustColor = make_float4(0.0f, 0.0f, 0.1f, 0.0f);      // blue
+    //float4 dustColor = make_float4(0.0f, 0.0f, 0.1f, 0.0f);      // blue
     //float4 dustColor =  make_float4(0.1f, 0.1f, 0.1f, 0.0f);    // grey
+	float4 dustColor = make_float4(0.5f, 0.2f, 0.0f, 1.0f);
+
+	float4 darkMatterColor = make_float4(0.0f, 0.0f, 0.1f, 0.0f);      // blue
 
     float4 *colors = m_particleColors;
 
@@ -565,24 +570,24 @@ public:
             
       if (id >= 0 && id < 50000000)     //Disk
       {
-        colors[i] = make_float4(0, 0, 1, 1);        
+        //colors[i] = make_float4(0, 1, 0, 1);
+          colors[i] = ((id % 100) != 0) ? 
+						starColor :
+						((id / 100) & 1) ? starColor2 : starColor3;
       } 
       else if (id >= 50000000 && id < 100000000) //Dust
       {
-        colors[i] = starColor;
-
+        //colors[i] = starColor;
+		colors[i] = dustColor;
       } 
       else if (id >= 100000000 && id < 200000000) //Bulge
       {
-#if 0      /* no need to drand48()< just use id to pick same particles :) */
-          colors[i] = (drand48() < 0.99f) ? starColor : starColor2;          
-#else
-          colors[i] = ((id%100) == 0) ? starColor : starColor2;          
-#endif
-      } 
+		  colors[i] = starColor;
+	  } 
       else //>= 200000000, Dark matter
       {
-         colors[i] = dustColor;
+         //colors[i] = dustColor;
+		  colors[i] = darkMatterColor;
       }            
       
 #else

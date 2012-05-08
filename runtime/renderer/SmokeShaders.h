@@ -15,6 +15,7 @@ extern const char *mblurVS, *mblurGS;
 extern const char *passThruVS, *transformVS, *texture2DPS;
 extern const char *blurPS, *blur3x3PS, *blur2PS;
 extern const char *starFilterPS, *compositePS;
+extern const char *thresholdPS;
 extern const char *downSample4PS, *downSample2PS;
 extern const char *gaussianBlurPS;
 extern const char *floorVS, *floorPS;

@@ -6,6 +6,16 @@ void octree::allocateDustMemory(tree_structure &tree)
 {
   if(tree.n_dust == 0) return;
   
+  #ifdef USE_B40C
+    if(tree.n_dust > tree.n)
+    {
+      delete sorter;
+      sorter = new Sort90(tree.n_dust);
+    }
+  #endif
+        
+  
+  
   if( tree.dust_pos.get_size() > 0)
   {
     //Dust buffers, resize only
@@ -33,6 +43,15 @@ void octree::allocateDustMemory(tree_structure &tree)
   {
     //Dust buffers
     int n_dust = tree.n_dust;  
+    
+    #ifdef USE_B40C
+      if(tree.n_dust > tree.n)
+      {
+        delete sorter;
+        sorter = new Sort90(tree.n_dust);
+      }
+    #endif    
+    
     tree.dust_pos.cmalloc(n_dust+1, false);     
     tree.dust_key.cmalloc(n_dust+1, false);     
     tree.dust_vel.cmalloc(n_dust, false);
