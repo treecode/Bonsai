@@ -183,7 +183,7 @@ int main(int argc, char **argv)
 	FILE *rv1 = NULL,*rv2 = NULL;
 
 	float ds=1.0, vs, ms=1.0;
-	double m1, m2, mu1, mu2, vp;
+	double m1, m2, mu1, mu2, vp = 0;
 	float b=1.0, rsep=10.0;
 	float x, y, vx, vy, x1, y1, vx1, vy1 ,  x2, y2, vx2, vy2;
 	float theta, tcoll;
@@ -290,6 +290,7 @@ int main(int argc, char **argv)
 	double massGalaxy2 = 0;
 
 	int NHALO =0, NDISK =0, NBULGE = 0, NDUST = 0;
+	int NDISKGLOW = 0, NDUSTGLOW = 0;
 
 
 	for(i=0; i < NHalo1; i++)
@@ -319,8 +320,12 @@ int main(int argc, char **argv)
 
 		if(r[NHalo1+i].ID >= 100000000)
 			NBULGE++;
+		else if(r[NHalo1+i].ID >= 70000000)
+			NDUSTGLOW++;           
 		else if(r[NHalo1+i].ID >= 50000000)
 			NDUST++;           
+		else if(r[NHalo1+i].ID >= 40000000)
+			NDISKGLOW++;
 		else
 			NDISK++;
 
@@ -329,8 +334,8 @@ int main(int argc, char **argv)
 
 
 	fprintf(stderr,"nobj in galaxy 1: %d   Mass: %f\n",NTotal1, massGalaxy1);
-	fprintf(stderr,"nobj in galaxy 1: halo %d disk %d bulge %d dust %d\n",
-			NHALO, NDISK, NBULGE , NDUST);
+	fprintf(stderr,"nobj in galaxy 1: halo %d disk %d diskGlow %d bulge %d dust %d dustGlow %d\n",
+			NHALO, NDISK, NDISKGLOW, NBULGE , NDUST, NDUSTGLOW);
 
 	centerGalaxy(r, NTotal1); /* centre everything of the main galaxy */
 
@@ -377,18 +382,23 @@ int main(int argc, char **argv)
 		r2[NHalo2+i].eps      = s.eps;
 		massGalaxy2          += s.mass;
 
-		if(r[NHalo2+i].ID >= 100000000)
+		const int ID = (int)s.phi;
+		if(ID >= 100000000)
 			NBULGE++;
-		else if(r[NHalo2+i].ID >= 50000000)
+		else if(ID >= 70000000)
+			NDUSTGLOW++;           
+		else if(ID >= 50000000)
 			NDUST++;           
+		else if(ID >= 40000000)
+			NDISKGLOW++;
 		else
-			NDISK++;          
+			NDISK++;
 	}
 
 
 	fprintf(stderr,"nobj in galaxy 2: %d   massTest: %f\n",NTotal2, massGalaxy2);
-	fprintf(stderr,"nobj in galaxy 2: halo %d disk %d bulge %d dust %d\n",
-			NHALO, NDISK, NBULGE , NDUST);       
+	fprintf(stderr,"nobj in galaxy 2: halo %d disk %d diskGlow %d bulge %d dust %d dustGlow %d\n",
+			NHALO, NDISK, NDISKGLOW, NBULGE , NDUST, NDUSTGLOW);
 
 	centerGalaxy(r2, NTotal2); /* centre everything of the added galaxy */
 
@@ -464,13 +474,6 @@ int main(int argc, char **argv)
 		r2[i].vx = vs*r2[i].vx + vx2;
 		r2[i].vy = vs*r2[i].vy + vy2;
 		r2[i].vz = vs*r2[i].vz;
-
-		if(r2[i].ID >= 50000000 && r2[i].ID < 100000000)
-		{
-			//                    r2[i].vx += 100;
-		}
-
-
 	}
 
 
@@ -544,12 +547,14 @@ int main(int argc, char **argv)
 		s.phi       = r[i].ID;    
 		s.eps       = r[i].eps;;    
 
+#if 0
 		if(s.phi >= 100000000)
 			maxBulgeID  = std::max(maxBulgeID, s.phi);
 		else if(s.phi >= 50000000)
 			maxDustID  = std::max(maxDustID, s.phi);            
 		else
 			maxDiskID  = std::max(maxDiskID, s.phi);
+#endif
 
 		fwrite(&s, sizeof(s), 1, outfile);
 	}
@@ -573,12 +578,14 @@ int main(int argc, char **argv)
 		s.eps       = r2[i].eps;; 
 		s.phi       = r2[i].ID; 
 
+#if 0
 		if(s.phi >= 100000000)
 			s.phi       = maxBulgeID++;   
 		else if(s.phi >= 50000000)
 			s.phi       = maxDustID++;            
 		else
 			s.phi       = maxDiskID++;   
+#endif
 
 
 		fwrite(&s, sizeof(s), 1, outfile);

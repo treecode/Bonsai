@@ -25,20 +25,6 @@ float float_in(const float a, const float b)
 }
 
 
-void print_help(char *name)
-{
-  fprintf(stderr, " %s infile  outfile N F [Rloc Rscale Zscale nrScale nzScale]\n", name);
-  fprintf(stderr, "  infile  - input file \n");
-  fprintf(stderr, "  outfile - output file \n");
-  fprintf(stderr, "  N       - number of the dust particles \n");
-  fprintf(stderr, "  Rloc    - shift from the ring centre in units of Rscale [0.0 - middle of the galactic disk]\n");
-  fprintf(stderr, "  Rscale  - radial   scale height in units of the disk radial   extent [0.05] \n");
-  fprintf(stderr, "  Zscale  - vertical scale height in units of the disk vertical extent [0.1 ] \n");
-  fprintf(stderr, "  nrScale - number of radial scale heights [3.0] \n");
-  fprintf(stderr, "  nzScale - number of vertical scale heights [3.0] \n");
-  fprintf(stderr, "  T       - use TORUS instead of CYLINDER dust ring [CYLINDER is default]\n");
-}
-
 int main(int argc, char **argv)
 {
 
@@ -59,6 +45,7 @@ int main(int argc, char **argv)
   opt->addUsage( " -r  --nrScale  3.0     Radial   scale height ");
   opt->addUsage( " -z  --nzScale  3.0     Vertical scale height ");
   opt->addUsage( " -T  --torus            Enable TORUS dust ring instead of CYLINDER");
+  opt->addUsage( " -G  --Glow    0       Enable glowing, Nglow = Ndust/Glow, if Glow = 0, no glowing is added");
   opt->addUsage( "" );
         
   opt->setFlag  (  "help", 'h' );     /* a flag (takes no argument), supporting long and short form */ 
@@ -72,6 +59,7 @@ int main(int argc, char **argv)
   opt->setOption(  "nzScale", 'z');
   opt->setOption(  "incl", 'I');
   opt->setOption(  "phi", 'P');
+  opt->setOption(  "Glow", 'G');
   opt->setFlag  ( "torus", 'T');
 
   /* for options that will be checked only on the command and line not in option/resource file */
@@ -110,7 +98,7 @@ int main(int argc, char **argv)
     }
 
 
-  int Ndust = 0;
+  int Ndust = 0, Glow = 0;
   real dRshift = 0.0;
   real Rscale   = 0.05;
   real Zscale   = 0.1;
@@ -128,6 +116,7 @@ int main(int argc, char **argv)
   if ((optarg = opt->getValue('z'))) nzScale  = atof(optarg);
   if ((optarg = opt->getValue('I'))) inclination = atof(optarg);
   if ((optarg = opt->getValue('P'))) phi = atof(optarg);
+  if ((optarg = opt->getValue('G'))) Glow = atoi(optarg);
   if (opt->getFlag('T')) ring_type = DustRing::TORUS;
 
   
@@ -191,6 +180,8 @@ int main(int argc, char **argv)
   struct star_particle s;
 
   unsigned int maxDustID = 50000000-1; //-1 since we do +1 later on
+  unsigned int maxMasslessGlowID = 70000000-1; //-1 since we do +1 later on
+  unsigned int maxMassiveGlowID = 40000000-1; //-1 since we do +1 later on
 
   for(int i=0; i < NBulge1; i++)
   {
@@ -326,7 +317,7 @@ int main(int argc, char **argv)
 
   /** Generating dust ring **/
 
-  const DustRing ring(Ndust, Ro, D, H, inclination, VelCurve, phi, nrScale, nzScale, ring_type);
+  const DustRing ring (Ndust, Ro, D, H, inclination, VelCurve, phi, nrScale, nzScale, ring_type);
 
   /** Adding dust ring **/
 
@@ -356,56 +347,98 @@ int main(int argc, char **argv)
 
     dust.push_back(s);
   }
+	
+  /** Adding ring of glowing particles **/
 
-  //End dust magic
+	if (Glow > 0)
+	{
+		const int Nglow = Ndust / Glow;   /* use less particles */
+		const Real D1   = D/3;          /* make ring less wider */
+		const Real H1   = H/3;          /*          and thinner */
+		const DustRing glow(Nglow, Ro, D1, H1, inclination, VelCurve, phi, nrScale, nzScale, ring_type);
 
-  //         dust.clear();
-  //         disk.clear();
+#if 0  /* uncomment this if you want massless glowing particles */
+		unsigned int glowID = maxMasslessGlowID+1;
+		for(int i=0; i < Nglow; i++)
+		{
+			s.mass = 1.0e-12;
+			s.pos[0] = glow.ptcl[i].pos.x;
+			s.pos[1] = glow.ptcl[i].pos.y;
+			s.pos[2] = glow.ptcl[i].pos.z;
+			s.vel[0] = glow.ptcl[i].vel.x;
+			s.vel[1] = glow.ptcl[i].vel.y;
+			s.vel[2] = glow.ptcl[i].vel.z;
+			s.phi = glowID++;
+
+			dust.push_back(s);
+		}
+#else /* otherwise they will have mass equal to the disk star particles */
+		unsigned int glowID = maxMassiveGlowID+1;
+		for(int i=0; i < Nglow; i++)
+		{
+			s.mass = disk[0].mass;
+			s.pos[0] = glow.ptcl[i].pos.x;
+			s.pos[1] = glow.ptcl[i].pos.y;
+			s.pos[2] = glow.ptcl[i].pos.z;
+			s.vel[0] = glow.ptcl[i].vel.x;
+			s.vel[1] = glow.ptcl[i].vel.y;
+			s.vel[2] = glow.ptcl[i].vel.z;
+			s.phi = glowID++;
+
+			dust.push_back(s);
+		}
+#endif
+	}
+
+	//End dust magic
+
+	//         dust.clear();
+	//         disk.clear();
 
 
-  //Write the data
+	//Write the data
 
-  NTotal1 = (int)darkMatter.size() + (int)disk.size() + (int)bulge.size() + (int)dust.size();
-  int NStar = (int)disk.size() + (int)bulge.size() + (int)dust.size();
-  //Write tipsy header
-  h.nbodies = NTotal1;
-  h.ndark   = (int)darkMatter.size();
-  h.nstar   = NStar;
-  h.nsph    = 0;
-  h.ndim    = 3;
-  h.time    = 0;
+	NTotal1 = (int)darkMatter.size() + (int)disk.size() + (int)bulge.size() + (int)dust.size();
+	int NStar = (int)disk.size() + (int)bulge.size() + (int)dust.size();
+	//Write tipsy header
+	h.nbodies = NTotal1;
+	h.ndark   = (int)darkMatter.size();
+	h.nstar   = NStar;
+	h.nsph    = 0;
+	h.ndim    = 3;
+	h.time    = 0;
 
-  fwrite(&h, sizeof(h), 1, outfile);
-  //First write DM Halo of main galaxy
-  for(int i=0; i < NHalo1; i++)
-  {
-    d = darkMatter[i];
-    fwrite(&d, sizeof(d), 1, outfile);
-  }
+	fwrite(&h, sizeof(h), 1, outfile);
+	//First write DM Halo of main galaxy
+	for(int i=0; i < NHalo1; i++)
+	{
+		d = darkMatter[i];
+		fwrite(&d, sizeof(d), 1, outfile);
+	}
 
-  //Now write the star particles
-  for(int i=0; i < (int)bulge.size(); i++)
-  {
-    s = bulge[i];          
-    fwrite(&s, sizeof(s), 1, outfile);
-  }
-  //Now write the disk particles
-  for(int i=0; i < (int)disk.size(); i++)
-  {
-    s = disk[i];          
-    fwrite(&s, sizeof(s), 1, outfile);
-  }    
-  //Now write the dust particles
-  for(int i=0; i < (int)dust.size(); i++)
-  {
-    s = dust[i];          
-    fwrite(&s, sizeof(s), 1, outfile);
-  }          
+	//Now write the star particles
+	for(int i=0; i < (int)bulge.size(); i++)
+	{
+		s = bulge[i];          
+		fwrite(&s, sizeof(s), 1, outfile);
+	}
+	//Now write the disk particles
+	for(int i=0; i < (int)disk.size(); i++)
+	{
+		s = disk[i];          
+		fwrite(&s, sizeof(s), 1, outfile);
+	}    
+	//Now write the dust particles
+	for(int i=0; i < (int)dust.size(); i++)
+	{
+		s = dust[i];          
+		fwrite(&s, sizeof(s), 1, outfile);
+	}          
 
-  fprintf(stderr,"Wrote: Total: %d DM: %d Disk: %d Bulge: %d Dust: %d \n",
-      NTotal1, (int)darkMatter.size(),
-      (int)disk.size(), (int)bulge.size(), (int)dust.size());        
+	fprintf(stderr,"Wrote: Total: %d DM: %d Disk: %d Bulge: %d Dust: %d \n",
+			NTotal1, (int)darkMatter.size(),
+			(int)disk.size(), (int)bulge.size(), (int)dust.size());        
 
-  return 0;
+	return 0;
 }
 

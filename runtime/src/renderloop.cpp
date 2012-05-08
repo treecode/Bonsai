@@ -629,6 +629,7 @@ public:
       //printf("%d: id %d, mass: %f\n", i, id, m_tree->localTree.bodies_pos[i].w);
 #if 1
       float r = frand(id);
+#if 0 /* eg: original version */
       if (id >= 0 && id < 50000000)     //Disk
       {
         //colors[i] = make_float4(0, 1, 0, 1);
@@ -637,11 +638,33 @@ public:
                         starColor :
 						((id / 100) & 1) ? starColor2 : starColor3;
       } 
+#else /* eg: adds glowing massive particles */
+				if (id >= 0 && id < 40000000)     //Disk
+				{
+          colors[i] = ((id % 100) != 0) ? 
+						starColor :
+						((id / 100) & 1) ? starColor2 : starColor3;
+				} else if (id >= 40000000 && id < 50000000)     // Glowing stars in spiral arms
+				{
+					colors[i] = starColor3;  /*  adds glow in purple */
+				}
+#endif
+#if 0 /* eg: original version */
       else if (id >= 50000000 && id < 100000000) //Dust
       {
         //colors[i] = starColor;
 		colors[i] = dustColor * make_float4(r, r, r, 1.0f);
       } 
+#else /* eg: adds glowing massless particles */
+				else if (id >= 50000000 && id < 70000000) //Dust
+				{
+					colors[i] = dustColor * make_float4(r, r, r, 1.0f);
+				} 
+				else if (id >= 70000000 && id < 100000000) // Glow massless dust particles
+				{
+					colors[i] = starColor3;  /*  adds glow in purple */
+				}
+#endif
       else if (id >= 100000000 && id < 200000000) //Bulge
       {
 		  //colors[i] = starColor;
