@@ -382,13 +382,14 @@ int main(int argc, char **argv)
 		r2[NHalo2+i].eps      = s.eps;
 		massGalaxy2          += s.mass;
 
-		if(r[NHalo1+i].ID >= 100000000)
+		const int ID = (int)s.phi;
+		if(ID >= 100000000)
 			NBULGE++;
-		else if(r[NHalo1+i].ID >= 70000000)
+		else if(ID >= 70000000)
 			NDUSTGLOW++;           
-		else if(r[NHalo1+i].ID >= 50000000)
+		else if(ID >= 50000000)
 			NDUST++;           
-		else if(r[NHalo1+i].ID >= 40000000)
+		else if(ID >= 40000000)
 			NDISKGLOW++;
 		else
 			NDISK++;
