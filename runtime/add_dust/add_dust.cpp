@@ -352,10 +352,10 @@ int main(int argc, char **argv)
 
 	if (Glow > 0)
 	{
-		const int Nglow = Ndust / Glow;   /* use less particles */
-		const Real D1   = D/3;          /* make ring less wider */
-		const Real H1   = H/3;          /*          and thinner */
-		const DustRing glow(Nglow, Ro, D1, H1, inclination, VelCurve, phi, nrScale, nzScale, ring_type);
+		const int Nglow = Ndisk / Glow;   /* use less particles */
+		const Real D1   = D/3;           /* make ring less wider */
+		const Real H1   = H/3;           /*          and thinner */
+		const DustRing glow(Nglow, Ro, D1, H1, 0, VelCurve, phi, nrScale, nzScale, ring_type);
 
 #if 0  /* uncomment this if you want massless glowing particles */
 		unsigned int glowID = maxMasslessGlowID+1;

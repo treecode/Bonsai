@@ -600,7 +600,7 @@ int main(int argc, char **argv)
 	//Write to the settings file
 
 	char settingsFile[256];
-	sprintf(settingsFile, "%s.settings", argv[3]);
+	sprintf(settingsFile, "%s.settings", outfilename.c_str());
 
 	fprintf(stderr, "Settings written to: %s \n", settingsFile);
 
