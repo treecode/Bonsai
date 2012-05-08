@@ -99,7 +99,7 @@ void octree::getBoundariesGroups(tree_structure &tree, real4 &r_min, real4 &r_ma
 void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
 
   //We assume the bodies are already onthe GPU
-  devContext.startTiming();
+  devContext.startTiming(execStream->s());
   real4 r_min = {+1e10, +1e10, +1e10, +1e10}; 
   real4 r_max = {-1e10, -1e10, -1e10, -1e10};   
   
@@ -165,10 +165,10 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
   // are preserved, if they are the same srcValues will be overwritten  
   gpuSort(devContext, srcValues, tree.bodies_key,srcValues, tree.n, 32, 3, tree);
 
-  devContext.stopTiming("Sorting", 0);  
+  devContext.stopTiming("Sorting", 0, execStream->s());  
 
   //Call the reorder data functions
-  devContext.startTiming();
+  devContext.startTiming(execStream->s());
 
   
   static int oneRunFull = 0;
@@ -309,7 +309,7 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
 
   } //end if
   
-  devContext.stopTiming("Data-reordering", 1);   
+  devContext.stopTiming("Data-reordering", 1, execStream->s());   
    
 }
 
