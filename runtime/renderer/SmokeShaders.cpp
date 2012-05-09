@@ -52,6 +52,7 @@ void main()                                                 \n
 	} else if (type == 2.0) {
 		// star
 		col.rgb *= overBright;
+		col.a = 1.0;
 	}
 
     //gl_PointSize = pointRadius*(pointScale / dist);       \n
@@ -210,7 +211,8 @@ const char *particlePS =
 "#extension GL_EXT_gpu_shader4 : enable\n"
 STRINGIFY(
 uniform sampler2D rampTex;
-uniform sampler2DArray spriteTex;
+//uniform sampler2DArray spriteTex;
+uniform sampler2D spriteTex;
 uniform float pointRadius;                                         \n
 uniform float overBright = 1.0;
 uniform float overBrightThreshold;
@@ -218,16 +220,17 @@ uniform float alphaScale;
 void main()                                                        \n
 {                                                                  \n
     // calculate eye-space sphere normal from texture coordinates  \n
-    vec3 N;                                                        \n
-    N.xy = gl_TexCoord[0].xy*vec2(2.0, -2.0) + vec2(-1.0, 1.0);    \n
-    float r2 = dot(N.xy, N.xy);                                    \n
+    //vec3 N;                                                        \n
+    //N.xy = gl_TexCoord[0].xy*vec2(2.0, -2.0) + vec2(-1.0, 1.0);    \n
+    //float r2 = dot(N.xy, N.xy);                                    \n
     //if (r2 > 1.0) discard;   // kill pixels outside circle         \n
     //N.z = sqrt(1.0-r2);                                            \n
 
 //    float alpha = clamp(1.0 - r2, 0.0, 1.0);                     \n
-    float alpha = exp(-r2*5.0);
+//    float alpha = exp(-r2*5.0);
 //    float alpha = texture2DArray(spriteTex, vec3(gl_TexCoord[0].xy, gl_PrimitiveID & 7)).x;
-    //alpha *= gl_Color.w;                                           \n
+	float alpha = texture2D(spriteTex, gl_TexCoord[0].xy).x;		\n
+	//alpha *= gl_Color.w;                                           \n
 	alpha *= gl_Color.w * alphaScale;
 	alpha = clamp(alpha, 0.0, 1.0);
 
@@ -257,7 +260,8 @@ const char *particleShadowPS =
 "#extension GL_EXT_gpu_shader4 : enable\n"
 STRINGIFY(
 uniform sampler2D rampTex;
-uniform sampler2DArray spriteTex;
+//uniform sampler2DArray spriteTex;
+uniform sampler2D spriteTex;
 uniform sampler2D shadowTex;                                       \n
 //uniform sampler2D depthTex;                                        \n
 uniform float pointRadius;                                         \n
@@ -269,24 +273,25 @@ uniform float alphaScale;
 void main()                                                        \n
 {                                                                  \n
     // calculate eye-space sphere normal from texture coordinates  \n
-    vec3 N;                                                        \n
-    N.xy = gl_TexCoord[0].xy*vec2(2.0, -2.0) + vec2(-1.0, 1.0);    \n
-    float r2 = dot(N.xy, N.xy);                                    \n
+    //vec3 N;                                                        \n
+    //N.xy = gl_TexCoord[0].xy*vec2(2.0, -2.0) + vec2(-1.0, 1.0);    \n
+    //float r2 = dot(N.xy, N.xy);                                    \n
     //if (r2 > 1.0) discard;                                         \n // kill pixels outside circle
     //N.z = sqrt(1.0-r2);                                            \n
 
     // fetch indirect lighting
 	vec4 eyeSpacePos = gl_TexCoord[1];                             \n
-    vec4 eyeSpaceSpherePos = vec4(eyeSpacePos.xyz + N*pointRadius, 1.0); \n // point on sphere
+    //vec4 eyeSpaceSpherePos = vec4(eyeSpacePos.xyz + N*pointRadius, 1.0); \n // point on sphere
     //vec4 shadowPos = gl_TextureMatrix[0] * eyeSpaceSpherePos;      \n
 	vec4 shadowPos = gl_TextureMatrix[0] * eyeSpacePos;      \n
 //    vec3 shadow = vec3(1.0) - texture2DProj(shadowTex, shadowPos.xyw).xyz;  \n
-    shadowPos.xy *= shadowTexScale;
+//    shadowPos.xy *= shadowTexScale;
     vec3 shadow = texture2DProj(shadowTex, shadowPos.xyw).xyz;  \n
 
 	//float alpha = clamp(1.0 - r2, 0.0, 1.0);                    \n
-    float alpha = exp(-r2*5.0);
+    //float alpha = exp(-r2*5.0);
     //float alpha = texture2DArray(spriteTex, vec3(gl_TexCoord[0].xy, float(gl_PrimitiveID & 7))).x;
+	float alpha = texture2D(spriteTex, gl_TexCoord[0].xy).x;		\n
     //alpha *= gl_Color.w;                                           \n
 	alpha *= gl_Color.w * alphaScale;
 	alpha = clamp(alpha, 0.0, 1.0);
