@@ -316,9 +316,9 @@ int main(int argc, char **argv)
 	const float Vunit = 100.0;    /* km/s */
 	const float Runit = 1.0;      /* kpc  */
 
-	const float Vr = -125.0/Vunit;
-	const float Vt = + 42.0/Vunit;  /* from Johan's thesis */
-	const float lVt = to_rad(-120.0);  /* this is orientation of the tangential velocity */
+	const float Vr = -130.0/Vunit;
+	const float Vt = - 10.0/Vunit;  /* from Johan's thesis */
+	const float lVt = to_rad(+180.0);  /* this is orientation of the tangential velocity */
 	const float bVt = to_rad(   0.0);  /* p.18 in arXiv/astro-ph/9509010 */
 
 	const float sizeRatio = 1.0; //300.0/200.0;  /* size(M31)/size(MW) */
@@ -340,6 +340,7 @@ int main(int argc, char **argv)
 	const Galactic rotVt = Galactic(lVt, bVt);
 	const vec3 Rij = rotVr * vec3(Rsep, 0.0, 0.0);
 	const vec3 Vij = rotVr * vec3(Vr,   0.0, 0.0) + rotVt * vec3(Vt, 0.0, 0.0);
+	fprintf(stderr, " R= %g  V= %g \n", Rij.abs(), Vij.abs());
 
 	FILE *fin1 = NULL;
 	if( !(fin1 = fopen(mw_fname.c_str(),"rb")) ) 
