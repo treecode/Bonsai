@@ -125,6 +125,11 @@ inline double to_rad(const double deg)
 	return deg * M_PI/180.0;
 }
 
+inline double to_deg(const double rad)
+{
+	return rad * 180.0/M_PI;
+}
+
 int main(int argc, char **argv)
 {
 
@@ -241,14 +246,14 @@ int main(int argc, char **argv)
 
 	std::cout << "Enter Euler angles for first galaxy:\n";
 	std::cout << "Enter inclination: ";
-	inc1 = lMW; //std::cin >> inc1;
+	inc1 = to_deg(lMW); //std::cin >> inc1;
 	std::cout << "Enter omega: ";
-	omega1 = bMW; //std::cin >> omega1;
+	omega1 = to_deg(bMW); //std::cin >> omega1;
 	std::cout << "Enter Euler angles for second galaxy:\n";
 	std::cout << "Enter inclination: ";
-	inc2 = lM31; // std::cin >> inc2;
+	inc2 = to_deg(lM31); // std::cin >> inc2;
 	std::cout << "Enter omega: ";
-	omega2 = bM31;// std::cin >> omega2;
+	omega2 = to_deg(bM31);// std::cin >> omega2;
 
 
 
@@ -625,10 +630,10 @@ int main(int argc, char **argv)
 	fprintf(outfile, "Pericenter  : %f \n", b);
 
 	fprintf(outfile, "inclination1: %f \n", inc1_inp);
-	fprintf(outfile, "omage1      : %f \n", om1_inp);  
+	fprintf(outfile, "omega1      : %f \n", om1_inp);  
 
 	fprintf(outfile, "inclination2: %f \n", inc2_inp);
-	fprintf(outfile, "omage2      : %f \n", om2_inp);  
+	fprintf(outfile, "omega2      : %f \n", om2_inp);  
 
 	fclose(outfile);  
 
