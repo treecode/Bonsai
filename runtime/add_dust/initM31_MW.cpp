@@ -38,16 +38,16 @@ struct Particle
 };
 
 template<class T>
-bool readf(T &data, FILE *fin)
+bool readf(T &data, FILE *fin, const int n = 1)
 {
-	const size_t sz = fread(&data, sizeof(T), 1, fin);
+	const size_t sz = fread(&data, sizeof(T), n, fin);
 	return sz == sizeof(T);
 }
 
 template<class T>
-bool writef(T &data, FILE *fout)
+bool writef(T &data, FILE *fout, const int n = 1)
 {
-	const size_t sz = fwrite(&data, sizeof(T), 1, fout);
+	const size_t sz = fwrite(&data, sizeof(T), n, fout);
 	return  sz == sizeof(T);
 }
 
@@ -316,10 +316,10 @@ int main(int argc, char **argv)
 	const float Vunit = 100.0;    /* km/s */
 	const float Runit = 1.0;      /* kpc  */
 
-	const float Vr = 125.0/Vunit;
-	const float Vt = 100.0/Vunit;
-	const float lVt = to_rad(180.0);  /* this is orientation of the tangential velocity */
-	const float bVt = to_rad(  0.0);  /* p.18 in arXiv/astro-ph/9509010 */
+	const float Vr = -125.0/Vunit;
+	const float Vt = + 42.0/Vunit;  /* from Johan's thesis */
+	const float lVt = to_rad(-120.0);  /* this is orientation of the tangential velocity */
+	const float bVt = to_rad(   0.0);  /* p.18 in arXiv/astro-ph/9509010 */
 
 	const float sizeRatio = 1.0; //300.0/200.0;  /* size(M31)/size(MW) */
 	const float massRatio = 1.0;//  7.1/5.8;    /* mass(M31)/mass(MW) */
@@ -339,7 +339,7 @@ int main(int argc, char **argv)
 	const Galactic rotVr = Galactic(lR,  bR);
 	const Galactic rotVt = Galactic(lVt, bVt);
 	const vec3 Rij = rotVr * vec3(Rsep, 0.0, 0.0);
-	const vec3 Vij = rotVr * vec3(-Vr,  0.0, 0.0) + rotVt * vec3(Vt, 0.0, 0.0);
+	const vec3 Vij = rotVr * vec3(Vr,   0.0, 0.0) + rotVt * vec3(Vt, 0.0, 0.0);
 
 	FILE *fin1 = NULL;
 	if( !(fin1 = fopen(mw_fname.c_str(),"rb")) ) 
