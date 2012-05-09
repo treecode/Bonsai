@@ -116,7 +116,7 @@ struct Galactic : public Rotation
 		Rotation A(l, vec3(0.0, 0.0, 1.0));
 		Rotation B(b, vec3(-sin(l), cos(l), 0.0));
 
-		*this = A*B;
+		*this = B*A;
 	}
 	Galactic(const Rotation &A)
 	{
