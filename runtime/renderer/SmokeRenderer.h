@@ -138,8 +138,10 @@ private:
     void blurLightBuffer();
 	void processImage(GLSLProgram *prog, GLuint src, GLuint dest);
 
-    GLuint createTexture(GLenum target, int w, int h, GLint internalformat, GLenum format);
+    GLuint createTexture(GLenum target, int w, int h, GLint internalformat, GLenum format, void *data = 0);
 	GLuint createNoiseTexture(int w, int h, int d);
+	float *createSplatImage(int n);
+	GLuint createSpriteTexture(int size);
 
     void createBuffers(int w, int h);
     void createLightBuffer();
@@ -268,6 +270,7 @@ private:
     GLuint              m_rampTex;
     GLuint              m_rainbowTex;
     GLuint              m_textureArrayID;
+	GLuint              m_spriteTex;
 	GLuint              m_noiseTex;
     GLuint              m_cubemapTex;
 };

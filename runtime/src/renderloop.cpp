@@ -180,6 +180,10 @@ public:
 
     for(int i=0; i<256; i++) m_keyDown[i] = false;
 
+    cudaEventCreate(&startEvent, 0);
+    cudaEventCreate(&stopEvent, 0);
+    cudaEventRecord(startEvent, 0);
+
     StartTimer();
   }
 
@@ -930,10 +934,6 @@ void initGL(int argc, char** argv)
   checkGLErrors("initGL");
 
   atexit(onexit);
-
-  cudaEventCreate(&startEvent, 0);
-  cudaEventCreate(&stopEvent, 0);
-  cudaEventRecord(startEvent, 0);
 }
 
 
