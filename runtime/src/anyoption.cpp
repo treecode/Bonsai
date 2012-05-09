@@ -684,7 +684,7 @@ AnyOption::parseGNU( char *arg )
 	for( unsigned int i = 0 ; i < strlen(arg) ; i++ ){
 		if(arg[i] ==  equalsign ){
 			split_at = i ; /* store index */
-			i = strlen(arg); /* get out of loop */
+			i = (unsigned int)strlen(arg); /* get out of loop */
 		}
 	}
 	if( split_at > 0 ){ /* it is an option value pair */
@@ -955,7 +955,7 @@ AnyOption::readFile( const char* fname )
                 return NULL;
         }
         is.seekg (0, ios::end);
-        length = is.tellg();
+        length = (int)is.tellg();
         is.seekg (0, ios::beg);
         buffer = (char*) malloc(length*sizeof(char));
         is.read (buffer,length);

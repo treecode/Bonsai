@@ -28,6 +28,13 @@
 
 extern void displayTimers();    // For profiling counter display
 
+// fps
+bool displayFps = true;
+double fps = 0.0;
+int fpsCount = 0;
+int fpsLimit = 5;
+cudaEvent_t startEvent, stopEvent;
+
 void drawWireBox(float3 boxMin, float3 boxMax) {
 #if 0
   glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);  
@@ -119,7 +126,7 @@ void glutStrokePrint(float x, float y, const char *s, void *font)
   glTranslatef(x, y, 0.0f);
   int len = (int) strlen(s);
   for (int i = 0; i < len; i++) {
-      glutStrokeCharacter(font, s[i]);
+    glutStrokeCharacter(font, s[i]);
   }
   glPopMatrix();
 }
@@ -143,9 +150,7 @@ public:
       m_displayLightBuffer(false),
       m_octreeDisplayLevel(3),
       m_flyMode(false),
-	  m_fov(60.0f),
-      m_simTime(0.0),
-      m_renderTime(0.0),
+	    m_fov(60.0f),
       m_supernova(false),
       m_overBright(1.0f)
   {
@@ -156,7 +161,7 @@ public:
     m_cameraRotLag = m_cameraRot;
             
     //float color[4] = { 0.8f, 0.7f, 0.95f, 0.5f};
-	float color[4] = { 1.0f, 1.0f, 1.0f, 1.0f};
+	  float color[4] = { 1.0f, 1.0f, 1.0f, 1.0f};
     //m_renderer.setBaseColor(color);
     //m_renderer.setPointSize(0.00001f);
     tree->iterate_setup(m_idata);
@@ -169,9 +174,9 @@ public:
     m_particleColors  = new float4[MAX_PARTICLES];   
     initBodyColors();
 
-	m_renderer.setFOV(m_fov);
-	m_renderer.setWindowSize(m_windowDims.x, m_windowDims.y);
-	m_renderer.setDisplayMode(m_displayMode);
+	  m_renderer.setFOV(m_fov);
+	  m_renderer.setWindowSize(m_windowDims.x, m_windowDims.y);
+	  m_renderer.setDisplayMode(m_displayMode);
 
     for(int i=0; i<256; i++) m_keyDown[i] = false;
 
@@ -222,10 +227,13 @@ public:
       printf("No iterations Remaining!\n");
   }
 
-  void drawStats(int bodies, double time)
+  void drawStats(double fps)
   {
     //beginWinCoords();
     //glPrint(0, 15, "test", GLUT_BITMAP_9_BY_15);
+
+    int bodies = m_tree->localTree.n;
+    int dust = m_tree->localTree.n_dust;
 
     beginDeviceCoords();
     glScalef(0.25f, 0.25f, 1.0f);
@@ -240,15 +248,23 @@ public:
     float x = 50.0f;
     float y = 50.0f;
     char str[256];
-    sprintf(str, "TIME: %.2f ms", time);
-    glutStrokePrint(x, y, str, GLUT_STROKE_ROMAN);
+    if (displayFps)
+    {
+      sprintf(str, "%.2f fps", fps);
+      glutStrokePrint(x, y, str, GLUT_STROKE_ROMAN);
+    }
 
     y += 150.0f;
-    sprintf(str, "BODIES: %d", bodies);
+    sprintf(str, "BODIES: %d", bodies + dust);
     glutStrokePrint(x, y, str, GLUT_STROKE_ROMAN);
 
     glDisable(GL_BLEND);
     endWinCoords();
+
+    sprintf(str, "Bonsai N-Body Tree Code (%d bodies, %d dust): %0.1f fps",
+            bodies, dust, fps);
+
+    glutSetWindowTitle(str);
   }
 
   void display() {
@@ -281,13 +297,13 @@ public:
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
 
-	    if (m_flyMode) {
-		  glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
-		  glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
+        if (m_flyMode) {
+          glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
+          glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
           glRotatef(90.0f, 1.0f, 0.0f, 0.0f); // rotate galaxies into XZ plane
-		  glTranslatef(m_cameraTransLag.x, m_cameraTransLag.y, m_cameraTransLag.z);
-	    } else {
-		  // orbit viwer - rotate around centre, then translate
+          glTranslatef(m_cameraTransLag.x, m_cameraTransLag.y, m_cameraTransLag.z);
+        } else {
+          // orbit viwer - rotate around centre, then translate
           glTranslatef(m_cameraTransLag.x, m_cameraTransLag.y, m_cameraTransLag.z);
           glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
           glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
@@ -307,7 +323,7 @@ public:
         }
 
         //m_renderer.display(m_displayMode);
-	    m_renderer.render();
+        m_renderer.render();
 
         if (m_displayBoxes) {
           glEnable(GL_DEPTH_TEST);
@@ -315,18 +331,12 @@ public:
         }
 
         if (m_displaySliders) {
-	        m_renderer.getParams()->Render(0, 0);
+          m_renderer.getParams()->Render(0, 0);
         }
       }
     }
 
-    //glFinish();
-    m_renderTime = GetTimer() - startTime;
-    //m_renderTime = getBodyDataTime - startTime;
-
-    // display stats
-    //drawStats(m_tree->localTree.n + m_tree->localTree.n_dust, m_renderTime);
-    drawStats(m_tree->localTree.n + m_tree->localTree.n_dust, m_simTime + m_renderTime);
+    drawStats(fps);
   }
 
   void mouse(int button, int state, int x, int y)
@@ -765,6 +775,8 @@ public:
   int m_keyModifiers;
 
   double m_simTime, m_renderTime;
+  double m_fps;
+  int m_fpsCount, m_fpsLimit;
 
   bool m_supernova;
   float m_overBright;
@@ -786,6 +798,36 @@ void display()
 
   //glutReportErrors();
   glutSwapBuffers();
+
+  fpsCount++;
+
+  // this displays the frame rate updated every second (independent of frame rate)
+  if (fpsCount >= fpsLimit)
+  {
+    static double gflops = 0;
+    static double interactionsPerSecond = 0;
+
+    float milliseconds = 1;
+
+    cudaEventRecord(stopEvent, 0);
+    cudaEventSynchronize(stopEvent);
+    cudaEventElapsedTime(&milliseconds, startEvent, stopEvent);
+    
+    milliseconds /= (float)fpsCount;
+    
+    fps = 1.f / (milliseconds / 1000.f);
+    theDemo->drawStats(fps);
+    
+    fpsCount = 0;
+    fpsLimit = (fps > 1.f) ? (int)fps : 1;
+
+    if (theDemo->m_paused)
+    {
+      fpsLimit = 0;
+    }
+
+    cudaEventRecord(startEvent, 0);
+  }
 }
 
 void reshape(int w, int h)
@@ -810,6 +852,14 @@ void motion(int x, int y)
 void key(unsigned char key, int /*x*/, int /*y*/)
 {
   theDemo->key(key);
+
+  switch (key) {
+  case '0':
+    displayFps = !displayFps;
+    break;
+  default:
+    break;
+  }
   glutPostRedisplay();
 }
 
@@ -880,6 +930,10 @@ void initGL(int argc, char** argv)
   checkGLErrors("initGL");
 
   atexit(onexit);
+
+  cudaEventCreate(&startEvent, 0);
+  cudaEventCreate(&stopEvent, 0);
+  cudaEventRecord(startEvent, 0);
 }
 
 
