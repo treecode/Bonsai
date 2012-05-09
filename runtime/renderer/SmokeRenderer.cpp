@@ -53,7 +53,7 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
 	m_numDisplayedSlices(m_numSlices),
     m_sliceNo(0),
     m_shadowAlpha(0.1f),
-    m_spriteAlpha(1.0f),
+    m_spriteAlpha(0.1f),
     m_volumeAlpha(0.2f),
 	m_dustAlpha(1.0f),
     m_volumeColor(0.5f, 0.0f, 0.0f),
