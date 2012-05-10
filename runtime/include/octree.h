@@ -727,8 +727,9 @@ public:
 
   octree(char **argv, const int device = 0, const float _theta = 0.75, const float eps = 0.05,
          string snapF = "", int snapI = -1,  float tempTimeStep = 1.0 / 16.0, int tempTend = 1000,
-         float killDistanceT = -1, int maxDistT = -1, int snapAdd = 0, const int _rebuild = 2)
-  : rebuild_tree_rate(_rebuild), procId(0), nProcs(1), thisPartLETExTime(0), useDirectGravity(false)
+         float killDistanceT = -1, int maxDistT = -1, int snapAdd = 0, const int _rebuild = 2,
+         bool direct = false)
+  : rebuild_tree_rate(_rebuild), procId(0), nProcs(1), thisPartLETExTime(0), useDirectGravity(direct)
   {
 #if USE_B40C
     sorter = 0;

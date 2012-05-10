@@ -550,6 +550,8 @@ public:
     case '1':
       m_directGravitation = !m_directGravitation;
       m_tree->setUseDirectGravity(m_directGravitation);
+    case '0':
+
     default:
       break;
     }
@@ -901,7 +903,7 @@ void idle(void)
     glutPostRedisplay();
 }
 
-void initGL(int argc, char** argv)
+void initGL(int argc, char** argv, bool bFullscreen)
 {  
   // First initialize OpenGL context, so we can properly set the GL for CUDA.
   // This is necessary in order to achieve optimal performance with OpenGL/CUDA interop.
@@ -910,8 +912,12 @@ void initGL(int argc, char** argv)
   //glutInitWindowSize(720, 480);
   glutInitWindowSize(1024, 768);
   glutCreateWindow("Bonsai Tree-code Gravitational N-body Simulation");
-  //if (bFullscreen)
-  //  glutFullScreen();
+  
+  if (bFullscreen)
+  {
+    glutFullScreen();
+  }
+
   GLenum err = glewInit();
 
   if (GLEW_OK != err)

@@ -235,7 +235,7 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
   NSecond       = h.nstar;
   NThird        = h.nsph;
 
-	tree->set_t_current(h.time);
+	tree->set_t_current((float)h.time);
   
   //Rough divide
   uint perProc = NTotal / procs;
@@ -629,6 +629,8 @@ int main(int argc, char** argv)
   int rebuild_tree_rate = 2;
   int reduce_bodies_factor = 1;
   int reduce_dust_factor = 1;
+  bool direct = false;
+  bool fullscreen = false;
 
 #if ENABLE_LOG
   ENABLE_RUNTIME_LOG = false;
@@ -665,6 +667,10 @@ int main(int argc, char** argv)
 #if ENABLE_LOG
     ADDUSAGE("     --log              enable logging ");
 #endif
+    ADDUSAGE("     --direct           enable N^2 direct gravitation [" << (direct ? "on" : "off") << "]");
+#ifdef USE_OPENGL
+    ADDUSAGE(" -f  --fullscreen      enable full-screen mode [" << (fullscreen ? "on" : "off") << "]");
+#endif
 		ADDUSAGE(" ");
 
 
@@ -689,6 +695,8 @@ int main(int argc, char** argv)
 #if ENABLE_LOG
 		opt.setFlag("log");
 #endif
+    opt.setFlag("direct");
+    opt.setFlag("fullscreen", 'f');
   
 		opt.processCommandArgs( argc, argv );
 
@@ -707,8 +715,11 @@ int main(int argc, char** argv)
 #if ENABLE_LOG
     if (opt.getFlag("log")) ENABLE_RUNTIME_LOG = true;
 #endif
-
-
+    if (opt.getFlag("direct")) direct = true;
+#if USE_OPENGL
+    if (opt.getFlag("fullscreen")) fullscreen = true;
+#endif
+    
 		char *optarg = NULL;
 		if ((optarg = opt.getValue("infile")))       fileName           = string(optarg);
 		if ((optarg = opt.getValue("logfile")))      logFileName        = string(optarg);
@@ -825,6 +836,8 @@ int main(int argc, char** argv)
   else
     cout << " Runtime logging is DISABLED \n";
 #endif
+  cout << " Direct gravitation is " << (direct ? "ENABLED" : "DISABLED") << endl;
+
 	
   cerr << "Used settings: \n";
 	cerr << "Input filename " << fileName << endl;
@@ -846,7 +859,7 @@ int main(int argc, char** argv)
   else
     cerr << " Runtime logging is DISABLED \n";
 #endif
-
+  cerr << " Direct gravitation is " << (direct ? "ENABLED" : "DISABLED") << endl;
 
   int NTotal, NFirst, NSecond, NThird;
   NTotal = NFirst = NSecond = NThird = 0;
@@ -855,12 +868,12 @@ int main(int argc, char** argv)
 
 #ifdef USE_OPENGL
   // create OpenGL context first, and register for interop
-  initGL(argc, argv);
+  initGL(argc, argv, fullscreen);
   cudaGLSetGLDevice(devID);
 #endif
 
   //Creat the octree class and set the properties
-  octree *tree = new octree(argv, devID, theta, eps, snapshotFile, snapshotIter,  timeStep, (int)tEnd, killDistance, (int)remoDistance, snapShotAdd, rebuild_tree_rate);
+  octree *tree = new octree(argv, devID, theta, eps, snapshotFile, snapshotIter,  timeStep, (int)tEnd, killDistance, (int)remoDistance, snapShotAdd, rebuild_tree_rate, direct);
                             
                             
   //Get parallel processing information  
