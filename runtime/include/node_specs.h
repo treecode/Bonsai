@@ -1,3 +1,6 @@
+#ifndef _NODE_SPECS_H_
+#define _NODE_SPECS_H_
+
 typedef unsigned int uint;
 
 typedef float real;
@@ -11,7 +14,9 @@ typedef float4 real4;
 
 //If you uncomment the next line dust/massless particles will be treated
 //like normal particles and used in the tree-construction
+#if 0  /* DEFINED in CMakeLists.txt */
 #define USE_DUST
+#endif
 
 
 #define IMPBH   //Improved barnes hut opening method
@@ -159,3 +164,5 @@ typedef float4 real4;
 #if NCRIT < NLEAF
 #error "Fatal, NCRIT < NLEAF. Please check that NCRIT >= NLEAF"
 #endif
+
+#endif /* _NODE_SPECS_H_ */

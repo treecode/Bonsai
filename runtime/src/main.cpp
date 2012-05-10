@@ -234,6 +234,8 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
   NFirst        = h.ndark;
   NSecond       = h.nstar;
   NThird        = h.nsph;
+
+	tree->set_t_current(h.time);
   
   //Rough divide
   uint perProc = NTotal / procs;
@@ -683,7 +685,7 @@ int main(int argc, char** argv)
 		opt.setOption( "reducebodies");
 #ifdef USE_DUST
     opt.setOption( "reducedust");
-#endif USE_DUST
+#endif /* USE_DUST */
 #if ENABLE_LOG
 		opt.setFlag("log");
 #endif
@@ -906,6 +908,10 @@ int main(int argc, char** argv)
   {
     tree->ICRecv(0, bodyPositions, bodyVelocities,  bodyIDs);
   }
+
+#ifdef TIPSYOUTPUT
+	fprintf(stderr, " t_current = %g\n", tree->get_t_current());
+#endif
   
   
   //#define SETUP_MERGER
@@ -994,7 +1000,9 @@ int main(int argc, char** argv)
 
     tree->localTree.bodies_Ppos[i] = bodyPositions[i];
     tree->localTree.bodies_Pvel[i] = bodyVelocities[i];
+		tree->localTree.bodies_time[i] = make_float2(tree->get_t_current(), tree->get_t_current());
   }
+	tree->localTree.bodies_time.h2d();
 
   tree->localTree.bodies_pos.h2d();
   tree->localTree.bodies_vel.h2d();
@@ -1048,6 +1056,7 @@ int main(int argc, char** argv)
       tree->localTree.dust_ids.h2d();    
    }
   #endif //ifdef USE_DUST
+	
   
   //Start the integration
 #ifdef USE_OPENGL

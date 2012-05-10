@@ -18,6 +18,7 @@
 #endif
 
 #include <cuda_runtime_api.h>
+#include <cstdarg>
 
 #include "renderloop.h"
 #include "render_particles.h"
@@ -131,6 +132,16 @@ void glutStrokePrint(float x, float y, const char *s, void *font)
   glPopMatrix();
 }
 
+void glPrintf(float x, float y, const char* format, ...)
+{
+  char buffer[256];
+  va_list args;
+  va_start (args, format); 
+  vsnprintf (buffer, 255, format, args);
+  glutStrokePrint(x, y, buffer, GLUT_STROKE_ROMAN);
+  va_end(args);
+}
+
 #define MAX_PARTICLES 5000000
 class BonsaiDemo
 {
@@ -234,9 +245,6 @@ public:
 
   void drawStats(double fps)
   {
-    //beginWinCoords();
-    //glPrint(0, 15, "test", GLUT_BITMAP_9_BY_15);
-
     int bodies = m_tree->localTree.n;
     int dust = m_tree->localTree.n_dust;
 
@@ -252,20 +260,23 @@ public:
 
     float x = 50.0f;
     float y = 50.0f;
-    char str[256];
     if (displayFps)
     {
-      sprintf(str, "%.2f fps", fps);
-      glutStrokePrint(x, y, str, GLUT_STROKE_ROMAN);
+      glPrintf(x, y, "FPS:   %.2f", fps);
     }
 
     y += 150.0f;
-    sprintf(str, "BODIES: %d", bodies + dust);
-    glutStrokePrint(x, y, str, GLUT_STROKE_ROMAN);
+    glPrintf(x, y, "BODIES: %d", bodies + dust);
+
+    float Myr = m_tree->get_t_current() * 9.78f;
+
+    y += 150.0f;
+    glPrintf(x, y, "Myears: %.2f", Myr);
 
     glDisable(GL_BLEND);
     endWinCoords();
 
+    char str[256];
     sprintf(str, "Bonsai N-Body Tree Code (%d bodies, %d dust): %0.1f fps",
             bodies, dust, fps);
 
