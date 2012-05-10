@@ -19,6 +19,7 @@
 
 #include <cuda_runtime_api.h>
 #include <cstdarg>
+#include <vector>
 
 #include "renderloop.h"
 #include "render_particles.h"
@@ -192,6 +193,8 @@ public:
 	  m_renderer.setDisplayMode(m_displayMode);
 
     for(int i=0; i<256; i++) m_keyDown[i] = false;
+
+    readCameras("cameras.txt");
 
     cudaEventCreate(&startEvent, 0);
     cudaEventCreate(&stopEvent, 0);
@@ -406,7 +409,7 @@ public:
 
     if (m_buttonState == 3) {
       // left+middle = zoom
-      float3 v = make_float3(0.0f, 0.0f, dy*zoomSpeed*fabs(m_cameraTrans.z));
+      float3 v = make_float3(0.0f, 0.0f, dy*zoomSpeed*fmaxf(fabs(m_cameraTrans.z), 1.0f));
       if (m_flyMode) {
 		v = ixform(v, m_modelView);
       }
@@ -569,6 +572,10 @@ public:
       m_renderer.setNumSlices(m_renderer.getNumSlices()/2);
       m_renderer.setNumDisplayedSlices(m_renderer.getNumSlices());
       break;
+    case 'D':
+      //printf("%f %f %f %f %f %f\n", m_cameraTrans.x, m_cameraTrans.y, m_cameraTrans.z, m_cameraRot.x, m_cameraRot.y, m_cameraRot.z);
+      writeCameras("cameras.txt");
+      break;
     default:
       break;
     }
@@ -579,6 +586,45 @@ public:
   void keyUp(unsigned char key) {
     m_keyDown[key] = false;
     m_keyModifiers = 0;
+  }
+
+  void special(int key)
+  {
+    int modifiers = glutGetModifiers(); // freeglut complains about this, but it seems to work
+
+    switch (key) {
+    case GLUT_KEY_F1:
+    case GLUT_KEY_F2:
+    case GLUT_KEY_F3:
+    case GLUT_KEY_F4:
+    case GLUT_KEY_F5:
+    case GLUT_KEY_F6:
+    case GLUT_KEY_F7:
+    case GLUT_KEY_F8:
+    //case GLUT_KEY_F9:
+    //case GLUT_KEY_F10:
+      {
+        int cam = key - GLUT_KEY_F1;
+        if (modifiers & GLUT_ACTIVE_SHIFT) {
+          // save camera
+          printf("Saved camera %d\n", cam);
+          m_camera[cam].translate = m_cameraTrans;
+          m_camera[cam].rotate = m_cameraRot;
+          m_camera[cam].fly = m_flyMode;
+        } else {
+          // restore camera
+          printf("Restored camera %d\n", cam);
+          m_cameraTrans = m_camera[cam].translate;
+          m_cameraRot = m_camera[cam].rotate;
+          m_flyMode = m_camera[cam].fly;
+        }
+      }
+      break;
+    default:
+      // for cursor keys on sliders
+      m_renderer.getParams()->Special(key, 0, 0);
+      break;
+    }
   }
 
   void reshape(int w, int h) {
@@ -828,6 +874,61 @@ public:
 
   bool m_supernova;
   float m_overBright;
+
+  // saved cameras
+  struct Camera {
+    Camera() {
+      translate = make_float3(0.f);
+      rotate = make_float3(0.0f);
+      fly = false;
+    }
+
+    void write(FILE *fp)
+    {
+      fprintf(fp, "%d %f %f %f %f %f %f\n", fly, translate.x, translate.y, translate.z, rotate.x, rotate.y, rotate.z);
+    }
+
+    bool read(FILE *fp)
+    {
+      return fscanf(fp, "%d %f %f %f %f %f %f", &fly, &translate.x, &translate.y, &translate.z, &rotate.x, &rotate.y, &rotate.z) == 7;
+    }
+
+    float3 translate;
+    float3 rotate;
+    bool fly;
+  };
+
+  static const int maxCameras = 8;
+  Camera m_camera[maxCameras];
+
+  void writeCameras(char *filename)
+  {
+    FILE *fp = fopen(filename, "w");
+    if (!fp) {
+      fprintf(stderr, "Error writing camera file '%s'\n", filename);
+      return;
+    }
+    for(int i=0; i<maxCameras; i++) {
+      m_camera[i].write(fp);
+    }
+    fclose(fp);
+    printf("Wrote camera file '%s'\n", filename);
+  }
+
+  void readCameras(char *filename)
+  {
+    FILE *fp = fopen(filename, "r");
+    if (!fp) {
+      fprintf(stderr, "Couldn't open camera file '%s'\n", filename);
+      return;
+    }
+    for(int i=0; i<maxCameras; i++) {
+      if (!m_camera[i].read(fp))
+        break;
+    }
+    fclose(fp);
+    printf("Read camera file '%s'\n", filename);
+  }
 };
 
 BonsaiDemo *theDemo = NULL;
@@ -921,7 +1022,7 @@ void keyUp(unsigned char key, int /*x*/, int /*y*/)
 
 void special(int key, int x, int y)
 {
-	theDemo->getParams()->Special(key, x, y);
+    theDemo->special(key);
     glutPostRedisplay();
 }
 
