@@ -147,7 +147,8 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
 	m_noiseTex = createNoiseTexture(64, 64, 64);
 
     //m_cubemapTex = loadCubemapCross("images/Carina_cross.ppm");
-    m_cubemapTex = loadCubemap("../images/deepfield%d.ppm");
+    //m_cubemapTex = loadCubemap("../images/deepfield%d.ppm");
+    m_cubemapTex = loadCubemap("../images/deepfield%d_1k.ppm");
 
 	m_spriteTex = createSpriteTexture(256);
 
