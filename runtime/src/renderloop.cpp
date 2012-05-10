@@ -326,10 +326,12 @@ public:
         glLoadIdentity();
 
         if (m_flyMode) {
+          glRotatef(m_cameraRotLag.z, 0.0, 0.0, 1.0);
           glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
           glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
           glRotatef(90.0f, 1.0f, 0.0f, 0.0f); // rotate galaxies into XZ plane
           glTranslatef(m_cameraTransLag.x, m_cameraTransLag.y, m_cameraTransLag.z);
+          m_cameraRot.z *= 0.95f;
         } else {
           // orbit viwer - rotate around centre, then translate
           glTranslatef(m_cameraTransLag.x, m_cameraTransLag.y, m_cameraTransLag.z);
@@ -430,6 +432,7 @@ public:
       // left = rotate
       m_cameraRot.x += dy * rotateSpeed;
       m_cameraRot.y += dx * rotateSpeed;
+      m_cameraRot.z += dx * rotateSpeed * 0.5f;  // roll effect
     }
 
     m_ox = x;
@@ -554,6 +557,7 @@ public:
       m_flyMode = !m_flyMode;
       if (m_flyMode) {
         m_cameraTrans = m_cameraTransLag = ixform(m_cameraTrans, m_modelView);
+        m_cameraRotLag.z = m_cameraRot.z = 0.0f;
       } else {
         fitCamera();
       }
@@ -849,7 +853,7 @@ public:
 
     //dustColor = make_float4(0.0f, 0.0f, 0.1f, 0.0f);      // blue
     //dustColor =  make_float4(0.1f, 0.1f, 0.1f, 0.0f);    // grey
-    dustColor = make_float4(0.1f, 0.02f, 0.0f, 0.0f);  // brownish
+    dustColor = make_float4(0.05f, 0.02f, 0.0f, 0.0f);  // brownish
     //dustColor = make_float4(0.0f, 0.2f, 0.1f, 0.0f);  // green
     //dustColor = make_float4(0.0f, 0.0f, 0.0f, 0.0f);  // black
 
