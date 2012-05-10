@@ -246,4 +246,5 @@ target_link_libraries(bonsai2 ${ALL_LIBRARIES})
 
 #copy test data file
 file(COPY ${CMAKE_SOURCE_DIR}/model3_child_compact.tipsy DESTINATION ${CMAKE_BINARY_DIR})
+file(COPY ${CMAKE_SOURCE_DIR}/../images/ DESTINATION ${CMAKE_BINARY_DIR}/../images/)
 

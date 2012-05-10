@@ -44,7 +44,13 @@ Image *loadPPM(const char *filename)
 	    exit(1);
     }
 
-    if (fscanf(fp, "%lu %lu", &result->width, &result->height) != 2)
+    int r = 0;
+    if (8 == sizeof(void*))
+       r = fscanf(fp, "%llu %llu", &result->width, &result->height);
+    else
+      r = fscanf(fp, "%lu %lu", &result->width, &result->height);
+
+    if (r != 2)
     {
 	    fprintf(stderr, "Error loading image `%s'\n", filename);
 	    exit(1);
