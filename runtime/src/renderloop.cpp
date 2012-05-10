@@ -561,11 +561,11 @@ public:
       m_tree->setUseDirectGravity(m_directGravitation);
     case '0':
       break;
-    case '+':
+    case '.':
       m_renderer.setNumSlices(m_renderer.getNumSlices()*2);
       m_renderer.setNumDisplayedSlices(m_renderer.getNumSlices());
       break;
-    case '_':
+    case ',':
       m_renderer.setNumSlices(m_renderer.getNumSlices()/2);
       m_renderer.setNumDisplayedSlices(m_renderer.getNumSlices());
       break;
@@ -764,6 +764,7 @@ public:
     float alpha = std::min(1.0f, 1.0f - (float)(displayMax - displayMin) / m_tree->localTree.n_nodes);
         
     glColor4f(0.0f, 0.5f, 0.0f, std::max(alpha, 0.2f));
+    //glColor4f(0.0f, 0.5f, 0.0f, 1.0f / m_octreeMaxDepth);
 
       
     for(uint i=displayMin; i < displayMax; i++)

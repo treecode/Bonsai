@@ -101,7 +101,8 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
     m_flareIntensity(0.0f),
     m_sourceIntensity(1.0f),
     m_flareRadius(100.0f),
-    m_skyboxBrightness(0.25f)
+    m_skyboxBrightness(0.5f),
+    m_transmission(0.0f)
 {
 	// load shader programs
 	m_simpleProg = new GLSLProgram(simpleVS, simplePS);
@@ -146,9 +147,9 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
 	glGenTextures(1, &mPosBufferTexture);
 	m_noiseTex = createNoiseTexture(64, 64, 64);
 
-    m_cubemapTex = loadCubemapCross("images/Carina_cross.ppm");
+    //m_cubemapTex = loadCubemapCross("images/Carina_cross.ppm");
     //m_cubemapTex = loadCubemap("../images/deepfield%d.ppm");
-    //m_cubemapTex = loadCubemap("../images/deepfield%d_1k.ppm");
+    m_cubemapTex = loadCubemap("../images/deepfield%d_1k.ppm");
 
 	m_spriteTex = createSpriteTexture(256);
 
@@ -422,6 +423,7 @@ void SmokeRenderer::drawPointSprites(GLSLProgram *prog, int start, int count, bo
 
 	} else {
 		prog->setUniform1f("alphaScale", m_shadowAlpha);
+        prog->setUniform1f("transmission", m_transmission);
 	}
 
 #if MOTION_BLUR==0
@@ -1404,6 +1406,7 @@ void SmokeRenderer::initParams()
 
     m_params->AddParam(new Param<float>("alpha", m_spriteAlpha, 0.0f, 1.0f, 0.001f, &m_spriteAlpha));
     m_params->AddParam(new Param<float>("shadow alpha", m_shadowAlpha, 0.0f, 1.0f, 0.001f, &m_shadowAlpha));
+    m_params->AddParam(new Param<float>("transmission", m_transmission, 0.0f, 1.0f, 0.001f, &m_transmission));
     m_params->AddParam(new Param<float>("indirect lighting", m_indirectAmount, 0.0f, 1.0f, 0.001f, &m_indirectAmount));
 
 #if 0

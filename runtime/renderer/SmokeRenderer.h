@@ -191,6 +191,7 @@ private:
     float               m_shadowAlpha;
     float               m_spriteAlpha;
 	float               m_dustAlpha;
+    float               m_transmission;
     bool                m_doBlur;
     float               m_blurRadius;
     bool                m_displayLightBuffer;
