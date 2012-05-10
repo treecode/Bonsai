@@ -280,7 +280,6 @@ int main(int argc, char **argv)
 		ADDUSAGE("     --mw  #        Input  filename for the Milky Way galaxy ");
 		ADDUSAGE("     --m31 #        Input  filename for the Andromeda galaxy");
 		ADDUSAGE("     --out #        Output filename for the merger IC");
-		ADDUSAGE("     --out #        Output filename for the merger IC");
 		ADDUSAGE(" ");
 
 		opt.setFlag( "help" ,   'h');
