@@ -217,6 +217,7 @@ uniform float pointRadius;                                         \n
 uniform float overBright = 1.0;
 uniform float overBrightThreshold;
 uniform float alphaScale;
+uniform float transmission;
 void main()                                                        \n
 {                                                                  \n
     // calculate eye-space sphere normal from texture coordinates  \n
@@ -245,7 +246,7 @@ void main()                                                        \n
 //    col.rgb *= 1.0 + smoothstep(overBrightThreshold, 0.0, age)*overBright;
 	//alpha *= smoothstep(1.0, 0.8, age);
 
-    gl_FragColor = vec4(gl_Color.xyz * alpha, alpha);              \n
+    gl_FragColor = vec4(gl_Color.xyz * alpha, max(0, alpha - transmission));              \n
 //    gl_FragColor = vec4(gl_Color.xyz * gl_Color.w, gl_Color.w);              \n
 //    gl_FragColor = vec4(col.xyz * alpha, alpha);
 //    gl_FragColor = vec4(gl_Color.xyz * col.xyz * alpha, alpha); // premul

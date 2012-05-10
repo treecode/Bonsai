@@ -31,6 +31,7 @@ public:
     {
         POINTS,
 		SPRITES,
+        SPRITES_SORTED,
         VOLUMETRIC,
         NUM_MODES
     };
@@ -61,6 +62,7 @@ public:
     void setParticleRadius(float x) { mParticleRadius = x; }
 
     void setNumSlices(int x) { m_numSlices = x; }
+    int getNumSlices() { return m_numSlices; }
     void setNumDisplayedSlices(int x) { m_numDisplayedSlices = x; }
 
     void setAlpha(float x) { m_spriteAlpha = x; }
@@ -127,7 +129,7 @@ private:
 	void drawVolumeSlice(int i, bool shadowed);
 
     void drawSlices();
-	void renderSprites();
+	void renderSprites(bool sort);
 
     void displayTexture(GLuint tex, float scale);
     void doStarFilter();
@@ -189,6 +191,7 @@ private:
     float               m_shadowAlpha;
     float               m_spriteAlpha;
 	float               m_dustAlpha;
+    float               m_transmission;
     bool                m_doBlur;
     float               m_blurRadius;
     bool                m_displayLightBuffer;
