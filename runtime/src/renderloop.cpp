@@ -31,7 +31,7 @@
 extern void displayTimers();    // For profiling counter display
 
 // fps
-bool displayFps = true;
+bool displayFps = false;
 double fps = 0.0;
 int fpsCount = 0;
 int fpsLimit = 5;
@@ -275,9 +275,9 @@ public:
     if (displayFps)
     {
       glPrintf(x, y, "FPS:   %.2f", fps);
+      y += 150.0f;
     }
 
-    y += 150.0f;
     glPrintf(x, y, "BODIES: %d", bodies + dust);
 
     float Myr = m_tree->get_t_current() * 9.78f;
@@ -444,9 +444,9 @@ public:
     if (!m_flyMode)
       return;
 
-    //const float flySpeed = 1.0f;
-    const float flySpeed = 0.25f;
-    //float flySpeed = (m_keyModifiers & GLUT_ACTIVE_SHIFT) ? 4.0f : 1.0f;
+    //const float flySpeed = 0.25f;
+    //float flySpeed = (m_keyModifiers & GLUT_ACTIVE_SHIFT) ? 1.0f : 0.25f;
+    float flySpeed = (m_buttonState & 4) ? 1.0f : 0.25f;
 
 	// Z
     if (m_keyDown['w']) { //  || (m_buttonState & 1)) {
@@ -967,12 +967,12 @@ public:
     printf("Wrote camera file '%s'\n", filename);
   }
 
-  void readCameras(char *filename)
+  bool readCameras(char *filename)
   {
     FILE *fp = fopen(filename, "r");
     if (!fp) {
       fprintf(stderr, "Couldn't open camera file '%s'\n", filename);
-      return;
+      return false;
     }
     for(int i=0; i<maxCameras; i++) {
       if (!m_camera[i].read(fp))
@@ -980,6 +980,7 @@ public:
     }
     fclose(fp);
     printf("Read camera file '%s'\n", filename);
+    return true;
   }
 };
 
@@ -1112,6 +1113,8 @@ void initGL(int argc, char** argv, const char *fullScreenMode)
   glutKeyboardUpFunc(keyUp);
   glutSpecialFunc(special);
   glutIdleFunc(idle);
+
+  glutIgnoreKeyRepeat(GL_TRUE);
 
   GLenum err = glewInit();
 
