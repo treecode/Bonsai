@@ -31,8 +31,10 @@ Bonsai demo keys
 * [b]	toggle octree boxes
 * [l]	toggle display light scatter buffer
 * [c]	fit camera
-* [.] [>]	increment octree display level
-* [,] [<]	decrement octree display level
+* [[] decrement minimum octree display level
+* []] increment minimum octree display level
+* [-] decrement maximum octree display level
+* [=] increment maximum octree display level
 * [g]	toggle glow / post processing
 * [f]	toggle fly mode
 * [n]	detonate supernova
