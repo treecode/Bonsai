@@ -118,6 +118,8 @@ void octree::allocateParticleMemory(tree_structure &tree)
   this->devMemCountsx.setContext(devContext);
   this->devMemCountsx.cmalloc(NBLOCK_PREFIX, true);    
   
+  this->specialParticles.setContext(devContext);
+  this->specialParticles.cmalloc(16, true);    
 
   
   if(mpiGetNProcs() > 1)

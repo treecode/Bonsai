@@ -462,6 +462,9 @@ public:
    my_dev::dev_mem<uint> devMemCounts;
    my_dev::dev_mem<uint> devMemCountsx;
 
+   my_dev::dev_mem<real4> specialParticles;//Buffer to store postions of selected particles
+
+
    tree_structure localTree;
    tree_structure remoteTree;
 

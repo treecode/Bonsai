@@ -834,6 +834,17 @@ public:
       boxMax.z = m_tree->localTree.boxCenterInfo[i].z+m_tree->localTree.boxSizeInfo[i].z;
       drawWireBox(boxMin, boxMax);
     }
+    
+    
+#if 0
+    m_tree->specialParticles.d2h();
+    
+    glBegin(GL_LINES);
+      glVertex3f(m_tree->specialParticles[0].x, m_tree->specialParticles[0].y, m_tree->specialParticles[0].z);
+      glVertex3f(m_tree->specialParticles[1].x, m_tree->specialParticles[1].y, m_tree->specialParticles[1].z);
+    glEnd(GL_LINES);
+#endif    
+    
 
     glDisable(GL_BLEND);
     glDisable(GL_LINE_SMOOTH);    

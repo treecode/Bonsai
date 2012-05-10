@@ -214,7 +214,14 @@ KERNEL_DECLARE(correct_particles)(const int n_bodies,
                                              real4 *pVel,
                                              uint  *unsorted,
                                              real4 *acc0_new,
-                                             float2 *time_new) {
+#if 1		
+					     float2 *time_new,
+					     int *pIDS,
+					     real4 *specialParticles){
+					     
+#else
+					     float2 *time_new){
+#endif 
   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
   const int tid =  threadIdx.y * blockDim.x + threadIdx.x;
   const int dim =  blockDim.x * blockDim.y;
@@ -256,6 +263,17 @@ KERNEL_DECLARE(correct_particles)(const int n_bodies,
   v.x += (a1.x - a0.x)*dt_cb;
   v.y += (a1.y - a0.y)*dt_cb;
   v.z += (a1.z - a0.z)*dt_cb;
+
+
+  #if 1
+   int pid = pIDS[idx];
+   
+   if(pid == 30000000 - 1) 
+     specialParticles[0] = pPos[idx];
+   if (pid == 30000000 - 2) 
+     specialParticles[1] = pPos[idx];
+   #endif
+
 
   //Store the corrected velocity, accelaration and the new time step info
   vel     [idx] = v;

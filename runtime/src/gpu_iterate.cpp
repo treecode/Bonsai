@@ -1015,12 +1015,25 @@ void octree::correct(tree_structure &tree)
   correctParticles.set_arg<cl_mem>(11, real4Buffer1.p());
   correctParticles.set_arg<cl_mem>(12, float2Buffer.p());
 
+#if 1
+  //Buffers required for storing the position of selected particles
+  correctParticles.set_arg<cl_mem>(13, tree.bodies_ids.p());
+  correctParticles.set_arg<cl_mem>(14, specialParticles.p());
+
+#endif
+
   correctParticles.setWork(tree.n, 128);
   correctParticles.execute(execStream->s());
+ 
+/* specialParticles.d2h();
+fprintf(stderr, "Sun: %f %f %f %f \n", specialParticles[0].x, 
+  specialParticles[0].y, specialParticles[0].z, specialParticles[0].w); 
   
-  
-  
-  tree.bodies_acc0.copy(real4Buffer1, tree.n);
+fprintf(stderr, "m31: %f %f %f %f \n", specialParticles[1].x, 
+  specialParticles[1].y, specialParticles[1].z, specialParticles[1].w);  */
+
+
+tree.bodies_acc0.copy(real4Buffer1, tree.n);
   tree.bodies_time.copy(float2Buffer, float2Buffer.get_size()); 
   
 
