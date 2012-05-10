@@ -456,7 +456,7 @@ bool octree::iterate_once(IterationData &idata) {
         localTree.bodies_ids.d2h();
 
         write_dumbp_snapshot_parallel(&localTree.bodies_pos[0], &localTree.bodies_vel[0],
-              &localTree.bodies_ids[0], localTree.n + localTree.n_dust, fileName.c_str()) ;
+              &localTree.bodies_ids[0], localTree.n + localTree.n_dust, fileName.c_str(), t_current) ;
       }
     }
 
@@ -568,7 +568,7 @@ void octree::iterate_setup(IterationData &idata) {
         localTree.bodies_ids.d2h();
 
         write_dumbp_snapshot_parallel(&localTree.bodies_pos[0], &localTree.bodies_vel[0],
-          &localTree.bodies_ids[0], localTree.n + localTree.n_dust, fileName.c_str()) ;
+          &localTree.bodies_ids[0], localTree.n + localTree.n_dust, fileName.c_str(), t_current) ;
       }
   }
 

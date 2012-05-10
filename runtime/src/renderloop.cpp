@@ -713,6 +713,7 @@ public:
 
     float4 color2 = make_float4(starColor2.x*starColor2.w, starColor2.y*starColor2.w, starColor2.z*starColor2.w, 1.0f);
     float4 color3 = make_float4(starColor3.x*starColor3.w, starColor3.y*starColor3.w, starColor3.z*starColor3.w, 1.0f);
+    float4 color4 = make_float4(starColor4.x*starColor4.w, starColor4.y*starColor4.w, starColor4.z*starColor4.w, 1.0f);
 
 #if 1
     for (int i = 0; i < n; i++)
@@ -738,7 +739,7 @@ public:
         ((id / m_brightFreq) & 1) ? color2 : color3;
       } else if (id >= 40000000 && id < 50000000)     // Glowing stars in spiral arms
       {
-        colors[i] = color3;  /*  adds glow in purple */
+        colors[i] = ((id%4) == 0) ? color4 : color3;
       }
 #endif
 #if 0 /* eg: original version */
@@ -840,8 +841,9 @@ public:
   {
     //starColor = make_float4(1.0f, 1.0f, 0.5f, 1.0f);  // yellowish
     starColor = make_float4(1.0f, 1.0f, 1.0f, 1.0f);  // white
-    starColor2 = make_float4(1.0f, 0.2f, 0.5f, 100.0f); // bright redish
+    starColor2 = make_float4(1.0f, 0.2f, 0.5f, 100.0f); // bright redish (w is brightness)
     starColor3 = make_float4(0.1f, 0.1f, 1.0f, 100.0f); // bright bluish
+    starColor4 = make_float4(0.0f, 1.0f, 0.0f, 100.0f);  // green
 
     bulgeColor = make_float4(1.0f, 1.0f, 0.5f, 2.0f);  // yellowish
 
@@ -858,6 +860,7 @@ public:
     addColorParam(m_colorParams, "bulge color", bulgeColor);
     addColorParam(m_colorParams, "star color2", starColor2, true);
     addColorParam(m_colorParams, "star color3", starColor3, true);
+    addColorParam(m_colorParams, "star color4", starColor4, true);
     addColorParam(m_colorParams, "dust color", dustColor);
     addColorParam(m_colorParams, "dark matter color", darkMatterColor);
     m_colorParams->AddParam(new Param<int>("bright star freq", m_brightFreq, 1, 1000, 1, &m_brightFreq));
@@ -911,6 +914,7 @@ public:
   float4 starColor;
   float4 starColor2;
   float4 starColor3;
+  float4 starColor4;
   float4 bulgeColor;
   float4 dustColor;
   float4 darkMatterColor;

@@ -321,7 +321,8 @@ int main(int argc, char **argv)
 	const float Vunit = 100.0;    /* km/s */
 	const float Runit = 1.0;      /* kpc  */
 
-	const float Vr = -125.0/Vunit;
+	//const float Vr = -125.0/Vunit;
+	const float Vr = -130.0/Vunit;
 	const float Vt =  20.0/Vunit;  /* from Johan's thesis */
 	const float Vt_phi = to_rad(-45.0);
 #if 0
@@ -335,7 +336,7 @@ int main(int argc, char **argv)
 	const float Rsep      = 778.0/Runit;  
 //	const float Rp        = 20.0/Runit;     /* page 18 in astro-ph/9509010 */
 	const float lMW       = to_rad(0.0);
-	const float bMW       = to_rad(-90.0);
+	const float bMW       = to_rad(90.0);
 	const float lM31      = to_rad(240.0);
 	const float bM31      = to_rad(-30.0);
 	const float lR        = to_rad(121.0);
