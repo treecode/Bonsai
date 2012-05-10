@@ -237,8 +237,7 @@ void octree::build (tree_structure &tree) {
   int validCount = 0;
   int offset     = 0;
 
-
-  /******** load kernels **********/
+  this->resetCompact();
 
   /******** create memory buffers **********/
 
@@ -324,11 +323,12 @@ void octree::build (tree_structure &tree) {
   
   /******  build the levels *********/
   
-  // set devMemCountsx to 1 because it is used to early out when it hits zero
+  // make sure previous resetCompact() has finished.
+  this->devMemCountsx.waitForCopyEvent();
+
 #if 0
   build_tree_node_levels(*this, validList, compactList, levelOffset, maxLevel, execStream->s());
 #else
-  this->resetCompact();
 
   //int nodeSum = 0;
   for (level = 0; level < MAXLEVELS; level++) {
