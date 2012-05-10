@@ -210,9 +210,9 @@ public:
 	  m_displayMode = (SmokeRenderer::DisplayMode) ((m_displayMode + 1) % SmokeRenderer::NUM_MODES);
 	  m_renderer.setDisplayMode(m_displayMode);
       if (m_displayMode == SmokeRenderer::SPRITES) {
-        m_renderer.setAlpha(0.1f);
+        //m_renderer.setAlpha(0.1f);
       } else {
-        m_renderer.setAlpha(1.0f);
+        //m_renderer.setAlpha(1.0f);
       }
     // MJH todo: add body color support and remove this
     //if (ParticleRenderer::PARTICLE_SPRITES_COLOR == m_displayMode)
@@ -551,7 +551,15 @@ public:
       m_directGravitation = !m_directGravitation;
       m_tree->setUseDirectGravity(m_directGravitation);
     case '0':
-
+      break;
+    case '+':
+      m_renderer.setNumSlices(m_renderer.getNumSlices()*2);
+      m_renderer.setNumDisplayedSlices(m_renderer.getNumSlices());
+      break;
+    case '_':
+      m_renderer.setNumSlices(m_renderer.getNumSlices()/2);
+      m_renderer.setNumDisplayedSlices(m_renderer.getNumSlices());
+      break;
     default:
       break;
     }

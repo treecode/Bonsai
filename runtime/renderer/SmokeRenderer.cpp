@@ -146,9 +146,9 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
 	glGenTextures(1, &mPosBufferTexture);
 	m_noiseTex = createNoiseTexture(64, 64, 64);
 
-    //m_cubemapTex = loadCubemapCross("images/Carina_cross.ppm");
+    m_cubemapTex = loadCubemapCross("images/Carina_cross.ppm");
     //m_cubemapTex = loadCubemap("../images/deepfield%d.ppm");
-    m_cubemapTex = loadCubemap("../images/deepfield%d_1k.ppm");
+    //m_cubemapTex = loadCubemap("../images/deepfield%d_1k.ppm");
 
 	m_spriteTex = createSpriteTexture(256);
 
@@ -1012,18 +1012,8 @@ void SmokeRenderer::drawBounds()
 	glPopMatrix();
 }
 
-void SmokeRenderer::renderSprites()
+void SmokeRenderer::renderSprites(bool sort)
 {
-    if (m_invertedView) {
-        // front-to-back
-        glBlendFunc(GL_ONE_MINUS_DST_ALPHA, GL_ONE);
-    } else {
-        // back-to-front
-        //glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-        //glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-        glBlendFunc(GL_ONE, GL_ONE);
-    }
-
 #if 1
 	// post
     m_fbo->Bind();
@@ -1040,16 +1030,15 @@ void SmokeRenderer::renderSprites()
 #endif
 
 	glColor4f(1.0, 1.0, 1.0, m_spriteAlpha);
-#if 0
-	// sort
-	calcVectors();
-	depthSort();
-	//glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-	drawPointSprites(m_particleProg, 0, mNumParticles, true, true);	
-#else
-    glBlendFunc(GL_ONE, GL_ONE);
-	drawPointSprites(m_particleProg, 0, mNumParticles, true, false);
-#endif
+    if (sort) {
+	    calcVectors();
+	    depthSort();
+        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+	    drawPointSprites(m_particleProg, 0, mNumParticles, false, true);	
+    } else {
+        glBlendFunc(GL_ONE, GL_ONE);
+	    drawPointSprites(m_particleProg, 0, mNumParticles, false, false);
+    }
 
 #if 1
     m_fbo->Disable();
@@ -1071,8 +1060,12 @@ void SmokeRenderer::render()
 		break;
 
 	case SPRITES:
-		renderSprites();
+		renderSprites(false);
 		break;
+
+    case SPRITES_SORTED:
+        renderSprites(true);
+        break;
 
 	case VOLUMETRIC:
 		calcVectors();
