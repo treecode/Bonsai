@@ -801,6 +801,9 @@ BonsaiDemo *theDemo = NULL;
 
 void onexit() {
   if (theDemo) delete theDemo;
+  if (glutGameModeGet(GLUT_GAME_MODE_ACTIVE) != 0) {
+    glutLeaveGameMode();
+  }
   cudaDeviceReset();
 }
 
@@ -894,17 +897,36 @@ void idle(void)
     glutPostRedisplay();
 }
 
-void initGL(int argc, char** argv)
+void initGL(int argc, char** argv, const char *fullScreenMode)
 {  
   // First initialize OpenGL context, so we can properly set the GL for CUDA.
   // This is necessary in order to achieve optimal performance with OpenGL/CUDA interop.
   glutInit(&argc, argv);
-  glutInitDisplayMode(GLUT_RGB | GLUT_DEPTH | GLUT_DOUBLE);
-  //glutInitWindowSize(720, 480);
-  glutInitWindowSize(1024, 768);
-  glutCreateWindow("Bonsai Tree-code Gravitational N-body Simulation");
-  //if (bFullscreen)
-  //  glutFullScreen();
+  glutInitDisplayMode(GLUT_RGBA | GLUT_DEPTH | GLUT_DOUBLE);
+
+  if (fullScreenMode[0]) {
+      printf("fullScreenMode: %s\n", fullScreenMode);
+      glutGameModeString(fullScreenMode);
+      if (glutGameModeGet(GLUT_GAME_MODE_POSSIBLE)) {
+          int win = glutEnterGameMode();
+      } else {
+          printf("mode is not available\n");
+          exit(-1);
+      }
+  } else {
+    glutInitWindowSize(1024, 768);
+    glutCreateWindow("Bonsai Tree-code Gravitational N-body Simulation");
+  }
+
+  glutDisplayFunc(display);
+  glutReshapeFunc(reshape);
+  glutMouseFunc(mouse);
+  glutMotionFunc(motion);
+  glutKeyboardFunc(key);
+  glutKeyboardUpFunc(keyUp);
+  glutSpecialFunc(special);
+  glutIdleFunc(idle);
+
   GLenum err = glewInit();
 
   if (GLEW_OK != err)
@@ -929,15 +951,6 @@ void initGL(int argc, char** argv)
     glxSwapIntervalSGI(0);
 #endif      
   }
-
-  glutDisplayFunc(display);
-  glutReshapeFunc(reshape);
-  glutMouseFunc(mouse);
-  glutMotionFunc(motion);
-  glutKeyboardFunc(key);
-  glutKeyboardUpFunc(keyUp);
-  glutSpecialFunc(special);
-  glutIdleFunc(idle);
 
   glEnable(GL_DEPTH_TEST);
   glClearColor(0.0, 0.0, 0.0, 1.0);

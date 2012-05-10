@@ -29,64 +29,96 @@
  */
 
 #ifdef __cplusplus
-extern "C" {
+    extern "C" {
 #endif
 
-    /*
-     * Under windows, we have to differentiate between static and dynamic libraries
-     */
-#if defined(WIN32)
-#    include <windows.h>
-#    include <windowsx.h>
-#    include <mmsystem.h>
-#    define WINDOWS
-#ifdef FREEGLUT_STATIC
-#    define FGAPI
-#    define FGAPIENTRY
+/*
+ * Under windows, we have to differentiate between static and dynamic libraries
+ */
+#ifdef _WIN32
+/* #pragma may not be supported by some compilers.
+ * Discussion by FreeGLUT developers suggests that
+ * Visual C++ specific code involving pragmas may
+ * need to move to a separate header.  24th Dec 2003
+ */
 
-#    pragma comment (lib, "freeglut_static.lib")    /* link with Win32 static freeglut lib */
+/* Define FREEGLUT_LIB_PRAGMAS to 1 to include library
+ * pragmas or to 0 to exclude library pragmas.
+ * The default behavior depends on the compiler/platform.
+ */
+#   ifndef FREEGLUT_LIB_PRAGMAS
+#       if ( defined(_MSC_VER) || defined(__WATCOMC__) ) && !defined(_WIN32_WCE)
+#           define FREEGLUT_LIB_PRAGMAS 1
+#       else
+#           define FREEGLUT_LIB_PRAGMAS 0
+#       endif
+#   endif
+
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN 1
+#  endif
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#   include <windows.h>
+
+/* Windows static library */
+#   ifdef FREEGLUT_STATIC
+
+#error Static linking is not supported with this build. Please remove the FREEGLUT_STATIC preprocessor directive, or download the source code from http://freeglut.sf.net/ and build against that.
+
+/* Windows shared library (DLL) */
+#   else
+
+#       define FGAPIENTRY __stdcall
+#       if defined(FREEGLUT_EXPORTS)
+#           define FGAPI __declspec(dllexport)
+#       else
+#           define FGAPI __declspec(dllimport)
+
+            /* Link with Win32 shared freeglut lib */
+#           if FREEGLUT_LIB_PRAGMAS
+#               pragma comment (lib, "freeglut.lib")
+#           endif
+
+#       endif
+
+#   endif
+
+/* Drag in other Windows libraries as required by FreeGLUT */
+#   if FREEGLUT_LIB_PRAGMAS
+#       pragma comment (lib, "glu32.lib")    /* link OpenGL Utility lib     */
+#       pragma comment (lib, "opengl32.lib") /* link Microsoft OpenGL lib   */
+#       pragma comment (lib, "gdi32.lib")    /* link Windows GDI lib        */
+#       pragma comment (lib, "winmm.lib")    /* link Windows MultiMedia lib */
+#       pragma comment (lib, "user32.lib")   /* link Windows user lib       */
+#   endif
 
 #else
 
-#        if defined(FREEGLUT_EXPORTS)
-#                define FGAPI __declspec(dllexport)
-    /* #                define FGAPI */
-#        else
-#                define FGAPI __declspec(dllimport)
-#   pragma comment (lib, "freeglut.lib")    /* link with Win32 freeglut lib */
-#        endif
-#        define FGAPIENTRY __stdcall
-
-#endif
-
-#pragma comment (lib, "winmm.lib")       /* link with Windows MultiMedia lib */
-#pragma comment (lib, "user32.lib") /* link with Windows user lib */
-#pragma comment (lib, "gdi32.lib") /* link with Windows GDI lib */
-#pragma comment (lib, "opengl32.lib")    /* link with Microsoft OpenGL lib */
-#pragma comment (lib, "glu32.lib")       /* link with OpenGL Utility lib */
-
-
-#else
+/* Non-Windows definition of FGAPI and FGAPIENTRY  */
 #        define FGAPI
 #        define FGAPIENTRY
+
 #endif
 
-    /*
-     * The freeglut and GLUT API versions
-     */
+/*
+ * The freeglut and GLUT API versions
+ */
 #define  FREEGLUT             1
 #define  GLUT_API_VERSION     4
 #define  FREEGLUT_VERSION_2_0 1
+#define  GLUT_XLIB_IMPLEMENTATION 13
 
-    /*
-     * Always include OpenGL and GLU headers
-     */
+/*
+ * Always include OpenGL and GLU headers
+ */
 #include <GL/gl.h>
 #include <GL/glu.h>
 
-    /*
-     * GLUT API macro definitions -- the special key codes:
-     */
+/*
+ * GLUT API macro definitions -- the special key codes:
+ */
 #define  GLUT_KEY_F1                        0x0001
 #define  GLUT_KEY_F2                        0x0002
 #define  GLUT_KEY_F3                        0x0003
@@ -109,9 +141,9 @@ extern "C" {
 #define  GLUT_KEY_END                       0x006B
 #define  GLUT_KEY_INSERT                    0x006C
 
-    /*
-     * GLUT API macro definitions -- mouse state definitions
-     */
+/*
+ * GLUT API macro definitions -- mouse state definitions
+ */
 #define  GLUT_LEFT_BUTTON                   0x0000
 #define  GLUT_MIDDLE_BUTTON                 0x0001
 #define  GLUT_RIGHT_BUTTON                  0x0002
@@ -120,9 +152,9 @@ extern "C" {
 #define  GLUT_LEFT                          0x0000
 #define  GLUT_ENTERED                       0x0001
 
-    /*
-     * GLUT API macro definitions -- the display mode definitions
-     */
+/*
+ * GLUT API macro definitions -- the display mode definitions
+ */
 #define  GLUT_RGB                           0x0000
 #define  GLUT_RGBA                          0x0000
 #define  GLUT_INDEX                         0x0001
@@ -136,9 +168,9 @@ extern "C" {
 #define  GLUT_STEREO                        0x0100
 #define  GLUT_LUMINANCE                     0x0200
 
-    /*
-     * GLUT API macro definitions -- windows and menu related definitions
-     */
+/*
+ * GLUT API macro definitions -- windows and menu related definitions
+ */
 #define  GLUT_MENU_NOT_IN_USE               0x0000
 #define  GLUT_MENU_IN_USE                   0x0001
 #define  GLUT_NOT_VISIBLE                   0x0000
@@ -148,12 +180,12 @@ extern "C" {
 #define  GLUT_PARTIALLY_RETAINED            0x0002
 #define  GLUT_FULLY_COVERED                 0x0003
 
-    /*
-     * GLUT API macro definitions -- fonts definitions
-     *
-     * Steve Baker suggested to make it binary compatible with GLUT:
-     */
-#if defined(WIN32)
+/*
+ * GLUT API macro definitions -- fonts definitions
+ *
+ * Steve Baker suggested to make it binary compatible with GLUT:
+ */
+#if defined(_MSC_VER) || defined(__CYGWIN__) || defined(__MINGW32__) || defined(__WATCOMC__)
 #   define  GLUT_STROKE_ROMAN               ((void *)0x0000)
 #   define  GLUT_STROKE_MONO_ROMAN          ((void *)0x0001)
 #   define  GLUT_BITMAP_9_BY_15             ((void *)0x0002)
@@ -167,15 +199,15 @@ extern "C" {
     /*
      * I don't really know if it's a good idea... But here it goes:
      */
-    extern void *glutStrokeRoman;
-    extern void *glutStrokeMonoRoman;
-    extern void *glutBitmap9By15;
-    extern void *glutBitmap8By13;
-    extern void *glutBitmapTimesRoman10;
-    extern void *glutBitmapTimesRoman24;
-    extern void *glutBitmapHelvetica10;
-    extern void *glutBitmapHelvetica12;
-    extern void *glutBitmapHelvetica18;
+    extern void* glutStrokeRoman;
+    extern void* glutStrokeMonoRoman;
+    extern void* glutBitmap9By15;
+    extern void* glutBitmap8By13;
+    extern void* glutBitmapTimesRoman10;
+    extern void* glutBitmapTimesRoman24;
+    extern void* glutBitmapHelvetica10;
+    extern void* glutBitmapHelvetica12;
+    extern void* glutBitmapHelvetica18;
 
     /*
      * Those pointers will be used by following definitions:
@@ -191,9 +223,9 @@ extern "C" {
 #   define  GLUT_BITMAP_HELVETICA_18        ((void *) &glutBitmapHelvetica18)
 #endif
 
-    /*
-     * GLUT API macro definitions -- the glutGet parameters
-     */
+/*
+ * GLUT API macro definitions -- the glutGet parameters
+ */
 #define  GLUT_WINDOW_X                      0x0064
 #define  GLUT_WINDOW_Y                      0x0065
 #define  GLUT_WINDOW_WIDTH                  0x0066
@@ -231,11 +263,10 @@ extern "C" {
 #define  GLUT_INIT_DISPLAY_MODE             0x01F8
 #define  GLUT_ELAPSED_TIME                  0x02BC
 #define  GLUT_WINDOW_FORMAT_ID              0x007B
-#define  GLUT_INIT_STATE                    0x007C
 
-    /*
-     * GLUT API macro definitions -- the glutDeviceGet parameters
-     */
+/*
+ * GLUT API macro definitions -- the glutDeviceGet parameters
+ */
 #define  GLUT_HAS_KEYBOARD                  0x0258
 #define  GLUT_HAS_MOUSE                     0x0259
 #define  GLUT_HAS_SPACEBALL                 0x025A
@@ -254,9 +285,9 @@ extern "C" {
 #define  GLUT_JOYSTICK_AXES                 0x0267
 #define  GLUT_JOYSTICK_POLL_RATE            0x0268
 
-    /*
-     * GLUT API macro definitions -- the glutLayerGet parameters
-     */
+/*
+ * GLUT API macro definitions -- the glutLayerGet parameters
+ */
 #define  GLUT_OVERLAY_POSSIBLE              0x0320
 #define  GLUT_LAYER_IN_USE                  0x0321
 #define  GLUT_HAS_OVERLAY                   0x0322
@@ -264,9 +295,9 @@ extern "C" {
 #define  GLUT_NORMAL_DAMAGED                0x0324
 #define  GLUT_OVERLAY_DAMAGED               0x0325
 
-    /*
-     * GLUT API macro definitions -- the glutVideoResizeGet parameters
-     */
+/*
+ * GLUT API macro definitions -- the glutVideoResizeGet parameters
+ */
 #define  GLUT_VIDEO_RESIZE_POSSIBLE         0x0384
 #define  GLUT_VIDEO_RESIZE_IN_USE           0x0385
 #define  GLUT_VIDEO_RESIZE_X_DELTA          0x0386
@@ -278,22 +309,22 @@ extern "C" {
 #define  GLUT_VIDEO_RESIZE_WIDTH            0x038C
 #define  GLUT_VIDEO_RESIZE_HEIGHT           0x038D
 
-    /*
-     * GLUT API macro definitions -- the glutUseLayer parameters
-     */
+/*
+ * GLUT API macro definitions -- the glutUseLayer parameters
+ */
 #define  GLUT_NORMAL                        0x0000
 #define  GLUT_OVERLAY                       0x0001
 
-    /*
-     * GLUT API macro definitions -- the glutGetModifiers parameters
-     */
+/*
+ * GLUT API macro definitions -- the glutGetModifiers parameters
+ */
 #define  GLUT_ACTIVE_SHIFT                  0x0001
 #define  GLUT_ACTIVE_CTRL                   0x0002
 #define  GLUT_ACTIVE_ALT                    0x0004
 
-    /*
-     * GLUT API macro definitions -- the glutSetCursor parameters
-     */
+/*
+ * GLUT API macro definitions -- the glutSetCursor parameters
+ */
 #define  GLUT_CURSOR_RIGHT_ARROW            0x0000
 #define  GLUT_CURSOR_LEFT_ARROW             0x0001
 #define  GLUT_CURSOR_INFO                   0x0002
@@ -318,16 +349,16 @@ extern "C" {
 #define  GLUT_CURSOR_NONE                   0x0065
 #define  GLUT_CURSOR_FULL_CROSSHAIR         0x0066
 
-    /*
-     * GLUT API macro definitions -- RGB color component specification definitions
-     */
+/*
+ * GLUT API macro definitions -- RGB color component specification definitions
+ */
 #define  GLUT_RED                           0x0000
 #define  GLUT_GREEN                         0x0001
 #define  GLUT_BLUE                          0x0002
 
-    /*
-     * GLUT API macro definitions -- additional keyboard and joystick definitions
-     */
+/*
+ * GLUT API macro definitions -- additional keyboard and joystick definitions
+ */
 #define  GLUT_KEY_REPEAT_OFF                0x0000
 #define  GLUT_KEY_REPEAT_ON                 0x0001
 #define  GLUT_KEY_REPEAT_DEFAULT            0x0002
@@ -337,9 +368,9 @@ extern "C" {
 #define  GLUT_JOYSTICK_BUTTON_C             0x0004
 #define  GLUT_JOYSTICK_BUTTON_D             0x0008
 
-    /*
-     * GLUT API macro definitions -- game mode definitions
-     */
+/*
+ * GLUT API macro definitions -- game mode definitions
+ */
 #define  GLUT_GAME_MODE_ACTIVE              0x0000
 #define  GLUT_GAME_MODE_POSSIBLE            0x0001
 #define  GLUT_GAME_MODE_WIDTH               0x0002
@@ -348,197 +379,241 @@ extern "C" {
 #define  GLUT_GAME_MODE_REFRESH_RATE        0x0005
 #define  GLUT_GAME_MODE_DISPLAY_CHANGED     0x0006
 
-    /*
-     * Initialization functions, see fglut_init.c
-     */
-    FGAPI void    FGAPIENTRY glutInit(int *pargc, char **argv);
-    FGAPI void    FGAPIENTRY glutInitWindowPosition(int x, int y);
-    FGAPI void    FGAPIENTRY glutInitWindowSize(int width, int height);
-    FGAPI void    FGAPIENTRY glutInitDisplayMode(unsigned int displayMode);
-    FGAPI void    FGAPIENTRY glutInitDisplayString(const char *displayMode);
+/*
+ * Initialization functions, see fglut_init.c
+ */
+FGAPI void    FGAPIENTRY glutInit( int* pargc, char** argv );
+FGAPI void    FGAPIENTRY glutInitWindowPosition( int x, int y );
+FGAPI void    FGAPIENTRY glutInitWindowSize( int width, int height );
+FGAPI void    FGAPIENTRY glutInitDisplayMode( unsigned int displayMode );
+FGAPI void    FGAPIENTRY glutInitDisplayString( const char* displayMode );
 
-    /*
-     * Process loop function, see freeglut_main.c
-     */
-    FGAPI void    FGAPIENTRY glutMainLoop(void);
+/*
+ * Process loop function, see freeglut_main.c
+ */
+FGAPI void    FGAPIENTRY glutMainLoop( void );
 
-    /*
-     * Window management functions, see freeglut_window.c
-     */
-    FGAPI int     FGAPIENTRY glutCreateWindow(const char *title);
-    FGAPI int     FGAPIENTRY glutCreateSubWindow(int window, int x, int y, int width, int height);
-    FGAPI void    FGAPIENTRY glutDestroyWindow(int window);
-    FGAPI void    FGAPIENTRY glutSetWindow(int window);
-    FGAPI int     FGAPIENTRY glutGetWindow(void);
-    FGAPI void    FGAPIENTRY glutSetWindowTitle(const char *title);
-    FGAPI void    FGAPIENTRY glutSetIconTitle(const char *title);
-    FGAPI void    FGAPIENTRY glutReshapeWindow(int width, int height);
-    FGAPI void    FGAPIENTRY glutPositionWindow(int x, int y);
-    FGAPI void    FGAPIENTRY glutShowWindow(void);
-    FGAPI void    FGAPIENTRY glutHideWindow(void);
-    FGAPI void    FGAPIENTRY glutIconifyWindow(void);
-    FGAPI void    FGAPIENTRY glutPushWindow(void);
-    FGAPI void    FGAPIENTRY glutPopWindow(void);
-    FGAPI void    FGAPIENTRY glutFullScreen(void);
+/*
+ * Window management functions, see freeglut_window.c
+ */
+FGAPI int     FGAPIENTRY glutCreateWindow( const char* title );
+FGAPI int     FGAPIENTRY glutCreateSubWindow( int window, int x, int y, int width, int height );
+FGAPI void    FGAPIENTRY glutDestroyWindow( int window );
+FGAPI void    FGAPIENTRY glutSetWindow( int window );
+FGAPI int     FGAPIENTRY glutGetWindow( void );
+FGAPI void    FGAPIENTRY glutSetWindowTitle( const char* title );
+FGAPI void    FGAPIENTRY glutSetIconTitle( const char* title );
+FGAPI void    FGAPIENTRY glutReshapeWindow( int width, int height );
+FGAPI void    FGAPIENTRY glutPositionWindow( int x, int y );
+FGAPI void    FGAPIENTRY glutShowWindow( void );
+FGAPI void    FGAPIENTRY glutHideWindow( void );
+FGAPI void    FGAPIENTRY glutIconifyWindow( void );
+FGAPI void    FGAPIENTRY glutPushWindow( void );
+FGAPI void    FGAPIENTRY glutPopWindow( void );
+FGAPI void    FGAPIENTRY glutFullScreen( void );
 
-    /*
-     * Display-connected functions, see freeglut_display.c
-     */
-    FGAPI void    FGAPIENTRY glutPostWindowRedisplay(int window);
-    FGAPI void    FGAPIENTRY glutPostRedisplay(void);
-    FGAPI void    FGAPIENTRY glutSwapBuffers(void);
+/*
+ * Display-connected functions, see freeglut_display.c
+ */
+FGAPI void    FGAPIENTRY glutPostWindowRedisplay( int window );
+FGAPI void    FGAPIENTRY glutPostRedisplay( void );
+FGAPI void    FGAPIENTRY glutSwapBuffers( void );
 
-    /*
-     * Mouse cursor functions, see freeglut_cursor.c
-     */
-    FGAPI void    FGAPIENTRY glutWarpPointer(int x, int y);
-    FGAPI void    FGAPIENTRY glutSetCursor(int cursor);
+/*
+ * Mouse cursor functions, see freeglut_cursor.c
+ */
+FGAPI void    FGAPIENTRY glutWarpPointer( int x, int y );
+FGAPI void    FGAPIENTRY glutSetCursor( int cursor );
 
-    /*
-     * Overlay stuff, see freeglut_overlay.c
-     */
-    FGAPI void    FGAPIENTRY glutEstablishOverlay(void);
-    FGAPI void    FGAPIENTRY glutRemoveOverlay(void);
-    FGAPI void    FGAPIENTRY glutUseLayer(GLenum layer);
-    FGAPI void    FGAPIENTRY glutPostOverlayRedisplay(void);
-    FGAPI void    FGAPIENTRY glutPostWindowOverlayRedisplay(int window);
-    FGAPI void    FGAPIENTRY glutShowOverlay(void);
-    FGAPI void    FGAPIENTRY glutHideOverlay(void);
+/*
+ * Overlay stuff, see freeglut_overlay.c
+ */
+FGAPI void    FGAPIENTRY glutEstablishOverlay( void );
+FGAPI void    FGAPIENTRY glutRemoveOverlay( void );
+FGAPI void    FGAPIENTRY glutUseLayer( GLenum layer );
+FGAPI void    FGAPIENTRY glutPostOverlayRedisplay( void );
+FGAPI void    FGAPIENTRY glutPostWindowOverlayRedisplay( int window );
+FGAPI void    FGAPIENTRY glutShowOverlay( void );
+FGAPI void    FGAPIENTRY glutHideOverlay( void );
 
-    /*
-     * Menu stuff, see freeglut_menu.c
-     */
-    FGAPI int     FGAPIENTRY glutCreateMenu(void (* callback)(int menu));
-    FGAPI void    FGAPIENTRY glutDestroyMenu(int menu);
-    FGAPI int     FGAPIENTRY glutGetMenu(void);
-    FGAPI void    FGAPIENTRY glutSetMenu(int menu);
-    FGAPI void    FGAPIENTRY glutAddMenuEntry(const char *label, int value);
-    FGAPI void    FGAPIENTRY glutAddSubMenu(const char *label, int subMenu);
-    FGAPI void    FGAPIENTRY glutChangeToMenuEntry(int item, const char *label, int value);
-    FGAPI void    FGAPIENTRY glutChangeToSubMenu(int item, const char *label, int value);
-    FGAPI void    FGAPIENTRY glutRemoveMenuItem(int item);
-    FGAPI void    FGAPIENTRY glutAttachMenu(int button);
-    FGAPI void    FGAPIENTRY glutDetachMenu(int button);
+/*
+ * Menu stuff, see freeglut_menu.c
+ */
+FGAPI int     FGAPIENTRY glutCreateMenu( void (* callback)( int menu ) );
+FGAPI void    FGAPIENTRY glutDestroyMenu( int menu );
+FGAPI int     FGAPIENTRY glutGetMenu( void );
+FGAPI void    FGAPIENTRY glutSetMenu( int menu );
+FGAPI void    FGAPIENTRY glutAddMenuEntry( const char* label, int value );
+FGAPI void    FGAPIENTRY glutAddSubMenu( const char* label, int subMenu );
+FGAPI void    FGAPIENTRY glutChangeToMenuEntry( int item, const char* label, int value );
+FGAPI void    FGAPIENTRY glutChangeToSubMenu( int item, const char* label, int value );
+FGAPI void    FGAPIENTRY glutRemoveMenuItem( int item );
+FGAPI void    FGAPIENTRY glutAttachMenu( int button );
+FGAPI void    FGAPIENTRY glutDetachMenu( int button );
 
-    /*
-     * Global callback functions, see freeglut_callbacks.c
-     */
-    FGAPI void    FGAPIENTRY glutTimerFunc(unsigned int time, void (* callback)(int), int value);
-    FGAPI void    FGAPIENTRY glutIdleFunc(void (* callback)(void));
+/*
+ * Global callback functions, see freeglut_callbacks.c
+ */
+FGAPI void    FGAPIENTRY glutTimerFunc( unsigned int time, void (* callback)( int ), int value );
+FGAPI void    FGAPIENTRY glutIdleFunc( void (* callback)( void ) );
 
-    /*
-     * Window-specific callback functions, see freeglut_callbacks.c
-     */
-    FGAPI void    FGAPIENTRY glutKeyboardFunc(void (* callback)(unsigned char, int, int));
-    FGAPI void    FGAPIENTRY glutSpecialFunc(void (* callback)(int, int, int));
-    FGAPI void    FGAPIENTRY glutReshapeFunc(void (* callback)(int, int));
-    FGAPI void    FGAPIENTRY glutVisibilityFunc(void (* callback)(int));
-    FGAPI void    FGAPIENTRY glutDisplayFunc(void (* callback)(void));
-    FGAPI void    FGAPIENTRY glutMouseFunc(void (* callback)(int, int, int, int));
-    FGAPI void    FGAPIENTRY glutMotionFunc(void (* callback)(int, int));
-    FGAPI void    FGAPIENTRY glutPassiveMotionFunc(void (* callback)(int, int));
-    FGAPI void    FGAPIENTRY glutEntryFunc(void (* callback)(int));
+/*
+ * Window-specific callback functions, see freeglut_callbacks.c
+ */
+FGAPI void    FGAPIENTRY glutKeyboardFunc( void (* callback)( unsigned char, int, int ) );
+FGAPI void    FGAPIENTRY glutSpecialFunc( void (* callback)( int, int, int ) );
+FGAPI void    FGAPIENTRY glutReshapeFunc( void (* callback)( int, int ) );
+FGAPI void    FGAPIENTRY glutVisibilityFunc( void (* callback)( int ) );
+FGAPI void    FGAPIENTRY glutDisplayFunc( void (* callback)( void ) );
+FGAPI void    FGAPIENTRY glutMouseFunc( void (* callback)( int, int, int, int ) );
+FGAPI void    FGAPIENTRY glutMotionFunc( void (* callback)( int, int ) );
+FGAPI void    FGAPIENTRY glutPassiveMotionFunc( void (* callback)( int, int ) );
+FGAPI void    FGAPIENTRY glutEntryFunc( void (* callback)( int ) );
 
-    FGAPI void    FGAPIENTRY glutKeyboardUpFunc(void (* callback)(unsigned char, int, int));
-    FGAPI void    FGAPIENTRY glutSpecialUpFunc(void (* callback)(int, int, int));
-    FGAPI void    FGAPIENTRY glutJoystickFunc(void (* callback)(unsigned int, int, int, int), int pollInterval);
-    FGAPI void    FGAPIENTRY glutMenuStateFunc(void (* callback)(int));
-    FGAPI void    FGAPIENTRY glutMenuStatusFunc(void (* callback)(int, int, int));
-    FGAPI void    FGAPIENTRY glutOverlayDisplayFunc(void (* callback)(void));
-    FGAPI void    FGAPIENTRY glutWindowStatusFunc(void (* callback)(int));
+FGAPI void    FGAPIENTRY glutKeyboardUpFunc( void (* callback)( unsigned char, int, int ) );
+FGAPI void    FGAPIENTRY glutSpecialUpFunc( void (* callback)( int, int, int ) );
+FGAPI void    FGAPIENTRY glutJoystickFunc( void (* callback)( unsigned int, int, int, int ), int pollInterval );
+FGAPI void    FGAPIENTRY glutMenuStateFunc( void (* callback)( int ) );
+FGAPI void    FGAPIENTRY glutMenuStatusFunc( void (* callback)( int, int, int ) );
+FGAPI void    FGAPIENTRY glutOverlayDisplayFunc( void (* callback)( void ) );
+FGAPI void    FGAPIENTRY glutWindowStatusFunc( void (* callback)( int ) );
 
-    FGAPI void    FGAPIENTRY glutSpaceballMotionFunc(void (* callback)(int, int, int));
-    FGAPI void    FGAPIENTRY glutSpaceballRotateFunc(void (* callback)(int, int, int));
-    FGAPI void    FGAPIENTRY glutSpaceballButtonFunc(void (* callback)(int, int));
-    FGAPI void    FGAPIENTRY glutButtonBoxFunc(void (* callback)(int, int));
-    FGAPI void    FGAPIENTRY glutDialsFunc(void (* callback)(int, int));
-    FGAPI void    FGAPIENTRY glutTabletMotionFunc(void (* callback)(int, int));
-    FGAPI void    FGAPIENTRY glutTabletButtonFunc(void (* callback)(int, int, int, int));
+FGAPI void    FGAPIENTRY glutSpaceballMotionFunc( void (* callback)( int, int, int ) );
+FGAPI void    FGAPIENTRY glutSpaceballRotateFunc( void (* callback)( int, int, int ) );
+FGAPI void    FGAPIENTRY glutSpaceballButtonFunc( void (* callback)( int, int ) );
+FGAPI void    FGAPIENTRY glutButtonBoxFunc( void (* callback)( int, int ) );
+FGAPI void    FGAPIENTRY glutDialsFunc( void (* callback)( int, int ) );
+FGAPI void    FGAPIENTRY glutTabletMotionFunc( void (* callback)( int, int ) );
+FGAPI void    FGAPIENTRY glutTabletButtonFunc( void (* callback)( int, int, int, int ) );
 
-    /*
-     * State setting and retrieval functions, see freeglut_state.c
-     */
-    FGAPI int     FGAPIENTRY glutGet(GLenum query);
-    FGAPI int     FGAPIENTRY glutDeviceGet(GLenum query);
-    FGAPI int     FGAPIENTRY glutGetModifiers(void);
-    FGAPI int     FGAPIENTRY glutLayerGet(GLenum query);
+/*
+ * State setting and retrieval functions, see freeglut_state.c
+ */
+FGAPI int     FGAPIENTRY glutGet( GLenum query );
+FGAPI int     FGAPIENTRY glutDeviceGet( GLenum query );
+FGAPI int     FGAPIENTRY glutGetModifiers( void );
+FGAPI int     FGAPIENTRY glutLayerGet( GLenum query );
 
-    /*
-     * Font stuff, see freeglut_font.c
-     */
-    FGAPI void    FGAPIENTRY glutBitmapCharacter(void *font, int character);
-    FGAPI int     FGAPIENTRY glutBitmapWidth(void *font, int character);
-    FGAPI void    FGAPIENTRY glutStrokeCharacter(void *font, int character);
-    FGAPI int     FGAPIENTRY glutStrokeWidth(void *font, int character);
-    FGAPI int     FGAPIENTRY glutBitmapLength(void *font, const unsigned char *string);
-    FGAPI int     FGAPIENTRY glutStrokeLength(void *font, const unsigned char *string);
+/*
+ * Font stuff, see freeglut_font.c
+ */
+FGAPI void    FGAPIENTRY glutBitmapCharacter( void* font, int character );
+FGAPI int     FGAPIENTRY glutBitmapWidth( void* font, int character );
+FGAPI void    FGAPIENTRY glutStrokeCharacter( void* font, int character );
+FGAPI int     FGAPIENTRY glutStrokeWidth( void* font, int character );
+FGAPI int     FGAPIENTRY glutBitmapLength( void* font, const unsigned char* string );
+FGAPI int     FGAPIENTRY glutStrokeLength( void* font, const unsigned char* string );
 
-    /*
-     * Geometry functions, see freeglut_geometry.c
-     */
-    FGAPI void    FGAPIENTRY glutWireCube(GLdouble size);
-    FGAPI void    FGAPIENTRY glutSolidCube(GLdouble size);
-    FGAPI void    FGAPIENTRY glutWireSphere(GLdouble radius, GLint slices, GLint stacks);
-    FGAPI void    FGAPIENTRY glutSolidSphere(GLdouble radius, GLint slices, GLint stacks);
-    FGAPI void    FGAPIENTRY glutWireCone(GLdouble base, GLdouble height, GLint slices, GLint stacks);
-    FGAPI void    FGAPIENTRY glutSolidCone(GLdouble base, GLdouble height, GLint slices, GLint stacks);
+/*
+ * Geometry functions, see freeglut_geometry.c
+ */
+FGAPI void    FGAPIENTRY glutWireCube( GLdouble size );
+FGAPI void    FGAPIENTRY glutSolidCube( GLdouble size );
+FGAPI void    FGAPIENTRY glutWireSphere( GLdouble radius, GLint slices, GLint stacks );
+FGAPI void    FGAPIENTRY glutSolidSphere( GLdouble radius, GLint slices, GLint stacks );
+FGAPI void    FGAPIENTRY glutWireCone( GLdouble base, GLdouble height, GLint slices, GLint stacks );
+FGAPI void    FGAPIENTRY glutSolidCone( GLdouble base, GLdouble height, GLint slices, GLint stacks );
 
-    FGAPI void    FGAPIENTRY glutWireTorus(GLdouble innerRadius, GLdouble outerRadius, GLint sides, GLint rings);
-    FGAPI void    FGAPIENTRY glutSolidTorus(GLdouble innerRadius, GLdouble outerRadius, GLint sides, GLint rings);
-    FGAPI void    FGAPIENTRY glutWireDodecahedron(void);
-    FGAPI void    FGAPIENTRY glutSolidDodecahedron(void);
-    FGAPI void    FGAPIENTRY glutWireOctahedron(void);
-    FGAPI void    FGAPIENTRY glutSolidOctahedron(void);
-    FGAPI void    FGAPIENTRY glutWireTetrahedron(void);
-    FGAPI void    FGAPIENTRY glutSolidTetrahedron(void);
-    FGAPI void    FGAPIENTRY glutWireIcosahedron(void);
-    FGAPI void    FGAPIENTRY glutSolidIcosahedron(void);
+FGAPI void    FGAPIENTRY glutWireTorus( GLdouble innerRadius, GLdouble outerRadius, GLint sides, GLint rings );
+FGAPI void    FGAPIENTRY glutSolidTorus( GLdouble innerRadius, GLdouble outerRadius, GLint sides, GLint rings );
+FGAPI void    FGAPIENTRY glutWireDodecahedron( void );
+FGAPI void    FGAPIENTRY glutSolidDodecahedron( void );
+FGAPI void    FGAPIENTRY glutWireOctahedron( void );
+FGAPI void    FGAPIENTRY glutSolidOctahedron( void );
+FGAPI void    FGAPIENTRY glutWireTetrahedron( void );
+FGAPI void    FGAPIENTRY glutSolidTetrahedron( void );
+FGAPI void    FGAPIENTRY glutWireIcosahedron( void );
+FGAPI void    FGAPIENTRY glutSolidIcosahedron( void );
 
-    /*
-     * Teapot rendering functions, found in freeglut_teapot.c
-     */
-    FGAPI void    FGAPIENTRY glutWireTeapot(GLdouble size);
-    FGAPI void    FGAPIENTRY glutSolidTeapot(GLdouble size);
+/*
+ * Teapot rendering functions, found in freeglut_teapot.c
+ */
+FGAPI void    FGAPIENTRY glutWireTeapot( GLdouble size );
+FGAPI void    FGAPIENTRY glutSolidTeapot( GLdouble size );
 
-    /*
-     * Game mode functions, see freeglut_gamemode.c
-     */
-    FGAPI void    FGAPIENTRY glutGameModeString(const char *string);
-    FGAPI int     FGAPIENTRY glutEnterGameMode(void);
-    FGAPI void    FGAPIENTRY glutLeaveGameMode(void);
-    FGAPI int     FGAPIENTRY glutGameModeGet(GLenum query);
+/*
+ * Game mode functions, see freeglut_gamemode.c
+ */
+FGAPI void    FGAPIENTRY glutGameModeString( const char* string );
+FGAPI int     FGAPIENTRY glutEnterGameMode( void );
+FGAPI void    FGAPIENTRY glutLeaveGameMode( void );
+FGAPI int     FGAPIENTRY glutGameModeGet( GLenum query );
 
-    /*
-     * Video resize functions, see freeglut_videoresize.c
-     */
-    FGAPI int     FGAPIENTRY glutVideoResizeGet(GLenum query);
-    FGAPI void    FGAPIENTRY glutSetupVideoResizing(void);
-    FGAPI void    FGAPIENTRY glutStopVideoResizing(void);
-    FGAPI void    FGAPIENTRY glutVideoResize(int x, int y, int width, int height);
-    FGAPI void    FGAPIENTRY glutVideoPan(int x, int y, int width, int height);
+/*
+ * Video resize functions, see freeglut_videoresize.c
+ */
+FGAPI int     FGAPIENTRY glutVideoResizeGet( GLenum query );
+FGAPI void    FGAPIENTRY glutSetupVideoResizing( void );
+FGAPI void    FGAPIENTRY glutStopVideoResizing( void );
+FGAPI void    FGAPIENTRY glutVideoResize( int x, int y, int width, int height );
+FGAPI void    FGAPIENTRY glutVideoPan( int x, int y, int width, int height );
 
-    /*
-     * Colormap functions, see freeglut_misc.c
-     */
-    FGAPI void    FGAPIENTRY glutSetColor(int color, GLfloat red, GLfloat green, GLfloat blue);
-    FGAPI GLfloat FGAPIENTRY glutGetColor(int color, int component);
-    FGAPI void    FGAPIENTRY glutCopyColormap(int window);
+/*
+ * Colormap functions, see freeglut_misc.c
+ */
+FGAPI void    FGAPIENTRY glutSetColor( int color, GLfloat red, GLfloat green, GLfloat blue );
+FGAPI GLfloat FGAPIENTRY glutGetColor( int color, int component );
+FGAPI void    FGAPIENTRY glutCopyColormap( int window );
 
-    /*
-     * Misc keyboard and joystick functions, see freeglut_misc.c
-     */
-    FGAPI void    FGAPIENTRY glutIgnoreKeyRepeat(int ignore);
-    FGAPI void    FGAPIENTRY glutSetKeyRepeat(int repeatMode);    /* DEPRECATED 11/4/02 - Do not use */
-    FGAPI void    FGAPIENTRY glutForceJoystickFunc(void);
+/*
+ * Misc keyboard and joystick functions, see freeglut_misc.c
+ */
+FGAPI void    FGAPIENTRY glutIgnoreKeyRepeat( int ignore );
+FGAPI void    FGAPIENTRY glutSetKeyRepeat( int repeatMode );
+FGAPI void    FGAPIENTRY glutForceJoystickFunc( void );
 
-    /*
-     * Misc functions, see freeglut_misc.c
-     */
-    FGAPI int     FGAPIENTRY glutExtensionSupported(const char *extension);
-    FGAPI void    FGAPIENTRY glutReportErrors(void);
+/*
+ * Misc functions, see freeglut_misc.c
+ */
+FGAPI int     FGAPIENTRY glutExtensionSupported( const char* extension );
+FGAPI void    FGAPIENTRY glutReportErrors( void );
+
+/* Comment from glut.h of classic GLUT:
+
+   Win32 has an annoying issue where there are multiple C run-time
+   libraries (CRTs).  If the executable is linked with a different CRT
+   from the GLUT DLL, the GLUT DLL will not share the same CRT static
+   data seen by the executable.  In particular, atexit callbacks registered
+   in the executable will not be called if GLUT calls its (different)
+   exit routine).  GLUT is typically built with the
+   "/MD" option (the CRT with multithreading DLL support), but the Visual
+   C++ linker default is "/ML" (the single threaded CRT).
+
+   One workaround to this issue is requiring users to always link with
+   the same CRT as GLUT is compiled with.  That requires users supply a
+   non-standard option.  GLUT 3.7 has its own built-in workaround where
+   the executable's "exit" function pointer is covertly passed to GLUT.
+   GLUT then calls the executable's exit function pointer to ensure that
+   any "atexit" calls registered by the application are called if GLUT
+   needs to exit.
+
+   Note that the __glut*WithExit routines should NEVER be called directly.
+   To avoid the atexit workaround, #define GLUT_DISABLE_ATEXIT_HACK. */
+
+/* to get the prototype for exit() */
+#include <stdlib.h>
+
+#if defined(_WIN32) && !defined(GLUT_DISABLE_ATEXIT_HACK) && !defined(__WATCOMC__)
+FGAPI void FGAPIENTRY __glutInitWithExit(int *argcp, char **argv, void (__cdecl *exitfunc)(int));
+FGAPI int FGAPIENTRY __glutCreateWindowWithExit(const char *title, void (__cdecl *exitfunc)(int));
+FGAPI int FGAPIENTRY __glutCreateMenuWithExit(void (* func)(int), void (__cdecl *exitfunc)(int));
+#ifndef FREEGLUT_BUILDING_LIB
+#if defined(__GNUC__)
+#define FGUNUSED __attribute__((unused))
+#else
+#define FGUNUSED
+#endif
+static void FGAPIENTRY FGUNUSED glutInit_ATEXIT_HACK(int *argcp, char **argv) { __glutInitWithExit(argcp, argv, exit); }
+#define glutInit glutInit_ATEXIT_HACK
+static int FGAPIENTRY FGUNUSED glutCreateWindow_ATEXIT_HACK(const char *title) { return __glutCreateWindowWithExit(title, exit); }
+#define glutCreateWindow glutCreateWindow_ATEXIT_HACK
+static int FGAPIENTRY FGUNUSED glutCreateMenu_ATEXIT_HACK(void (* func)(int)) { return __glutCreateMenuWithExit(func, exit); }
+#define glutCreateMenu glutCreateMenu_ATEXIT_HACK
+#endif
+#endif
 
 #ifdef __cplusplus
-}
+    }
 #endif
 
 /*** END OF FILE ***/
