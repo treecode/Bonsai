@@ -769,8 +769,8 @@ public:
 	  } 
       else //>= 200000000, Dark matter
       {
-         //colors[i] = dustColor;
-		  colors[i] = darkMatterColor * make_float4(r, r, r, 1.0f);
+        colors[i] = darkMatterColor;
+		  //colors[i] = darkMatterColor * make_float4(r, r, r, 1.0f);
       }            
       
 #else
@@ -857,7 +857,7 @@ public:
     //dustColor = make_float4(0.0f, 0.2f, 0.1f, 0.0f);  // green
     //dustColor = make_float4(0.0f, 0.0f, 0.0f, 0.0f);  // black
 
-    darkMatterColor = make_float4(0.0f, 0.2f, 0.4f, 1.0f);      // blue
+    darkMatterColor = make_float4(0.0f, 0.2f, 0.4f, 3.0f);      // blue
 
     m_colorParams = new ParamListGL("colors");
     addColorParam(m_colorParams, "star color", starColor);

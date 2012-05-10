@@ -53,7 +53,10 @@ void main()                                                 \n
 		// star
 		col.rgb *= overBright;
 		col.a = 1.0;
-	}
+    } else if (type == 3.0) {
+      // cull dark matter
+      gl_Position.w = -1.0;
+    }
 
     //gl_PointSize = pointRadius*(pointScale / dist);       \n
 	gl_PointSize = max(1.0, pointRadius * (pointScale / dist)); \n
