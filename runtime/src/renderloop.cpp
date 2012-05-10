@@ -786,7 +786,7 @@ public:
 #endif
 
 
-		LOGF(stderr, "sunIdx= %d  m31Idx= %d \n", sunIdx, m31Idx);
+		//LOGF(stderr, "sunIdx= %d  m31Idx= %d \n", sunIdx, m31Idx);
 
     m_renderer.setNumParticles( m_tree->localTree.n + m_tree->localTree.n_dust);    
     m_renderer.setPositionsDevice((float*) m_tree->localTree.bodies_pos.d());   // use d2d copy
@@ -839,10 +839,11 @@ public:
 #if 0
     m_tree->specialParticles.d2h();
     
+    //Draw a line from sun to M31. Sun is [0] M31 center is [1]
     glBegin(GL_LINES);
       glVertex3f(m_tree->specialParticles[0].x, m_tree->specialParticles[0].y, m_tree->specialParticles[0].z);
       glVertex3f(m_tree->specialParticles[1].x, m_tree->specialParticles[1].y, m_tree->specialParticles[1].z);
-    glEnd(GL_LINES);
+    glEnd();
 #endif    
     
 
