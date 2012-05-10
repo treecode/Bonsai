@@ -148,6 +148,7 @@ public:
       m_displaySliders(false),
       m_enableGlow(true),
       m_displayLightBuffer(false),
+      m_directGravitation(false),
       m_octreeDisplayLevel(3),
       m_flyMode(false),
 	    m_fov(60.0f),
@@ -535,6 +536,11 @@ public:
       m_supernova = true;
       m_overBright = 20.0f;
       break;
+    case '1':
+      m_directGravitation = !m_directGravitation;
+      m_tree->setUseDirectGravity(m_directGravitation);
+    default:
+      break;
     }
 
     m_keyDown[key] = true;
@@ -774,6 +780,7 @@ public:
   bool m_displayLightBuffer;
   bool m_renderingEnabled;
   bool m_flyMode;
+  bool m_directGravitation;
 
   bool m_keyDown[256];
   int m_keyModifiers;

@@ -37,10 +37,10 @@ option(COMPILE_SM30
   ON
   )
 
-option(USE_DUST
-  "On to enable dust rendering"
-  ON
-  )
+#option(USE_DUST
+#  "On to enable dust rendering"
+#  ON
+#  )
 
   
 option(CUDA_KEEP_INTERMEDIATE_FILES
@@ -104,6 +104,7 @@ set (CUFILES
   CUDAkernels/sortKernels.cu
   CUDAkernels/timestep.cu
   CUDAkernels/depthSort.cu
+  CUDAkernels/dev_direct_gravity.cu
   )
 
 if (COMPILE_SM30)

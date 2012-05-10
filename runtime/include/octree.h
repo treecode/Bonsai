@@ -335,6 +335,8 @@ protected:
   int   tEnd;
   float theta;
 
+  bool  useDirectGravity;
+
   //Sim stats
   double Ekin, Ekin0, Ekin1;
   double Epot, Epot0, Epot1;
@@ -395,6 +397,7 @@ protected:
   my_dev::kernel predictParticles;
   my_dev::kernel getNActive;
   my_dev::kernel approxGrav;
+  my_dev::kernel directGrav;
   my_dev::kernel correctParticles;
   my_dev::kernel computeDt;
   my_dev::kernel computeEnergy;
@@ -534,6 +537,7 @@ public:
   //Subfunctions of iterate, should probally be private 
   void predict(tree_structure &tree);
   void approximate_gravity(tree_structure &tree);
+  void direct_gravity(tree_structure &tree);
   void correct(tree_structure &tree);
   double compute_energies(tree_structure &tree);
 
@@ -673,6 +677,7 @@ public:
     void predictDustStep(tree_structure &tree);
     void correctDustStep(tree_structure &tree);
     void approximate_dust(tree_structure &tree);
+    void direct_dust(tree_structure &tree);
     void setDustGroupProperties(tree_structure &tree);
     
     my_dev::kernel define_dust_groups;
@@ -714,7 +719,7 @@ public:
   octree(char **argv, const int device = 0, const float _theta = 0.75, const float eps = 0.05,
          string snapF = "", int snapI = -1,  float tempTimeStep = 1.0 / 16.0, int tempTend = 1000,
          float killDistanceT = -1, int maxDistT = -1, int snapAdd = 0, const int _rebuild = 2)
-  : rebuild_tree_rate(_rebuild), procId(0), nProcs(1), thisPartLETExTime(0)
+  : rebuild_tree_rate(_rebuild), procId(0), nProcs(1), thisPartLETExTime(0), useDirectGravity(false)
   {
 #if USE_B40C
     sorter = 0;
@@ -799,6 +804,9 @@ public:
     delete sorter;
 #endif
   };
+
+  void setUseDirectGravity(bool s) { useDirectGravity = s;    }
+  bool getUseDirectGravity() const { return useDirectGravity; }
 };
 
 

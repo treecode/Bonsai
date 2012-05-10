@@ -252,6 +252,7 @@ void octree::load_kernels() {
   predictParticles.setContext(devContext);
   getNActive.setContext(devContext);
   approxGrav.setContext(devContext);
+  directGrav.setContext(devContext);
   correctParticles.setContext(devContext);
   computeDt.setContext(devContext);
   computeEnergy.setContext(devContext);
@@ -266,6 +267,7 @@ void octree::load_kernels() {
   predictParticles.load_source("./timestep.ptx", pathName.c_str(), "", -1);
   getNActive.load_source("./timestep.ptx", pathName.c_str(), "", -1);
 	approxGrav.load_source("./dev_approximate_gravity.ptx", pathName.c_str(), "", 64);
+  directGrav.load_source("./dev_direct_gravity.ptx", pathName.c_str(), "", 64);
   correctParticles.load_source("./timestep.ptx", pathName.c_str(), "", -1);
   computeDt.load_source("./timestep.ptx", pathName.c_str(), "", -1);
   computeEnergy.load_source("./timestep.ptx", pathName.c_str(), "", -1);
@@ -279,6 +281,7 @@ void octree::load_kernels() {
   predictParticles.create("predict_particles");   
   getNActive.create("get_nactive");
   approxGrav.create("dev_approximate_gravity");
+  directGrav.create("dev_direct_gravity");
   correctParticles.create("correct_particles");
   computeDt.create("compute_dt");  
   setActiveGrps.create("setActiveGroups");
