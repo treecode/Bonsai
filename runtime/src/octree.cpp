@@ -149,7 +149,7 @@ void octree::write_dumbp_snapshot(real4 *bodyPositions, real4 *bodyVelocities, i
 };
 
 void octree::write_dumbp_snapshot_parallel_tipsy(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName,
-                                                 int NCombTotal, int NCombFirst, int NCombSecond, int NCombThird) 
+                                                 int NCombTotal, int NCombFirst, int NCombSecond, int NCombThird, float time) 
 {
   #ifdef TIPSYOUTPUT  
   //Rank 0 does the writing
@@ -167,7 +167,7 @@ void octree::write_dumbp_snapshot_parallel_tipsy(real4 *bodyPositions, real4 *bo
     }
       
     //Create tipsy header
-    h.time = 0.0;
+    h.time = time;
     h.nbodies = NCombTotal;
     h.ndim = 3;
     h.ndark = NCombFirst;
@@ -258,7 +258,7 @@ void octree::write_dumbp_snapshot_parallel_tipsy(real4 *bodyPositions, real4 *bo
  #endif
 }
 
-void octree::write_dumbp_snapshot_parallel(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName) 
+void octree::write_dumbp_snapshot_parallel(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName, float time) 
 {
   
   //If we use individual softening then first sync the particle types
@@ -292,7 +292,7 @@ void octree::write_dumbp_snapshot_parallel(real4 *bodyPositions, real4 *bodyVelo
     sprintf(fullFileName, "%s", fileName.c_str());
     string tempName; tempName.assign(fullFileName);
     write_dumbp_snapshot_parallel_tipsy(bodyPositions, bodyVelocities, bodyIds, n, tempName,
-                                        NCombTotal, NCombFirst, NCombSecond, NCombThird);
+                                        NCombTotal, NCombFirst, NCombSecond, NCombThird, time);
     return;
   #endif
   //#endif

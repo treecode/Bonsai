@@ -446,9 +446,9 @@ public:
 
    my_dev::context * getDevContext() { return &devContext; };        //Pointer so destructor is only called once  
 
-   void write_dumbp_snapshot_parallel(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName) ;
+   void write_dumbp_snapshot_parallel(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName, float time) ;
    void write_dumbp_snapshot_parallel_tipsy(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName,
-                                            int NCombTotal, int NCombFirst, int NCombSecond, int NCombThird);
+                                            int NCombTotal, int NCombFirst, int NCombSecond, int NCombThird, float time);
    
    void set_src_directory(string src_dir);
 
