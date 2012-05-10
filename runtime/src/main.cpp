@@ -618,6 +618,7 @@ int main(int argc, char** argv)
   float timeStep = 1.0f / 16.0f;
   float  tEnd      = 1;
   int devID      = 0;
+  int renderDevID = 0;
 
   string fileName       =  "";
   string logFileName    = "gpuLog.log";
@@ -651,6 +652,7 @@ int main(int argc, char** argv)
 		ADDUSAGE(" -i  --infile #         Input snapshot filename ");
 		ADDUSAGE("     --logfile #        Log filename [" << logFileName << "]");
 		ADDUSAGE("     --dev #            Device ID [" << devID << "]");
+		ADDUSAGE("     --renderdev #      Rendering Device ID [" << renderDevID << "]");
 		ADDUSAGE(" -t  --dt #             time step [" << timeStep << "]");
 		ADDUSAGE(" -T  --tend #           N-body end time [" << tEnd << "]");
 		ADDUSAGE(" -e  --eps #            softening (will be squared) [" << eps << "]");
@@ -684,6 +686,7 @@ int main(int argc, char** argv)
 		opt.setOption( "theta",   'o' );
 		opt.setOption( "rebuild", 'r' );
 		opt.setOption( "dev" );
+		opt.setOption( "renderdev" );
 		opt.setOption( "logfile" );
 		opt.setOption( "snapname");
 		opt.setOption( "snapiter");
@@ -723,6 +726,8 @@ int main(int argc, char** argv)
 		if ((optarg = opt.getValue("infile")))       fileName           = string(optarg);
 		if ((optarg = opt.getValue("logfile")))      logFileName        = string(optarg);
 		if ((optarg = opt.getValue("dev")))          devID              = atoi  (optarg);
+        renderDevID = devID;
+        if ((optarg = opt.getValue("renderdev")))    renderDevID        = atoi  (optarg);
 		if ((optarg = opt.getValue("dt")))           timeStep           = (float) atof  (optarg);
 		if ((optarg = opt.getValue("tend")))         tEnd               = (float) atof  (optarg);
 		if ((optarg = opt.getValue("eps")))          eps                = (float) atof  (optarg);
@@ -868,7 +873,7 @@ int main(int argc, char** argv)
 #ifdef USE_OPENGL
   // create OpenGL context first, and register for interop
   initGL(argc, argv, fullScreenMode.c_str());
-  cudaGLSetGLDevice(devID);
+  cudaGLSetGLDevice(renderDevID);
 #endif
 
   initTimers();
