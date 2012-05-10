@@ -317,7 +317,7 @@ int main(int argc, char **argv)
 	const float Runit = 1.0;      /* kpc  */
 
 	const float Vr = -125.0/Vunit;
-	const float Vt = - 20.0/Vunit;  /* from Johan's thesis */
+	const float Vt = - 10.0/Vunit;  /* from Johan's thesis */
 	const float lVt = to_rad(+180.0);  /* this is orientation of the tangential velocity */
 	const float bVt = to_rad(   0.0);  /* p.18 in arXiv/astro-ph/9509010 */
 
