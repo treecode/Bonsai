@@ -72,7 +72,7 @@ extern void displayTimers()
 #endif
 
 void read_dumbp_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyVelocities,  vector<int> &bodiesIDs,  float eps2,
-                     string fileName, int rank, int procs, int &NTotal2, int &NFirst, int &NSecond, int &NThird, octree *tree, int reduce_data_factor)  
+                     string fileName, int rank, int procs, int &NTotal2, int &NFirst, int &NSecond, int &NThird, octree *tree, int reduce_bodies_factor)  
 {
   //Process 0 does the file reading and sends the data
   //to the other processes
@@ -143,10 +143,10 @@ void read_dumbp_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
 
 	globalParticleCount++;
 
-	if( globalParticleCount % reduce_data_factor == 0 ) 
-		positions.w *= reduce_data_factor;
+	if( globalParticleCount % reduce_bodies_factor == 0 ) 
+		positions.w *= reduce_bodies_factor;
 
-	if( globalParticleCount % reduce_data_factor != 0 )
+	if( globalParticleCount % reduce_bodies_factor != 0 )
 		continue;
 
     #ifndef INDSOFT
@@ -193,7 +193,8 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
                               int rank, int procs, int &NTotal2, int &NFirst, 
                               int &NSecond, int &NThird, octree *tree,
                               vector<real4> &dustPositions, vector<real4> &dustVelocities,
-                              vector<int> &dustIDs, int reduce_data_factor)  
+                              vector<int> &dustIDs, int reduce_bodies_factor,
+                              int reduce_dust_factor)  
 {
   //Process 0 does the file reading and sends the data
   //to the other processes
@@ -249,6 +250,8 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
   star_particle s;
 
   int globalParticleCount = 0;
+  int bodyCount = 0;
+  int dustCount = 0;
   
   for(int i=0; i < NTotal; i++)
   {
@@ -280,22 +283,28 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
     }
 
 	globalParticleCount++;
-
-	if( globalParticleCount % reduce_data_factor == 0 ) 
-		positions.w *= reduce_data_factor;
-
-	if( globalParticleCount % reduce_data_factor != 0 )
-		continue;
-    
+   
     #ifdef USE_DUST
       if(idummy >= 50000000 && idummy < 100000000)
       {
+        dustCount++;
+        if( dustCount % reduce_dust_factor == 0 ) 
+          positions.w *= reduce_dust_factor;
+
+        if( dustCount % reduce_dust_factor != 0 )
+          continue;
         dustPositions.push_back(positions);
         dustVelocities.push_back(velocity);
         dustIDs.push_back(idummy);      
       }
       else
       {
+        bodyCount++;
+        if( bodyCount % reduce_bodies_factor == 0 ) 
+		      positions.w *= reduce_bodies_factor;
+
+	      if( bodyCount % reduce_bodies_factor != 0 )
+		      continue;
         bodyPositions.push_back(positions);
         bodyVelocities.push_back(velocity);
         bodiesIDs.push_back(idummy);  
@@ -303,6 +312,11 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
 
     
     #else
+      if( globalParticleCount % reduce_bodies_factor == 0 ) 
+        positions.w *= reduce_bodies_factor;
+
+      if( globalParticleCount % reduce_bodies_factor != 0 )
+        continue;
       bodyPositions.push_back(positions);
       bodyVelocities.push_back(velocity);
       bodiesIDs.push_back(idummy);  
@@ -611,7 +625,8 @@ int main(int argc, char** argv)
   float  remoDistance   = -1.0;
   int    snapShotAdd    =  0;
   int rebuild_tree_rate = 2;
-  int reduce_data_factor = 1;
+  int reduce_bodies_factor = 1;
+  int reduce_dust_factor = 1;
 
 #if ENABLE_LOG
   ENABLE_RUNTIME_LOG = false;
@@ -641,7 +656,10 @@ int main(int argc, char** argv)
 		ADDUSAGE("     --rmdist #         Particle removal distance (-1 to disable) [" << remoDistance << "]");
 		ADDUSAGE("     --valueadd #       value to add to the snapshot [" << snapShotAdd << "]");
 		ADDUSAGE(" -r  --rebuild #        rebuild tree every # steps [" << rebuild_tree_rate << "]");
-		ADDUSAGE("     --reducedata #     cut down dataset by # factor ");
+		ADDUSAGE("     --reducebodies #   cut down bodies dataset by # factor ");
+#ifdef USE_DUST
+    ADDUSAGE("     --reducedust #     cut down dust dataset by # factor ");
+#endif
 #if ENABLE_LOG
     ADDUSAGE("     --log              enable logging ");
 #endif
@@ -662,7 +680,10 @@ int main(int argc, char** argv)
 		opt.setOption( "killdist");
 		opt.setOption( "rmdist");
 		opt.setOption( "valueadd");
-		opt.setOption( "reducedata");
+		opt.setOption( "reducebodies");
+#ifdef USE_DUST
+    opt.setOption( "reducedust");
+#endif USE_DUST
 #if ENABLE_LOG
 		opt.setFlag("log");
 #endif
@@ -700,7 +721,8 @@ int main(int argc, char** argv)
 		if ((optarg = opt.getValue("rmdist")))       remoDistance       = (float) atof  (optarg);
 		if ((optarg = opt.getValue("valueadd")))     snapShotAdd        = atoi  (optarg);
 		if ((optarg = opt.getValue("rebuild")))      rebuild_tree_rate  = atoi  (optarg);
-		if ((optarg = opt.getValue("reducedata")))	 reduce_data_factor = atoi  (optarg);
+		if ((optarg = opt.getValue("reducebodies"))) reduce_bodies_factor = atoi  (optarg);
+    if ((optarg = opt.getValue("reducedust")))	 reduce_dust_factor = atoi  (optarg);
 
 		if (fileName.empty()) 
 		{
@@ -791,8 +813,10 @@ int main(int argc, char** argv)
 	cout << "Kill distance: \t"      << killDistance     << "\t\tRemove dist: \t"   << remoDistance << endl;
 	cout << "Snapshot Addition: \t"  << snapShotAdd << endl;
 	cout << "Rebuild tree every " << rebuild_tree_rate << " timestep\n";
-	if( reduce_data_factor > 1 )
-		cout << "Reduce data set by " << reduce_data_factor << " \n";
+	if( reduce_bodies_factor > 1 )
+		cout << "Reduce number of non-dust bodies by " << reduce_bodies_factor << " \n";
+  if( reduce_dust_factor > 1 )
+    cout << "Reduce number of dust bodies by " << reduce_dust_factor << " \n";
 #if ENABLE_LOG
   if (ENABLE_RUNTIME_LOG)
     cout << " Runtime logging is ENABLED \n";
@@ -810,8 +834,10 @@ int main(int argc, char** argv)
 	cerr << "Kill distance: \t"      << killDistance     << "\t\tRemove dist: \t"   << remoDistance << endl;
 	cerr << "Snapshot Addition: \t"  << snapShotAdd << endl;
 	cerr << "Rebuild tree every " << rebuild_tree_rate << " timestep\n";
-	if( reduce_data_factor > 1 )
-		cout << "Reduce data set by " << reduce_data_factor << " \n";
+  if( reduce_bodies_factor > 1 )
+    cout << "Reduce number of non-dust bodies by " << reduce_bodies_factor << " \n";
+  if( reduce_dust_factor > 1 )
+    cout << "Reduce number of dust bodies by " << reduce_dust_factor << " \n";
 #if ENABLE_LOG
   if (ENABLE_RUNTIME_LOG)
     cerr << " Runtime logging is ENABLED \n";
@@ -870,9 +896,9 @@ int main(int argc, char** argv)
    #ifdef TIPSYOUTPUT
       read_tipsy_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, 
                                procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
-                               dustPositions, dustVelocities, dustIDs, reduce_data_factor);    
+                               dustPositions, dustVelocities, dustIDs, reduce_bodies_factor, reduce_dust_factor);    
    #else
-      read_dumbp_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, procId, nProcs, NTotal, NFirst, NSecond, NThird, tree, reduce_data_factor);
+      read_dumbp_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, procId, nProcs, NTotal, NFirst, NSecond, NThird, tree, reduce_bodies_factor);
    #endif
 
   }

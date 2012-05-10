@@ -47,7 +47,7 @@ extern void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4>
                               int rank, int procs, int &NTotal2, int &NFirst, 
                               int &NSecond, int &NThird, octree *tree,
                               vector<real4> &dustPositions, vector<real4> &dustVelocities,
-                              vector<int> &dustIDs, int reduce_data_factor) ;
+                              vector<int> &dustIDs, int reduce_bodies_factor, int reduce_dust_factor) ;
 extern int setupMergerModel(vector<real4> &bodyPositions1,      vector<real4> &bodyVelocities1,
                             vector<int>   &bodyIDs1,            vector<real4> &bodyPositions2,
                             vector<real4> &bodyVelocities2,     vector<int>   &bodyIDs2);
@@ -92,7 +92,7 @@ bool octree::addGalaxy(int galaxyID)
     int NTotal, NFirst, NSecond, Nthird = 0;
     read_tipsy_file_parallel(newGalaxy_pos, newGalaxy_vel, newGalaxy_ids, 0, fileName, 
                              rank, procs, NTotal, NFirst, NSecond, NThird, this,
-                             newGalaxy_pos_dust, newGalaxy_vel_dust, newGalaxy_ids_dust, 1);
+                             newGalaxy_pos_dust, newGalaxy_vel_dust, newGalaxy_ids_dust, 1, 1);
     
 
     int n_addGalaxy      = (int) newGalaxy_pos.size();
