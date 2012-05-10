@@ -1392,7 +1392,7 @@ void SmokeRenderer::initParams()
 
     m_params->AddParam(new Param<float>("sprite size", mParticleRadius, 0.0f, 2.0f, 0.01f, &mParticleRadius));
     m_params->AddParam(new Param<float>("dust scale", m_ageScale, 0.0f, 50.0f, 0.1f, &m_ageScale));
-    m_params->AddParam(new Param<float>("dust alpha", m_dustAlpha, 0.0f, 10.0f, 0.1f, &m_dustAlpha));
+    m_params->AddParam(new Param<float>("dust alpha", m_dustAlpha, 0.0f, 1.0f, 0.1f, &m_dustAlpha));
 
     m_params->AddParam(new Param<float>("light color r", m_lightColor[0], 0.0f, 1.0f, 0.01f, &m_lightColor[0]));
     m_params->AddParam(new Param<float>("light color g", m_lightColor[1], 0.0f, 1.0f, 0.01f, &m_lightColor[1]));

@@ -56,7 +56,7 @@ void main()                                                 \n
 	}
 
     //gl_PointSize = pointRadius*(pointScale / dist);       \n
-	gl_PointSize = max(2.0, pointRadius * (pointScale / dist)); \n
+	gl_PointSize = max(1.0, pointRadius * (pointScale / dist)); \n
 
     //gl_TexCoord[0] = vec4(gl_MultiTexCoord0.xyz, age); // sprite texcoord  \n
     //gl_TexCoord[1] = vec4(eyeSpacePos.xyz, mass);                           \n
@@ -488,8 +488,8 @@ void main()                                                                     
 	vec4 s = texture2D(tex, gl_TexCoord[0].xy);	\n
 	float i = dot(s.rgb, vec3(0.333));
 	s *= smoothstep(threshold, threshold+0.1, i);
-	s = pow(s, scale);
-	//s *= scale;
+	//s = pow(s, scale);
+	s *= scale;
 	gl_FragColor = s;
 }
 );
@@ -598,6 +598,11 @@ void main()                                                        \n
     }
     c += texture2D(glowTex, gl_TexCoord[0].xy) * glowIntensity;
     c.rgb *= scale;
+
+    // vignette
+    float d = length(gl_TexCoord[0].xy*2.0-1.0);
+    c.rgb *= 1.0 - smoothstep(0.9, 1.5, d);
+
 	c.rgb = pow(c.rgb, gamma);
     gl_FragColor = c;                                              \n
 }                                                                  \n
