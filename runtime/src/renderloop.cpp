@@ -719,10 +719,15 @@ public:
     float4 color3 = make_float4(starColor3.x*starColor3.w, starColor3.y*starColor3.w, starColor3.z*starColor3.w, 1.0f);
     float4 color4 = make_float4(starColor4.x*starColor4.w, starColor4.y*starColor4.w, starColor4.z*starColor4.w, 1.0f);
 
+		int sunIdx = -1;
+		int m31Idx = -1;
+
 #if 1
     for (int i = 0; i < n; i++)
     {
       int id =  m_tree->localTree.bodies_ids[i];
+			if (id == 30000000 - 1) sunIdx = i;
+			if (id == 30000000 - 2) m31Idx = i;
       //printf("%d: id %d, mass: %f\n", i, id, m_tree->localTree.bodies_pos[i].w);
 #if 1
       float r = frand(id);
@@ -779,6 +784,9 @@ public:
 #endif
     }
 #endif
+
+
+		LOGF(stderr, "sunIdx= %d  m31Idx= %d \n", sunIdx, m31Idx);
 
     m_renderer.setNumParticles( m_tree->localTree.n + m_tree->localTree.n_dust);    
     m_renderer.setPositionsDevice((float*) m_tree->localTree.bodies_pos.d());   // use d2d copy

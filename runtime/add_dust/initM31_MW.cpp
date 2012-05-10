@@ -342,6 +342,12 @@ int main(int argc, char **argv)
 	const float lR        = to_rad(121.0);
 	const float bR        = to_rad(-23.0);
 
+	const float Rsun      = 8.27/Runit; /* location of Sun */
+#if 0
+	const float Zsun      = 0.0;
+	const float Tsun      = to_rad(180.0);
+#endif
+
 	const Galactic rot1(lMW,  bMW);
 	const Galactic rot2(lM31, bM31);
 
@@ -504,20 +510,40 @@ int main(int argc, char **argv)
 		merger.push_back(p);
 	}
 
+	bool foundSun    = false;
 	for (int i = h1.ndark; i < h1.nbodies; i++)
 	{
 		Particle p = ptcl1[i];
+		if (!foundSun)
+			if (std::abs(p.pos.z) < 0.01)
+				if (std::abs(p.pos.abs() - Rsun) < 0.01*Rsun)
+				{
+					foundSun = true;
+					p.ID = 30000000 - 1;
+					fprintf(stderr, "Sun found: %g %g \n", std::sqrt(p.pos.x*p.pos.x+p.pos.y*p.pos.y), p.pos.z);
+				}
 		p.pos = rot1 * p.pos;
 		p.vel = rot1 * p.vel;
 		merger.push_back(p);
 	}
+	assert(foundSun);
+
+	bool foundCentre = false;
 	for (int i = h2.ndark; i < h2.nbodies; i++)
 	{
 		Particle p = ptcl2[i];
+		if (!foundCentre)
+			if (p.pos.abs() < 0.01)
+			{
+				foundCentre = true;
+				p.ID = 30000000 - 2;
+				fprintf(stderr, "Centre found: %g \n", p.pos.abs());
+			}
 		p.pos = rot2 * p.pos + Rij;
 		p.vel = rot2 * p.vel + Vij;
 		merger.push_back(p);
 	}
+	assert(foundCentre);
 
 	centerGalaxy(merger);
 
