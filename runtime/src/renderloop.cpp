@@ -166,7 +166,9 @@ public:
       m_flyMode(false),
 	    m_fov(60.0f),
       m_supernova(false),
-      m_overBright(1.0f)
+      m_overBright(1.0f),
+      m_params(m_renderer.getParams()),
+      m_brightFreq(100)
   {
     m_windowDims = make_int2(1024, 768);
     m_cameraTrans = make_float3(0, -2, -100);
@@ -195,6 +197,7 @@ public:
     for(int i=0; i<256; i++) m_keyDown[i] = false;
 
     readCameras("cameras.txt");
+    initColors();
 
     cudaEventCreate(&startEvent, 0);
     cudaEventCreate(&stopEvent, 0);
@@ -356,7 +359,7 @@ public:
         }
 
         if (m_displaySliders) {
-          m_renderer.getParams()->Render(0, 0);
+          m_params->Render(0, 0);
         }
       }
     }
@@ -369,7 +372,7 @@ public:
     int mods;
 
 	  if (m_displaySliders) {
-		  if (m_renderer.getParams()->Mouse(x, y, button, state))
+		  if (m_params->Mouse(x, y, button, state))
 			  return;
 	  }
 
@@ -403,7 +406,7 @@ public:
     float dy = (float)(y - m_oy);
 
     if (m_displaySliders) {
-      if (m_renderer.getParams()->Motion(x, y))
+      if (m_params->Motion(x, y))
         return;
     }
 
@@ -576,6 +579,13 @@ public:
       //printf("%f %f %f %f %f %f\n", m_cameraTrans.x, m_cameraTrans.y, m_cameraTrans.z, m_cameraRot.x, m_cameraRot.y, m_cameraRot.z);
       writeCameras("cameras.txt");
       break;
+    case 'j':
+      if (m_params == m_colorParams) {
+        m_params = m_renderer.getParams();
+      } else {
+        m_params = m_colorParams;
+      }
+      break;
     default:
       break;
     }
@@ -622,7 +632,7 @@ public:
       break;
     default:
       // for cursor keys on sliders
-      m_renderer.getParams()->Special(key, 0, 0);
+      m_params->Special(key, 0, 0);
       break;
     }
   }
@@ -659,8 +669,6 @@ public:
                    0.0001 * distanceToCenter, 
                    4 * (radius + distanceToCenter));
   }
-
-  ParamListGL *getParams() { return m_renderer.getParams(); }
 
   //float  frand() { return rand() / (float) RAND_MAX; }
   //float4 randColor(float scale) { return make_float4(frand()*scale, frand()*scale, frand()*scale, 0.0f); }
@@ -701,22 +709,10 @@ public:
 
     m_tree->localTree.bodies_ids.d2h();   
     
-    //float4 starColor = make_float4(1.0f, 1.0f, 0.5f, 1.0f);  // yellowish
-    float4 starColor = make_float4(1.0f, 1.0f, 1.0f, 1.0f);               // white
-    float4 starColor2 = make_float4(1.0f, 0.2f, 0.5f, 1.0f) * make_float4(100.0f, 100.0f, 100.0f, 1.0f);             // redish
-    float4 starColor3 = make_float4(0.1f, 0.1f, 1.0f, 1.0f) * make_float4(100.0f, 100.0f, 100.0f, 1.0f);             // bluish
-
-    float4 bulgeColor = make_float4(1.0f, 1.0f, 0.5f, 2.0f);  // yellowish
-
-    //float4 dustColor = make_float4(0.0f, 0.0f, 0.1f, 0.0f);      // blue
-    //float4 dustColor =  make_float4(0.1f, 0.1f, 0.1f, 0.0f);    // grey
-	float4 dustColor = make_float4(0.1f, 0.05f, 0.0f, 0.0f);  // brownish
-    //float4 dustColor = make_float4(0.0f, 0.2f, 0.1f, 0.0f);  // green
-    //float4 dustColor = make_float4(0.0f, 0.0f, 0.0f, 0.0f);  // black
-
-    float4 darkMatterColor = make_float4(0.0f, 0.2f, 0.4f, 1.0f);      // blue
-
     float4 *colors = m_particleColors;
+
+    float4 color2 = make_float4(starColor2.x*starColor2.w, starColor2.y*starColor2.w, starColor2.z*starColor2.w, 1.0f);
+    float4 color3 = make_float4(starColor3.x*starColor3.w, starColor3.y*starColor3.w, starColor3.z*starColor3.w, 1.0f);
 
 #if 1
     for (int i = 0; i < n; i++)
@@ -735,15 +731,15 @@ public:
 						((id / 100) & 1) ? starColor2 : starColor3;
       } 
 #else /* eg: adds glowing massive particles */
-				if (id >= 0 && id < 40000000)     //Disk
-				{
-          colors[i] = ((id % 100) != 0) ? 
-						starColor :
-						((id / 100) & 1) ? starColor2 : starColor3;
-				} else if (id >= 40000000 && id < 50000000)     // Glowing stars in spiral arms
-				{
-					colors[i] = starColor3;  /*  adds glow in purple */
-				}
+      if (id >= 0 && id < 40000000)     //Disk
+      {
+        colors[i] = ((id % m_brightFreq) != 0) ? 
+        starColor :
+        ((id / m_brightFreq) & 1) ? color2 : color3;
+      } else if (id >= 40000000 && id < 50000000)     // Glowing stars in spiral arms
+      {
+        colors[i] = color3;  /*  adds glow in purple */
+      }
 #endif
 #if 0 /* eg: original version */
       else if (id >= 50000000 && id < 100000000) //Dust
@@ -758,7 +754,7 @@ public:
 				} 
 				else if (id >= 70000000 && id < 100000000) // Glow massless dust particles
 				{
-					colors[i] = starColor3;  /*  adds glow in purple */
+					colors[i] = color3;  /*  adds glow in purple */
 				}
 #endif
       else if (id >= 100000000 && id < 200000000) //Bulge
@@ -830,6 +826,43 @@ public:
     glDisable(GL_LINE_SMOOTH);    
   }
 
+  void addColorParam(ParamListGL *list, std::string name, float4 &color, bool intensity=false)
+  {
+    list->AddParam(new Param<float>((name + " r").c_str(), color.x, 0.0f, 1.0f, 0.01f, &color.x));
+    list->AddParam(new Param<float>((name + " g").c_str(), color.y, 0.0f, 1.0f, 0.01f, &color.y));
+    list->AddParam(new Param<float>((name + " b").c_str(), color.z, 0.0f, 1.0f, 0.01f, &color.z));
+    if (intensity) {
+      list->AddParam(new Param<float>((name + " i").c_str(), color.w, 0.0f, 100.0f, 1.0f, &color.w));
+    }
+  }
+
+  void initColors()
+  {
+    //starColor = make_float4(1.0f, 1.0f, 0.5f, 1.0f);  // yellowish
+    starColor = make_float4(1.0f, 1.0f, 1.0f, 1.0f);  // white
+    starColor2 = make_float4(1.0f, 0.2f, 0.5f, 100.0f); // bright redish
+    starColor3 = make_float4(0.1f, 0.1f, 1.0f, 100.0f); // bright bluish
+
+    bulgeColor = make_float4(1.0f, 1.0f, 0.5f, 2.0f);  // yellowish
+
+    //dustColor = make_float4(0.0f, 0.0f, 0.1f, 0.0f);      // blue
+    //dustColor =  make_float4(0.1f, 0.1f, 0.1f, 0.0f);    // grey
+    dustColor = make_float4(0.1f, 0.02f, 0.0f, 0.0f);  // brownish
+    //dustColor = make_float4(0.0f, 0.2f, 0.1f, 0.0f);  // green
+    //dustColor = make_float4(0.0f, 0.0f, 0.0f, 0.0f);  // black
+
+    darkMatterColor = make_float4(0.0f, 0.2f, 0.4f, 1.0f);      // blue
+
+    m_colorParams = new ParamListGL("colors");
+    addColorParam(m_colorParams, "star color", starColor);
+    addColorParam(m_colorParams, "bulge color", bulgeColor);
+    addColorParam(m_colorParams, "star color2", starColor2, true);
+    addColorParam(m_colorParams, "star color3", starColor3, true);
+    addColorParam(m_colorParams, "dust color", dustColor);
+    addColorParam(m_colorParams, "dark matter color", darkMatterColor);
+    m_colorParams->AddParam(new Param<int>("bright star freq", m_brightFreq, 1, 1000, 1, &m_brightFreq));
+  }
+
   octree *m_tree;
   octree::IterationData &m_idata;
   bool iterationsRemaining;
@@ -874,6 +907,17 @@ public:
 
   bool m_supernova;
   float m_overBright;
+
+  float4 starColor;
+  float4 starColor2;
+  float4 starColor3;
+  float4 bulgeColor;
+  float4 dustColor;
+  float4 darkMatterColor;
+  int m_brightFreq;
+
+  ParamListGL *m_colorParams;
+  ParamListGL *m_params;    // current
 
   // saved cameras
   struct Camera {
