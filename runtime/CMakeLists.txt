@@ -36,6 +36,12 @@ option(COMPILE_SM30
   "On to enable SM30 compilation"
   ON
   )
+
+option(USE_DUST
+  "On to enable dust rendering"
+  ON
+  )
+
   
 option(CUDA_KEEP_INTERMEDIATE_FILES
   "On to enable -keep"
@@ -56,6 +62,10 @@ include_directories(${CUDA_TOOLKIT_ROOT_DIR}/../../thrust)
 if (USE_B40C)
   add_definitions(-DUSE_B40C)
 endif (USE_B40C)
+
+if (USE_DUST)
+  add_definitions(-DUSE_DUST)
+endif (USE_DUST)
 
 set(CMAKE_DEBUG_POSTFIX "D")
 
