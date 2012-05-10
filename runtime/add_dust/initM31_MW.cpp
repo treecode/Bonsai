@@ -114,7 +114,7 @@ struct Galactic : public Rotation
 	Galactic(const real _l, const real _b) : l(_l), b(_b)
 	{
 		Rotation A(l, vec3(0.0, 0.0, 1.0));
-		Rotation B(b, vec3(-sin(l), cos(l), 0.0));
+		Rotation B(b, vec3(sin(l), -cos(l), 0.0));
 
 		*this = B*A;
 	}
@@ -316,8 +316,8 @@ int main(int argc, char **argv)
 	const float Vunit = 100.0;    /* km/s */
 	const float Runit = 1.0;      /* kpc  */
 
-	const float Vr = -130.0/Vunit;
-	const float Vt = - 10.0/Vunit;  /* from Johan's thesis */
+	const float Vr = -125.0/Vunit;
+	const float Vt = - 20.0/Vunit;  /* from Johan's thesis */
 	const float lVt = to_rad(+180.0);  /* this is orientation of the tangential velocity */
 	const float bVt = to_rad(   0.0);  /* p.18 in arXiv/astro-ph/9509010 */
 
