@@ -701,10 +701,10 @@ public:
 
     m_tree->localTree.bodies_ids.d2h();   
     
-    //float4 starColor = make_float4(1.0f, 1.0f, 0.5f, 1.0f);  // yellowish
     float4 starColor = make_float4(1.0f, 1.0f, 1.0f, 1.0f);               // white
     float4 starColor2 = make_float4(1.0f, 0.2f, 0.5f, 1.0f) * make_float4(100.0f, 100.0f, 100.0f, 1.0f);             // redish
     float4 starColor3 = make_float4(0.1f, 0.1f, 1.0f, 1.0f) * make_float4(100.0f, 100.0f, 100.0f, 1.0f);             // bluish
+    float4 starColor4 = make_float4(0.0f, 1.0f, 0.0f, 1.0f) * make_float4(100.0f, 100.0f, 100.0f, 1.0f);  // yellowish
 
     float4 bulgeColor = make_float4(1.0f, 1.0f, 0.5f, 2.0f);  // yellowish
 
@@ -742,7 +742,8 @@ public:
 						((id / 100) & 1) ? starColor2 : starColor3;
 				} else if (id >= 40000000 && id < 50000000)     // Glowing stars in spiral arms
 				{
-					colors[i] = starColor3;  /*  adds glow in purple */
+					colors[i] = ((id%4) == 0) ?
+				               starColor4 : starColor3;
 				}
 #endif
 #if 0 /* eg: original version */
