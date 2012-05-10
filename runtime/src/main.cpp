@@ -235,7 +235,7 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
   NSecond       = h.nstar;
   NThird        = h.nsph;
 
-	tree->set_t_current((float)h.time);
+  tree->set_t_current((float) h.time);
   
   //Rough divide
   uint perProc = NTotal / procs;
@@ -629,6 +629,7 @@ int main(int argc, char** argv)
   int rebuild_tree_rate = 2;
   int reduce_bodies_factor = 1;
   int reduce_dust_factor = 1;
+  string fullScreenMode = "";
   bool direct = false;
   bool fullscreen = false;
 
@@ -667,10 +668,11 @@ int main(int argc, char** argv)
 #if ENABLE_LOG
     ADDUSAGE("     --log              enable logging ");
 #endif
-    ADDUSAGE("     --direct           enable N^2 direct gravitation [" << (direct ? "on" : "off") << "]");
+        ADDUSAGE("     --direct           enable N^2 direct gravitation [" << (direct ? "on" : "off") << "]");
 #ifdef USE_OPENGL
-    ADDUSAGE(" -f  --fullscreen      enable full-screen mode [" << (fullscreen ? "on" : "off") << "]");
+		ADDUSAGE("     --fullscreen#      set fullscreen mode string");
 #endif
+
 		ADDUSAGE(" ");
 
 
@@ -695,8 +697,8 @@ int main(int argc, char** argv)
 #if ENABLE_LOG
 		opt.setFlag("log");
 #endif
-    opt.setFlag("direct");
-    opt.setFlag("fullscreen", 'f');
+        opt.setFlag("direct");
+		opt.setOption( "fullscreen");
   
 		opt.processCommandArgs( argc, argv );
 
@@ -712,14 +714,11 @@ int main(int argc, char** argv)
 			exit(0);
 		}
 
+        if (opt.getFlag("direct")) direct = true;
+
 #if ENABLE_LOG
     if (opt.getFlag("log")) ENABLE_RUNTIME_LOG = true;
-#endif
-    if (opt.getFlag("direct")) direct = true;
-#if USE_OPENGL
-    if (opt.getFlag("fullscreen")) fullscreen = true;
-#endif
-    
+#endif    
 		char *optarg = NULL;
 		if ((optarg = opt.getValue("infile")))       fileName           = string(optarg);
 		if ((optarg = opt.getValue("logfile")))      logFileName        = string(optarg);
@@ -735,8 +734,10 @@ int main(int argc, char** argv)
 		if ((optarg = opt.getValue("valueadd")))     snapShotAdd        = atoi  (optarg);
 		if ((optarg = opt.getValue("rebuild")))      rebuild_tree_rate  = atoi  (optarg);
 		if ((optarg = opt.getValue("reducebodies"))) reduce_bodies_factor = atoi  (optarg);
-    if ((optarg = opt.getValue("reducedust")))	 reduce_dust_factor = atoi  (optarg);
-
+        if ((optarg = opt.getValue("reducedust")))	 reduce_dust_factor = atoi  (optarg);
+#if USE_OPENGL
+        if ((optarg = opt.getValue("fullscreen")))	 fullScreenMode     = string(optarg);
+#endif
 		if (fileName.empty()) 
 		{
 			opt.printUsage();
@@ -864,13 +865,13 @@ int main(int argc, char** argv)
   int NTotal, NFirst, NSecond, NThird;
   NTotal = NFirst = NSecond = NThird = 0;
 
-  initTimers();
-
 #ifdef USE_OPENGL
   // create OpenGL context first, and register for interop
-  initGL(argc, argv, fullscreen);
+  initGL(argc, argv, fullScreenMode.c_str());
   cudaGLSetGLDevice(devID);
 #endif
+
+  initTimers();
 
   //Creat the octree class and set the properties
   octree *tree = new octree(argv, devID, theta, eps, snapshotFile, snapshotIter,  timeStep, (int)tEnd, killDistance, (int)remoDistance, snapShotAdd, rebuild_tree_rate, direct);

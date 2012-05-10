@@ -3,7 +3,7 @@
 
 #include "octree.h"
 
-void initGL(int argc, char** argv, bool fullscreen);
+void initGL(int argc, char** argv, const char *fullScreenMode);
 void initAppRenderer(int argc, char** argv, octree *tree, octree::IterationData &idata);
 
 #endif // _RENDERLOOP_H_

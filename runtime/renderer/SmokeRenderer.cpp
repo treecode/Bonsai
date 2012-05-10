@@ -413,9 +413,9 @@ void SmokeRenderer::drawPointSprites(GLSLProgram *prog, int start, int count, bo
 	if (shadowed) {
 		prog->bindTexture("shadowTex", m_lightTexture[m_srcLightTexture], GL_TEXTURE_2D, 2);
 #if USE_MRT
-        prog->setUniform2f("shadowTexScale", m_lightBufferSize / (float) m_imageW, m_lightBufferSize / (float) m_imageH);
+        //prog->setUniform2f("shadowTexScale", m_lightBufferSize / (float) m_imageW, m_lightBufferSize / (float) m_imageH);
 #else
-        prog->setUniform2f("shadowTexScale", 1.0f, 1.0f);
+        //prog->setUniform2f("shadowTexScale", 1.0f, 1.0f);
 #endif
         prog->setUniform1f("indirectAmount", m_indirectAmount);
 		prog->setUniform1f("alphaScale", m_spriteAlpha);
