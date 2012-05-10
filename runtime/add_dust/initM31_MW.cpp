@@ -19,6 +19,7 @@
 #include <vector>
 #include "vector3.h"
 #include "anyoption.h"
+#include "kepler.h"
 
 #include "tipsydefs.h"
 
@@ -268,6 +269,7 @@ int main(int argc, char **argv)
 {
 
 	std::string mw_fname, m31_fname, out_fname;
+	float Tepoch = 0;
 	{
 		AnyOption opt;
 
@@ -280,11 +282,13 @@ int main(int argc, char **argv)
 		ADDUSAGE("     --mw  #        Input  filename for the Milky Way galaxy ");
 		ADDUSAGE("     --m31 #        Input  filename for the Andromeda galaxy");
 		ADDUSAGE("     --out #        Output filename for the merger IC");
+		ADDUSAGE("     -T    #        Initial epoch [" << Tepoch << " ]");
 		ADDUSAGE(" ");
 
 		opt.setFlag( "help" ,   'h');
 		opt.setOption( "mw");
 		opt.setOption( "m31");
+		opt.setOption( 'T');
 		opt.setOption( "out");
 
 		opt.processCommandArgs( argc, argv );
@@ -305,6 +309,7 @@ int main(int argc, char **argv)
 		if ((optarg = opt.getValue("mw" )))    mw_fname  = std::string(optarg);
 		if ((optarg = opt.getValue("m31")))    m31_fname = std::string(optarg);
 		if ((optarg = opt.getValue("out")))    out_fname = std::string(optarg);
+		if ((optarg = opt.getValue('T')))      Tepoch = atof(optarg);
 
 		if (mw_fname.empty() || m31_fname.empty() || out_fname.empty())
 		{
@@ -317,10 +322,12 @@ int main(int argc, char **argv)
 	const float Runit = 1.0;      /* kpc  */
 
 	const float Vr = -125.0/Vunit;
-	const float Vt =  100.0/Vunit;  /* from Johan's thesis */
-	const float Vt_phi = to_rad(45.0);
+	const float Vt =  20.0/Vunit;  /* from Johan's thesis */
+	const float Vt_phi = to_rad(-45.0);
+#if 0
 	const float lVt = to_rad(+180.0);  /* this is orientation of the tangential velocity */
 	const float bVt = to_rad(   0.0);  /* p.18 in arXiv/astro-ph/9509010 */
+#endif
 
 	const float sizeRatio = 1.0; //300.0/200.0;  /* size(M31)/size(MW) */
 	const float massRatio = 1.0;//  7.1/5.8;    /* mass(M31)/mass(MW) */
@@ -339,10 +346,11 @@ int main(int argc, char **argv)
 
 	const Galactic rotVr = Galactic(lR,  bR);
 //	const Galactic rotVt = Galactic(lVt, bVt);  /* wrong */
-	const vec3 Rij  = rotVr * vec3(Rsep, 0.0, 0.0);
 	const vec3 vRij = rotVr * vec3(Vr,   0.0, 0.0);
 	const vec3 vTij = rotVr * vec3(0.0,  Vt*cos(Vt_phi), Vt*sin(Vt_phi));
-	const vec3 Vij  = vRij + vTij;
+	vec3 Rij  = rotVr * vec3(Rsep, 0.0, 0.0);
+	vec3 Vij  = vRij + vTij;
+	fprintf(stderr, " Tepoch= %g \n", Tepoch);
 	fprintf(stderr, " R= %g  V= %g \n", Rij.abs(), Vij.abs());
 	fprintf(stderr, " vR.R/R= %g  vT.R/R= %g \n", (vRij*Rij)/Rij.abs(), (vTij*Rij)/Rij.abs());
 	fprintf(stderr, " V.R/R= %g  Vr= %g \n", (Vij*Rij)/Rij.abs(), Vr);
@@ -405,7 +413,7 @@ int main(int argc, char **argv)
 		assert(D2 > 0.0);
 		const real D   = std::sqrt(D2); 
 		assert(B+D > 0.0);
-		const real Rp  = std::sqrt(A/(B+D));
+		const real Rp  = A/(B+D);
 		fprintf(stderr,"  pericentre disance (Rp) : %g \n", Rp);
 
 		const real Vff = std::sqrt(2.0*M/Rsep);
@@ -415,7 +423,24 @@ int main(int argc, char **argv)
 		fprintf(stderr, " Tcoll~ %g [ Tff= %g  Td= %g ] \n", 
 				  std::min(Tff, Td), Tff, Td);
 //				std::sqrt(1.0/(1.0/(Tff*Tff) + 1.0/(Td*Td))), Tff, Td);
+	
+		fprintf(stderr, "M= %g  T= %g \n", M, Tepoch);
+		const Kepler R1(Rij, Vij, M, Tepoch);
+#if 0
+		fprintf(stderr, "Rij: %g %g %g  (%g) \n", Rij.x, Rij.y, Rij.z, Rij.abs());
+		fprintf(stderr, "Vij: %g %g %g  (%g) \n", Vij.x, Vij.y, Vij.z, Vij.abs());
+		Rij = R1.pos;
+		Vij = R1.vel;
+		fprintf(stderr, "Rij: %g %g %g  (%g) \n", Rij.x, Rij.y, Rij.z, Rij.abs());
+		fprintf(stderr, "Vij: %g %g %g  (%g) \n", Vij.x, Vij.y, Vij.z, Vij.abs());
+#else
+		fprintf(stderr, "T=0:  R= %g  V= %g \n", Rij.abs(), Vij.abs());
+		Rij = R1.pos;
+		Vij = R1.vel;
+		fprintf(stderr, "T=%g: R= %g  V= %g \n", Tepoch, Rij.abs(), Vij.abs());
+#endif
 	}
+
 
 	int NHALO = 0, NDISK = 0, NBULGE = 0, NDUST = 0;
 	int NDISKGLOW = 0, NDUSTGLOW = 0;
@@ -501,7 +526,7 @@ int main(int argc, char **argv)
 	h.nstar   = h1.nstar   + h2.nstar;
 	h.nsph    = 0;
 	h.ndim    = 3;
-	h.time    = 0;
+	h.time    = Tepoch;
 
 	writeGalaxy(h, merger, fout);
 

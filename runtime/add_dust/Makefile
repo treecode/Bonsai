@@ -51,8 +51,8 @@ clean:
 	/bin/rm -rf *.o $(PROG)  $(PROG1) $(PROG2)
 
 $(OBJ): DustRing.h vector3.h tipsydefs.h
-$(OBJ1): vector3.h tipsydefs.h
-$(OBJ2): vector3.h tipsydefs.h
+$(OBJ1): vector3.h tipsydefs.h 
+$(OBJ2): vector3.h tipsydefs.h kepler.h
 
 
 
