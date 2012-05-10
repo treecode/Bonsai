@@ -564,5 +564,22 @@ void octree::approximate_dust(tree_structure &tree)
 }
 //end approximate
 
+void octree::direct_dust(tree_structure &tree)
+{
+  directGrav.set_arg<cl_mem>(0, tree.dust_acc1.p());
+  directGrav.set_arg<cl_mem>(1, tree.dust_pos.p());
+  directGrav.set_arg<cl_mem>(2, tree.bodies_Ppos.p());
+  directGrav.set_arg<int>(3,    &tree.n);
+  directGrav.set_arg<float>(4,  &(this->eps2));
+  directGrav.set_arg<float4>(5, NULL, 256);
+  std::vector<size_t> localWork(2), globalWork(2);
+  localWork[0] = 256; localWork[1] = 1;
+  globalWork[0] = 256 * ((tree.n + 255) / 256);
+  globalWork[1] = 1;
+  directGrav.setWork(globalWork, localWork);
+  directGrav.execute(gravStream->s());  //First half
+}
+
+
 #endif //USE_DUST
 

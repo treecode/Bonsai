@@ -630,6 +630,8 @@ int main(int argc, char** argv)
   int reduce_bodies_factor = 1;
   int reduce_dust_factor = 1;
   string fullScreenMode = "";
+  bool direct = false;
+  bool fullscreen = false;
 
 #if ENABLE_LOG
   ENABLE_RUNTIME_LOG = false;
@@ -666,7 +668,11 @@ int main(int argc, char** argv)
 #if ENABLE_LOG
     ADDUSAGE("     --log              enable logging ");
 #endif
-		ADDUSAGE("     --fullscreen#      set fullscreen mode");
+        ADDUSAGE("     --direct           enable N^2 direct gravitation [" << (direct ? "on" : "off") << "]");
+#ifdef USE_OPENGL
+		ADDUSAGE("     --fullscreen#      set fullscreen mode string");
+#endif
+
 		ADDUSAGE(" ");
 
 
@@ -691,6 +697,7 @@ int main(int argc, char** argv)
 #if ENABLE_LOG
 		opt.setFlag("log");
 #endif
+        opt.setFlag("direct");
 		opt.setOption( "fullscreen");
   
 		opt.processCommandArgs( argc, argv );
@@ -707,11 +714,11 @@ int main(int argc, char** argv)
 			exit(0);
 		}
 
+        if (opt.getFlag("direct")) direct = true;
+
 #if ENABLE_LOG
     if (opt.getFlag("log")) ENABLE_RUNTIME_LOG = true;
-#endif
-
-
+#endif    
 		char *optarg = NULL;
 		if ((optarg = opt.getValue("infile")))       fileName           = string(optarg);
 		if ((optarg = opt.getValue("logfile")))      logFileName        = string(optarg);
@@ -728,8 +735,9 @@ int main(int argc, char** argv)
 		if ((optarg = opt.getValue("rebuild")))      rebuild_tree_rate  = atoi  (optarg);
 		if ((optarg = opt.getValue("reducebodies"))) reduce_bodies_factor = atoi  (optarg);
         if ((optarg = opt.getValue("reducedust")))	 reduce_dust_factor = atoi  (optarg);
+#if USE_OPENGL
         if ((optarg = opt.getValue("fullscreen")))	 fullScreenMode     = string(optarg);
-
+#endif
 		if (fileName.empty()) 
 		{
 			opt.printUsage();
@@ -829,6 +837,8 @@ int main(int argc, char** argv)
   else
     cout << " Runtime logging is DISABLED \n";
 #endif
+  cout << " Direct gravitation is " << (direct ? "ENABLED" : "DISABLED") << endl;
+
 	
   cerr << "Used settings: \n";
 	cerr << "Input filename " << fileName << endl;
@@ -850,7 +860,7 @@ int main(int argc, char** argv)
   else
     cerr << " Runtime logging is DISABLED \n";
 #endif
-
+  cerr << " Direct gravitation is " << (direct ? "ENABLED" : "DISABLED") << endl;
 
   int NTotal, NFirst, NSecond, NThird;
   NTotal = NFirst = NSecond = NThird = 0;
@@ -864,7 +874,7 @@ int main(int argc, char** argv)
   initTimers();
 
   //Creat the octree class and set the properties
-  octree *tree = new octree(argv, devID, theta, eps, snapshotFile, snapshotIter,  timeStep, (int)tEnd, killDistance, (int)remoDistance, snapShotAdd, rebuild_tree_rate);
+  octree *tree = new octree(argv, devID, theta, eps, snapshotFile, snapshotIter,  timeStep, (int)tEnd, killDistance, (int)remoDistance, snapShotAdd, rebuild_tree_rate, direct);
                             
                             
   //Get parallel processing information  

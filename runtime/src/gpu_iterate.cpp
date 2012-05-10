@@ -267,122 +267,136 @@ bool octree::iterate_once(IterationData &idata) {
       predictDustStep(this->localTree);          
     #endif
 
-    
-    bool needDomainUpdate = true;
-    
-   //Redistribute the particles
-    if(1)
-    {      
-      if(nProcs > 1)
-      { 
-       if(iter % rebuild_tree_rate == 0) 
-//        if(0)
-//        if(1)
-        {     
-          //If we do a redistribution we _always_ have to do 
-          //an update of the particle domain, otherwise the boxes 
-          //do not match and we get errors of particles outside
-          //domains
-          t1 = get_time();
-          
-          devContext.startTiming(execStream->s());
-          gpu_updateDomainDistribution(idata.lastGravTime);          
-          devContext.stopTiming("DomainUpdate", 6, execStream->s());
-          
-          devContext.startTiming(execStream->s());
-          gpuRedistributeParticles();
-          devContext.stopTiming("Exchange", 6, execStream->s());
-          
-          needDomainUpdate = false;
-          
-          idata.lastDomTime   = get_time() - t1;
-          idata.totalDomTime += idata.lastDomTime;          
-        }
-        else
-        {
-          //Only send new box sizes, incase we do not exchange particles
-          //but continue with the current tree_structure
-          gpu_updateDomainOnly();
-          
-          needDomainUpdate = false;
-        } //if (iter % X )
-//         else
-//         {
-//           //Only exchange, do not update domain decomposition
-//         }
-      } //if nProcs > 1
-    }//if (0)        
-    
-    
-    //Build the tree using the predicted positions
-   // bool rebuild_tree = Nact_since_last_tree_rebuild > 4*this->localTree.n;   
-    bool rebuild_tree = true;
-
-    rebuild_tree = ((iter % rebuild_tree_rate) == 0) || forceTreeRebuild;    
-    if(rebuild_tree)
+    if (useDirectGravity)
     {
-      t1 = get_time();
-      //Rebuild the tree
-      this->sort_bodies(this->localTree, needDomainUpdate);
+      devContext.startTiming(gravStream->s());
+      direct_gravity(this->localTree);
+      devContext.stopTiming("Direct_gravity", 4);
 
-      devContext.startTiming(execStream->s());
-      this->build(this->localTree);
-      devContext.stopTiming("Tree-construction", 2, execStream->s());
+#ifdef USE_DUST
+      devContext.startTiming(gravStream->s());
+      direct_dust(this->localTree);
+      devContext.stopTiming("Direct_dust", 4, gravStream->s());
+#endif      
+    }
+    else
+    {
+      bool needDomainUpdate = true;
 
-      devContext.startTiming(execStream->s());
-      this->allocateTreePropMemory(this->localTree);
-      devContext.stopTiming("Memory", 11, execStream->s());      
+      //Redistribute the particles
+      if(1)
+      {      
+        if(nProcs > 1)
+        { 
+          if(iter % rebuild_tree_rate == 0) 
+            //        if(0)
+            //        if(1)
+          {     
+            //If we do a redistribution we _always_ have to do 
+            //an update of the particle domain, otherwise the boxes 
+            //do not match and we get errors of particles outside
+            //domains
+            t1 = get_time();
 
-      devContext.startTiming(execStream->s());
-      this->compute_properties(this->localTree);
-      devContext.stopTiming("Compute-properties", 3, execStream->s());
+            devContext.startTiming(execStream->s());
+            gpu_updateDomainDistribution(idata.lastGravTime);          
+            devContext.stopTiming("DomainUpdate", 6, execStream->s());
 
-      #ifdef DO_BLOCK_TIMESTEP
+            devContext.startTiming(execStream->s());
+            gpuRedistributeParticles();
+            devContext.stopTiming("Exchange", 6, execStream->s());
+
+            needDomainUpdate = false;
+
+            idata.lastDomTime   = get_time() - t1;
+            idata.totalDomTime += idata.lastDomTime;          
+          }
+          else
+          {
+            //Only send new box sizes, incase we do not exchange particles
+            //but continue with the current tree_structure
+            gpu_updateDomainOnly();
+
+            needDomainUpdate = false;
+          } //if (iter % X )
+          //         else
+          //         {
+          //           //Only exchange, do not update domain decomposition
+          //         }
+        } //if nProcs > 1
+      }//if (0)        
+
+
+      //Build the tree using the predicted positions
+      // bool rebuild_tree = Nact_since_last_tree_rebuild > 4*this->localTree.n;   
+      bool rebuild_tree = true;
+
+      rebuild_tree = ((iter % rebuild_tree_rate) == 0) || forceTreeRebuild;    
+      if(rebuild_tree)
+      {
+        t1 = get_time();
+        //Rebuild the tree
+        this->sort_bodies(this->localTree, needDomainUpdate);
+
+        devContext.startTiming(execStream->s());
+        this->build(this->localTree);
+        devContext.stopTiming("Tree-construction", 2, execStream->s());
+
+        devContext.startTiming(execStream->s());
+        this->allocateTreePropMemory(this->localTree);
+        devContext.stopTiming("Memory", 11, execStream->s());      
+
+        devContext.startTiming(execStream->s());
+        this->compute_properties(this->localTree);
+        devContext.stopTiming("Compute-properties", 3, execStream->s());
+
+#ifdef DO_BLOCK_TIMESTEP
         devContext.startTiming(execStream->s());
         setActiveGrpsFunc(this->localTree);
         devContext.stopTiming("setActiveGrpsFunc", 10, execStream->s());      
         idata.Nact_since_last_tree_rebuild = 0;
-      #endif
-      
-      idata.lastBuildTime   = get_time() - t1;
-      idata.totalBuildTime += idata.lastBuildTime;  
-      
-    
-      #ifdef USE_DUST
+#endif
+
+        idata.lastBuildTime   = get_time() - t1;
+        idata.totalBuildTime += idata.lastBuildTime;  
+
+
+#ifdef USE_DUST
         //Sort and set properties      
         sort_dust(this->localTree);
         make_dust_groups(this->localTree);
         setDustGroupProperties(this->localTree);        
-      #endif          
-              
-    }
-    else
-    {
-      //Dont rebuild only update the current boxes
-      devContext.startTiming(execStream->s());
-      this->compute_properties(this->localTree);
-      devContext.stopTiming("Compute-properties", 3, execStream->s());
-      
-      #ifdef USE_DUST
-        setDustGroupProperties(this->localTree);
-      #endif          
-              
-    }//end rebuild tree
+#endif          
 
-    //Approximate gravity
-    t1 = get_time();
-    devContext.startTiming(gravStream->s());
-    approximate_gravity(this->localTree);
-    devContext.stopTiming("Approximation", 4, gravStream->s());
-    
-    
-    if(nProcs > 1)  makeLET();
-    
-    #ifdef USE_DUST
+      }
+      else
+      {
+        //Dont rebuild only update the current boxes
+        devContext.startTiming(execStream->s());
+        this->compute_properties(this->localTree);
+        devContext.stopTiming("Compute-properties", 3, execStream->s());
+
+#ifdef USE_DUST
+        setDustGroupProperties(this->localTree);
+#endif          
+
+      }//end rebuild tree
+
+      //Approximate gravity
+      t1 = get_time();
+      devContext.startTiming(gravStream->s());
+      approximate_gravity(this->localTree);
+      devContext.stopTiming("Approximation", 4, gravStream->s());
+
+
+      if(nProcs > 1)  makeLET();
+
+#ifdef USE_DUST
       devContext.startTiming(gravStream->s());
       approximate_dust(this->localTree);
       devContext.stopTiming("Approximation_dust", 4, gravStream->s());
-    #endif        
+#endif        
+    }
 
     gravStream->sync();
     
@@ -697,6 +711,22 @@ void octree::setActiveGrpsFunc(tree_structure &tree)
   LOG("t_previous: %lg t_current: %lg dt: %lg Active groups: %d \n",
          t_previous, t_current, t_current-t_previous, tree.n_active_groups);
 
+}
+
+void octree::direct_gravity(tree_structure &tree)
+{
+  directGrav.set_arg<cl_mem>(0, tree.bodies_acc1.p());
+  directGrav.set_arg<cl_mem>(1, tree.bodies_Ppos.p());
+  directGrav.set_arg<cl_mem>(2, tree.bodies_Ppos.p());
+  directGrav.set_arg<int>(3,    &tree.n);
+  directGrav.set_arg<float>(4,  &(this->eps2));
+  directGrav.set_arg<float4>(5, NULL, 256);
+  std::vector<size_t> localWork(2), globalWork(2);
+  localWork[0] = 256; localWork[1] = 1;
+  globalWork[0] = 256 * ((tree.n + 255) / 256);
+  globalWork[1] = 1;
+  directGrav.setWork(globalWork, localWork);
+  directGrav.execute(gravStream->s());  //First half
 }
 
 void octree::approximate_gravity(tree_structure &tree)
