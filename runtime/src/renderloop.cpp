@@ -18,6 +18,7 @@
 #endif
 
 #include <cuda_runtime_api.h>
+#include <cstdarg>
 
 #include "renderloop.h"
 #include "render_particles.h"
