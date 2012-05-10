@@ -711,6 +711,15 @@ public:
     NThird   = NThirdT;
   }
 
+	void set_t_current(const float t)
+	{
+		t_current = t_previous = t;
+	}
+	float get_t_current() const
+	{
+		return t_current;
+	}
+
   octree(char **argv, const int device = 0, const float _theta = 0.75, const float eps = 0.05,
          string snapF = "", int snapI = -1,  float tempTimeStep = 1.0 / 16.0, int tempTend = 1000,
          float killDistanceT = -1, int maxDistT = -1, int snapAdd = 0, const int _rebuild = 2)
