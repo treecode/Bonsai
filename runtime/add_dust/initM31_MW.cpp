@@ -280,6 +280,7 @@ int main(int argc, char **argv)
 		ADDUSAGE("     --mw  #        Input  filename for the Milky Way galaxy ");
 		ADDUSAGE("     --m31 #        Input  filename for the Andromeda galaxy");
 		ADDUSAGE("     --out #        Output filename for the merger IC");
+		ADDUSAGE("     --out #        Output filename for the merger IC");
 		ADDUSAGE(" ");
 
 		opt.setFlag( "help" ,   'h');
@@ -317,7 +318,8 @@ int main(int argc, char **argv)
 	const float Runit = 1.0;      /* kpc  */
 
 	const float Vr = -125.0/Vunit;
-	const float Vt = - 10.0/Vunit;  /* from Johan's thesis */
+	const float Vt =  100.0/Vunit;  /* from Johan's thesis */
+	const float Vt_phi = to_rad(45.0);
 	const float lVt = to_rad(+180.0);  /* this is orientation of the tangential velocity */
 	const float bVt = to_rad(   0.0);  /* p.18 in arXiv/astro-ph/9509010 */
 
@@ -337,10 +339,14 @@ int main(int argc, char **argv)
 	const Galactic rot2(lM31, bM31);
 
 	const Galactic rotVr = Galactic(lR,  bR);
-	const Galactic rotVt = Galactic(lVt, bVt);
-	const vec3 Rij = rotVr * vec3(Rsep, 0.0, 0.0);
-	const vec3 Vij = rotVr * vec3(Vr,   0.0, 0.0) + rotVt * vec3(Vt, 0.0, 0.0);
+//	const Galactic rotVt = Galactic(lVt, bVt);  /* wrong */
+	const vec3 Rij  = rotVr * vec3(Rsep, 0.0, 0.0);
+	const vec3 vRij = rotVr * vec3(Vr,   0.0, 0.0);
+	const vec3 vTij = rotVr * vec3(0.0,  Vt*cos(Vt_phi), Vt*sin(Vt_phi));
+	const vec3 Vij  = vRij + vTij;
 	fprintf(stderr, " R= %g  V= %g \n", Rij.abs(), Vij.abs());
+	fprintf(stderr, " vR.R/R= %g  vT.R/R= %g \n", (vRij*Rij)/Rij.abs(), (vTij*Rij)/Rij.abs());
+	fprintf(stderr, " V.R/R= %g  Vr= %g \n", (Vij*Rij)/Rij.abs(), Vr);
 
 	FILE *fin1 = NULL;
 	if( !(fin1 = fopen(mw_fname.c_str(),"rb")) ) 
@@ -375,6 +381,42 @@ int main(int argc, char **argv)
 			h1.time, h1.nbodies, h1.ndim, h1.nsph,	h1.ndark, h1.nstar);
 	fprintf(stderr, "Galaxy 2: %f %d %d %d %d %d \n",
 			h2.time, h2.nbodies, h2.ndim, h2.nsph,	h2.ndark, h2.nstar);
+
+	/* compute Rperi */
+	{
+		const real M  = M1 + M2;
+		const real U  = M/Rij.abs();
+		const real T  = Vij.norm2()*0.5;
+		const real E  = T - U;   /* specific total energy in the CoM frame */
+		if (E > 0.0)  /* hyperbolic orbit */
+			fprintf(stderr, "the orbit is HYPERBOLIC: \n");
+		else if (E < 0.0)  /* elliptic orbit */
+			fprintf(stderr, "the orbit is ELLIPTIC: \n");
+		else
+		{
+			fprintf(stderr, "PARABOLIC orbits are not supported, Change your parameters slightly..\n");
+			exit(0);
+		}
+
+		const real L  =  (Rij%Vij).abs();
+		const real A  =  L*L;
+		const real B  =  M;
+		const real C  = -2.0*E;
+		const real D2 =  B*B - A*C;
+		assert(D2 > 0.0);
+		const real D   = std::sqrt(D2); 
+		assert(B+D > 0.0);
+		const real Rp  = std::sqrt(A/(B+D));
+		fprintf(stderr,"  pericentre disance (Rp) : %g \n", Rp);
+
+		const real Vff = std::sqrt(2.0*M/Rsep);
+		const real Vd  = std::abs(Rij*Vij)/Rij.abs();
+		const real Tff = 2.0/3.0*Rij.abs()/Vff;  /* free-fall time */
+		const real Td  = Rij.abs()/Vd;    /* drift time */
+		fprintf(stderr, " Tcoll~ %g [ Tff= %g  Td= %g ] \n", 
+				  std::min(Tff, Td), Tff, Td);
+//				std::sqrt(1.0/(1.0/(Tff*Tff) + 1.0/(Td*Td))), Tff, Td);
+	}
 
 	int NHALO = 0, NDISK = 0, NBULGE = 0, NDUST = 0;
 	int NDISKGLOW = 0, NDUSTGLOW = 0;

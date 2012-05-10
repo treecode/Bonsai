@@ -87,7 +87,7 @@ public:
 		return vector3<REAL> (
         y*v.z - z*v.y, 
         z*v.x - x*v.z, 
-        x*v.y - y*v.z);
+        x*v.y - y*v.x);
   }
   const vector3<REAL> operator / (const REAL &s) const{
     REAL r = REAL(1)/s;
