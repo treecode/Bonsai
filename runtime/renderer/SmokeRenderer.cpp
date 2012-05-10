@@ -53,7 +53,7 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
 	m_numDisplayedSlices(m_numSlices),
     m_sliceNo(0),
     m_shadowAlpha(0.1f),
-    m_spriteAlpha(1.0f),
+    m_spriteAlpha(0.1f),
     m_volumeAlpha(0.2f),
 	m_dustAlpha(1.0f),
     m_volumeColor(0.5f, 0.0f, 0.0f),
@@ -147,7 +147,9 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
 	m_noiseTex = createNoiseTexture(64, 64, 64);
 
     //m_cubemapTex = loadCubemapCross("images/Carina_cross.ppm");
-    //m_cubemapTex = loadCubemap("images/deepfield%d.ppm");
+    m_cubemapTex = loadCubemap("../images/deepfield%d.ppm");
+
+	m_spriteTex = createSpriteTexture(256);
 
     initParams();
 
@@ -159,6 +161,9 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
 		mParticleIndices.getHostPtr()[i] = i;
 	}
 	mParticleIndices.copy(GpuArray<uint>::HOST_TO_DEVICE);
+
+	printf("Vendor: %s\n", glGetString(GL_VENDOR));
+	printf("Renderer: %s\n", glGetString(GL_RENDERER));
 
     glutReportErrors();
 }
@@ -403,6 +408,7 @@ void SmokeRenderer::drawPointSprites(GLSLProgram *prog, int start, int count, bo
     //prog->bindTexture("rampTex", m_rampTex, GL_TEXTURE_2D, 0);
     //prog->bindTexture("rampTex", m_rainbowTex, GL_TEXTURE_2D, 0);
     //prog->bindTexture("spriteTex",  m_textureArrayID, GL_TEXTURE_2D_ARRAY_EXT, 1);
+	prog->bindTexture("spriteTex",  m_spriteTex, GL_TEXTURE_2D, 1);
 	if (shadowed) {
 		prog->bindTexture("shadowTex", m_lightTexture[m_srcLightTexture], GL_TEXTURE_2D, 2);
 #if USE_MRT
@@ -1134,7 +1140,7 @@ void SmokeRenderer::endSceneRender(Target target)
 
 // create an OpenGL texture
 GLuint
-SmokeRenderer::createTexture(GLenum target, int w, int h, GLint internalformat, GLenum format)
+SmokeRenderer::createTexture(GLenum target, int w, int h, GLint internalformat, GLenum format, void *data)
 {
     GLuint texid;
     glGenTextures(1, &texid);
@@ -1145,7 +1151,7 @@ SmokeRenderer::createTexture(GLenum target, int w, int h, GLint internalformat, 
     glTexParameteri(target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-    glTexImage2D(target, 0, internalformat, w, h, 0, format, GL_FLOAT, 0);
+    glTexImage2D(target, 0, internalformat, w, h, 0, format, GL_FLOAT, data);
     return texid;
 }
 
@@ -1188,6 +1194,32 @@ GLuint SmokeRenderer::createNoiseTexture(int w, int h, int d)
 	return texid;
 }
 
+float * SmokeRenderer::createSplatImage(int n)
+{
+	float *img = new float[n*n];
+	for(int y=0; y<n; y++) {
+		float v = (y / (float) (n-1))*2.0f-1.0f;
+		for(int x=0; x<n; x++) {
+			float u = (x / (float) (n-1))*2.0f-1.0f;
+			float d = sqrtf(u*u + v*v);
+			if (d > 1.0f) d = 1.0f;
+			float i = 1.0f - d*d*(3.0f - 2.0f*d);	// smoothstep
+			img[y*n+x] = i;
+		}
+	}
+	return img;
+}
+
+GLuint SmokeRenderer::createSpriteTexture(int size)
+{
+	float *img = createSplatImage(size);
+
+	GLuint tex = createTexture(GL_TEXTURE_2D, size, size, GL_LUMINANCE8, GL_LUMINANCE, img);
+	delete [] img;
+	glGenerateMipmapEXT(GL_TEXTURE_2D);
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+	return tex;
+}
 
 // create textures for off-screen rendering
 void SmokeRenderer::createBuffers(int w, int h)
