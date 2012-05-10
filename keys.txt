@@ -13,3 +13,4 @@ c	fit camera
 g	toggle glow / post processing
 f	toggle fly mode
 n	detonate supernova
+'1'     toggle direct (N^2=slow) gravitation
