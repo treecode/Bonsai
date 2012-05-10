@@ -160,7 +160,8 @@ public:
       m_enableGlow(true),
       m_displayLightBuffer(false),
       m_directGravitation(false),
-      m_octreeDisplayLevel(3),
+      m_octreeMinDepth(0),
+      m_octreeMaxDepth(3),
       m_flyMode(false),
 	    m_fov(60.0f),
       m_supernova(false),
@@ -226,9 +227,14 @@ public:
   void toggleGlow() { m_enableGlow = !m_enableGlow; m_renderer.setEnableFilters(m_enableGlow); }
   void toggleLightBuffer() { m_displayLightBuffer = !m_displayLightBuffer; m_renderer.setDisplayLightBuffer(m_displayLightBuffer); }
 
-  void incrementOctreeDisplayLevel(int inc) { 
-    m_octreeDisplayLevel += inc;
-    m_octreeDisplayLevel = std::max(0, std::min(m_octreeDisplayLevel, 30));
+  void incrementOctreeMaxDepth(int inc) { 
+    m_octreeMaxDepth += inc;
+    m_octreeMaxDepth = std::max(m_octreeMinDepth+1, std::min(m_octreeMaxDepth, 30));
+  }
+
+  void incrementOctreeMinDepth(int inc) { 
+    m_octreeMinDepth += inc;
+    m_octreeMinDepth = std::max(0, std::min(m_octreeMinDepth, m_octreeMaxDepth-1));
   }
 
   void step() { 
@@ -493,8 +499,6 @@ public:
       togglePause();
       break;
     case 27: // escape
-    //case 'q':
-    //case 'Q':
       displayTimers();
       exit(0);
       break;
@@ -521,13 +525,18 @@ public:
     case 'C':
       fitCamera();
       break;
-    case ',':
-    case '<':
-      incrementOctreeDisplayLevel(-1);
+    case '-':
+      incrementOctreeMaxDepth(-1);
       break;
-    case '.':
-    case '>':
-      incrementOctreeDisplayLevel(+1);
+    case '=':
+    case '+':
+      incrementOctreeMaxDepth(+1);
+      break;
+    case '[':
+      incrementOctreeMinDepth(-1);
+      break;
+    case ']':
+      incrementOctreeMinDepth(+1);
       break;
     case 'h':
   	  toggleSliders();
@@ -728,23 +737,28 @@ public:
     float3 boxMin = make_float3(m_tree->rMinLocalTree);
     float3 boxMax = make_float3(m_tree->rMaxLocalTree);
 
-    glLineWidth(1.0);
+    glLineWidth(0.8f);
     //glColor3f(0.0, 1.0, 0.0);
-    glColor3f(0.0, 0.5, 0.0);
     glEnable(GL_LINE_SMOOTH);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE);
     glEnable(GL_BLEND);
     glDisable(GL_DEPTH_TEST);
 
-    drawWireBox(boxMin, boxMax);
+    //drawWireBox(boxMin, boxMax);
       
     m_tree->localTree.boxCenterInfo.d2h();
     m_tree->localTree.boxSizeInfo.d2h();
     m_tree->localTree.node_level_list.d2h(); //Should not be needed is created on host
            
-    int displayLevel = min(m_octreeDisplayLevel, m_tree->localTree.n_levels);
+    uint displayMax = m_tree->localTree.level_list[min(m_octreeMaxDepth, m_tree->localTree.n_levels)].y;
+    uint displayMin = m_tree->localTree.level_list[max(0, m_octreeMinDepth)].y;
+
+    float alpha = std::min(1.0f, 1.0f - (float)(displayMax - displayMin) / m_tree->localTree.n_nodes);
+        
+    glColor4f(0.0f, 0.5f, 0.0f, std::max(alpha, 0.2f));
+
       
-    for(uint i=0; i < m_tree->localTree.level_list[displayLevel].y; i++)
+    for(uint i=displayMin; i < displayMax; i++)
     {
       float3 boxMin, boxMax;
       boxMin.x = m_tree->localTree.boxCenterInfo[i].x-m_tree->localTree.boxSizeInfo[i].x;
@@ -758,7 +772,7 @@ public:
     }
 
     glDisable(GL_BLEND);
-    glDisable(GL_LINE_SMOOTH);
+    glDisable(GL_LINE_SMOOTH);    
   }
 
   octree *m_tree;
@@ -769,7 +783,8 @@ public:
   //ParticleRenderer::DisplayMode m_displayMode; 
   SmokeRenderer m_renderer;
   SmokeRenderer ::DisplayMode m_displayMode; 
-  int m_octreeDisplayLevel;
+  int m_octreeMinDepth;
+  int m_octreeMaxDepth;
 
   float4 *m_particleColors;
 
