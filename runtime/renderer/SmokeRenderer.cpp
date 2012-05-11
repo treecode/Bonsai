@@ -33,6 +33,9 @@
 #define USE_HALF_ANGLE 0
 #define MOTION_BLUR 0
 
+extern int renderDevID;
+extern int devID;
+
 using namespace nv;
 
 SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
@@ -156,6 +159,9 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
     initParams();
 
 	//initCUDA();
+
+	cudaGLSetGLDevice(renderDevID);
+
 	mParticlePos.alloc(mMaxParticles, true, false, false);
 	mParticleDepths.alloc(mMaxParticles, false, false, false);
 	mParticleIndices.alloc(mMaxParticles, true, false, true);
@@ -163,6 +169,8 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
 		mParticleIndices.getHostPtr()[i] = i;
 	}
 	mParticleIndices.copy(GpuArray<uint>::HOST_TO_DEVICE);
+
+	cudaSetDevice(devID);
 
 	printf("Vendor: %s\n", glGetString(GL_VENDOR));
 	printf("Renderer: %s\n", glGetString(GL_RENDERER));
@@ -320,9 +328,13 @@ void SmokeRenderer::setPositions(float *pos)
 
 void SmokeRenderer::setPositionsDevice(float *posD)
 {
+	cudaSetDevice(renderDevID);
+
     mParticlePos.map();
     cudaMemcpy(mParticlePos.getDevicePtr(), posD, mNumParticles*4*sizeof(float), cudaMemcpyDeviceToDevice);
     mParticlePos.unmap();
+
+	cudaSetDevice(devID);
 }
 
 void SmokeRenderer::setColors(float *color)
@@ -343,8 +355,35 @@ void SmokeRenderer::setColors(float *color)
 	glBindBuffer( GL_ARRAY_BUFFER_ARB, 0);
 }
 
+void SmokeRenderer::setColorsDevice(float *colorD)
+{
+	cudaSetDevice(renderDevID);
+
+ 	if (!mColorVbo)
+	{
+		// allocate
+		glGenBuffers(1, &mColorVbo);
+		glBindBuffer(GL_ARRAY_BUFFER_ARB, mColorVbo);
+// 		glBufferData(GL_ARRAY_BUFFER_ARB, mNumParticles * 4 * sizeof(float), color, GL_DYNAMIC_DRAW);
+        //Jeroen, I allocate the maximum number of particles
+        glBufferData(GL_ARRAY_BUFFER_ARB, mMaxParticles * 4 * sizeof(float), NULL, GL_DYNAMIC_DRAW);    
+		cutilSafeCall(cudaGLRegisterBufferObject(mColorVbo));
+		cutilSafeCall(cudaGLSetBufferObjectMapFlags(mColorVbo, cudaGLMapFlagsWriteDiscard));    // CUDA writes, GL consumes
+	}
+
+	
+	void *ptr;
+	cutilSafeCall(cudaGLMapBufferObject((void **) &ptr, mColorVbo));
+	cudaMemcpy( ptr, colorD, mNumParticles * 4 * sizeof(float), cudaMemcpyDeviceToDevice );
+	cutilSafeCall(cudaGLUnmapBufferObject(mColorVbo));
+
+	cudaSetDevice(devID);
+}
+
 void SmokeRenderer::depthSort()
 {
+	cudaSetDevice(renderDevID);
+
     mParticleIndices.map();
     mParticlePos.map();
 
@@ -353,6 +392,8 @@ void SmokeRenderer::depthSort()
 
     mParticlePos.unmap();
     mParticleIndices.unmap();
+
+	cudaSetDevice(devID);
 }
 
 // draw points from vertex buffer objects
