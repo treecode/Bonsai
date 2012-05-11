@@ -31,6 +31,7 @@
 #include "depthSort.h"
 
 float TstartGlow;
+float dTstartGlow;
 
 struct Rand48
 {
@@ -946,8 +947,14 @@ public:
 
 		m_renderer.setColors((float*)colors);
 #else  /* eg: assign colours on the device */
+		const float Tcurrent = m_tree->get_t_current() * 9.78f;
 		assignColors( m_particleColorsDev, (int*)m_tree->localTree.bodies_ids.d(), n, 
-				color2, color3, color4, starColor, bulgeColor, darkMatterColor, dustColor, m_brightFreq, make_float2(m_tree->get_t_current() * 9.78f, TstartGlow));
+				color2, color3, color4, starColor, bulgeColor, darkMatterColor, dustColor, m_brightFreq, 
+				make_float4(
+					Tcurrent, TstartGlow,
+					std::max(0.0f, std::min(1.0f, (Tcurrent - TstartGlow)/dTstartGlow)),
+					Tcurrent > TstartGlow ? 1.0f : 3.0f)
+				);
 
 		m_renderer.setColorsDevice( (float*)m_particleColorsDev );
 #endif

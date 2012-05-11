@@ -643,6 +643,7 @@ int main(int argc, char** argv)
 #endif
 
 	TstartGlow = 0.0;
+	dTstartGlow = 1.0;
 
 	/************** beg - command line arguments ********/
 #if 1
@@ -681,6 +682,7 @@ int main(int argc, char** argv)
 		ADDUSAGE("     --fullscreen #     set fullscreen mode string");
     ADDUSAGE("     --displayfps       enable on-screen FPS display");
 		ADDUSAGE("     --Tglow  #         enable glow @ # Myr [" << TstartGlow << "]");
+		ADDUSAGE("     --dTglow  #        reach full brightness in @ # Myr [" << dTstartGlow << "]");
 #endif
 
 
@@ -713,6 +715,7 @@ int main(int argc, char** argv)
 #ifdef USE_OPENGL
 		opt.setOption( "fullscreen");
 		opt.setOption( "Tglow");
+		opt.setOption( "dTglow");
     opt.setFlag("displayfps");
 #endif
   
@@ -757,6 +760,7 @@ int main(int argc, char** argv)
 #if USE_OPENGL
         if ((optarg = opt.getValue("fullscreen")))	 fullScreenMode     = string(optarg);
         if ((optarg = opt.getValue("Tglow")))	 TstartGlow  = (float)atof(optarg);
+        if ((optarg = opt.getValue("dTglow")))	 dTstartGlow  = (float)atof(optarg);
 #endif
 		if (fileName.empty()) 
 		{
@@ -860,6 +864,7 @@ int main(int argc, char** argv)
   cout << " Direct gravitation is " << (direct ? "ENABLED" : "DISABLED") << endl;
 #if USE_OPENGL
 	cout << "Tglow =" << TstartGlow << endl;
+	cout << "dTglow =" << dTstartGlow << endl;
 #endif
 
 	
@@ -886,6 +891,7 @@ int main(int argc, char** argv)
   cerr << " Direct gravitation is " << (direct ? "ENABLED" : "DISABLED") << endl;
 #if USE_OPENGL
 	cerr << "Tglow =" << TstartGlow << endl;
+	cerr << "dTglow =" << dTstartGlow << endl;
 #endif
 
   int NTotal, NFirst, NSecond, NThird;

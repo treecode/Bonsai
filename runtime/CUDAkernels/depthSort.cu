@@ -165,7 +165,7 @@ class StarSampler
 KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles, 
 		float4 color2, float4 color3, float4 color4, 
 		float4 starColor, float4 bulgeColor, float4 darkMatterColor, float4 dustColor,
-		int m_brightFreq, float2 t_current)
+		int m_brightFreq, float4 t_current)
 {
 	int tid = blockIdx.x * blockDim.x + threadIdx.x;
 	if( tid >= numParticles ) return;
@@ -255,7 +255,11 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles,
 		color = Cstar;
 
 		//We need to tune this parameter, this disabled glowing stars uptill a certain time
-#if 1
+		color.x *= t_current.z;
+		color.y *= t_current.z;
+		color.z *= t_current.z;
+		color.w  = t_current.w;
+#if 0
 		if(t_current.x < t_current.y)    
 			color.w = 3.0f;
 #endif
@@ -295,7 +299,7 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles,
 void assignColors(float4 *colors, int *ids, int numParticles, 
 		float4 color2, float4 color3, float4 color4, 
 		float4 starColor, float4 bulgeColor, float4 darkMatterColor, float4 dustColor,
-		int m_brightFreq, float2  t_current)
+		int m_brightFreq, float4  t_current)
 {
 	int numThreads = 256;
 	int numBlocks = (numParticles + numThreads - 1) / numThreads;

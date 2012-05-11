@@ -3,6 +3,7 @@
 
 #include "octree.h"
 extern float TstartGlow;
+extern float dTstartGlow;
 
 void initGL(int argc, char** argv, const char *fullScreenMode);
 void initAppRenderer(int argc, char** argv, octree *tree, 
