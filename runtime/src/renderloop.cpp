@@ -62,6 +62,7 @@ struct Rand48
 
 namespace StarSamplerData
 {
+#if 0
 	const int N = 7;
 	const float4 Colours[N] = 
 	{  /* colours for different spectral classes: Oh Be A Fine Girl Kiss Me */
@@ -78,6 +79,31 @@ namespace StarSamplerData
 		/* O     B    A    F    G    K     M */
 		150.0, 18.0, 3.2, 1.7, 1.1, 0.78, 0.47, 0.1
 	};
+#else
+	const int N = 15;
+	const float4 Colours[N] = 
+	{  /* colours for different spectral classes: Oh Be A Fine Girl Kiss Me */
+		make_float4( 62.0f, 108.0f, 255.0f, 1.0f),  /* O5 */
+		make_float4( 68.0f, 114.0f, 255.0f, 1.0f),  /* B0 */
+		make_float4( 87.0f, 133.0f, 255.0f, 1.0f),  /* B5 */
+		make_float4(124.0f, 165.0f, 255.0f, 1.0f),  /* A0 */
+		make_float4(156.0f, 189.0f, 255.0f, 1.0f),  /* A5 */
+		make_float4(177.0f, 204.0f, 255.0f, 1.0f),  /* F0 */
+		make_float4(212.0f, 228.0f, 255.0f, 1.0f),  /* F5 */
+		make_float4(237.0f, 244.0f, 255.0f, 1.0f),  /* G0 */
+		make_float4(253.0f, 254.0f, 255.0f, 1.0f),  /* G2 */
+		make_float4(255.0f, 246.0f, 233.0f, 1.0f),  /* G5 - the Sun */
+		make_float4(255.0f, 233.0f, 203.0f, 1.0f),  /* K0 */
+		make_float4(255.0f, 203.0f, 145.0f, 1.0f),  /* K5 */
+		make_float4(255.0f, 174.0f,  98.0f, 1.0f),  /* M0 */
+		make_float4(255.0f, 138.0f,  56.0f, 1.0f),  /* M5 */
+		make_float4(240.0f,   0.0f,   0.0f, 1.0f)   /* M8 */
+	};
+	double Masses[N+1] =
+	{  /* masses for each of the spectra type */
+		150.0, 18.0, 6.5, 3.2, 2.1, 1.7, 1.29, 1.1, 1.0, 0.93, 0.78, 0.69, 0.47, 0.21, 0.1, 0.05
+	};
+#endif
 }
 
 class StarSampler
@@ -842,13 +868,13 @@ public:
 #elif 0
 		const float slope = -0.01; // nearly uniform MF
 #elif 1
-		const float slope = +.35; // reversed MF
+		const float slope = -0.1; // reversed MF
 #elif 1
 		const float slope = +1.35; // reversed MF, low mass depleted
 #endif
 
 		StarSampler sSampler (slope-1);
-		StarSampler sSampler1(1.35-1, 1234556);
+		StarSampler sSampler1(-0.1-1, 1234556);
 
 		int sunIdx = -1;
 		int m31Idx = -1;

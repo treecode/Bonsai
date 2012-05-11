@@ -176,6 +176,7 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles,
 	//float4 color = { r, 1-r, 0.5f, 1.0f };
 	//float4 color = { 1.0f, 0.0f, 0.0f, 1.0f };
 
+#if 0
 	const int N = 7;
 	const float4 Colours[N] = 
 	{  /* colours for different spectral classes: Oh Be A Fine Girl Kiss Me */
@@ -192,10 +193,39 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles,
 		/* O     B    A    F    G    K     M */
 		150.0f, 18.0f, 3.2f, 1.7f, 1.1f, 0.78f, 0.47f, 0.1f
 	};
-	const float slope_disk = 0.35f;
-	const float slope_glow = 1.35f;
-	StarSampler sDisk(N, Masses, slope_disk);
-	StarSampler sGlow(N, Masses, slope_glow);
+#else
+	const int N = 15;
+	const float4 Colours[N] = 
+	{  /* colours for different spectral classes: Oh Be A Fine Girl Kiss Me */
+		make_float4( 62.0f, 108.0f, 255.0f, 1.0f),  /* O5 */
+		make_float4( 68.0f, 114.0f, 255.0f, 1.0f),  /* B0 */
+		make_float4( 87.0f, 133.0f, 255.0f, 1.0f),  /* B5 */
+		make_float4(124.0f, 165.0f, 255.0f, 1.0f),  /* A0 */
+		make_float4(156.0f, 189.0f, 255.0f, 1.0f),  /* A5 */
+		make_float4(177.0f, 204.0f, 255.0f, 1.0f),  /* F0 */
+		make_float4(212.0f, 228.0f, 255.0f, 1.0f),  /* F5 */
+		make_float4(237.0f, 244.0f, 255.0f, 1.0f),  /* G0 */
+		make_float4(253.0f, 254.0f, 255.0f, 1.0f),  /* G2 */
+		make_float4(255.0f, 246.0f, 233.0f, 1.0f),  /* G5 - the Sun */
+		make_float4(255.0f, 233.0f, 203.0f, 1.0f),  /* K0 */
+		make_float4(255.0f, 203.0f, 145.0f, 1.0f),  /* K5 */
+		make_float4(255.0f, 174.0f,  98.0f, 1.0f),  /* M0 */
+		make_float4(255.0f, 138.0f,  56.0f, 1.0f),  /* M5 */
+		make_float4(240.0f,   0.0f,   0.0f, 1.0f)   /* M8 */
+	};
+	float Masses[N+1] =
+	{  /* masses for each of the spectra type */
+		150.0f, 18.0f, 6.5f, 3.2f, 2.1f, 1.7f, 1.29f, 1.1f, 1.0f, 0.93f, 0.78f, 0.69f, 0.47f, 0.21f, 0.1f, 0.05f
+	};
+#endif
+	float slope_disk = -2.35f;  /* salpeter MF */
+	float slope_glow = -2.35f;
+#if 1
+	slope_disk = -0.1;//35;
+	slope_glow = -0.1;
+#endif
+	StarSampler sDisk(N, Masses, slope_disk-1);
+	StarSampler sGlow(N, Masses, slope_glow-1);
 
 	float4 color;
 
