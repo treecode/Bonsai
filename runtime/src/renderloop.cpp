@@ -945,7 +945,8 @@ public:
 		m_renderer.setColors((float*)colors);
 #else  /* eg: assign colours on the device */
 		assignColors( m_particleColorsDev, (int*)m_tree->localTree.bodies_ids.d(), n, 
-				color2, color3, color4, starColor, bulgeColor, darkMatterColor, dustColor, m_brightFreq );
+				color2, color3, color4, starColor, bulgeColor, darkMatterColor, dustColor, m_brightFreq, m_tree->get_t_current() * 9.78f);
+
 		m_renderer.setColorsDevice( (float*)m_particleColorsDev );
 #endif
 
