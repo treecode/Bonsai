@@ -221,8 +221,8 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles,
 	float slope_disk = -2.35f;  /* salpeter MF */
 	float slope_glow = -2.35f;
 #if 1
-	slope_disk = -0.1;//35;
-	slope_glow = -0.1;
+	slope_disk = +0.1;  /* gives galaxies nice Blue tint */
+	slope_glow = +0.1;
 #endif
 	StarSampler sDisk(N, Masses, slope_disk-1);
 	StarSampler sGlow(N, Masses, slope_glow-1);
