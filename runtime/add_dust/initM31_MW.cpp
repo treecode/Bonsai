@@ -533,7 +533,7 @@ int main(int argc, char **argv)
 	{
 		Particle p = ptcl2[i];
 		if (!foundCentre)
-			if (p.pos.abs() < 0.01)
+			if (p.pos.abs() < 0.1)
 			{
 				foundCentre = true;
 				p.ID = 30000000 - 2;

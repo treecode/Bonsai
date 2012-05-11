@@ -642,6 +642,8 @@ int main(int argc, char** argv)
   ENABLE_RUNTIME_LOG = false;
 #endif
 
+	TstartGlow = 0.0;
+
 	/************** beg - command line arguments ********/
 #if 1
 	{
@@ -678,7 +680,9 @@ int main(int argc, char** argv)
 #ifdef USE_OPENGL
 		ADDUSAGE("     --fullscreen #     set fullscreen mode string");
     ADDUSAGE("     --displayfps       enable on-screen FPS display");
+		ADDUSAGE("     --Tglow  #         enable glow @ # Myr [" << TstartGlow << "]");
 #endif
+
 
 		ADDUSAGE(" ");
 
@@ -708,6 +712,7 @@ int main(int argc, char** argv)
     opt.setFlag("direct");
 #ifdef USE_OPENGL
 		opt.setOption( "fullscreen");
+		opt.setOption( "Tglow");
     opt.setFlag("displayfps");
 #endif
   
@@ -751,6 +756,7 @@ int main(int argc, char** argv)
         if ((optarg = opt.getValue("reducedust")))	 reduce_dust_factor = atoi  (optarg);
 #if USE_OPENGL
         if ((optarg = opt.getValue("fullscreen")))	 fullScreenMode     = string(optarg);
+        if ((optarg = opt.getValue("Tglow")))	 TstartGlow  = (float)atof(optarg);
 #endif
 		if (fileName.empty()) 
 		{
@@ -852,6 +858,9 @@ int main(int argc, char** argv)
     cout << " Runtime logging is DISABLED \n";
 #endif
   cout << " Direct gravitation is " << (direct ? "ENABLED" : "DISABLED") << endl;
+#if USE_OPENGL
+	cout << "Tglow =" << TstartGlow << endl;
+#endif
 
 	
   cerr << "Used settings: \n";
@@ -875,6 +884,9 @@ int main(int argc, char** argv)
     cerr << " Runtime logging is DISABLED \n";
 #endif
   cerr << " Direct gravitation is " << (direct ? "ENABLED" : "DISABLED") << endl;
+#if USE_OPENGL
+	cerr << "Tglow =" << TstartGlow << endl;
+#endif
 
   int NTotal, NFirst, NSecond, NThird;
   NTotal = NFirst = NSecond = NThird = 0;

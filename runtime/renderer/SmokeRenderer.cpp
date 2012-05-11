@@ -85,7 +85,7 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
 	m_starBlurRadius(40.0f),
 	m_starThreshold(1.0f),
     m_starPower(1.0f),
-	m_starIntensity(1.0f),
+	m_starIntensity(0.5f),
 	m_glowRadius(10.0f),
     m_glowIntensity(0.5f),
 	m_ageScale(10.0f),
@@ -102,8 +102,8 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
     m_cubemapTex(0),
     m_flareThreshold(0.5f),
     m_flareIntensity(0.0f),
-    m_sourceIntensity(1.0f),
-    m_flareRadius(100.0f),
+    m_sourceIntensity(0.5f),
+    m_flareRadius(50.0f),
     m_skyboxBrightness(0.5f),
     m_transmission(0.0f)
 {
