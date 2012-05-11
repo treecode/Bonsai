@@ -270,7 +270,8 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles,
 #if 1
 		const float  Mstar = sBulge.sampleMass(id);
 		const float4 Cstar = Colours[sBulge.getColour(Mstar)];
-		color = Cstar * make_float4(0.01f, 0.01f, 0.01f, 1.0f);
+		const float fdim = 0.01f;
+		color = Cstar * make_float4(fdim, fdim, fdim, 2.0f);
 #endif
 	} 
 	else //>= 200000000, Dark matter
