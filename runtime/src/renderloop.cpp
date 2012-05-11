@@ -27,6 +27,7 @@
 #include "vector_math.h"
 #include "timer.h"
 #include "paramgl.h"
+#include "depthSort.h"
 
 extern void displayTimers();    // For profiling counter display
 
@@ -143,7 +144,9 @@ void glPrintf(float x, float y, const char* format, ...)
   va_end(args);
 }
 
-#define MAX_PARTICLES 5000000
+// reducing to improve perf
+#define MAX_PARTICLES 700000
+
 class BonsaiDemo
 {
 public:
@@ -187,7 +190,8 @@ public:
     arraySize    += tree->localTree.n_dust;
  
     //m_particleColors  = new float4[arraySize];
-    m_particleColors  = new float4[MAX_PARTICLES];   
+    m_particleColors  = new float4[MAX_PARTICLES];  
+    cudaMalloc( &m_particleColorsDev, MAX_PARTICLES * sizeof(float4)); 
     initBodyColors();
 
 	  m_renderer.setFOV(m_fov);
@@ -711,16 +715,17 @@ public:
                            m_tree->localTree.n_dust, m_tree->localTree.n);
     #endif    
 
-    m_tree->localTree.bodies_ids.d2h();   
-    
-    float4 *colors = m_particleColors;
-
-    float4 color2 = make_float4(starColor2.x*starColor2.w, starColor2.y*starColor2.w, starColor2.z*starColor2.w, 1.0f);
+float4 color2 = make_float4(starColor2.x*starColor2.w, starColor2.y*starColor2.w, starColor2.z*starColor2.w, 1.0f);
     float4 color3 = make_float4(starColor3.x*starColor3.w, starColor3.y*starColor3.w, starColor3.z*starColor3.w, 1.0f);
     float4 color4 = make_float4(starColor4.x*starColor4.w, starColor4.y*starColor4.w, starColor4.z*starColor4.w, 1.0f);
 
 		int sunIdx = -1;
 		int m31Idx = -1;
+
+#if 0
+    m_tree->localTree.bodies_ids.d2h();   
+    
+    float4 *colors = m_particleColors;
 
 #if 1
     for (int i = 0; i < n; i++)
@@ -785,14 +790,19 @@ public:
     }
 #endif
 
+		LOGF(stderr, "sunIdx= %d  m31Idx= %d \n", sunIdx, m31Idx);
 
-		//LOGF(stderr, "sunIdx= %d  m31Idx= %d \n", sunIdx, m31Idx);
+	m_renderer.setColors((float*)colors);
+#else
+	 assignColors( m_particleColorsDev, (int*)m_tree->localTree.bodies_ids.d(), n, 
+		 color2, color3, color4, starColor, bulgeColor, darkMatterColor, dustColor, m_brightFreq );
+	 m_renderer.setColorsDevice( (float*)m_particleColorsDev );
+#endif
 
     m_renderer.setNumParticles( m_tree->localTree.n + m_tree->localTree.n_dust);    
     m_renderer.setPositionsDevice((float*) m_tree->localTree.bodies_pos.d());   // use d2d copy
     //m_tree->localTree.bodies_pos.d2h(); m_renderer.setPositions((float *) &m_tree->localTree.bodies_pos[0]);
-    m_renderer.setColors((float*)colors);
-
+    
   }
 
 
@@ -902,6 +912,7 @@ public:
   int m_octreeMaxDepth;
 
   float4 *m_particleColors;
+  float4 *m_particleColorsDev;
 
   // view params
   int m_ox; // = 0

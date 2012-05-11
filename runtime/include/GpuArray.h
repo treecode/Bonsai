@@ -20,6 +20,9 @@
 #include <cuda_gl_interop.h>
 //#include <cutil_inline.h>
 
+extern int devID;
+extern int renderDevID;
+
 typedef unsigned int uint;
 
 #define cutilSafeCall(err)           __cudaSafeCall      (err, __FILE__, __LINE__)
@@ -275,6 +278,8 @@ GpuArray<T>::copy(Direction dir, uint start, uint count)
 
 	//assert(start < m_size);
 
+    cudaSetDevice(renderDevID);
+
     map();
     switch(dir) {
     case HOST_TO_DEVICE:
@@ -286,6 +291,8 @@ GpuArray<T>::copy(Direction dir, uint start, uint count)
         break;
     }
     unmap();
+
+    cudaSetDevice(devID);
 }
 
 

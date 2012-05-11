@@ -38,6 +38,9 @@ using namespace std;
 
 #include "../profiling/bonsai_timing.h"
 
+int devID;
+int renderDevID;
+
 extern void initTimers()
 {
 #ifndef CUXTIMER_DISABLE
@@ -617,8 +620,8 @@ int main(int argc, char** argv)
   float theta    = 0.75f;
   float timeStep = 1.0f / 16.0f;
   float  tEnd      = 1;
-  int devID      = 0;
-  int renderDevID = 0;
+  devID      = 0;
+  renderDevID = 0;
 
   string fileName       =  "";
   string logFileName    = "gpuLog.log";
@@ -873,7 +876,7 @@ int main(int argc, char** argv)
 #ifdef USE_OPENGL
   // create OpenGL context first, and register for interop
   initGL(argc, argv, fullScreenMode.c_str());
-  cudaGLSetGLDevice(renderDevID);
+  cudaGLSetGLDevice(devID);
 #endif
 
   initTimers();

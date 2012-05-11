@@ -54,6 +54,7 @@ public:
 	void setPositions(float *pos);
     void setPositionsDevice(float *posD);
 	void setColors(float *color);
+    void setColorsDevice(float *colorD);
 
     void setWindowSize(int w, int h);
     void setFOV(float fov) { mFov = fov; }
