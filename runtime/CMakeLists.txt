@@ -37,12 +37,11 @@ option(COMPILE_SM30
   ON
   )
 
-#option(USE_DUST
-#  "On to enable dust rendering"
-#  ON
-#  )
-
-  
+option(USE_DUST
+  "On to enable dust rendering"
+  ON
+  )
+ 
 option(CUDA_KEEP_INTERMEDIATE_FILES
   "On to enable -keep"
   OFF
@@ -65,6 +64,9 @@ endif (USE_B40C)
 
 if (USE_DUST)
   add_definitions(-DUSE_DUST)
+  set(BINARY_NAME bonsai2)
+else (USE_DUST)
+  set(BINARY_NAME bonsai2_slowdust)
 endif (USE_DUST)
 
 set(CMAKE_DEBUG_POSTFIX "D")
@@ -235,7 +237,8 @@ if (USE_OPENGL)
 
 endif (USE_OPENGL)
 
-cuda_add_executable(bonsai2
+
+cuda_add_executable(${BINARY_NAME}
   ${CCFILES} 
   ${HFILES}
   ${CUFILES}
@@ -243,7 +246,7 @@ cuda_add_executable(bonsai2
   OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING} ${KEEP}
   )
 
-target_link_libraries(bonsai2 ${ALL_LIBRARIES})
+target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES})
 
 #copy test data file
 file(COPY ${CMAKE_SOURCE_DIR}/model3_child_compact.tipsy DESTINATION ${CMAKE_BINARY_DIR})
