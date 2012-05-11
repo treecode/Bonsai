@@ -77,13 +77,14 @@ gravitation(float4 iPos,
 // once.
 #define WRAP(x,m) (((x)<(m))?(x):((x)-(m)))  // Mod without divide, works on values from 0 up to 2m
 
-KERNEL_DECLARE(dev_direct_gravity)(float4 *accel, float4 *i_positions, float4 *j_positions, int numBodies, float eps2)
+//JB, different numbers of i-particles and j-particles incase tree.n_dust and tree.n are unequal
+KERNEL_DECLARE(dev_direct_gravity)(float4 *accel, float4 *i_positions, float4 *j_positions, int numBodies_i, int numBodies_j, float eps2)
 {
     extern __shared__ float4 sharedPos[];
 
     int index = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (index >= numBodies)
+    if (index >= numBodies_i)
     {
         return;
     }
@@ -93,13 +94,13 @@ KERNEL_DECLARE(dev_direct_gravity)(float4 *accel, float4 *i_positions, float4 *j
     float3 acc = {0.0f, 0.0f, 0.0f};
 
     int p = blockDim.x;
-    int n = numBodies;
+    int n = numBodies_j;
     int numTiles = n / p;
 
     for (int tile = blockIdx.y; tile < numTiles + blockIdx.y; tile++)
     {
         int jindex = WRAP(blockIdx.x + tile, gridDim.x) * p + threadIdx.x;
-        if (jindex < numBodies)
+        if (jindex < numBodies_j)
           sharedPos[threadIdx.x] = j_positions[jindex];
         else
           sharedPos[threadIdx.x] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);

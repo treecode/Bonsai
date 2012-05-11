@@ -550,9 +550,18 @@ void octree::iterate_setup(IterationData &idata) {
   if(snapshotIter > 0 )
   {
       int time = (int)t_current;
-      if((time >= nextSnapTime))
+      
+      //We always snapshot the state at the current time, so we have the start
+      //of the simulation included in our snapshots. This also allows us to
+      //adjust the nextSnapTime to the correct starting point now that we can start
+      //at time != 0
+      //if((time >= nextSnapTime))
+      nextSnapTime = time;
+      if(1)
       {
-        nextSnapTime += snapshotIter;
+        nextSnapTime += snapshotIter;       
+        
+        
         string fileName; fileName.resize(256);
         sprintf(&fileName[0], "%s_%06d", snapshotFile.c_str(), time + snapShotAdd);
         
@@ -719,8 +728,9 @@ void octree::direct_gravity(tree_structure &tree)
   directGrav.set_arg<cl_mem>(1, tree.bodies_Ppos.p());
   directGrav.set_arg<cl_mem>(2, tree.bodies_Ppos.p());
   directGrav.set_arg<int>(3,    &tree.n);
-  directGrav.set_arg<float>(4,  &(this->eps2));
-  directGrav.set_arg<float4>(5, NULL, 256);
+  directGrav.set_arg<int>(4,    &tree.n);
+  directGrav.set_arg<float>(5,  &(this->eps2));
+  directGrav.set_arg<float4>(6, NULL, 256);
   std::vector<size_t> localWork(2), globalWork(2);
   localWork[0] = 256; localWork[1] = 1;
   globalWork[0] = 256 * ((tree.n + 255) / 256);
