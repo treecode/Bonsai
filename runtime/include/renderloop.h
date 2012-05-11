@@ -4,6 +4,8 @@
 #include "octree.h"
 
 void initGL(int argc, char** argv, const char *fullScreenMode);
-void initAppRenderer(int argc, char** argv, octree *tree, octree::IterationData &idata);
+void initAppRenderer(int argc, char** argv, octree *tree, 
+                     octree::IterationData &idata,
+                     bool showFPS);
 
 #endif // _RENDERLOOP_H_

@@ -1170,7 +1170,9 @@ void initGL(int argc, char** argv, const char *fullScreenMode)
 }
 
 
-void initAppRenderer(int argc, char** argv, octree *tree, octree::IterationData &idata) {
+void initAppRenderer(int argc, char** argv, octree *tree, 
+                     octree::IterationData &idata, bool showFPS) {
+  displayFps = showFPS;
   //initGL(argc, argv);
   theDemo = new BonsaiDemo(tree, idata);
   glutMainLoop();

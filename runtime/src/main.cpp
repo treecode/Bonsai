@@ -633,6 +633,7 @@ int main(int argc, char** argv)
   string fullScreenMode = "";
   bool direct = false;
   bool fullscreen = false;
+  bool displayFPS = false;
 
 #if ENABLE_LOG
   ENABLE_RUNTIME_LOG = false;
@@ -672,7 +673,8 @@ int main(int argc, char** argv)
 #endif
         ADDUSAGE("     --direct           enable N^2 direct gravitation [" << (direct ? "on" : "off") << "]");
 #ifdef USE_OPENGL
-		ADDUSAGE("     --fullscreen#      set fullscreen mode string");
+		ADDUSAGE("     --fullscreen #     set fullscreen mode string");
+    ADDUSAGE("     --displayfps       enable on-screen FPS display");
 #endif
 
 		ADDUSAGE(" ");
@@ -700,8 +702,11 @@ int main(int argc, char** argv)
 #if ENABLE_LOG
 		opt.setFlag("log");
 #endif
-        opt.setFlag("direct");
+    opt.setFlag("direct");
+#ifdef USE_OPENGL
 		opt.setOption( "fullscreen");
+    opt.setFlag("displayfps");
+#endif
   
 		opt.processCommandArgs( argc, argv );
 
@@ -717,7 +722,8 @@ int main(int argc, char** argv)
 			exit(0);
 		}
 
-        if (opt.getFlag("direct")) direct = true;
+    if (opt.getFlag("direct")) direct = true;
+    if (opt.getFlag("displayfps")) displayFPS = true;
 
 #if ENABLE_LOG
     if (opt.getFlag("log")) ENABLE_RUNTIME_LOG = true;
@@ -1080,7 +1086,7 @@ int main(int argc, char** argv)
   //Start the integration
 #ifdef USE_OPENGL
   octree::IterationData idata;
-  initAppRenderer(argc, argv, tree, idata);
+  initAppRenderer(argc, argv, tree, idata, displayFPS);
   printf("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);  
 #else
   tree->iterate(); 
