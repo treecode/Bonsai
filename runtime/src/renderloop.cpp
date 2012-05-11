@@ -20,6 +20,7 @@
 #include <cuda_runtime_api.h>
 #include <cstdarg>
 #include <vector>
+#include <cassert>
 
 #include "renderloop.h"
 #include "render_particles.h"
@@ -29,7 +30,120 @@
 #include "paramgl.h"
 #include "depthSort.h"
 
+struct Rand48
+{
+	double drand()
+	{
+		update();
+		return (stat&0xFFFFFFFFFFFF)*(1.0/281474976710656.0);
+	}
+	long lrand()
+	{
+		update();
+		return (long)(stat>>17)&0x7FFFFFFF;
+	}
+	long mrand()
+	{
+		update();
+		return(long)(stat>>16)&0xFFFFFFFF;
+	}
+	void srand(const long seed)
+	{
+		stat = (seed<<16)+0x330E;
+	}
+
+	private:
+	long long stat;
+	void update()
+	{
+		stat = stat*0x5DEECE66D + 0xB;
+	}
+};
+
+namespace StarSamplerData
+{
+	const int N = 7;
+	const float4 Colours[N] = 
+	{  /* colours for different spectral classes: Oh Be A Fine Girl Kiss Me */
+		make_float4(189.0, 188.0, 239.0, 1.0),  /* O-star */
+		make_float4(203.0, 214.0, 228.0, 1.0),  /* B-star */
+		make_float4(210.0, 211.0, 206.0, 1.0),  /* A-star */
+		make_float4(229.0, 219.0, 169.0, 1.0),  /* F-star */
+		make_float4(215.0, 211.0, 125.0, 1.0),  /* G-star, Sun-like */
+		make_float4(233.0, 187.0, 116.0, 1.0),  /* K-star */
+		make_float4(171.0,  49.0,  57.0, 1.0)   /* M-star, red-dwarfs */
+	};
+	const double Masses[N+1] =
+	{  /* masses for each of the spectra type */
+		/* O     B    A    F    G    K     M */
+		150.0, 18.0, 3.2, 1.7, 1.1, 0.78, 0.47, 0.1
+	};
+}
+
+class StarSampler
+{
+	private:
+		double slope;
+		double slope1;
+		double slope1inv;
+		double Mu_lo;
+		double C;
+		Rand48 rnd;
+
+	public:
+
+		StarSampler(const double _slope = -2.35, const long seed = 12345) : slope(_slope)
+	{
+		rnd.srand(seed);
+		slope1    = slope + 1.0f;
+		assert(slope1 != 0.0f);
+	  slope1inv	= 1.0f/slope1;
+
+		const double Mhi = StarSamplerData::Masses[0];
+		const double Mlo = StarSamplerData::Masses[StarSamplerData::N];
+		Mu_lo = std::pow(Mlo, slope1);
+		C = (std::pow(Mhi, slope1) - std::pow(Mlo, slope1));
+	}
+
+		double sampleMass() 
+		{
+			const double Mu = C*rnd.drand() + Mu_lo;
+			assert(Mu > 0.0);
+			const double M   = std::pow(Mu, slope1inv);
+			const double Mhi = StarSamplerData::Masses[0];
+			const double Mlo = StarSamplerData::Masses[StarSamplerData::N];
+			assert(M >= Mlo);
+			assert(M <= Mhi);
+			return M;
+		}
+
+		float4 getColour(const float M)
+		{
+			const float Mhi = StarSamplerData::Masses[0];
+			const float Mlo = StarSamplerData::Masses[StarSamplerData::N];
+			assert(M >= Mlo);
+			assert(M <= Mhi);
+			int beg = 0;
+			int end = StarSamplerData::N-1;
+			int mid = (beg + end) >> 1;
+			while (end - beg > 1)
+			{
+				if (StarSamplerData::Masses[mid] > M)
+					beg = mid;
+				else 
+					end = mid;
+				mid = (beg + end) >> 1;
+			}
+			assert(mid >= 0);
+			assert(mid <  StarSamplerData::N-1);
+
+			return StarSamplerData::Colours[mid];
+		}
+};
+
 extern void displayTimers();    // For profiling counter display
+
+/* thread safe drand48(), man drand48 */
 
 // fps
 bool displayFps = false;
@@ -715,88 +829,97 @@ public:
                            m_tree->localTree.n_dust, m_tree->localTree.n);
     #endif    
 
-float4 color2 = make_float4(starColor2.x*starColor2.w, starColor2.y*starColor2.w, starColor2.z*starColor2.w, 1.0f);
+	  float4 color2 = make_float4(starColor2.x*starColor2.w, starColor2.y*starColor2.w, starColor2.z*starColor2.w, 1.0f);
     float4 color3 = make_float4(starColor3.x*starColor3.w, starColor3.y*starColor3.w, starColor3.z*starColor3.w, 1.0f);
     float4 color4 = make_float4(starColor4.x*starColor4.w, starColor4.y*starColor4.w, starColor4.z*starColor4.w, 1.0f);
+
+#if 0  /*eg:  assign colours on the host*/
+
+#if 0
+		const float slope = -1.35; // mass function slope, Salpeter
+#elif 0
+		const float slope = -0.35; // top heavy mass function
+#elif 0
+		const float slope = -0.01; // nearly uniform MF
+#elif 1
+		const float slope = +.35; // reversed MF
+#elif 1
+		const float slope = +1.35; // reversed MF, low mass depleted
+#endif
+
+		StarSampler sSampler (slope-1);
+		StarSampler sSampler1(1.35-1, 1234556);
 
 		int sunIdx = -1;
 		int m31Idx = -1;
 
-#if 0
-    m_tree->localTree.bodies_ids.d2h();   
-    
-    float4 *colors = m_particleColors;
+		m_tree->localTree.bodies_ids.d2h();   
+		float4 *colors = m_particleColors;
 
-#if 1
-    for (int i = 0; i < n; i++)
-    {
-      int id =  m_tree->localTree.bodies_ids[i];
+		for (int i = 0; i < n; i++)
+		{
+			int id =  m_tree->localTree.bodies_ids[i];
 			if (id == 30000000 - 1) sunIdx = i;
 			if (id == 30000000 - 2) m31Idx = i;
-      //printf("%d: id %d, mass: %f\n", i, id, m_tree->localTree.bodies_pos[i].w);
+			//printf("%d: id %d, mass: %f\n", i, id, m_tree->localTree.bodies_pos[i].w);
 #if 1
-      float r = frand(id);
-#if 0 /* eg: original version */
-      if (id >= 0 && id < 50000000)     //Disk
-      {
-        //colors[i] = make_float4(0, 1, 0, 1);
-          colors[i] = ((id % 100) != 0) ? 
-						//starColor * make_float4(r, r, r, 1.0f):
-                        starColor :
-						((id / 100) & 1) ? starColor2 : starColor3;
-      } 
-#else /* eg: adds glowing massive particles */
-      if (id >= 0 && id < 40000000)     //Disk
-      {
-        colors[i] = ((id % m_brightFreq) != 0) ? 
-        starColor :
-        ((id / m_brightFreq) & 1) ? color2 : color3;
-      } else if (id >= 40000000 && id < 50000000)     // Glowing stars in spiral arms
-      {
-        colors[i] = ((id%4) == 0) ? color4 : color3;
-      }
-#endif
-#if 0 /* eg: original version */
-      else if (id >= 50000000 && id < 100000000) //Dust
-      {
-        //colors[i] = starColor;
-		colors[i] = dustColor * make_float4(r, r, r, 1.0f);
-      } 
-#else /* eg: adds glowing massless particles */
-				else if (id >= 50000000 && id < 70000000) //Dust
-				{
-					colors[i] = dustColor * make_float4(r, r, r, 1.0f);
-				} 
-				else if (id >= 70000000 && id < 100000000) // Glow massless dust particles
-				{
-					colors[i] = color3;  /*  adds glow in purple */
-				}
-#endif
-      else if (id >= 100000000 && id < 200000000) //Bulge
-      {
-		  //colors[i] = starColor;
-        colors[i] = bulgeColor;
-	  } 
-      else //>= 200000000, Dark matter
-      {
-        colors[i] = darkMatterColor;
-		  //colors[i] = darkMatterColor * make_float4(r, r, r, 1.0f);
-      }            
-      
+			float r = frand(id);
+			if (id >= 0 && id < 40000000)     //Disk
+			{
+				colors[i] = ((id % m_brightFreq) != 0) ? 
+					starColor :
+					((id / m_brightFreq) & 1) ? color2 : color3;
+				const float  Mstar = sSampler.sampleMass();
+				const float4 Cstar = sSampler.getColour(Mstar);
+				const float fdim = 4.0;
+				colors[i] = ((id%1000) == 0) ?   /* one in 1000 stars glows a bit */
+					make_float4(Cstar.x/fdim,  Cstar.y/fdim,  Cstar.z/fdim, Cstar.w) : 
+#if 0
+					colors[i];  /* use Simon's colours, make inner galaxy differently coloured */
 #else
-      // test sorting
-      colors[i] = make_float4(frand(), frand(), frand(), 1.0f);
+					make_float4(Cstar.x/100.0, Cstar.y/100.0, Cstar.z/100.0, Cstar.w);
 #endif
-    }
+			}
+		 	else if (id >= 40000000 && id < 50000000)     // Glowing stars in spiral arms
+			{
+				colors[i] = ((id%4) == 0) ? color4 : color3;
+				/* sample colours form the MF */
+				const float  Mstar = sSampler1.sampleMass();
+				const float4 Cstar = sSampler1.getColour(Mstar);
+				colors[i] = Cstar;
+			}
+			else if (id >= 50000000 && id < 70000000) //Dust
+			{
+				colors[i] = dustColor * make_float4(r, r, r, 1.0f);
+			} 
+			else if (id >= 70000000 && id < 100000000) // Glow massless dust particles
+			{
+				colors[i] = color3;  /*  adds glow in purple */
+				colors[i] = dustColor * make_float4(r, r, r, 1.0f);
+			}
+			else if (id >= 100000000 && id < 200000000) //Bulge
+			{
+				//colors[i] = starColor;
+				colors[i] = bulgeColor;
+			} 
+			else //>= 200000000, Dark matter
+			{
+				colors[i] = darkMatterColor;
+				//colors[i] = darkMatterColor * make_float4(r, r, r, 1.0f);
+			}            
+#else
+			// test sorting
+			colors[i] = make_float4(frand(), frand(), frand(), 1.0f);
 #endif
+		}
 
 		LOGF(stderr, "sunIdx= %d  m31Idx= %d \n", sunIdx, m31Idx);
 
-	m_renderer.setColors((float*)colors);
-#else
-	 assignColors( m_particleColorsDev, (int*)m_tree->localTree.bodies_ids.d(), n, 
-		 color2, color3, color4, starColor, bulgeColor, darkMatterColor, dustColor, m_brightFreq );
-	 m_renderer.setColorsDevice( (float*)m_particleColorsDev );
+		m_renderer.setColors((float*)colors);
+#else  /* eg: assign colours on the device */
+		assignColors( m_particleColorsDev, (int*)m_tree->localTree.bodies_ids.d(), n, 
+				color2, color3, color4, starColor, bulgeColor, darkMatterColor, dustColor, m_brightFreq );
+		m_renderer.setColorsDevice( (float*)m_particleColorsDev );
 #endif
 
     m_renderer.setNumParticles( m_tree->localTree.n + m_tree->localTree.n_dust);    
