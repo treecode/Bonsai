@@ -383,12 +383,12 @@ public:
 
   void incrementOctreeMaxDepth(int inc) { 
     m_octreeMaxDepth += inc;
-    m_octreeMaxDepth = std::max(m_octreeMinDepth+1, std::min(m_octreeMaxDepth, 30));
+    m_octreeMaxDepth = std::max(m_octreeMinDepth, std::min(m_octreeMaxDepth, m_tree->localTree.n_levels));
   }
 
   void incrementOctreeMinDepth(int inc) { 
     m_octreeMinDepth += inc;
-    m_octreeMinDepth = std::max(0, std::min(m_octreeMinDepth, m_octreeMaxDepth-1));
+    m_octreeMinDepth = std::max(0, std::min(m_octreeMinDepth, m_octreeMaxDepth));
   }
 
   void step() { 
@@ -984,14 +984,14 @@ public:
     m_tree->localTree.node_level_list.d2h(); //Should not be needed is created on host
            
     uint displayMax = m_tree->localTree.level_list[min(m_octreeMaxDepth, m_tree->localTree.n_levels)].y;
-    uint displayMin = m_tree->localTree.level_list[max(0, m_octreeMinDepth)].y;
+    uint displayMin = m_tree->localTree.level_list[max(0, m_octreeMinDepth)].x;
 
     float alpha = std::min(1.0f, 1.0f - (float)(displayMax - displayMin) / m_tree->localTree.n_nodes);
-        
+
     glColor4f(0.0f, 0.5f, 0.0f, std::max(alpha, 0.2f));
     //glColor4f(0.0f, 0.5f, 0.0f, 1.0f / m_octreeMaxDepth);
 
-      
+
     for(uint i=displayMin; i < displayMax; i++)
     {
       float3 boxMin, boxMax;
