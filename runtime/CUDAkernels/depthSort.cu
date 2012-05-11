@@ -162,8 +162,7 @@ class StarSampler
 		}
 };
 
-	__global__
-void assignColorsKernel(float4 *colors, int *ids, int numParticles, 
+KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles, 
 		float4 color2, float4 color3, float4 color4, 
 		float4 starColor, float4 bulgeColor, float4 darkMatterColor, float4 dustColor,
 		int m_brightFreq)
