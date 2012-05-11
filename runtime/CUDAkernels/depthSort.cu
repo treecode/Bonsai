@@ -194,9 +194,10 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles,
 		150.0f, 18.0f, 3.2f, 1.7f, 1.1f, 0.78f, 0.47f, 0.1f
 	};
 #else
-	const int N = 15;
+	const int N = 16;
 	const float4 Colours[N] = 
 	{  /* colours for different spectral classes: Oh Be A Fine Girl Kiss Me */
+		make_float4( 32.0f,  78.0f, 255.0f, 1.0f),  /* O0 */
 		make_float4( 62.0f, 108.0f, 255.0f, 1.0f),  /* O5 */
 		make_float4( 68.0f, 114.0f, 255.0f, 1.0f),  /* B0 */
 		make_float4( 87.0f, 133.0f, 255.0f, 1.0f),  /* B5 */
@@ -205,8 +206,8 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles,
 		make_float4(177.0f, 204.0f, 255.0f, 1.0f),  /* F0 */
 		make_float4(212.0f, 228.0f, 255.0f, 1.0f),  /* F5 */
 		make_float4(237.0f, 244.0f, 255.0f, 1.0f),  /* G0 */
-		make_float4(253.0f, 254.0f, 255.0f, 1.0f),  /* G2 */
-		make_float4(255.0f, 246.0f, 233.0f, 1.0f),  /* G5 - the Sun */
+		make_float4(253.0f, 254.0f, 255.0f, 1.0f),  /* G2 -- the Sun */
+		make_float4(255.0f, 246.0f, 233.0f, 1.0f),  /* G5 */
 		make_float4(255.0f, 233.0f, 203.0f, 1.0f),  /* K0 */
 		make_float4(255.0f, 203.0f, 145.0f, 1.0f),  /* K5 */
 		make_float4(255.0f, 174.0f,  98.0f, 1.0f),  /* M0 */
@@ -215,17 +216,20 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles,
 	};
 	float Masses[N+1] =
 	{  /* masses for each of the spectra type */
-		150.0f, 18.0f, 6.5f, 3.2f, 2.1f, 1.7f, 1.29f, 1.1f, 1.0f, 0.93f, 0.78f, 0.69f, 0.47f, 0.21f, 0.1f, 0.05f
+		150.0f, 40.0f, 18.0f, 6.5f, 3.2f, 2.1f, 1.7f, 1.29f, 1.1f, 1.0f, 0.93f, 0.78f, 0.69f, 0.47f, 0.21f, 0.1f, 0.05f
 	};
 #endif
-	float slope_disk = -2.35f;  /* salpeter MF */
-	float slope_glow = -2.35f;
+	float slope_disk  = -2.35f;  /* salpeter MF */
+	float slope_glow  = -2.35f;
+	float slope_bulge = -1.35f;
 #if 1
-	slope_disk = +0.1;  /* gives galaxies nice Blue tint */
-	slope_glow = +0.1;
+	slope_disk  = +0.1;  /* gives disk stars nice Blue tint */
+	slope_glow  = +0.1;  /* give  glowing stars blue ting as well*/
+	slope_bulge = -1.35; /* bulge remains yellowish */
 #endif
-	StarSampler sDisk(N, Masses, slope_disk-1);
-	StarSampler sGlow(N, Masses, slope_glow-1);
+	StarSampler sDisk (N, Masses, slope_disk -1);
+	StarSampler sGlow (N, Masses, slope_glow -1);
+	StarSampler sBulge(N, Masses, slope_bulge-1);
 
 	float4 color;
 
@@ -263,6 +267,11 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles,
 	{
 		//colors[i] = starColor;
 		color = bulgeColor;
+#if 1
+		const float  Mstar = sBulge.sampleMass(id);
+		const float4 Cstar = Colours[sBulge.getColour(Mstar)];
+		color = Cstar * make_float4(0.01f, 0.01f, 0.01f, 1.0f);
+#endif
 	} 
 	else //>= 200000000, Dark matter
 	{
