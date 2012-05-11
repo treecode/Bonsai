@@ -62,7 +62,11 @@ void octree::allocateParticleMemory(tree_structure &tree)
   tempSize = max(tempSize, treeWalkStackSize);
   
   //General buffer is used at multiple locations and reused in different functions
-  tree.generalBuffer1.cmalloc(tempSize, true);  
+  // MJH for some reason this is crashing if pinned, when running on Fermi)
+  if (this->getDevContext()->getComputeCapability() < 350)
+    tree.generalBuffer1.cmalloc(tempSize, false);  
+  else
+    tree.generalBuffer1.cmalloc(tempSize, true);  
   
 
   //Interactions needs; uint2   n 
