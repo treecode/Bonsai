@@ -30,11 +30,6 @@ http://github.com/treecode/Bonsai
 #include "anyoption.h"
 #include "renderloop.h"
 
-#ifndef USE_OPENGL
-float TstartGlow, dTstartGlow;
-#endif
-
-
 #if ENABLE_LOG
 bool ENABLE_RUNTIME_LOG;
 #endif
@@ -647,8 +642,10 @@ int main(int argc, char** argv)
   ENABLE_RUNTIME_LOG = false;
 #endif
 
+#ifdef USE_OPENGL
 	TstartGlow = 0.0;
 	dTstartGlow = 1.0;
+#endif
 
 	/************** beg - command line arguments ********/
 #if 1
