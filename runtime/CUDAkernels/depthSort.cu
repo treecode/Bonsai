@@ -119,17 +119,21 @@ class StarSampler
 		float C;
 		int   N;
 		float *Masses;
+		float4 *Colours;
 
 	public:
 
-		__device__ StarSampler(const float _N, float *_Masses, const float _slope = -2.35) : slope(_slope)
+		__device__ StarSampler(
+				const float _N, 
+				float  *_Masses, 
+				float4 *_Colours,
+				const float _slope = -2.35) : 
+			slope(_slope), N(_N), Masses(_Masses), Colours(_Colours)
 	{
-		Masses = _Masses;
-		N      = _N;
 		const float Mhi = Masses[0];
 		const float Mlo = Masses[N-1];
 		slope1    = slope + 1.0f;
-		assert(slope1 != 0.0f);
+//		assert(slope1 != 0.0f);
 	  slope1inv	= 1.0f/slope1;
 
 		Mu_lo = __powf(Mlo, slope1);
@@ -139,12 +143,12 @@ class StarSampler
 		__device__ float sampleMass(const int id)  const
 		{
 			const float Mu = C*frand(id) + Mu_lo;
-			assert(Mu > 0.0);
+//			assert(Mu > 0.0);
 			const float M   = __powf(Mu, slope1inv);
 			return M;
 		}
 
-		__device__ int getColour(const float M) const
+		__device__ float4 getColour(const float M) const
 		{
 			int beg = 0;
 			int end = N;
@@ -158,7 +162,7 @@ class StarSampler
 				mid = (beg + end) >> 1;
 			}
 
-			return mid;
+			return Colours[mid];
 		}
 };
 
@@ -178,7 +182,7 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles,
 
 #if 0
 	const int N = 7;
-	const float4 Colours[N] = 
+	float4 Colours[N] = 
 	{  /* colours for different spectral classes: Oh Be A Fine Girl Kiss Me */
 		make_float4(189.0f, 188.0f, 239.0, 1.0f),  /* O-star */
 		make_float4(203.0f, 214.0f, 228.0, 1.0f),  /* B-star */
@@ -195,7 +199,7 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles,
 	};
 #else
 	const int N = 16;
-	const float4 Colours[N] = 
+	float4 Colours[N] = 
 	{  /* colours for different spectral classes: Oh Be A Fine Girl Kiss Me */
 		make_float4( 32.0f,  78.0f, 255.0f, 1.0f),  /* O0 */
 		make_float4( 62.0f, 108.0f, 255.0f, 1.0f),  /* O5 */
@@ -227,9 +231,9 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles,
 	slope_glow  = +0.1;  /* give  glowing stars blue ting as well*/
 	slope_bulge = -1.35; /* bulge remains yellowish */
 #endif
-	StarSampler sDisk (N, Masses, slope_disk -1);
-	StarSampler sGlow (N, Masses, slope_glow -1);
-	StarSampler sBulge(N, Masses, slope_bulge-1);
+	StarSampler sDisk (N, Masses, Colours, slope_disk -1);
+	StarSampler sGlow (N, Masses, Colours, slope_glow -1);
+	StarSampler sBulge(N, Masses, Colours, slope_bulge-1);
 
 	float4 color;
 
@@ -240,7 +244,7 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles,
 			((id / m_brightFreq) & 1) ? color2 : color3;
 
 		const float  Mstar = sDisk.sampleMass(id);
-		const float4 Cstar = Colours[sDisk.getColour(Mstar)];
+		const float4 Cstar = sDisk.getColour(Mstar);
 		const float fdim = 0.5f;
 		color = ((id & 1023) == 0) ?   /* one in 1000 stars glows a bit */
 			              make_float4(Cstar.x*fdim,  Cstar.y*fdim,  Cstar.z*fdim,  Cstar.w) : 
@@ -251,7 +255,7 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles,
 #if 1
 		/* sample colours form the MF */
 		const float  Mstar = sGlow.sampleMass(id);
-		const float4 Cstar = Colours[sGlow.getColour(Mstar)];
+		const float4 Cstar = sGlow.getColour(Mstar);
 		color = Cstar;
 
 		//We need to tune this parameter, this disabled glowing stars uptill a certain time
@@ -279,7 +283,7 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles,
 		color = bulgeColor;
 #if 1
 		const float  Mstar = sBulge.sampleMass(id);
-		const float4 Cstar = Colours[sBulge.getColour(Mstar)];
+		const float4 Cstar = sBulge.getColour(Mstar);
 		const float fdim = 0.01f;
 		color = Cstar * make_float4(fdim, fdim, fdim, 2.0f);
 #endif
