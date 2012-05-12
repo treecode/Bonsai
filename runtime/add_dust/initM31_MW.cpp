@@ -455,7 +455,9 @@ int main(int argc, char **argv)
 	for (Particle::constIterator it = ptcl1.begin(); it != ptcl1.end(); it++)
 	{
 		const Particle &p = *it;
-		if (p.ID >= 100000000)
+		if (p.ID >= 200000000)
+			NHALO++;
+		else if (p.ID >= 100000000)
 			NBULGE++;
 		else if (p.ID >= 70000000)
 			NDUSTGLOW++;           
@@ -477,7 +479,9 @@ int main(int argc, char **argv)
 	for (Particle::constIterator it = ptcl2.begin(); it != ptcl2.end(); it++)
 	{
 		const Particle &p = *it;
-		if (p.ID >= 100000000)
+		if (p.ID >= 200000000)
+			NHALO++;
+		else if (p.ID >= 100000000)
 			NBULGE++;
 		else if (p.ID >= 70000000)
 			NDUSTGLOW++;           
