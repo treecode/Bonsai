@@ -763,7 +763,7 @@ int main(int argc, char** argv)
         if ((optarg = opt.getValue("fullscreen")))	 fullScreenMode     = string(optarg);
         if ((optarg = opt.getValue("Tglow")))	 TstartGlow  = (float)atof(optarg);
         if ((optarg = opt.getValue("dTglow")))	 dTstartGlow  = (float)atof(optarg);
-        dTstartGlow = std::max(dTstartGlow, 1.0);
+        dTstartGlow = std::max(dTstartGlow, 1.0f);
 #endif
 		if (fileName.empty()) 
 		{
