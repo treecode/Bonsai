@@ -13,9 +13,11 @@
 #ifndef KERNEL_SEPARATE    // Separate declaration option
 #define KERNEL_NAME(funcname)    funcname
 #define KERNEL_DECLARE(funcname) extern "C" __global__ void KERNEL_NAME(funcname)
+#define KERNEL_DECLARE_LB(funcname,threads,blocks) extern "C" __launch_bounds__(threads,blocks) __global__ void KERNEL_NAME(funcname)
 #else
 #define KERNEL_NAME(funcname)    gpu_ ## funcname
 #define KERNEL_DECLARE(funcname) __global__ void KERNEL_NAME(funcname)
+#define KERNEL_DECLARE_LB(funcname,threads,blocks) __launch_bounds__(threads,blocks) __global__ void KERNEL_NAME(funcname)
 #endif  // KERNEL_SEPARATE
 #endif  // KERNEL_DECLARE
 

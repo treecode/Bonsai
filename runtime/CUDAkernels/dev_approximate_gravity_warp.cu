@@ -786,11 +786,11 @@ void approximate_gravity(
   }
 }
 
+// tuned parameters: occupancy 0.56
+// NTHREAD 128
+#define GRAV_MIN_BLOCKS		9
 
-#if 0 /* casues 164 bytes spill to lmem with NTHREAD = 128 */
-__launch_bounds__(NTHREAD)
-#endif
-KERNEL_DECLARE(dev_approximate_gravity)(
+KERNEL_DECLARE_LB(dev_approximate_gravity,NTHREAD,GRAV_MIN_BLOCKS)(
       const int n_active_groups,
       int    n_bodies,
       float eps2,
