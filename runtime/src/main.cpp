@@ -28,6 +28,11 @@ http://github.com/treecode/Bonsai
 #include <sstream>
 #include "log.h"
 #include "anyoption.h"
+#include "renderloop.h"
+
+#ifndef USE_OPENGL
+float TstartGlow, dTstartGlow;
+#endif
 
 
 #if ENABLE_LOG
@@ -761,6 +766,7 @@ int main(int argc, char** argv)
         if ((optarg = opt.getValue("fullscreen")))	 fullScreenMode     = string(optarg);
         if ((optarg = opt.getValue("Tglow")))	 TstartGlow  = (float)atof(optarg);
         if ((optarg = opt.getValue("dTglow")))	 dTstartGlow  = (float)atof(optarg);
+        dTstartGlow = std::max(dTstartGlow, 1.0);
 #endif
 		if (fileName.empty()) 
 		{
