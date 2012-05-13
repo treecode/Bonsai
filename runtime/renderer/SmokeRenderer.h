@@ -277,6 +277,9 @@ private:
 	GLuint              m_spriteTex;
 	GLuint              m_noiseTex;
     GLuint              m_cubemapTex;
+
+    cudaStream_t        m_copyStreamPos;
+    cudaStream_t        m_copyStreamColor;
 };
 
 #endif

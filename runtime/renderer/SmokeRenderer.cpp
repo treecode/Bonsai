@@ -170,6 +170,9 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
 	}
 	mParticleIndices.copy(GpuArray<uint>::HOST_TO_DEVICE);
 
+	cudaStreamCreate(&m_copyStreamPos);
+    	cudaStreamCreate(&m_copyStreamColor);
+
 	cudaSetDevice(devID);
 
 	printf("Vendor: %s\n", glGetString(GL_VENDOR));
@@ -331,7 +334,8 @@ void SmokeRenderer::setPositionsDevice(float *posD)
 	cudaSetDevice(renderDevID);
 
     mParticlePos.map();
-    cudaMemcpy(mParticlePos.getDevicePtr(), posD, mNumParticles*4*sizeof(float), cudaMemcpyDeviceToDevice);
+//  cudaMemcpy(mParticlePos.getDevicePtr(), posD, mNumParticles*4*sizeof(float), cudaMemcpyDeviceToDevice);
+    cudaMemcpyPeerAsync(mParticlePos.getDevicePtr(), renderDevID, posD, devID, mNumParticles*4*sizeof(float), m_copyStreamPos);
     mParticlePos.unmap();
 
 	cudaSetDevice(devID);
@@ -374,7 +378,8 @@ void SmokeRenderer::setColorsDevice(float *colorD)
 	
 	void *ptr;
 	cutilSafeCall(cudaGLMapBufferObject((void **) &ptr, mColorVbo));
-	cudaMemcpy( ptr, colorD, mNumParticles * 4 * sizeof(float), cudaMemcpyDeviceToDevice );
+//	cudaMemcpy( ptr, colorD, mNumParticles * 4 * sizeof(float), cudaMemcpyDeviceToDevice );
+	cudaMemcpyPeerAsync( ptr, renderDevID, colorD, devID, mNumParticles * 4 * sizeof(float), m_copyStreamColor );
 	cutilSafeCall(cudaGLUnmapBufferObject(mColorVbo));
 
 	cudaSetDevice(devID);
