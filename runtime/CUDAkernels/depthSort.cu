@@ -223,6 +223,9 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles,
 		150.0f, 40.0f, 18.0f, 6.5f, 3.2f, 2.1f, 1.7f, 1.29f, 1.1f, 1.0f, 0.93f, 0.78f, 0.69f, 0.47f, 0.21f, 0.1f, 0.05f
 	};
 #endif
+
+#if 0 /* use ad'hpc MF to sample stellar colours */
+
 	float slope_disk  = -2.35f;  /* salpeter MF */
 	float slope_glow  = -2.35f;
 	float slope_bulge = -1.35f;
@@ -235,6 +238,20 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles,
 	StarSampler sGlow (N, Masses, Colours, slope_glow -1);
 	StarSampler sBulge(N, Masses, Colours, slope_bulge-1);
 
+#else /* use realistic mass & luminosity functions to sample stars */
+
+	const float MoL_bulge   = 4.0;         /* mass-to-light ratio */
+	const float MoL_disk    = 3.5;         
+	const float MoL_glow    = 1.0;
+	const float slope_bulge = -1.35f + MoL_bulge;
+	const float slope_disk  = -1.35f + MoL_disk;  /* salpeter MF slope + MoL to get light distribution function*/
+	const float slope_glow  = -1.35f + MoL_glow;
+	StarSampler sBulge(7,  Masses+10, Colours+10, slope_bulge-1);  /* only include old GKM stars */
+	StarSampler sDisk (15, Masses+2,  Colours+2,  slope_disk -1);  /* limit only to BAFGKM stars */
+	StarSampler sGlow (6,  Masses,    Colours,    slope_glow -1);  /* only OBA stars */
+
+#endif
+
 	float4 color;
 
 	if (id >= 0 && id < 40000000)     //Disk
@@ -245,10 +262,16 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles,
 
 		const float  Mstar = sDisk.sampleMass(id);
 		const float4 Cstar = sDisk.getColour(Mstar);
-		const float fdim = 0.5f;
+#if 0
+		const float fdim = 1.0;
 		color = ((id & 1023) == 0) ?   /* one in 1000 stars glows a bit */
 			              make_float4(Cstar.x*fdim,  Cstar.y*fdim,  Cstar.z*fdim,  Cstar.w) : 
 			(0) ? color : make_float4(Cstar.x*0.01f, Cstar.y*0.01f, Cstar.z*0.01f, Cstar.w);
+#else
+		color = ((id & 1023) == 0) ?   /* one in 1000 stars glows a bit */
+			              sGlow.getColour(sGlow.sampleMass(id)) :
+			(0) ? color : make_float4(Cstar.x*0.01f, Cstar.y*0.01f, Cstar.z*0.01f, Cstar.w);
+#endif
 	} else if (id >= 40000000 && id < 50000000)     // Glowing stars in spiral arms
 	{
 		color = ((id%4) == 0) ? color4 : color3;
