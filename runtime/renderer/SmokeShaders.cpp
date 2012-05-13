@@ -30,6 +30,7 @@ uniform float overBrightThreshold;
 uniform float ageScale;
 uniform float dustAlpha;
 uniform float fogDist;
+uniform float cullDarkMatter;
 void main()                                                 \n
 {                                                           \n
 	vec4 wpos = vec4(gl_Vertex.xyz, 1.0);                   \n
@@ -54,8 +55,11 @@ void main()                                                 \n
 		col.rgb *= overBright;
 		col.a = 1.0;
     } else if (type == 3.0) {
+      //col.a = 1.0;
       // cull dark matter
-      gl_Position.w = -1.0;
+      if (cullDarkMatter != 0) {
+        gl_Position.w = -1.0;
+      }
     }
 
     //gl_PointSize = pointRadius*(pointScale / dist);       \n

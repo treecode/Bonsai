@@ -13,19 +13,19 @@ Image *loadPPM(const char *filename)
     if (!fp)
     {
 	    fprintf(stderr, "Unable to open file `%s'\n", filename);
-	    exit(1);
+	    return 0;
     }
 
     if (!fgets(buff, sizeof(buff), fp))
     {
 	    fprintf(stderr, "Error opening file '%s'\n", filename);
-	    exit(1);
+	    return 0;
     }
 
     if (buff[0] != 'P' || buff[1] != '6')
     {
 	    fprintf(stderr, "Invalid image format (must be `P6')\n");
-	    exit(1);
+	    return 0;
     }
 
     int c = fgetc(fp);
@@ -53,14 +53,14 @@ Image *loadPPM(const char *filename)
     if (r != 2)
     {
 	    fprintf(stderr, "Error loading image `%s'\n", filename);
-	    exit(1);
+	    return 0;
     }
     while (fgetc(fp) != '\n');
 
     if (fscanf(fp, "%d", &maxval) != 1)
     {
 	    fprintf(stderr, "Error loading image `%s'\n", filename);
-	    exit(1);
+	    return 0;
     }
     while (fgetc(fp) != '\n');
 
@@ -74,7 +74,7 @@ Image *loadPPM(const char *filename)
     if (fread(result->data, 3 * result->width, result->height, fp) != result->height)
     {
 	    fprintf(stderr, "Error loading image `%s'\n", filename);
-	    exit(1);
+	    return 0;
     }
 
     fprintf(stdout, "Loaded `%s', %d x %d\n", filename, result->width, result->height);

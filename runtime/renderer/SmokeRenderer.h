@@ -104,6 +104,9 @@ public:
     nv::vec3f getSortVector() { return m_halfVector; }
 //    nv::vec3f getSortVector() { return m_viewVector; }
 
+    bool getCullDarkMatter() { return m_cullDarkMatter; }
+    void setCullDarkMatter(bool b) { m_cullDarkMatter = b; }
+
     ParamListGL *getParams() { return m_params; }
 
     void render();
@@ -245,6 +248,8 @@ private:
     float m_volumeIndirect;
     float m_volumeStart;
     float m_volumeWidth;
+
+    bool m_cullDarkMatter;
 
     ParamListGL         *m_params;
 

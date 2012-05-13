@@ -132,6 +132,8 @@ GLuint loadCubemap(char *filenameFormat)
         char filename[256];
         sprintf(filename, filenameFormat, i+1);
         faces[i] = loadPPM(filename);
+		if (!faces[i])
+			return 0;
         flipImage(faces[i]);
     }
 

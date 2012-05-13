@@ -105,7 +105,8 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
     m_sourceIntensity(0.5f),
     m_flareRadius(50.0f),
     m_skyboxBrightness(0.5f),
-    m_transmission(0.0f)
+    m_transmission(0.0f),
+    m_cullDarkMatter(true)
 {
 	// load shader programs
 	m_simpleProg = new GLSLProgram(simpleVS, simplePS);
@@ -150,9 +151,9 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
 	glGenTextures(1, &mPosBufferTexture);
 	m_noiseTex = createNoiseTexture(64, 64, 64);
 
-    //m_cubemapTex = loadCubemapCross("images/Carina_cross.ppm");
+    m_cubemapTex = loadCubemapCross("../images/Carina_cross.ppm");
     //m_cubemapTex = loadCubemap("../images/deepfield%d.ppm");
-    m_cubemapTex = loadCubemap("../images/deepfield%d_1k.ppm");
+    //m_cubemapTex = loadCubemap("../images/deepfield%d_1k.ppm");
 
 	m_spriteTex = createSpriteTexture(256);
 
@@ -452,6 +453,7 @@ void SmokeRenderer::drawPointSprites(GLSLProgram *prog, int start, int count, bo
     prog->setUniform1f("overBright", m_overBright);
     //prog->setUniform1f("overBrightThreshold", m_overBrightThreshold);
 	prog->setUniform1f("fogDist", m_fog);
+    prog->setUniform1f("cullDarkMatter", (float) m_cullDarkMatter);
 
     //prog->bindTexture("rampTex", m_rampTex, GL_TEXTURE_2D, 0);
     //prog->bindTexture("rampTex", m_rainbowTex, GL_TEXTURE_2D, 0);

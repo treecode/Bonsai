@@ -280,11 +280,13 @@ void glutStrokePrint(float x, float y, const char *s, void *font)
 
 void glPrintf(float x, float y, const char* format, ...)
 {
+  //void *font = GLUT_STROKE_ROMAN;
+  void *font = GLUT_STROKE_MONO_ROMAN;
   char buffer[256];
   va_list args;
   va_start (args, format); 
   vsnprintf (buffer, 255, format, args);
-  glutStrokePrint(x, y, buffer, GLUT_STROKE_ROMAN);
+  glutStrokePrint(x, y, buffer, font);
   va_end(args);
 }
 
@@ -315,7 +317,8 @@ public:
       m_supernova(false),
       m_overBright(1.0f),
       m_params(m_renderer.getParams()),
-      m_brightFreq(100)
+      m_brightFreq(100),
+      m_displayBodiesSec(true)
   {
     m_windowDims = make_int2(1024, 768);
     m_cameraTrans = make_float3(0, -2, -100);
@@ -420,18 +423,25 @@ public:
 
     float x = 50.0f;
     float y = 50.0f;
+	const float lineSpacing = 150.0f;
     if (displayFps)
     {
-      glPrintf(x, y, "FPS:   %.2f", fps);
-      y += 150.0f;
+    glPrintf(x, y, "FPS:        %.2f", fps);
+      y += lineSpacing;
     }
 
-    glPrintf(x, y, "BODIES: %d", bodies + dust);
+    if (m_displayBodiesSec) {
+	  double frameTime = 1.0 / fps;
+      glPrintf(x, y, "BODIES/SEC: %.0f", bodies / frameTime);
+	  y += lineSpacing;
+    }
+
+    glPrintf(x, y, "BODIES:     %d", bodies + dust);
 
     float Myr = m_tree->get_t_current() * 9.78f;
 
-    y += 150.0f;
-    glPrintf(x, y, "Myears: %.2f", Myr);
+    y += lineSpacing;
+    glPrintf(x, y, "MYears:     %.2f", Myr);
 
     glDisable(GL_BLEND);
     endWinCoords();
@@ -719,6 +729,10 @@ public:
       m_tree->setUseDirectGravity(m_directGravitation);
     case '0':
       break;
+    case '9':
+      m_displayBodiesSec = !m_displayBodiesSec;
+      break;
+
     case '.':
       m_renderer.setNumSlices(m_renderer.getNumSlices()*2);
       m_renderer.setNumDisplayedSlices(m_renderer.getNumSlices());
@@ -737,6 +751,9 @@ public:
       } else {
         m_params = m_colorParams;
       }
+      break;
+    case 'm':
+      m_renderer.setCullDarkMatter(!m_renderer.getCullDarkMatter());
       break;
     default:
       break;
@@ -1095,6 +1112,7 @@ public:
   bool m_renderingEnabled;
   bool m_flyMode;
   bool m_directGravitation;
+  bool m_displayBodiesSec;
 
   bool m_keyDown[256];
   int m_keyModifiers;
