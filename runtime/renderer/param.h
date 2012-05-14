@@ -25,6 +25,19 @@
 #include <iomanip>
 #include <string.h>
 
+#ifndef WIN32
+#include <stdlib.h>
+//Default strdup under Linux gives deprecated warnings
+//to keep it warning free, give own implementation
+inline char* _strdup(const char* str)
+{
+    char *p = (char*) malloc(strlen(str) + 1);
+    if(p) { strcpy(p, str); }
+    return p;
+}
+
+#endif
+
 // base class for named parameter
 class ParamBase
 {
