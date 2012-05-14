@@ -320,7 +320,8 @@ public:
       m_brightFreq(100),
       m_displayBodiesSec(true),
       m_cameraRollHome(0.0f),
-      m_cameraRoll(0.f)
+      m_cameraRoll(0.0f),
+      m_enableStats(true)
   {
     m_windowDims = make_int2(1024, 768);
     m_cameraTrans = make_float3(0, -2, -100);
@@ -349,9 +350,11 @@ public:
 
     for(int i=0; i<256; i++) m_keyDown[i] = false;
 
-    readCameras("cameras.txt");
-    readParams("params.txt");
     initColors();
+
+    readCameras("cameras.txt");
+    readParams(m_renderer.getParams(), "params.txt");
+    readParams(m_colorParams, "colorparams.txt");
 
     cudaEventCreate(&startEvent, 0);
     cudaEventCreate(&stopEvent, 0);
@@ -411,6 +414,9 @@ public:
 
   void drawStats(double fps)
   {
+    if (!m_enableStats)
+      return;
+
     int bodies = m_tree->localTree.n;
     int dust = m_tree->localTree.n_dust;
 
@@ -424,27 +430,29 @@ public:
     glDisable(GL_DEPTH_TEST);
     glColor4f(0.0f, 1.0f, 0.0f, 1.0f);
 
-    float x = 50.0f;
-    float y = 50.0f;
-	const float lineSpacing = 150.0f;
-    if (displayFps)
-    {
-    glPrintf(x, y, "FPS:        %.2f", fps);
-      y += lineSpacing;
-    }
+    float x = 100.0f;
+    //float y = 50.0f;
+    float y = glutGet(GLUT_WINDOW_HEIGHT)*4.0f - 200.0f;
+	const float lineSpacing = 140.0f;
+
+    float Myr = m_tree->get_t_current() * 9.78f;
+    glPrintf(x, y, "MYears:    %.2f", Myr);
+    y -= lineSpacing;
+
+    glPrintf(x, y, "BODIES:    %d", bodies + dust);
+    y -= lineSpacing;
 
     if (m_displayBodiesSec) {
 	  double frameTime = 1.0 / fps;
-      glPrintf(x, y, "BODIES/SEC: %.0f", bodies / frameTime);
-	  y += lineSpacing;
+      glPrintf(x, y, "BODIES/SEC:%.0f", bodies / frameTime);
+	  y -= lineSpacing;
     }
 
-    glPrintf(x, y, "BODIES:     %d", bodies + dust);
-
-    float Myr = m_tree->get_t_current() * 9.78f;
-
-    y += lineSpacing;
-    glPrintf(x, y, "MYears:     %.2f", Myr);
+    if (displayFps)
+    {
+      glPrintf(x, y, "FPS:       %.2f", fps);
+      y -= lineSpacing;
+    }
 
     glDisable(GL_BLEND);
     endWinCoords();
@@ -487,9 +495,10 @@ public:
         glLoadIdentity();
 
         if (m_flyMode) {
-          glRotatef(m_cameraRotLag.z + m_cameraRoll, 0.0, 0.0, 1.0);
+          glRotatef(m_cameraRotLag.z, 0.0, 0.0, 1.0);
           glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
           glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
+          glRotatef(m_cameraRoll, 0.0, 0.0, 1.0);
           glRotatef(90.0f, 1.0f, 0.0f, 0.0f); // rotate galaxies into XZ plane
           glTranslatef(m_cameraTransLag.x, m_cameraTransLag.y, m_cameraTransLag.z);
 
@@ -499,9 +508,9 @@ public:
         } else {
           // orbit viwer - rotate around centre, then translate
           glTranslatef(m_cameraTransLag.x, m_cameraTransLag.y, m_cameraTransLag.z);
-          glRotatef(m_cameraRoll, 0.0, 0.0, 1.0);
           glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
           glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
+          glRotatef(m_cameraRoll, 0.0, 0.0, 1.0);
           glRotatef(90.0f, 1.0f, 0.0f, 0.0f); // rotate galaxies into XZ plane
         }
 
@@ -676,9 +685,6 @@ public:
       displayTimers();
       exit(0);
       break;
-    case '`':
-       toggleSliders();
-       break;
     case 'p':
     case 'P':
       cycleDisplayMode();
@@ -712,8 +718,10 @@ public:
     case ']':
       incrementOctreeMinDepth(+1);
       break;
+    case '`':
     case 'h':
   	  toggleSliders();
+      m_enableStats = !m_displaySliders;
       break;
     case 'g':
       toggleGlow();
@@ -739,6 +747,9 @@ public:
     case '9':
       m_displayBodiesSec = !m_displayBodiesSec;
       break;
+    case '8':
+      m_enableStats = !m_enableStats;
+      break;
 
     case '.':
       m_renderer.setNumSlices(m_renderer.getNumSlices()*2);
@@ -751,7 +762,9 @@ public:
     case 'D':
       //printf("%f %f %f %f %f %f\n", m_cameraTrans.x, m_cameraTrans.y, m_cameraTrans.z, m_cameraRot.x, m_cameraRot.y, m_cameraRot.z);
       writeCameras("cameras.txt");
-      writeParams("params.txt");
+      writeParams(m_renderer.getParams(), "params.txt");
+      writeParams(m_colorParams, "colorparams.txt");
+      glClearColor(0.0f, 1.0f, 0.0f, 1.0f); glClear(GL_COLOR_BUFFER_BIT); glClearColor(0.0f, 0.0f, 0.0f, 1.0f); glutSwapBuffers();
       break;
     case 'j':
       if (m_params == m_colorParams) {
@@ -764,10 +777,10 @@ public:
       m_renderer.setCullDarkMatter(!m_renderer.getCullDarkMatter());
       break;
     case '>':
-      m_cameraRoll += 1.0f;
+      m_cameraRoll += 2.0f;
       break;
     case '<':
-      m_cameraRoll -= 1.0f;
+      m_cameraRoll -= 2.0f;
       break;
     case 'W':
     default:
@@ -777,23 +790,23 @@ public:
     m_keyDown[key] = true;
   }
 
-  void writeParams(char *filename)
+  void writeParams(ParamList *params, char *filename)
   {
     ofstream stream;
     stream.open(filename);
     if (stream.is_open()) {
-      m_renderer.getParams()->Write(stream);
+      params->Write(stream);
       printf("Wrote parameters '%s'\n", filename);
     }
     stream.close();
   }
 
-  void readParams(char *filename)
+  void readParams(ParamList *params, char *filename)
   {
     ifstream stream;
     stream.open(filename);
     if (stream.is_open()) {
-      m_renderer.getParams()->Read(stream);
+      params->Read(stream);
       stream.close();
       printf("Read parameters '%s'\n", filename);
     }
@@ -1104,14 +1117,17 @@ public:
     darkMatterColor = make_float4(0.0f, 0.2f, 0.4f, 3.0f);      // blue
 
     m_colorParams = new ParamListGL("colors");
+#if 0
     addColorParam(m_colorParams, "star color", starColor);
     addColorParam(m_colorParams, "bulge color", bulgeColor);
     addColorParam(m_colorParams, "star color2", starColor2, true);
     addColorParam(m_colorParams, "star color3", starColor3, true);
     addColorParam(m_colorParams, "star color4", starColor4, true);
+    m_colorParams->AddParam(new Param<int>("bright star freq", m_brightFreq, 1, 1000, 1, &m_brightFreq));
+#endif
     addColorParam(m_colorParams, "dust color", dustColor);
     addColorParam(m_colorParams, "dark matter color", darkMatterColor);
-    m_colorParams->AddParam(new Param<int>("bright star freq", m_brightFreq, 1, 1000, 1, &m_brightFreq));
+    m_colorParams->AddParam(new Param<float>("camera roll", m_cameraRoll, -180.0f, 180.0f, 1, &m_cameraRoll));
   }
 
   octree *m_tree;
@@ -1152,6 +1168,7 @@ public:
   bool m_flyMode;
   bool m_directGravitation;
   bool m_displayBodiesSec;
+  bool m_enableStats;
 
   bool m_keyDown[256];
   int m_keyModifiers;
@@ -1363,6 +1380,7 @@ void initGL(int argc, char** argv, const char *fullScreenMode)
   glutIdleFunc(idle);
 
   glutIgnoreKeyRepeat(GL_TRUE);
+  glutSetCursor(GLUT_CURSOR_CROSSHAIR);
 
   GLenum err = glewInit();
 

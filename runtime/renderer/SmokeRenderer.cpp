@@ -451,7 +451,7 @@ void SmokeRenderer::drawPointSprites(GLSLProgram *prog, int start, int count, bo
 	prog->setUniform1f("ageScale", m_ageScale);
 	prog->setUniform1f("dustAlpha", m_dustAlpha);
     prog->setUniform1f("overBright", m_overBright);
-    //prog->setUniform1f("overBrightThreshold", m_overBrightThreshold);
+    prog->setUniform1f("overBrightThreshold", m_overBrightThreshold);
 	prog->setUniform1f("fogDist", m_fog);
     prog->setUniform1f("cullDarkMatter", (float) m_cullDarkMatter);
 
@@ -976,14 +976,13 @@ void SmokeRenderer::doGlowFilter()
     // blur
     m_gaussianBlurProg->enable();
     m_gaussianBlurProg->setUniform1f("radius", m_glowRadius);
-	m_gaussianBlurProg->setUniform2f("texelSize", 2.0f / (float) m_downSampledW, 0.0f);
-	//m_gaussianBlurProg->setUniform2f("texelSize", 1.0f / (float) m_downSampledW, 0.0f);
+	//m_gaussianBlurProg->setUniform2f("texelSize", 2.0f / (float) m_downSampledW, 0.0f);
+	m_gaussianBlurProg->setUniform2f("texelSize", 1.0f / (float) m_downSampledW, 0.0f);
     processImage(m_gaussianBlurProg, m_downSampledTex[0], m_downSampledTex[1]);
 
     m_gaussianBlurProg->enable();
-    m_gaussianBlurProg->setUniform2f("texelSize", 0.0f, 2.0f / (float) m_downSampledH);
-	//m_gaussianBlurProg->setUniform2f("texelSize", 0.0f, 1.0f / (float) m_downSampledH);
-
+    //m_gaussianBlurProg->setUniform2f("texelSize", 0.0f, 2.0f / (float) m_downSampledH);
+	m_gaussianBlurProg->setUniform2f("texelSize", 0.0f, 1.0f / (float) m_downSampledH);
     processImage(m_gaussianBlurProg, m_downSampledTex[1], m_downSampledTex[0]);
     m_gaussianBlurProg->disable();
 }
@@ -1474,7 +1473,8 @@ void SmokeRenderer::initParams()
     m_params->AddParam(new Param<float>("fog", m_fog, 0.0f, 0.1f, 0.001f, &m_fog));
 
     m_params->AddParam(new Param<float>("over bright multiplier", m_overBright, 0.0f, 100.0f, 1.0f, &m_overBright));
-    m_params->AddParam(new Param<float>("over bright threshold", m_overBrightThreshold, 0.0f, 1.0f, 0.001f, &m_overBrightThreshold));
+    //m_params->AddParam(new Param<float>("over bright threshold", m_overBrightThreshold, 0.0f, 1.0f, 0.001f, &m_overBrightThreshold));
+    m_params->AddParam(new Param<float>("star brightness", m_overBrightThreshold, 0.0f, 10.0f, 0.001f, &m_overBrightThreshold));
     m_params->AddParam(new Param<float>("image brightness", m_imageBrightness, 0.0f, 10.0f, 0.1f, &m_imageBrightness));
     m_params->AddParam(new Param<float>("image gamma", m_gamma, 0.0f, 2.0f, 0.0f, &m_gamma));
 
@@ -1483,7 +1483,7 @@ void SmokeRenderer::initParams()
 
     m_params->AddParam(new Param<float>("source intensity", m_sourceIntensity, 0.0f, 1.0f, 0.01f, &m_sourceIntensity));
     m_params->AddParam(new Param<float>("star blur radius", m_starBlurRadius, 0.0f, 100.0f, 1.0f, &m_starBlurRadius));
-    m_params->AddParam(new Param<float>("star threshold", m_starThreshold, 0.0f, 10.0f, 0.1f, &m_starThreshold));
+    m_params->AddParam(new Param<float>("star threshold", m_starThreshold, 0.0f, 100.0f, 0.1f, &m_starThreshold));
     m_params->AddParam(new Param<float>("star power", m_starPower, 0.0f, 100.0f, 0.1f, &m_starPower));
     m_params->AddParam(new Param<float>("star intensity", m_starIntensity, 0.0f, 1.0f, 0.1f, &m_starIntensity));
     m_params->AddParam(new Param<float>("glow radius", m_glowRadius, 0.0f, 100.0f, 1.0f, &m_glowRadius));

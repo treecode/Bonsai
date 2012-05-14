@@ -50,6 +50,8 @@ void main()                                                 \n
 		// dust
 		pointRadius *= ageScale;	// scale up
 		col.a = dustAlpha;
+    } else if (type == 1.0) {
+        col.rgb *= overBrightThreshold; // XXX hack, using this var for now!!
 	} else if (type == 2.0) {
 		// star
 		col.rgb *= overBright;
@@ -64,6 +66,9 @@ void main()                                                 \n
 
     //gl_PointSize = pointRadius*(pointScale / dist);       \n
 	gl_PointSize = max(1.0, pointRadius * (pointScale / dist)); \n
+    //float pointSize = pointRadius * (pointScale / dist);
+    //if (pointSize < 1.0) col.rgb *= pointSize;
+    //gl_PointSize = max(1.0, pointSize);
 
     //gl_TexCoord[0] = vec4(gl_MultiTexCoord0.xyz, age); // sprite texcoord  \n
     //gl_TexCoord[1] = vec4(eyeSpacePos.xyz, mass);                           \n
@@ -566,8 +571,8 @@ void main()                                                                     
 {                                                                                     \n
     vec4 c = vec4(0.0, 0.0, 0.0, 0.0);                                                               \n
 	float wsum = 0.0;
-    vec2 uv = gl_TexCoord[0].xy - texelSize*0.25;
-	//vec2 uv = gl_TexCoord[0].xy;
+    //vec2 uv = gl_TexCoord[0].xy - texelSize*0.25;
+	vec2 uv = gl_TexCoord[0].xy;
 	for(int i=-radius; i<=radius; i++) {                                              \n
 		float x = (i / radius)*4.0;
 		float w = exp(-x*x);
