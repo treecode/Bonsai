@@ -768,7 +768,18 @@ void SmokeRenderer::drawSlices()
     glClearColor(0.0, 0.0, 0.0, 0.0); 
     glClear(GL_COLOR_BUFFER_BIT);
 
-    drawSkybox(m_cubemapTex);
+    #if 0
+        glMatrixMode(GL_MODELVIEW);
+	      glPushMatrix();
+	      glLoadIdentity();
+        static float rotate = 0;
+        glRotatef(rotate, 1,0,0);
+        rotate += 0.05f;
+        drawSkybox(m_cubemapTex);
+        glPopMatrix();
+    #else
+        drawSkybox(m_cubemapTex);
+    #endif
 
 	/*
 	// bind vbo as buffer texture
