@@ -151,9 +151,9 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
 	glGenTextures(1, &mPosBufferTexture);
 	m_noiseTex = createNoiseTexture(64, 64, 64);
 
-    m_cubemapTex = loadCubemapCross("../images/Carina_cross.ppm");
+//    m_cubemapTex = loadCubemapCross("../images/Carina_cross.ppm");
     //m_cubemapTex = loadCubemap("../images/deepfield%d.ppm");
-    //m_cubemapTex = loadCubemap("../images/deepfield%d_1k.ppm");
+	m_cubemapTex = loadCubemap("../images/deepfield%d_1k.ppm");
 
 	m_spriteTex = createSpriteTexture(256);
 
@@ -768,7 +768,18 @@ void SmokeRenderer::drawSlices()
     glClearColor(0.0, 0.0, 0.0, 0.0); 
     glClear(GL_COLOR_BUFFER_BIT);
 
-    drawSkybox(m_cubemapTex);
+    #if 1
+        glMatrixMode(GL_MODELVIEW);
+	      glPushMatrix();
+	      glLoadIdentity();
+        static float rotate = 0;
+        glRotatef(rotate, 1,0,0);
+        rotate += 0.1f;
+        drawSkybox(m_cubemapTex);
+        glPopMatrix();
+    #else
+        drawSkybox(m_cubemapTex);
+    #endif
 
 	/*
 	// bind vbo as buffer texture
