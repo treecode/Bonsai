@@ -318,7 +318,9 @@ public:
       m_overBright(1.0f),
       m_params(m_renderer.getParams()),
       m_brightFreq(100),
-      m_displayBodiesSec(true)
+      m_displayBodiesSec(true),
+      m_cameraRollHome(0.0f),
+      m_cameraRoll(0.f)
   {
     m_windowDims = make_int2(1024, 768);
     m_cameraTrans = make_float3(0, -2, -100);
@@ -348,6 +350,7 @@ public:
     for(int i=0; i<256; i++) m_keyDown[i] = false;
 
     readCameras("cameras.txt");
+    readParams("params.txt");
     initColors();
 
     cudaEventCreate(&startEvent, 0);
@@ -484,15 +487,19 @@ public:
         glLoadIdentity();
 
         if (m_flyMode) {
-          glRotatef(m_cameraRotLag.z, 0.0, 0.0, 1.0);
+          glRotatef(m_cameraRotLag.z + m_cameraRoll, 0.0, 0.0, 1.0);
           glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
           glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
           glRotatef(90.0f, 1.0f, 0.0f, 0.0f); // rotate galaxies into XZ plane
           glTranslatef(m_cameraTransLag.x, m_cameraTransLag.y, m_cameraTransLag.z);
+
           m_cameraRot.z *= 0.95f;
+          //m_cameraRot.z = (m_cameraRollHome - m_cameraRot.z)*0.1f;
+
         } else {
           // orbit viwer - rotate around centre, then translate
           glTranslatef(m_cameraTransLag.x, m_cameraTransLag.y, m_cameraTransLag.z);
+          glRotatef(m_cameraRoll, 0.0, 0.0, 1.0);
           glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
           glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
           glRotatef(90.0f, 1.0f, 0.0f, 0.0f); // rotate galaxies into XZ plane
@@ -604,7 +611,7 @@ public:
 
     //const float flySpeed = 0.25f;
     //float flySpeed = (m_keyModifiers & GLUT_ACTIVE_SHIFT) ? 1.0f : 0.25f;
-    float flySpeed = (m_buttonState & 4) ? 1.0f : 0.25f;
+    float flySpeed = (m_buttonState & 4) ? 0.5f : 0.1f;
 
 	// Z
     if (m_keyDown['w']) { //  || (m_buttonState & 1)) {
@@ -744,6 +751,7 @@ public:
     case 'D':
       //printf("%f %f %f %f %f %f\n", m_cameraTrans.x, m_cameraTrans.y, m_cameraTrans.z, m_cameraRot.x, m_cameraRot.y, m_cameraRot.z);
       writeCameras("cameras.txt");
+      writeParams("params.txt");
       break;
     case 'j':
       if (m_params == m_colorParams) {
@@ -755,11 +763,40 @@ public:
     case 'm':
       m_renderer.setCullDarkMatter(!m_renderer.getCullDarkMatter());
       break;
+    case '>':
+      m_cameraRoll += 1.0f;
+      break;
+    case '<':
+      m_cameraRoll -= 1.0f;
+      break;
+    case 'W':
     default:
       break;
     }
 
     m_keyDown[key] = true;
+  }
+
+  void writeParams(char *filename)
+  {
+    ofstream stream;
+    stream.open(filename);
+    if (stream.is_open()) {
+      m_renderer.getParams()->Write(stream);
+      printf("Wrote parameters '%s'\n", filename);
+    }
+    stream.close();
+  }
+
+  void readParams(char *filename)
+  {
+    ifstream stream;
+    stream.open(filename);
+    if (stream.is_open()) {
+      m_renderer.getParams()->Read(stream);
+      stream.close();
+      printf("Read parameters '%s'\n", filename);
+    }
   }
 
   void keyUp(unsigned char key) {
@@ -1101,6 +1138,8 @@ public:
   float3 m_cameraRot;     
   float3 m_cameraTransLag;
   float3 m_cameraRotLag;
+  float m_cameraRollHome;
+  float m_cameraRoll;
   float m_modelView[16];
   const float m_inertia;
 

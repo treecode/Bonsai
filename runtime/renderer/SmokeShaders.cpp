@@ -569,7 +569,7 @@ void main()                                                                     
     vec2 uv = gl_TexCoord[0].xy - texelSize*0.25;
 	//vec2 uv = gl_TexCoord[0].xy;
 	for(int i=-radius; i<=radius; i++) {                                              \n
-		float x = (i / radius)*3.0;
+		float x = (i / radius)*4.0;
 		float w = exp(-x*x);
 		vec4 s = texture2D(tex, uv + i*texelSize);				      \n
         c += w * s;

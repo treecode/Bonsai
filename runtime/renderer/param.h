@@ -23,6 +23,7 @@
 #include <iostream>
 #include <sstream>
 #include <iomanip>
+#include <string.h>
 
 // base class for named parameter
 class ParamBase
@@ -149,11 +150,20 @@ template<class T> class Param : public ParamBase
 
         void Write(std::ostream &stream)
         {
-            stream << m_name << " " << *m_ptr << '\n';
+            char *str = _strdup(m_name.c_str());
+            // replace spaces with _
+            char *ch;
+            while(ch = strchr(str, ' ')) {
+              *ch = '_';
+            }
+            //stream << m_name << " " << *m_ptr << '\n';
+            stream << str << " " << *m_ptr << '\n';
+            free(str);
         }
         void Read(std::istream &stream)
         {
-            stream >> m_name >> *m_ptr;
+            std::string name;
+            stream >> name >> *m_ptr;
         }
 
         bool IsList()
