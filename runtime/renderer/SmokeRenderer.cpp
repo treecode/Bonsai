@@ -1445,7 +1445,7 @@ void SmokeRenderer::drawSkybox(GLuint tex)
 
 void SmokeRenderer::initParams()
 {
-    m_params = new ParamListGL("render params");
+    m_params = new ParamListGL("render_params");
 
 	  m_params->AddParam(new Param<int>("slices", m_numSlices, 0, 256, 1, &m_numSlices));
 	  m_params->AddParam(new Param<int>("displayed slices", m_numDisplayedSlices, 0, 256, 1, &m_numDisplayedSlices));
