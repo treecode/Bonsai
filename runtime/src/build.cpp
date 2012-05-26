@@ -69,31 +69,6 @@ void octree::allocateParticleMemory(tree_structure &tree)
     tree.generalBuffer1.cmalloc(tempSize, true);  
   
 
-  //Interactions needs; uint2   n 
-  //ngb          needs:  uint   n
-  //activePartList needs: uint  n  (to be used at same moment as interactions and ngb)
-  
-  //So we need at least (uint4+uint+uint)*n is uint4*n of memory
-  //to be used at the same time, and to be used at the same time as 
-  //multipole data
-
-
-  #if 0
-  Vanuit sort bodies
-
-  Keys worden berekend voor de sort bodies, moet het dan nog wel
-  in de build.cpp ? Roepen we die niet altijd in combinatie aan?
-  
-
-  Could combine it with multiple moments
-  none of these are used at the same time
-  if we sort, we compute new multiple moments
- 
-  Have to increase the size of multiple moments
-
-  #endif
-
-
   //Tree properties, tree size is not known at forehand so
   //allocate worst possible outcome  
   n_bodies = n_bodies / 1;

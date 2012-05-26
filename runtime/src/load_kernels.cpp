@@ -55,8 +55,12 @@ void octree::load_kernels() {
   
   //Get the number of multiprocessors and compute number of 
   //blocks to be used during the tree-walk
-  nMultiProcessors   = devContext.multiProcessorCount;
-  nBlocksForTreeWalk = nMultiProcessors*TREE_WALK_BLOCKS_PER_SM;
+  nMultiProcessors      = devContext.multiProcessorCount;
+  const int blocksPerSM = getTreeWalkBlocksPerSM(
+                          this->getDevContext()->getComputeCapabilityMajor(),
+                          this->getDevContext()->getComputeCapabilityMinor());
+ 
+  nBlocksForTreeWalk = nMultiProcessors*blocksPerSM;
   
 
   std::string pathName;

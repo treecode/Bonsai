@@ -369,26 +369,39 @@ KERNEL_DECLARE(compute_scaling)(const int node_count,
     
   cellOp = cellOp*cellOp;
 
+  uint2 bij     = node_bodies[idx];
+  uint pfirst   = bij.x & ILEVELMASK;
+  uint nchild   = bij.y - pfirst;
+  
+
+  //If this is (leaf)node with only 1 particle then we change 
+  //the opening criteria to a large number to force that the 
+  //leaf will be opened and the particle data is used 
+  //instead of an approximation.
+  //This because sometimes (mass*pos)*(1.0/mass) != pos
+  //even in full double precision
+  if(nchild == 1)
+  {
+    cellOp = 10e10; //Force this node to be opened
+  }
+
   if(r_max.w > 0)
   {
     cellOp = -cellOp;       //This is a leaf node
   }
-  
 
   boxCenterInfo[idx].w = cellOp;
- 
+
+
   //Change the indirections of the leaf nodes so they point to
   //the particle data
   bool leaf = (r_max.w > 0);
   if(leaf)
   {
-    uint2 bij     = node_bodies[idx];
-    uint pfirst   = bij.x & ILEVELMASK;
-    uint nchild   = bij.y - pfirst;
-
     pfirst = pfirst | ((nchild-1) << LEAFBIT);
     boxSizeInfo[idx].w = __int_as_float(pfirst);
   }
+
 
   return;
 }

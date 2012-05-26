@@ -141,6 +141,8 @@ namespace my_dev {
     }
 
     int getComputeCapability() const { return 100 * ccMajor + 10 * ccMinor; }
+    int getComputeCapabilityMajor() const {return ccMajor;} 
+    int getComputeCapabilityMinor() const {return ccMajor;}
      
     
     int create(std::ofstream &log, bool disableTiming = false)

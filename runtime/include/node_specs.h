@@ -19,6 +19,13 @@ typedef float4 real4;
 #endif
 
 
+#if USE_DUST and USE_MPI
+#error "Fatal, USE DUST does not work when using MPI. Its for demo only"
+#endif
+
+
+
+
 #define IMPBH   //Improved barnes hut opening method
 //#define INDSOFT //Individual softening using cubic spline kernel
 
@@ -28,8 +35,26 @@ typedef float4 real4;
 #define LMEM_EXTRA_SIZE            2048
 //#define LMEM_STACK_SIZE            1024         //Number of storage places PER thread, MUST be power 2 !!!!
 //#define LMEM_STACK_SIZE            512         //Number of storage places PER thread, MUST be power 2 !!!!
-#define TREE_WALK_BLOCKS_PER_SM    32           //Number of GPU thread-blocks used for tree-walk
+// #define TREE_WALK_BLOCKS_PER_SM    32           //Number of GPU thread-blocks used for tree-walk
                                                 //this is per SM, 8 is ok for Fermi architecture, 16 is save side
+
+//Put this in this file since it is a setting
+inline int getTreeWalkBlocksPerSM(int devMajor, int devMinor)
+{
+  switch(devMajor)
+  {
+    case 1:
+      fprintf(stderr, "Sorry devices with compute capability < 2.0 are not supported \n");
+      exit(0);
+    case 2:     //Fermi
+      return 16;     
+    case 3:     //Kepler
+      return 32;
+    default:    //Future proof...
+      return 32;
+  }  
+}
+
 
 #define TEXTURE_BOUNDARY  512   //Fermi architecture boundary for textures
 
