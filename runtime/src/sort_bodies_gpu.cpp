@@ -141,15 +141,11 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
   //into a uint4 so we can extend the tree to 96bit key
   //we have to convert to 64bit key to a 96bit for sorting
   //and back from 96 to 64    
-  my_dev::dev_mem<uint4>  srcValues(devContext);
+  my_dev::dev_mem<uint4>  srcValues(devContext);  
   
   //The generalBuffer1 has size uint*4*N*3
   //this buffer gets part: 0-uint*4*N
-  srcValues.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                         tree.generalBuffer1.get_flags(), 
-                         tree.generalBuffer1.get_devMem(),
-                         &tree.generalBuffer1[0], 0,  
-                         tree.n, getAllignmentOffset(0));  
+  srcValues.cmalloc_copy(tree.generalBuffer1, tree.n, 0);
   
   //Compute the keys directly into srcValues 
   // will be sorted into tree.bodies_key below
@@ -169,7 +165,6 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
 
   //Call the reorder data functions
   devContext.startTiming(execStream->s());
-
   
   static int oneRunFull = 0;
 
@@ -178,21 +173,11 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
   if(oneRunFull == 1)
   {
     my_dev::dev_mem<real4>  real4Buffer1(devContext);
-    my_dev::dev_mem<int>    sortPermutation(devContext);
+    my_dev::dev_mem<int>    intBuffer1(devContext);
 
-  
-    real4Buffer1.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                          tree.generalBuffer1.get_flags(), 
-                          tree.generalBuffer1.get_devMem(),
-                          &tree.generalBuffer1[0], 0,  
-                          tree.n, getAllignmentOffset(0));  
     
-    my_dev::dev_mem<int>  intBuffer1(devContext);
-    intBuffer1.cmalloc_copy(tree.generalBuffer1.get_pinned(),   
-                          tree.generalBuffer1.get_flags(), 
-                          tree.generalBuffer1.get_devMem(),
-                          &tree.generalBuffer1[4*tree.n], 4*tree.n,
-                          tree.n, getAllignmentOffset(4*tree.n)); 
+    int genBufOffset = real4Buffer1.cmalloc_copy(tree.generalBuffer1, tree.n, 0);
+        genBufOffset = intBuffer1.cmalloc_copy(tree.generalBuffer1, tree.n, genBufOffset);
 
     
     dataReorderR4.set_arg<int>(0,      &tree.n);
@@ -220,25 +205,11 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
     my_dev::dev_mem<real4>  real4Buffer2(devContext);
     my_dev::dev_mem<real4>  real4Buffer3(devContext);
     
-    real4Buffer1.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                          tree.generalBuffer1.get_flags(), 
-                          tree.generalBuffer1.get_devMem(),
-                          &tree.generalBuffer1[0], 0,  
-                          tree.n, getAllignmentOffset(0));  
-      
-    real4Buffer2.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                          tree.generalBuffer1.get_flags(), 
-                          tree.generalBuffer1.get_devMem(),
-                          &tree.generalBuffer1[4*tree.n], 4*tree.n, 
-                          tree.n, getAllignmentOffset(4*tree.n));   
-    int prevOffset = getAllignmentOffset(4*tree.n);
+    int genBufOffset1 = real4Buffer1.cmalloc_copy(tree.generalBuffer1, tree.n, 0);
+        genBufOffset1 = real4Buffer2.cmalloc_copy(tree.generalBuffer1, tree.n, genBufOffset1);    
+        genBufOffset1 = real4Buffer3.cmalloc_copy(tree.generalBuffer1, tree.n, genBufOffset1);         
     
-    real4Buffer3.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                          tree.generalBuffer1.get_flags(), 
-                          tree.generalBuffer1.get_devMem(),
-                          &tree.generalBuffer1[8*tree.n], 8*tree.n, 
-                          tree.n, prevOffset + getAllignmentOffset(8*tree.n+prevOffset));   
-    
+
     
     dataReorderCombined.set_arg<int>(0,      &tree.n);
     dataReorderCombined.set_arg<cl_mem>(1,   tree.bodies_key.p());  
@@ -271,27 +242,13 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
     tree.bodies_Ppos.copy(real4Buffer2,  tree.n);
     tree.bodies_Pvel.copy(real4Buffer3, tree.n);   
 
-    
-    my_dev::dev_mem<int>  intBuffer(devContext);
-    intBuffer.cmalloc_copy(tree.generalBuffer1.get_pinned(),   
-                          tree.generalBuffer1.get_flags(), 
-                          tree.generalBuffer1.get_devMem(),
-                          &tree.generalBuffer1[4*tree.n], 4*tree.n,
-                          tree.n, getAllignmentOffset(4*tree.n));  
-    
-    
+
+    //These can reuse the real4Buffer1 space :-)
     my_dev::dev_mem<float2>  float2Buffer(devContext);
     my_dev::dev_mem<int> sortPermutation(devContext);
-    float2Buffer.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                          tree.generalBuffer1.get_flags(), 
-                          tree.generalBuffer1.get_devMem(),
-                          &tree.generalBuffer1[0], 0,  
-                          tree.n, getAllignmentOffset(0)); 
-    sortPermutation.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                          tree.generalBuffer1.get_flags(), 
-                          tree.generalBuffer1.get_devMem(),
-                          &tree.generalBuffer1[2*tree.n], 2*tree.n, 
-                          tree.n, getAllignmentOffset(2*tree.n)); 
+    genBufOffset1 = float2Buffer.cmalloc_copy(tree.generalBuffer1, tree.n, 0);
+    genBufOffset1 = sortPermutation.cmalloc_copy(tree.generalBuffer1, tree.n, genBufOffset1);
+    
     
     dataReorderF2.set_arg<int>(0,      &tree.n);
     dataReorderF2.set_arg<cl_mem>(1,   tree.bodies_key.p());  

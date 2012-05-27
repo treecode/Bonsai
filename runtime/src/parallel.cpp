@@ -538,12 +538,9 @@ void octree::gpu_updateDomainDistribution(double timeLocal)
                 
 
   my_dev::dev_mem<real4>  samplePositions(devContext);
-  samplePositions.cmalloc_copy(localTree.generalBuffer1.get_pinned(), 
-                          localTree.generalBuffer1.get_flags(), 
-                          localTree.generalBuffer1.get_devMem(),
-                          &localTree.generalBuffer1[0], 0,
-                          nSamples, getAllignmentOffset(0));          
-         
+  
+  samplePositions.cmalloc_copy(localTree.generalBuffer1, nSamples, 0);
+  
 
 //   double t2 = get_time();
 //   fprintf(stderr, "TIME1 (boundaries) %g \n", t2 - t1);  
@@ -1244,19 +1241,12 @@ void octree::gpuRedistributeParticles()
   //Memory buffers to hold the extracted particle information
   my_dev::dev_mem<uint>  validList(devContext);
   my_dev::dev_mem<uint>  compactList(devContext);
+  
+  int memOffset1 = compactList.cmalloc_copy(localTree.generalBuffer1,
+                                            localTree.n, 0);
+  int memOffset2 = validList.cmalloc_copy(localTree.generalBuffer1,
+                                            localTree.n, memOffset1);  
 
-  compactList.cmalloc_copy(localTree.generalBuffer1.get_pinned(), 
-                          localTree.generalBuffer1.get_flags(), 
-                          localTree.generalBuffer1.get_devMem(),
-                          &localTree.generalBuffer1[0], 0,
-                          localTree.n, getAllignmentOffset(0));
-                                    
-  validList.cmalloc_copy(localTree.generalBuffer1.get_pinned(), 
-                            localTree.generalBuffer1.get_flags(), 
-                            localTree.generalBuffer1.get_devMem(),
-                            &localTree.generalBuffer1[localTree.n], localTree.n,
-                            localTree.n, getAllignmentOffset(localTree.n));
-                            
   double4 thisXlow  = domainRLow [this->procId];
   double4 thisXhigh = domainRHigh[this->procId];
                                                                           
@@ -1288,12 +1278,9 @@ void octree::gpuRedistributeParticles()
 
     //Resize the general buffer
     localTree.generalBuffer1.cresize(itemsNeeded, false);
-    //Reset memory
-    compactList.cmalloc_copy(localTree.generalBuffer1.get_pinned(),
-                          localTree.generalBuffer1.get_flags(),
-                          localTree.generalBuffer1.get_devMem(),
-                          &localTree.generalBuffer1[0], 0,
-                          localTree.n, getAllignmentOffset(0));
+    //Reset memory pointers
+    memOffset1 = compactList.cmalloc_copy(localTree.generalBuffer1,
+                              localTree.n, 0);
 
     //Restore the compactList
     memcpy(&compactList[0], tempBuf, localTree.n*sizeof(int));
@@ -1304,11 +1291,8 @@ void octree::gpuRedistributeParticles()
   
   my_dev::dev_mem<bodyStruct>  bodyBuffer(devContext);
   
-  bodyBuffer.cmalloc_copy(localTree.generalBuffer1.get_pinned(), 
-                  localTree.generalBuffer1.get_flags(), 
-                  localTree.generalBuffer1.get_devMem(),
-                  &localTree.generalBuffer1[localTree.n], localTree.n, 
-                  validCount, getAllignmentOffset(localTree.n));                                 
+  memOffset1 = bodyBuffer.cmalloc_copy(localTree.generalBuffer1,
+                              localTree.n, memOffset1);  
 
   extractOutOfDomainBody.set_arg<int>(0,    &validCount);
   extractOutOfDomainBody.set_arg<cl_mem>(1, compactList.p());          
@@ -1506,11 +1490,10 @@ int octree::gpu_exchange_particles_with_overflow_check(tree_structure &tree,
   int stepSize = newParticleSpace;
 
   my_dev::dev_mem<bodyStruct>  bodyBuffer(devContext);
-  bodyBuffer.cmalloc_copy(localTree.generalBuffer1.get_pinned(), 
-                  localTree.generalBuffer1.get_flags(), 
-                  localTree.generalBuffer1.get_devMem(),
-                  &localTree.generalBuffer1[0], 0, 
-                  stepSize, getAllignmentOffset(0));           
+  
+  int memOffset1 = bodyBuffer.cmalloc_copy(localTree.generalBuffer1,
+                                            stepSize, 0);
+     
  
   fprintf(stderr, "Exchange, received particles: (%d): %d \tnewN: %d\tItems that can be insert in one step: %d\n", 
                    procId, recvCount, newN, stepSize);     

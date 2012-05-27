@@ -1000,16 +1000,12 @@ void octree::correct(tree_structure &tree)
 { 
   my_dev::dev_mem<float2>  float2Buffer(devContext);
   my_dev::dev_mem<real4>   real4Buffer1(devContext);
-  float2Buffer.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                         tree.generalBuffer1.get_flags(), 
-                         tree.generalBuffer1.get_devMem(),
-                         &tree.generalBuffer1[0], 0,  
-                         tree.n, getAllignmentOffset(0));  
-  real4Buffer1.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                         tree.generalBuffer1.get_flags(), 
-                         tree.generalBuffer1.get_devMem(),
-                         &tree.generalBuffer1[2*tree.n], 2*tree.n, 
-                         tree.n, getAllignmentOffset(2*tree.n));   
+
+  int memOffset = float2Buffer.cmalloc_copy(tree.generalBuffer1, 
+                                             tree.n, 0);
+      memOffset = real4Buffer1.cmalloc_copy(tree.generalBuffer1, 
+                                             tree.n, memOffset);  
+  
  
   correctParticles.set_arg<int   >(0, &tree.n);
   correctParticles.set_arg<float >(1, &t_current);
@@ -1043,7 +1039,7 @@ fprintf(stderr, "m31: %f %f %f %f \n", specialParticles[1].x,
   specialParticles[1].y, specialParticles[1].z, specialParticles[1].w);  */
 
 
-tree.bodies_acc0.copy(real4Buffer1, tree.n);
+  tree.bodies_acc0.copy(real4Buffer1, tree.n);
   tree.bodies_time.copy(float2Buffer, float2Buffer.get_size()); 
   
 
@@ -1198,11 +1194,9 @@ double octree::compute_energies(tree_structure &tree)
   //float2 energy : x is kinetic energy, y is potential energy
   int blockSize = NBLOCK_REDUCE ;
   my_dev::dev_mem<double2>  energy(devContext);
-  energy.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                      tree.generalBuffer1.get_flags(), 
-                      tree.generalBuffer1.get_devMem(),
-                      &tree.generalBuffer1[0], 0,  
-                      blockSize, getAllignmentOffset(0));    
+  energy.cmalloc_copy(tree.generalBuffer1, blockSize, 0);
+  
+
     
   computeEnergy.set_arg<int>(0,    &tree.n);
   computeEnergy.set_arg<cl_mem>(1, tree.bodies_pos.p());

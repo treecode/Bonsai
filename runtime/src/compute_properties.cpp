@@ -19,35 +19,17 @@ void octree::compute_properties(tree_structure &tree) {
   
   if(10*tree.n_nodes > 3*tree.n)
   {
-    fprintf(stderr, "Resize the generalBuffer1 \n");
+    LOG("Resize generalBuffer1 in compute_properties\n");
     tree.generalBuffer1.cresize(10*tree.n_nodes*4, false);
   }
   
   my_dev::dev_mem<double4> multipoleD(devContext);
   
-  multipoleD.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                          tree.generalBuffer1.get_flags(), 
-                          tree.generalBuffer1.get_devMem(),
-                          &tree.generalBuffer1[0], 0, 
-                          3*tree.n_nodes, getAllignmentOffset(0));
-
-  //Offset is in uint, so: double4 = 8uint*3*n_nodes
-  tree.nodeLowerBounds.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                          tree.generalBuffer1.get_flags(), 
-                          tree.generalBuffer1.get_devMem(),
-                          &tree.generalBuffer1[8*3*tree.n_nodes],  8*3*tree.n_nodes,
-                          tree.n_nodes, getAllignmentOffset(8*3*tree.n_nodes));
-                         
-  int prevOffsetSum = getAllignmentOffset(8*3*tree.n_nodes); //The offset of output
-                          
-  tree.nodeUpperBounds.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                          tree.generalBuffer1.get_flags(), 
-                          tree.generalBuffer1.get_devMem(),
-                          &tree.generalBuffer1[8*3*tree.n_nodes + 4*tree.n_nodes], 
-                          8*3*tree.n_nodes + 4*tree.n_nodes, 
-                          tree.n_nodes, 
-                          prevOffsetSum + getAllignmentOffset(8*3*tree.n_nodes + 4*tree.n_nodes + prevOffsetSum));     
-       
+  int memBufOffset = multipoleD.cmalloc_copy          (tree.generalBuffer1, 3*tree.n_nodes, 0);
+      memBufOffset = tree.nodeLowerBounds.cmalloc_copy(tree.generalBuffer1, tree.n_nodes, memBufOffset);
+      memBufOffset = tree.nodeUpperBounds.cmalloc_copy(tree.generalBuffer1, tree.n_nodes, memBufOffset);  
+  
+  
   
   //Computes the tree-properties (size, cm, monopole, quadropole, etc)
   //start the kernel for the leaf-type nodes

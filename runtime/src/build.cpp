@@ -223,38 +223,27 @@ void octree::build (tree_structure &tree) {
   /******** create memory buffers **********/
 
 
-  my_dev::dev_mem<uint>  validList(devContext);
-  my_dev::dev_mem<uint>  compactList(devContext);
-  my_dev::dev_mem<uint>  levelOffset(devContext);
-  my_dev::dev_mem<uint>  maxLevel(devContext);
+  my_dev::dev_mem<uint>   validList(devContext);
+  my_dev::dev_mem<uint>   compactList(devContext);
+  my_dev::dev_mem<uint>   levelOffset(devContext);
+  my_dev::dev_mem<uint>   maxLevel(devContext);
+  my_dev::dev_mem<uint4>  node_key(devContext);
   
-  validList.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                                    tree.generalBuffer1.get_flags(), 
-                                    tree.generalBuffer1.get_devMem(),
-                                    &tree.generalBuffer1[0], 0,
-                                    tree.n*2, getAllignmentOffset(0));
+
+  int memBufOffset = validList.cmalloc_copy  (tree.generalBuffer1, tree.n*2, 0);
+      memBufOffset = compactList.cmalloc_copy(tree.generalBuffer1, tree.n*2, memBufOffset);      
+      memBufOffset = node_key.cmalloc_copy   (tree.generalBuffer1, tree.n,   memBufOffset);
+      memBufOffset = levelOffset.cmalloc_copy(tree.generalBuffer1, 256,      memBufOffset);
+      memBufOffset = maxLevel.cmalloc_copy   (tree.generalBuffer1, 256,      memBufOffset);
+
   validList.zeroMem(); 
-                                    
-  compactList.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                                    tree.generalBuffer1.get_flags(), 
-                                    tree.generalBuffer1.get_devMem(),
-                                    &tree.generalBuffer1[tree.n*2], tree.n*2,
-                                    tree.n*2, getAllignmentOffset(tree.n*2));
-                                                                        
-  levelOffset.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                                    tree.generalBuffer1.get_flags(), 
-                                    tree.generalBuffer1.get_devMem(),
-                                    &tree.generalBuffer1[tree.n*4], tree.n*4,
-                                    256, getAllignmentOffset(tree.n*4));
   levelOffset.zeroMem();
-
-  maxLevel.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                                    tree.generalBuffer1.get_flags(), 
-                                    tree.generalBuffer1.get_devMem(),
-                                    &tree.generalBuffer1[tree.n*4+256], tree.n*4+256,
-                                    256, getAllignmentOffset(tree.n*4+256));
   maxLevel.zeroMem();
-
+  
+  //Memory layout of the above (in uint):
+  //[[validList--2*tree.n],[compactList--2*tree.n],[node_key--4*tree.n],
+  // [levelOffset--256], [maxLevel--256], [free--at-least: 12-8*tree.n-256]]
+  
   
   /******** set kernels parameters **********/
   

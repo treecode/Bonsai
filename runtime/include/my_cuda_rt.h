@@ -489,9 +489,67 @@ namespace my_dev {
 
 
     ///////////
-    
+    int getGlobalMemAllignmentPadding(int n)
+    {
+      const int allignBoundary = 128*sizeof(uint); //CC 2.X and 3.X ,128 bytes 
+      
+      int offset = 0;
+      //Compute the number of bytes  
+      offset = n*sizeof(uint); 
+      //Compute number of allignBoundary byte blocks  
+      offset = (offset / allignBoundary) + (((offset % allignBoundary) > 0) ? 1 : 0); 
+      //Compute the number of bytes padded / offset 
+      offset = (offset * allignBoundary) - n*sizeof(uint); 
+      //Back to the actual number of elements
+      offset = offset / sizeof(uint);   
+      
+      return offset;
+    }
+
     //Get the reference of memory allocated by another piece of memory
+    //sourcemem -> The memory buffer that acts as the parent
+    //n         -> The number of elements of type T for the child
+    //offset    -> The offset, this *MUST* be the return value of previous calls
+    //             to this function to ensure allignment. Note this is the number
+    //             of elements in type uint
+    int  cmalloc_copy(dev_mem<uint> &sourcemem, const int n, const int offset)
+    {
+      assert(context_flag);
+   
+      //The properties
+      this->pinned_mem  = sourcemem.get_pinned();
+      this->flags       = sourcemem.get_flags();
+      this->childMemory = true;
+      
+      size = n;
+     
+      
+      void* ParentHost_ptr = &sourcemem[offset]; 
+      //Dont forget to add the allignment values      
+      //The following line has a bug, it first casts and then adds offset*sizeof ELEMENTS
+      //host_ptr = (T*)ParentHost_ptr +  allignOffset*sizeof(uint); 
+      //This line correctly increases the memory location with number of bytes before castings      
+      host_ptr = (T*) ((char*)ParentHost_ptr);
+
+
+      /* jbedorf: fixed so address is correct, casting before adding gives a different
+       * result. So divide by size of object */
+      void *cudaMem     = sourcemem.get_devMem();
+      hDeviceMem        = (T*)cudaMem + ((offset*sizeof(uint)) / sizeof(T));
+      DeviceMemPtr      = (void*)(size_t)(hDeviceMem);
+      hDeviceMem_flag   = true;      
+      
+      //Compute the allignment
+      int currentOffset = offset + ((n*sizeof(T)) / sizeof(uint));
+      int padding       = getGlobalMemAllignmentPadding(currentOffset);
+
+      //TODO for safety we could add a check if we go outside 
+      //the memory bounds
+
+      return currentOffset + padding;
+    }    
     
+#if 0    
     void cmalloc_copy(bool pinned, bool flags, void *cudaMem, 
                       void* ParentHost_ptr, int offset, int n,
                       int allignOffset)
@@ -523,6 +581,7 @@ namespace my_dev {
 
       hDeviceMem_flag = true;      
     }
+#endif
 
     void cmalloc(int n, bool pinned = false, int flags = 0) 
     {

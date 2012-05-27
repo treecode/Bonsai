@@ -555,23 +555,15 @@ void  octree::gpuSort(my_dev::context &devContext,
   //Extra buffer values
   my_dev::dev_mem<uint> permutation(devContext);   // Permutation values, for sorting the int4 data
   my_dev::dev_mem<uint> temp_buffer(devContext);  // temporary uint buffer
-
-  int prevOffsetSum = getAllignmentOffset(4*N); //The offset of output
-
-  permutation.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                          tree.generalBuffer1.get_flags(), 
-                          tree.generalBuffer1.get_devMem(),
-                          &tree.generalBuffer1[8*N], 8*N,
-                          N, prevOffsetSum + getAllignmentOffset(8*N + prevOffsetSum));    //Ofset 8 since we have 2 uint4 before
   
-  prevOffsetSum += getAllignmentOffset(8*N + prevOffsetSum);
-  
-  temp_buffer.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                          tree.generalBuffer1.get_flags(), 
-                          tree.generalBuffer1.get_devMem(),
-                          &tree.generalBuffer1[9*N], 9*N,
-                          N, prevOffsetSum + getAllignmentOffset(9*N + prevOffsetSum));  //N elements after simpleKeys    
+  //Permutation has to be allocated after the two previous
+  //allocated buffers, get the right offset
+  int memOffset  = permutation.getGlobalMemAllignmentPadding(8*N);
+      memOffset += 8*N; 
 
+      memOffset = permutation.cmalloc_copy(tree.generalBuffer1, N, memOffset);
+      memOffset = temp_buffer.cmalloc_copy(tree.generalBuffer1, N, memOffset);      
+      
   thrust_sort_96b(srcValues, output, temp_buffer, permutation, N);
   
 #else
@@ -581,40 +573,15 @@ void  octree::gpuSort(my_dev::context &devContext,
   my_dev::dev_mem<int>  output32b(devContext);       //Permutation values, for sorting the int4 data
   my_dev::dev_mem<uint> valuesOutput(devContext);  //Buffers for the values which are the indexes
   
-  int prevOffsetSum = getAllignmentOffset(4*N); //The offset of output
-
+  //Permutation has to be allocated after the two previous
+  //allocated buffers, get the right offset
+  int memOffset = simpleKeys.getGlobalMemAllignmentPadding(8*N);
+      memOffset += 8*N; 
+      memOffset = simpleKeys.cmalloc_copy(tree.generalBuffer1, N, memOffset);
+      memOffset = permutation.cmalloc_copy(tree.generalBuffer1, N, memOffset);   
+      memOffset = output32b.cmalloc_copy(tree.generalBuffer1, N, memOffset); 
+      memOffset = valuesOutput.cmalloc_copy(tree.generalBuffer1, N, memOffset); 
   
-  simpleKeys.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                          tree.generalBuffer1.get_flags(), 
-                          tree.generalBuffer1.get_devMem(),
-                          &tree.generalBuffer1[8*N], 8*N,
-                          N, prevOffsetSum + getAllignmentOffset(8*N + prevOffsetSum));    //Ofset 8 since we have 2 uint4 before
-  
-  prevOffsetSum += getAllignmentOffset(8*N + prevOffsetSum);
-  
-  permutation.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                          tree.generalBuffer1.get_flags(), 
-                          tree.generalBuffer1.get_devMem(),
-                          &tree.generalBuffer1[9*N], 9*N,
-                          N, prevOffsetSum + getAllignmentOffset(9*N + prevOffsetSum));  //N elements after simpleKeys    
-
-  prevOffsetSum += getAllignmentOffset(9*N + prevOffsetSum);
-  
-
-  output32b.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                          tree.generalBuffer1.get_flags(), 
-                          tree.generalBuffer1.get_devMem(),
-                          &tree.generalBuffer1[10*N], 10*N,
-                          N, prevOffsetSum + getAllignmentOffset(10*N + prevOffsetSum));  //N elements after permutation      
-  
-  prevOffsetSum += getAllignmentOffset(10*N + prevOffsetSum);
-  
-  valuesOutput.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                          tree.generalBuffer1.get_flags(), 
-                          tree.generalBuffer1.get_devMem(),
-                          &tree.generalBuffer1[11*N], 11*N,
-                          N, prevOffsetSum + getAllignmentOffset(11*N + prevOffsetSum));  //N elements after output32b        
-
     
   //Dimensions for the kernels that shuffle and extract data
   const int blockSize = 256;

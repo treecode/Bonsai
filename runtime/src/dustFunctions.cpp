@@ -155,14 +155,10 @@ void octree::sort_dust(tree_structure &tree)
 
   //Compute the keys
   my_dev::dev_mem<uint4>  srcValues(devContext);
-  
+    
   //The generalBuffer1 has size uint*4*N*3
   //this buffer gets part: 0-uint*4*N
-  srcValues.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                         tree.generalBuffer1.get_flags(), 
-                         tree.generalBuffer1.get_devMem(),
-                         &tree.generalBuffer1[0], 0,  
-                         tree.n, getAllignmentOffset(0));  
+  srcValues.cmalloc_copy(tree.generalBuffer1, tree.n_dust, 0);
   
   //Compute the keys directly into srcValues   
   build_key_list.set_arg<cl_mem>(0,   srcValues.p());
@@ -178,33 +174,16 @@ void octree::sort_dust(tree_structure &tree)
 
 
   
-  //Sort the relevant properties
-  //Note we can optimize this further as done with 
-  //the normal particles
+  //Sort the relevant properties.Note we can optimize this 
+  //further as done with  the normal particles
 
   my_dev::dev_mem<real4>  real4Buffer1(devContext);
   my_dev::dev_mem<real4>  real4Buffer2(devContext);
   my_dev::dev_mem<real4>  real4Buffer3(devContext);
   
-  real4Buffer1.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                        tree.generalBuffer1.get_flags(), 
-                        tree.generalBuffer1.get_devMem(),
-                        &tree.generalBuffer1[0], 0,  
-                        tree.n_dust, getAllignmentOffset(0));  
-    
-  real4Buffer2.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                        tree.generalBuffer1.get_flags(), 
-                        tree.generalBuffer1.get_devMem(),
-                        &tree.generalBuffer1[4*tree.n_dust], 4*tree.n_dust, 
-                        tree.n_dust, getAllignmentOffset(4*tree.n_dust));   
-  int prevOffset = getAllignmentOffset(4*tree.n_dust);
-  
-  real4Buffer3.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                        tree.generalBuffer1.get_flags(), 
-                        tree.generalBuffer1.get_devMem(),
-                        &tree.generalBuffer1[8*tree.n_dust], 8*tree.n_dust, 
-                        tree.n_dust, prevOffset + getAllignmentOffset(8*tree.n_dust+prevOffset));   
-  
+  int memOffset1 = real4Buffer1.cmalloc_copy(tree.generalBuffer1,tree.n_dust, 0);
+      memOffset1 = real4Buffer2.cmalloc_copy(tree.generalBuffer1,tree.n_dust, memOffset1);
+      memOffset1 = real4Buffer3.cmalloc_copy(tree.generalBuffer1,tree.n_dust, memOffset1);
   
   dataReorderCombined.set_arg<int>(0,      &tree.n_dust);
   dataReorderCombined.set_arg<cl_mem>(1,   tree.dust_key.p());  
@@ -224,31 +203,18 @@ void octree::sort_dust(tree_structure &tree)
   tree.dust_acc0.copy(real4Buffer3, tree.n_dust);
   
 
-  my_dev::dev_mem<int>  intBuffer(devContext);
-  intBuffer.cmalloc_copy(tree.generalBuffer1.get_pinned(),   
-                        tree.generalBuffer1.get_flags(), 
-                        tree.generalBuffer1.get_devMem(),
-                        &tree.generalBuffer1[4*tree.n_dust], 4*tree.n_dust,
-                        tree.n_dust, getAllignmentOffset(4*tree.n_dust));  
-  
-  
+  my_dev::dev_mem<int>     intBuffer(devContext);
   my_dev::dev_mem<float2>  float2Buffer(devContext);
-  my_dev::dev_mem<int> sortPermutation(devContext);
-  float2Buffer.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                        tree.generalBuffer1.get_flags(), 
-                        tree.generalBuffer1.get_devMem(),
-                        &tree.generalBuffer1[0], 0,  
-                        tree.n_dust, getAllignmentOffset(0)); 
-  sortPermutation.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                        tree.generalBuffer1.get_flags(), 
-                        tree.generalBuffer1.get_devMem(),
-                        &tree.generalBuffer1[2*tree.n_dust], 2*tree.n_dust, 
-                        tree.n_dust, getAllignmentOffset(2*tree.n_dust)); 
+  my_dev::dev_mem<int>     sortPermutation(devContext);
+  
+  memOffset1 = float2Buffer.cmalloc_copy   (tree.generalBuffer1,tree.n_dust, 0);
+  memOffset1 = sortPermutation.cmalloc_copy(tree.generalBuffer1,tree.n_dust, memOffset1);
+  memOffset1 = intBuffer.cmalloc_copy      (tree.generalBuffer1,tree.n_dust, memOffset1);
+  
   
   dataReorderF2.set_arg<int>(0,      &tree.n_dust);
-  dataReorderF2.set_arg<cl_mem>(1,   tree.dust_key.p());  
-  
-  dataReorderF2.set_arg<cl_mem>(2,   float2Buffer.p()); //Plce holder, dust has no time
+  dataReorderF2.set_arg<cl_mem>(1,   tree.dust_key.p());    
+  dataReorderF2.set_arg<cl_mem>(2,   float2Buffer.p()); //Place holder, dust has no time
   dataReorderF2.set_arg<cl_mem>(3,   float2Buffer.p()); //Reuse as destination1
   dataReorderF2.set_arg<cl_mem>(4,   tree.dust_ids.p()); 
   dataReorderF2.set_arg<cl_mem>(5,   sortPermutation.p()); //Reuse as destination2  
@@ -256,7 +222,6 @@ void octree::sort_dust(tree_structure &tree)
   dataReorderF2.execute(execStream->s());
 
   tree.dust_ids.copy(sortPermutation, sortPermutation.get_size());  
-  
   
   
   devContext.stopTiming("DustSortReorder", -1, execStream->s());  
@@ -276,19 +241,13 @@ void octree::make_dust_groups(tree_structure &tree)
   my_dev::dev_mem<uint>  compactList(devContext);
     
   int n_bodies = tree.n_dust;
-  validList.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                                    tree.generalBuffer1.get_flags(), 
-                                    tree.generalBuffer1.get_devMem(),
-                                    &tree.generalBuffer1[0], 0,
-                                    n_bodies*2, getAllignmentOffset(0));
+  
+  int memOffset1 = validList.cmalloc_copy(tree.generalBuffer1,n_bodies*2, 0);
+      memOffset1 = compactList.cmalloc_copy(tree.generalBuffer1,n_bodies*2, memOffset1);
+  
   validList.zeroMem(); 
                                     
-  compactList.cmalloc_copy(tree.generalBuffer1.get_pinned(), 
-                                    tree.generalBuffer1.get_flags(), 
-                                    tree.generalBuffer1.get_devMem(),
-                                    &tree.generalBuffer1[n_bodies*2], n_bodies*2,
-                                    n_bodies*2, getAllignmentOffset(n_bodies*2));  
-   
+
   // set devMemCountsx to 1 because it is used to early out when it hits zero
   this->devMemCountsx[0] = 1;
   this->devMemCountsx.h2d(1);  
