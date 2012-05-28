@@ -24,10 +24,12 @@ void octree::compute_properties(tree_structure &tree) {
   }
   
   my_dev::dev_mem<double4> multipoleD(devContext);
+  my_dev::dev_mem<real4>  nodeLowerBounds(devContext); //Lower bounds used for scaling? TODO
+  my_dev::dev_mem<real4>  nodeUpperBounds(devContext); //Upper bounds used for scaling? TODO    
   
   int memBufOffset = multipoleD.cmalloc_copy          (tree.generalBuffer1, 3*tree.n_nodes, 0);
-      memBufOffset = tree.nodeLowerBounds.cmalloc_copy(tree.generalBuffer1, tree.n_nodes, memBufOffset);
-      memBufOffset = tree.nodeUpperBounds.cmalloc_copy(tree.generalBuffer1, tree.n_nodes, memBufOffset);  
+      memBufOffset = nodeLowerBounds.cmalloc_copy(tree.generalBuffer1, tree.n_nodes, memBufOffset);
+      memBufOffset = nodeUpperBounds.cmalloc_copy(tree.generalBuffer1, tree.n_nodes, memBufOffset);  
   
   
   
@@ -38,8 +40,8 @@ void octree::compute_properties(tree_structure &tree) {
   propsLeafD.set_arg<cl_mem>(2, tree.node_bodies.p());
   propsLeafD.set_arg<cl_mem>(3, tree.bodies_Ppos.p());  
   propsLeafD.set_arg<cl_mem>(4, multipoleD.p());
-  propsLeafD.set_arg<cl_mem>(5, tree.nodeLowerBounds.p());
-  propsLeafD.set_arg<cl_mem>(6, tree.nodeUpperBounds.p());
+  propsLeafD.set_arg<cl_mem>(5, nodeLowerBounds.p());
+  propsLeafD.set_arg<cl_mem>(6, nodeUpperBounds.p());
   propsLeafD.set_arg<cl_mem>(7, tree.bodies_Pvel.p());  //Velocity to get max eps
   propsLeafD.set_arg<cl_mem>(8, tree.bodies_ids.p());  //Ids to distinguish DM and stars
 
@@ -55,8 +57,8 @@ void octree::compute_properties(tree_structure &tree) {
   propsNonLeafD.set_arg<cl_mem>(2, tree.node_level_list.p());
   propsNonLeafD.set_arg<cl_mem>(3, tree.n_children.p());  
   propsNonLeafD.set_arg<cl_mem>(4, multipoleD.p());
-  propsNonLeafD.set_arg<cl_mem>(5, tree.nodeLowerBounds.p());
-  propsNonLeafD.set_arg<cl_mem>(6, tree.nodeUpperBounds.p());
+  propsNonLeafD.set_arg<cl_mem>(5, nodeLowerBounds.p());
+  propsNonLeafD.set_arg<cl_mem>(6, nodeUpperBounds.p());
 
   //Work from the bottom up
   for(int i=tree.n_levels; i >= 1; i--)
@@ -70,24 +72,22 @@ void octree::compute_properties(tree_structure &tree) {
         
         propsNonLeafD.setWork(totalOnThisLevel, 128);
         
-        LOG("PropsNonLeaf, nodes on level %d : %d (start: %d end: %d) , config: \t", i, totalOnThisLevel,
-               tree.node_level_list[i-1], tree.node_level_list[i]); 
+        LOG("PropsNonLeaf, nodes on level %d : %d (start: %d end: %d) , config: \t",
+            i, totalOnThisLevel,tree.node_level_list[i-1], tree.node_level_list[i]); 
         propsNonLeafD.printWorkSize();
       }      
       propsNonLeafD.set_arg<int>(0,    &i); //set the level
       propsNonLeafD.execute(execStream->s());     
   }
   
-
-  float theta2 = theta;
   
   propsScalingD.set_arg<int>(0,    &tree.n_nodes);
   propsScalingD.set_arg<cl_mem>(1, multipoleD.p());
-  propsScalingD.set_arg<cl_mem>(2, tree.nodeLowerBounds.p());
-  propsScalingD.set_arg<cl_mem>(3, tree.nodeUpperBounds.p());
+  propsScalingD.set_arg<cl_mem>(2, nodeLowerBounds.p());
+  propsScalingD.set_arg<cl_mem>(3, nodeUpperBounds.p());
   propsScalingD.set_arg<cl_mem>(4, tree.n_children.p());  
   propsScalingD.set_arg<cl_mem>(5, tree.multipole.p());
-  propsScalingD.set_arg<float >(6, &theta2);
+  propsScalingD.set_arg<float >(6, &theta);
   propsScalingD.set_arg<cl_mem>(7, tree.boxSizeInfo.p());
   propsScalingD.set_arg<cl_mem>(8, tree.boxCenterInfo.p());
   propsScalingD.set_arg<cl_mem>(9, tree.node_bodies.p());
@@ -111,7 +111,7 @@ void octree::compute_properties(tree_structure &tree) {
   copyNodeDataToGroupData.set_arg<int>(0,    &tree.n_groups);
   copyNodeDataToGroupData.set_arg<int>(1,    &tree.n);
   copyNodeDataToGroupData.set_arg<cl_mem>(2, tree.bodies_Ppos.p());  
-  copyNodeDataToGroupData.set_arg<cl_mem>(3, tree.group_list_test.p());
+  copyNodeDataToGroupData.set_arg<cl_mem>(3, tree.group_list.p());
   copyNodeDataToGroupData.set_arg<cl_mem>(4, tree.groupCenterInfo.p());  
   copyNodeDataToGroupData.set_arg<cl_mem>(5, tree.groupSizeInfo.p());
   copyNodeDataToGroupData.setWork(-1, NCRIT, tree.n_groups);    

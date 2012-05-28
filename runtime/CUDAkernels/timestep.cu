@@ -128,8 +128,6 @@ KERNEL_DECLARE(predict_particles)(const int n_bodies,
                                              real4 *vel,
                                              real4 *acc,
                                              float2 *time,
-                                             uint  *body2grouplist,
-                                             uint  *valid_list,
                                              real4 *pPos,
                                              real4 *pVel){                                          
   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
@@ -143,7 +141,6 @@ KERNEL_DECLARE(predict_particles)(const int n_bodies,
   float4 v = vel [idx];
   float4 a = acc [idx];
   float tb = time[idx].x;
-  float te = time[idx].y;
 
   #ifdef DO_BLOCK_TIMESTEP
     float dt_cb  = tc - tb;
@@ -164,16 +161,6 @@ KERNEL_DECLARE(predict_particles)(const int n_bodies,
 
   pPos[idx] = p;
   pVel[idx] = v;
-
-
-  //Set the group to active if the time current = time end of
-  //this particle. Can be that multiple particles write to the 
-  //same location but the net result is the same 
-  int grpID = body2grouplist[idx];
-  if(tc == te)
-  {
-    valid_list[grpID] = grpID | (1 << 31); 
-  }
 }
 
 
@@ -193,12 +180,12 @@ extern "C"  __global__ void setActiveGroups(const int n_bodies,
   //Set the group to active if the time current = time end of                                                                                               
   //this particle. Can be that multiple particles write to the                                                                                              
   //same location but the net result is the same                                                                                                            
-  int grpID = body2grouplist[idx];                                                                                                                                                                                                                                               
+  int grpID = body2grouplist[idx];        
+                                                                                                                                                                                                                                
   if(tc == te)                                                                                                                                              
   {                                                                                                                                                         
     valid_list[grpID] = grpID | (1 << 31);    
-  }                                                                                                                                                         
-                                                                                                                                                            
+  }                                                                                                                                                                                                                                                                                                                     
 }     
 
 

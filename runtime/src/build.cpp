@@ -39,13 +39,7 @@ void octree::allocateParticleMemory(tree_structure &tree)
   tree.level_list.cmalloc(MAXLEVELS);  
   tree.node_level_list.cmalloc(MAXLEVELS*2 , false);    
   
-  
-  //This is overkill, but it allows us to execute functions
-  //in a more logical order. Can always optimize it later
-  tree.active_group_list.cmalloc(tree.n, false);     
-  tree.activeGrpList.cmalloc(tree.n, false);      
-  tree.body2group_list.zeroMem();
-  
+
   //The generalBuffer is also used during the tree-walk, so the size has to be at least
   //large enough to store the tree-walk stack. Add 4096 for extra memory allignment space
   //Times 2 since first half is used for regular walks, 2nd half for walks that go outside 
@@ -72,7 +66,6 @@ void octree::allocateParticleMemory(tree_structure &tree)
   //Tree properties, tree size is not known at forehand so
   //allocate worst possible outcome  
   n_bodies = n_bodies / 1;
-  tree.node_key.cmalloc(n_bodies, false);
   tree.n_children.cmalloc(n_bodies, false);
   tree.node_bodies.cmalloc(n_bodies, false);  
   
@@ -150,17 +143,9 @@ void octree::reallocateParticleMemory(tree_structure &tree)
   
   tree.body2group_list.cresize(n_bodies, reduce);  
 
-  
-  //This is overkill, but it allows us to execute functions
-  //in a more logical order. Can always optimize it later
-  tree.active_group_list.cresize(tree.n, reduce);     
-  tree.activeGrpList.cresize(tree.n, reduce);      
-  tree.body2group_list.zeroMem();  
-  
   //Tree properties, tree size is not known at forehand so
   //allocate worst possible outcome  
   n_bodies = n_bodies / 1;
-  tree.node_key.cresize(n_bodies, reduce);
   tree.n_children.cresize(n_bodies, reduce);
   tree.node_bodies.cresize(n_bodies, reduce);  
   
@@ -272,7 +257,7 @@ void octree::build (tree_structure &tree) {
   build_nodes.set_arg<cl_mem>(4,  tree.level_list.p());
   build_nodes.set_arg<cl_mem>(5,  compactList.p());
   build_nodes.set_arg<cl_mem>(6,  tree.bodies_key.p());
-  build_nodes.set_arg<cl_mem>(7,  tree.node_key.p());
+  build_nodes.set_arg<cl_mem>(7,  node_key.p());
   build_nodes.set_arg<cl_mem>(8,  tree.n_children.p());
   build_nodes.set_arg<cl_mem>(9,  tree.node_bodies.p());
 
@@ -283,7 +268,7 @@ void octree::build (tree_structure &tree) {
   link_tree.set_arg<real4>(4,   &tree.corner);
   link_tree.set_arg<cl_mem>(5,  tree.level_list.p());
   link_tree.set_arg<cl_mem>(6,  validList.p()); 
-  link_tree.set_arg<cl_mem>(7,  tree.node_key.p());
+  link_tree.set_arg<cl_mem>(7,  node_key.p());
   link_tree.set_arg<cl_mem>(8,  tree.bodies_key.p());
 
 
@@ -429,14 +414,14 @@ void octree::build (tree_structure &tree) {
 
   tree.n_groups = validCount/2;
   //Now compact validList to get the list of group ids
-  tree.group_list_test.cmalloc(tree.n_groups , false);  
+  tree.group_list.cmalloc(tree.n_groups , false);  
   tree.n_active_groups = tree.n_groups; //Set all groups active in shared-time-step mode
   
   store_groups.set_arg<int>(0, &tree.n);  
   store_groups.set_arg<int>(1, &tree.n_groups);  
   store_groups.set_arg<cl_mem>(2, compactList.p());    
   store_groups.set_arg<cl_mem>(3, tree.body2group_list.p());     
-  store_groups.set_arg<cl_mem>(4, tree.group_list_test.p());     
+  store_groups.set_arg<cl_mem>(4, tree.group_list.p());     
   store_groups.setWork(-1, NCRIT, tree.n_groups);  
   store_groups.execute(execStream->s());  
 

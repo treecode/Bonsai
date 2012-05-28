@@ -107,27 +107,25 @@ class tree_structure
     my_dev::dev_mem<real4> bodies_acc1;    //Acceleration
     my_dev::dev_mem<float2> bodies_time;  //The timestep details (.x=tb, .y=te
     my_dev::dev_mem<int>   bodies_ids;
-    my_dev::dev_mem<int>   oriParticleOrder;         //Used to restore original particle order
+    my_dev::dev_mem<int>   oriParticleOrder;  //Used in the correct function to speedup reorder
     
     my_dev::dev_mem<real4> bodies_Ppos;    //Predicted position
     my_dev::dev_mem<real4> bodies_Pvel;    //Predicted velocity
 
     my_dev::dev_mem<uint2> level_list;    //List containing the start and end positions of each level
-    my_dev::dev_mem<uint4> node_key;
+
     my_dev::dev_mem<uint>  n_children;
     my_dev::dev_mem<uint2> node_bodies;
     my_dev::dev_mem<uint>  leafNodeIdx;    //First n_leaf items represent indices of leafs
                                            //remaining (n_nodes-n_leafs) are indices of non-leafs
-    my_dev::dev_mem<uint>  group_list;     //The id's of nodes that form a group
+//     my_dev::dev_mem<uint>  group_list;     //The id's of nodes that form a group
     my_dev::dev_mem<uint>  node_level_list; //List containing start and end idxs in (leafNode idx) for each level
     my_dev::dev_mem<uint>  body2group_list; //Contains per particle to which group it belongs
 
-    my_dev::dev_mem<uint2>  group_list_test;     //The group to particle relation
+    my_dev::dev_mem<uint2>  group_list;     //The group to particle relation
 
     //Variables used for properties
     my_dev::dev_mem<real4>  multipole;      //Array storing the properties for each node (mass, mono, quad pole)
-    my_dev::dev_mem<real4>  nodeLowerBounds; //Lower bounds used for scaling? TODO
-    my_dev::dev_mem<real4>  nodeUpperBounds; //Upper bounds used for scaling? TODO
 
     //Variables used for iteration
     int n_active_groups;
@@ -135,8 +133,8 @@ class tree_structure
 
     my_dev::dev_mem<uint>  activeGrpList;       //Non-compacted list of active grps
     my_dev::dev_mem<uint>  active_group_list;   //Compacted list of active groups
-    my_dev::dev_mem<uint>  activePartlist;      //Compacted list of active groups
-    my_dev::dev_mem<uint>  ngb;                 //Compacted list of active groups
+    my_dev::dev_mem<uint>  activePartlist;      //List of active particles
+    my_dev::dev_mem<uint>  ngb;                 //List of nearest neighbours
 
     my_dev::dev_mem<int2>  interactions;        //Counts the number of interactions, mainly for debugging and performance
 
@@ -230,15 +228,14 @@ class tree_structure
   {
     bodies_pos.setContext(*devContext);
     bodies_key.setContext(*devContext);
-    node_key.setContext(*devContext);
+
     n_children.setContext(*devContext);
     node_bodies.setContext(*devContext);
     leafNodeIdx.setContext(*devContext);
-    group_list.setContext(*devContext);
+
     node_level_list.setContext(*devContext);
     multipole.setContext(*devContext);
-    nodeLowerBounds.setContext(*devContext);
-    nodeUpperBounds.setContext(*devContext);
+
 
     body2group_list.setContext(*devContext);
 
@@ -259,7 +256,7 @@ class tree_structure
     ngb.setContext(*devContext);
     interactions.setContext(*devContext);
 
-    group_list_test.setContext(*devContext);
+    group_list.setContext(*devContext);
 
     //BH Opening
     boxSizeInfo.setContext(*devContext);

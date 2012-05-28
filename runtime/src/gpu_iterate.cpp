@@ -508,6 +508,13 @@ void octree::iterate_setup(IterationData &idata) {
   //Compute the (new) node properties
   compute_properties(this->localTree);
   
+#ifdef DO_BLOCK_TIMESTEP
+        devContext.startTiming(execStream->s());
+        setActiveGrpsFunc(this->localTree);
+        devContext.stopTiming("setActiveGrpsFunc", 10, execStream->s());      
+//         idata.Nact_since_last_tree_rebuild = 0;
+#endif  
+  
   t1 = get_time();
    
   //Approximate gravity
@@ -668,10 +675,8 @@ void octree::predict(tree_structure &tree)
   predictParticles.set_arg<cl_mem>(4, tree.bodies_vel.p());
   predictParticles.set_arg<cl_mem>(5, tree.bodies_acc0.p());
   predictParticles.set_arg<cl_mem>(6, tree.bodies_time.p());
-  predictParticles.set_arg<cl_mem>(7, tree.body2group_list.p());
-  predictParticles.set_arg<cl_mem>(8, tree.activeGrpList.p());
-  predictParticles.set_arg<cl_mem>(9, tree.bodies_Ppos.p());
-  predictParticles.set_arg<cl_mem>(10, tree.bodies_Pvel.p());  
+  predictParticles.set_arg<cl_mem>(7, tree.bodies_Ppos.p());
+  predictParticles.set_arg<cl_mem>(8, tree.bodies_Pvel.p());  
 
   predictParticles.setWork(tree.n, 128);
   predictParticles.execute(execStream->s());
@@ -685,13 +690,6 @@ void octree::predict(tree_structure &tree)
     tree.n_active_groups = tree.n_groups;
   #endif
 
-  #ifdef DO_BLOCK_TIMESTEP
-    //Compact the valid list to get a list of valid groups
-    gpuCompact(devContext, tree.activeGrpList, tree.active_group_list,
-              tree.n_groups, &tree.n_active_groups);
-  #else
-    tree.n_active_groups = tree.n_groups;
-  #endif
 
   LOG("t_previous: %lg t_current: %lg dt: %lg Active groups: %d \n",
          t_previous, t_current, t_current-t_previous, tree.n_active_groups);
@@ -702,7 +700,8 @@ void octree::predict(tree_structure &tree)
 void octree::setActiveGrpsFunc(tree_structure &tree)
 {
   tree.activeGrpList.zeroMem();      //Reset the active grps
-
+  this->resetCompact();              //Make sure compact has been reset
+  
   //Set valid list to zero
   setActiveGrps.set_arg<int>(0,    &tree.n);
   setActiveGrps.set_arg<float>(1,  &t_current);
@@ -717,8 +716,10 @@ void octree::setActiveGrpsFunc(tree_structure &tree)
   gpuCompact(devContext, tree.activeGrpList, tree.active_group_list,
              tree.n_groups, &tree.n_active_groups);
 
-  LOG("t_previous: %lg t_current: %lg dt: %lg Active groups: %d \n",
-         t_previous, t_current, t_current-t_previous, tree.n_active_groups);
+  this->resetCompact();   
+  LOG("t_previous: %lg t_current: %lg dt: %lg Active groups: %d (Total: %d)\n",
+         t_previous, t_current, t_current-t_previous, tree.n_active_groups, tree.n_groups);
+  
 
 }
 
