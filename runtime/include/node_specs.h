@@ -19,8 +19,10 @@ typedef float4 real4;
 #endif
 
 
-#if USE_DUST and USE_MPI
-#error "Fatal, USE DUST does not work when using MPI. Its for demo only"
+#if USE_DUST
+  #if USE_MPI
+    #error "Fatal, USE DUST does not work when using MPI. Its for demo only"
+  #endif
 #endif
 
 

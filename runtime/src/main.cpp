@@ -776,100 +776,6 @@ int main(int argc, char** argv)
 #endif
 	/************** end - command line arguments ********/
 
-
-#if 0
-	{
-		if (argc <= 1) {
-			cout << "Arguments: (in between [] are optional \n";
-			cout << "\t-inputFile (dumbp format) \n";
-			cout << "\t-[gpulogfile  (gpuLog.log is default)] \n";
-			cout << "\t-[device id (0 is default, tries any other device if 0 fails)]\n";
-			cout << "\t-[Timestep value  (1/16 is default)]\n";
-			cout << "\t-[N-body end time (1000 is default)]\n";
-			cout << "\t-[eps  (Will be squared) (0.05 is default)]\n";
-			cout << "\t-[theta (0.75 is fefault)]\n";
-			cout << "\t-[snapshot base filename (N-body time is appended in 000000 format) ('snapshot_' is default]\n";
-			cout << "\t-[snapshot iteration (Nbody time)  (-1 to disable, is also default)]\n";
-			cout << "\t-[Killlll distance  (-1 to disable, is also default)]\n";
-			cout << "\t-[Particle removal distance  (-1 to disable, is also default)]\n";
-			cout << "\t-[Value to add to the snapshot value (0 is default)] \n";
-			cout << "\t-[Rebuild tree every # steps (2 is default)] \n";
-
-			exit(0);
-		}
-
-		if (argc > 1) {
-			fileName = string(argv[1]);
-		}
-		if (argc > 2) {
-			logFileName = string(argv[2]);
-		}
-		if (argc > 3) {
-			devID = atoi(argv[3]);
-		}
-		if (argc > 4) {
-			timeStep = (float)atof(argv[4]);
-		}
-		if (argc > 5) {
-			tEnd = atoi(argv[5]);
-		}
-		if (argc > 6) {
-			eps = (float)atof(argv[6]);
-		}
-		if (argc > 7) {
-			theta = (float)atof(argv[7]);
-		}
-		if(argc > 8)
-		{
-			snapshotFile = string(argv[8]);
-		}
-		if(argc > 9)
-		{
-			snapshotIter = atoi(argv[9]);
-		}
-		if (argc > 10) {
-			killDistance = (float)atof(argv[10]);
-		}
-		if (argc > 11) {
-			remoDistance = (float)atof(argv[11]);
-		}
-		if(argc > 12)
-		{
-			snapShotAdd = atoi(argv[12]);
-		}
-		if(argc > 13)
-		{
-			rebuild_tree_rate = atoi(argv[13]);
-		}
-	}
-#endif
-
-	cout << "Used settings: \n";
-	cout << "Input filename " << fileName << endl;
-	cout << "Log filename " << logFileName << endl;
-	cout << "Theta: \t\t"             << theta        << "\t\teps: \t\t"          << eps << endl;
-	cout << "Timestep: \t"          << timeStep     << "\t\ttEnd: \t\t"         << tEnd << endl;
-	cout << "snapshotFile: \t"      << snapshotFile << "\tsnapshotIter: \t" << snapshotIter << endl;
-	cout << "Input file: \t"        << fileName     << "\t\tdevID: \t\t"        << devID << endl;
-	cout << "Kill distance: \t"      << killDistance     << "\t\tRemove dist: \t"   << remoDistance << endl;
-	cout << "Snapshot Addition: \t"  << snapShotAdd << endl;
-	cout << "Rebuild tree every " << rebuild_tree_rate << " timestep\n";
-	if( reduce_bodies_factor > 1 )
-		cout << "Reduce number of non-dust bodies by " << reduce_bodies_factor << " \n";
-  if( reduce_dust_factor > 1 )
-    cout << "Reduce number of dust bodies by " << reduce_dust_factor << " \n";
-#if ENABLE_LOG
-  if (ENABLE_RUNTIME_LOG)
-    cout << " Runtime logging is ENABLED \n";
-  else
-    cout << " Runtime logging is DISABLED \n";
-#endif
-  cout << " Direct gravitation is " << (direct ? "ENABLED" : "DISABLED") << endl;
-#if USE_OPENGL
-	cout << "Tglow =" << TstartGlow << endl;
-	cout << "dTglow =" << dTstartGlow << endl;
-#endif
-
 	
   cerr << "Used settings: \n";
 	cerr << "Input filename " << fileName << endl;
@@ -881,21 +787,23 @@ int main(int argc, char** argv)
 	cerr << "Kill distance: \t"      << killDistance     << "\t\tRemove dist: \t"   << remoDistance << endl;
 	cerr << "Snapshot Addition: \t"  << snapShotAdd << endl;
 	cerr << "Rebuild tree every " << rebuild_tree_rate << " timestep\n";
-  if( reduce_bodies_factor > 1 )
-    cout << "Reduce number of non-dust bodies by " << reduce_bodies_factor << " \n";
-  if( reduce_dust_factor > 1 )
-    cout << "Reduce number of dust bodies by " << reduce_dust_factor << " \n";
-#if ENABLE_LOG
-  if (ENABLE_RUNTIME_LOG)
-    cerr << " Runtime logging is ENABLED \n";
-  else
-    cerr << " Runtime logging is DISABLED \n";
-#endif
-  cerr << " Direct gravitation is " << (direct ? "ENABLED" : "DISABLED") << endl;
-#if USE_OPENGL
-	cerr << "Tglow =" << TstartGlow << endl;
-	cerr << "dTglow =" << dTstartGlow << endl;
-#endif
+        
+        if( reduce_bodies_factor > 1 )
+          cout << "Reduce number of non-dust bodies by " << reduce_bodies_factor << " \n";
+        if( reduce_dust_factor > 1 )
+          cout << "Reduce number of dust bodies by " << reduce_dust_factor << " \n";
+        
+        #if ENABLE_LOG
+          if (ENABLE_RUNTIME_LOG)
+            cerr << " Runtime logging is ENABLED \n";
+          else
+            cerr << " Runtime logging is DISABLED \n";
+        #endif
+        cerr << " Direct gravitation is " << (direct ? "ENABLED" : "DISABLED") << endl;
+        #if USE_OPENGL
+                cerr << "Tglow = " << TstartGlow << endl;
+                cerr << "dTglow = " << dTstartGlow << endl;
+        #endif
 
   int NTotal, NFirst, NSecond, NThird;
   NTotal = NFirst = NSecond = NThird = 0;
@@ -1049,10 +957,10 @@ int main(int argc, char** argv)
 
     tree->localTree.bodies_Ppos[i] = bodyPositions[i];
     tree->localTree.bodies_Pvel[i] = bodyVelocities[i];
-		tree->localTree.bodies_time[i] = make_float2(tree->get_t_current(), tree->get_t_current());
+    tree->localTree.bodies_time[i] = make_float2(tree->get_t_current(), tree->get_t_current());
   }
-	tree->localTree.bodies_time.h2d();
 
+  tree->localTree.bodies_time.h2d();
   tree->localTree.bodies_pos.h2d();
   tree->localTree.bodies_vel.h2d();
   tree->localTree.bodies_Ppos.h2d();
@@ -1077,8 +985,10 @@ int main(int argc, char** argv)
     
     //This is only required the first time since we have no predict call before we build the tree
     //Every next call this is not required since the predict call fills the predicted positions
-    tree->localTree.bodies_Ppos.copy(tree->localTree.bodies_pos, tree->localTree.bodies_pos.get_size());
-    tree->localTree.bodies_Pvel.copy(tree->localTree.bodies_vel, tree->localTree.bodies_vel.get_size());
+    tree->localTree.bodies_Ppos.copy(tree->localTree.bodies_pos,
+                                     tree->localTree.bodies_pos.get_size());
+    tree->localTree.bodies_Pvel.copy(tree->localTree.bodies_vel,
+                                     tree->localTree.bodies_vel.get_size());
     
     printf("Initial exchange Took in total: %lg sec\n", tree->get_time()-ttemp);
   }
