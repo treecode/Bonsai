@@ -37,16 +37,51 @@ PROF_MODULE(sortKernels);
     // backs the desired permutation array.
     cudaMalloc((void**) &double_buffer->d_values[0], sizeof(uint) * N);
     cudaMalloc((void**) &double_buffer->d_values[1], sizeof(uint) * N);
+
+    selfAllocatedMemory = true;
+  }
+
+  Sort90::Sort90(uint N, void* generalBuffer) 
+  {
+    // Allocate reusable ping-pong buffers on device.
+    double_buffer = new b40c::util::DoubleBuffer<uint, uint>;
+    sort_enactor = new b40c::radix_sort::Enactor;
+  
+    // The key buffers are opaque.
+    // Here we reuse the memory buffer already created by bonsai
+    // Note that we need to make sure the allignment is correct
+    // Initial offset is 4*N since we use the buffer in sort_bodies_gpu 
+    int initialPaddingElements = my_dev::dev_mem<uint>::getGlobalMemAllignmentPadding(4*N);
+    int paddingElements        = my_dev::dev_mem<uint>::getGlobalMemAllignmentPadding(N);
+
+    int offset = (4*N) + initialPaddingElements;
+
+
+    double_buffer->d_keys[0] = ((uint*)generalBuffer)+offset;
+    offset     += (1*N) + paddingElements;
+    double_buffer->d_keys[1] = ((uint*)generalBuffer)+offset;
+    offset     += (1*N) + paddingElements;
+    // The current value buffer (double_buffer.d_values[double_buffer.selector])
+    // backs the desired permutation array.
+    double_buffer->d_values[0] = ((uint*)generalBuffer)+offset;
+    offset     += (1*N) + paddingElements;
+    double_buffer->d_values[1] = ((uint*)generalBuffer)+offset;
+
+    selfAllocatedMemory = false;
   }
 
   Sort90::~Sort90() 
   {
+    if(selfAllocatedMemory)
+    {
+      //Only free if not-allocated by Bonsai internally
       cudaFree(double_buffer->d_keys[0]);
       cudaFree(double_buffer->d_keys[1]);
       cudaFree(double_buffer->d_values[0]);
       cudaFree(double_buffer->d_values[1]);
-      delete double_buffer;
-      delete sort_enactor;
+    }
+    delete double_buffer;
+    delete sort_enactor;
   }
 
   // Apply thrust_permutation

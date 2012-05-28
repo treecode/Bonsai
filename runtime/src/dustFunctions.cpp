@@ -9,6 +9,7 @@ void octree::allocateDustMemory(tree_structure &tree)
   #ifdef USE_B40C
     if(tree.n_dust > tree.n)
     {
+      //Dont use our own general buffer here we are not sure it fits      
       delete sorter;
       sorter = new Sort90(tree.n_dust);
     }
@@ -47,6 +48,7 @@ void octree::allocateDustMemory(tree_structure &tree)
     #ifdef USE_B40C
       if(tree.n_dust > tree.n)
       {
+        //Dont use our own general buffer here we are not sure it fits
         delete sorter;
         sorter = new Sort90(tree.n_dust);
       }

@@ -489,7 +489,9 @@ namespace my_dev {
 
 
     ///////////
-    int getGlobalMemAllignmentPadding(int n)
+    //Return the number of elements (of type uint) to be padded 
+    //to get to the correct address boundary
+    static int getGlobalMemAllignmentPadding(int n)
     {
       const int allignBoundary = 128*sizeof(uint); //CC 2.X and 3.X ,128 bytes 
       

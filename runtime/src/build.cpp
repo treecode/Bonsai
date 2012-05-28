@@ -8,9 +8,7 @@ void octree::allocateParticleMemory(tree_structure &tree)
   //particles. Eg valid arrays used in tree construction
   int n_bodies = tree.n;
   
-#ifdef USE_B40C
-  sorter = new Sort90(n_bodies);
-#endif
+
   
   if(nProcs > 1)                //10% extra space, only in parallel when
     n_bodies = (int)(n_bodies*1.1f);    //number of particles can fluctuate
@@ -62,6 +60,12 @@ void octree::allocateParticleMemory(tree_structure &tree)
   else
     tree.generalBuffer1.cmalloc(tempSize, true);  
   
+  
+  
+  #ifdef USE_B40C
+    sorter = new Sort90(n_bodies, tree.generalBuffer1.d());
+//     sorter = new Sort90(n_bodies);
+  #endif  
 
   //Tree properties, tree size is not known at forehand so
   //allocate worst possible outcome  
@@ -111,11 +115,7 @@ void octree::reallocateParticleMemory(tree_structure &tree)
   //particles. Eg valid arrays used in tree construction
   int n_bodies = tree.n;
   
-  #ifdef USE_B40C
-    delete sorter;
-    sorter = new Sort90(n_bodies);
-  #endif
-      
+
   
   
   bool reduce = false;  //Set this to true to limit memory usage by only allocating what
@@ -164,6 +164,12 @@ void octree::reallocateParticleMemory(tree_structure &tree)
   //General buffer is used at multiple locations and reused in different functions
   tree.generalBuffer1.cresize(tempSize, reduce);    
   
+  #ifdef USE_B40C
+    delete sorter;
+    sorter = new Sort90(n_bodies, tree.generalBuffer1.d());
+//      sorter = new Sort90(n_bodies);
+  #endif
+        
   
   my_dev::base_mem::printMemUsage();
 }

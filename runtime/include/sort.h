@@ -14,9 +14,12 @@ class Sort90
 {
   b40c::util::DoubleBuffer<uint, uint> *double_buffer;
   b40c::radix_sort::Enactor *sort_enactor;
+  
+  bool selfAllocatedMemory;
 
 public:
   Sort90(uint N);
+  Sort90(uint N, void *generalBuffer);
   ~Sort90();
   
   // Back40 90-bit sorting: sorts the lower 30 bits in uint4's key
