@@ -44,7 +44,7 @@ void octree::set_context2()
   
   //And for the remote tree
   this->remoteTree.setContext(devContext);
-
+  
 }
 
 void octree::load_kernels() {
@@ -270,7 +270,7 @@ void octree::load_kernels() {
   getTNext.load_source("./timestep.ptx", pathName.c_str(), "", -1);
   predictParticles.load_source("./timestep.ptx", pathName.c_str(), "", -1);
   getNActive.load_source("./timestep.ptx", pathName.c_str(), "", -1);
-	approxGrav.load_source("./dev_approximate_gravity.ptx", pathName.c_str(), "", 64);
+  approxGrav.load_source("./dev_approximate_gravity.ptx", pathName.c_str(), "", 64);
   directGrav.load_source("./dev_direct_gravity.ptx", pathName.c_str(), "", 64);
   correctParticles.load_source("./timestep.ptx", pathName.c_str(), "", -1);
   computeDt.load_source("./timestep.ptx", pathName.c_str(), "", -1);
@@ -278,7 +278,7 @@ void octree::load_kernels() {
   setActiveGrps.load_source("./timestep.ptx", pathName.c_str(), "", -1);
   distanceCheck.load_source("./timestep.ptx", pathName.c_str(), "", -1);  
   
-  approxGravLET.load_source("./dev_approximate_gravity_let.ptx", pathName.c_str(), "", 64);  
+  approxGravLET.load_source("./dev_approximate_gravity.ptx", pathName.c_str(), "", 64);  
   /* create kernels */
 
   getTNext.create("get_Tnext"); 

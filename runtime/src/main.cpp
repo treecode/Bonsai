@@ -171,7 +171,7 @@ void read_dumbp_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
   
   
     if(bodyPositions.size() > perProc && procCntr != procs)
-    { 
+    {       
       tree->ICSend(procCntr,  &bodyPositions[0], &bodyVelocities[0],  &bodiesIDs[0], (int)bodyPositions.size());
       procCntr++;
       
@@ -804,6 +804,11 @@ int main(int argc, char** argv)
                 cerr << "Tglow = " << TstartGlow << endl;
                 cerr << "dTglow = " << dTstartGlow << endl;
         #endif
+        #ifdef USE_MPI                
+          cerr << " Code is built WITH MPI Support \n";
+        #else
+          cerr << " Code is built WITHOUT MPI Support \n";          
+        #endif
 
   int NTotal, NFirst, NSecond, NThird;
   NTotal = NFirst = NSecond = NThird = 0;
@@ -947,7 +952,7 @@ int main(int argc, char** argv)
 
   tree->localTree.setN((int)bodyPositions.size());
   tree->allocateParticleMemory(tree->localTree);
-
+  
   //Load data onto the device
   for(uint i=0; i < bodyPositions.size(); i++)
   {

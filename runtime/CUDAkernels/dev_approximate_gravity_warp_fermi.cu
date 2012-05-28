@@ -892,8 +892,8 @@ __launch_bounds__(NTHREAD)
 //       ngb_out     [addr] = ngb_i;
       ngb_out     [addr] = addr; //JB Fixed this for demo 
       active_inout[addr] = 1;
-      interactions[addr].x = apprCount;
-      interactions[addr].y = direCount ;
+      interactions[addr].x = apprCount / ni;
+      interactions[addr].y = direCount / ni;
       if (ni == 2)
       {
         const int addr = body_i[1];
@@ -901,10 +901,196 @@ __launch_bounds__(NTHREAD)
 //       ngb_out     [addr] = ngb_i;
         ngb_out     [addr] = addr; //JB Fixed this for demo 
         active_inout[addr] = 1;     
-        interactions[addr].x = 0; // apprCount;    to avoid doubling the intearction count
-        interactions[addr].y = 0; // direCount ;
+        interactions[addr].x = apprCount / ni;
+        interactions[addr].y = direCount / ni;
       }
     }
   }     //end while
 }
 
+
+extern "C" __global__ void
+#if 0 /* casues 164 bytes spill to lmem with NTHREAD = 128 */
+__launch_bounds__(NTHREAD)
+#endif
+  dev_approximate_gravity_let(
+      const int n_active_groups,
+      int    n_bodies,
+      float eps2,
+      uint2 node_begend,
+      int    *active_groups,
+      real4  *body_pos,
+      real4  *multipole_data,
+      float4 *acc_out,
+      real4  *group_body_pos,           //This can be different from body_pos
+      int    *ngb_out,
+      int    *active_inout,
+      int2   *interactions,
+      float4  *boxSizeInfo,
+      float4  *groupSizeInfo,
+      float4  *boxCenterInfo,
+      float4  *groupCenterInfo,
+      real4   *body_vel,
+      int     *MEM_BUF) 
+{
+  const int blockDim2 = NTHREAD2;
+  const int shMemSize = 10 * (1 << blockDim2);
+  __shared__ int shmem_pool[shMemSize];
+
+  const int nWarps2 = blockDim2 - WARP_SIZE2;
+  const int sh_offs = (shMemSize >> nWarps2) * warpId;
+  int *shmem = shmem_pool + sh_offs;
+
+  /*********** check if this block is linked to a leaf **********/
+
+  int *lmem = &MEM_BUF[blockIdx.x*(LMEM_STACK_SIZE*blockDim.x + LMEM_EXTRA_SIZE)];
+  int  bid  = gridDim.x * blockIdx.y + blockIdx.x;
+
+  while(true)
+  {
+
+    if(laneId == 0)
+    {
+      bid         = atomicAdd(&active_inout[n_bodies], 1);
+      shmem[0]    = bid;
+    }
+
+    bid   = shmem[0];
+
+    if (bid >= n_active_groups) return;
+
+    int grpOffset = 0;
+
+    /*********** set necessary thread constants **********/
+#ifdef DO_BLOCK_TIMESTEP
+    real4 curGroupSize    = groupSizeInfo[active_groups[bid + grpOffset]];
+#else
+    real4 curGroupSize    = groupSizeInfo[bid + grpOffset];
+#endif
+    const int   groupData       = __float_as_int(curGroupSize.w);
+    const uint body_addr        =   groupData & CRITMASK;
+    const uint nb_i             = ((groupData & INVCMASK) >> CRITBIT) + 1;
+
+#ifdef DO_BLOCK_TIMESTEP
+    real4 group_pos       = groupCenterInfo[active_groups[bid + grpOffset]];
+#else
+    real4 group_pos       = groupCenterInfo[bid + grpOffset];
+#endif
+
+    uint body_i[2];
+    int ni = nb_i <= WARP_SIZE ? 1 : 2;
+    body_i[0] = body_addr + laneId%nb_i;
+    body_i[1] = body_addr + WARP_SIZE + laneId%(nb_i - WARP_SIZE);
+
+    float4 pos_i[2];
+    float4 acc_i[2];
+
+    pos_i[0] = group_body_pos[body_i[0]];
+    pos_i[1] = group_body_pos[body_i[1]];
+//     pos_i[0] = body_pos[body_i[0]];
+//     pos_i[1] = body_pos[body_i[1]];
+    acc_i[0] = acc_i[1] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+
+    int ngb_i;
+
+    const float group_eps  = 0;
+
+    int apprCount = 0;
+    int direCount = 0;
+
+    if (ni == 1)
+      approximate_gravity<0, blockDim2, 1>(
+          pos_i, group_pos,
+          eps2, node_begend,
+          multipole_data, body_pos,
+          shmem, lmem, ngb_i, apprCount, direCount, boxSizeInfo, curGroupSize, boxCenterInfo,
+          group_eps, 
+          acc_i);
+    else
+      approximate_gravity<0, blockDim2, 2>(
+          pos_i, group_pos,
+          eps2, node_begend,
+          multipole_data, body_pos,
+          shmem, lmem, ngb_i, apprCount, direCount, boxSizeInfo, curGroupSize, boxCenterInfo,
+          group_eps, 
+          acc_i);
+
+#if 1 /* this increase lmem spill count */
+    if(apprCount < 0)
+    {
+
+      //Try to get access to the big stack, only one block per time is allowed
+      if(laneId == 0)
+      {
+        int res = atomicExch(&active_inout[n_bodies+1], 1); //If the old value (res) is 0 we can go otherwise sleep
+        int waitCounter  = 0;
+        while(res != 0)
+        {
+          //Sleep
+          for(int i=0; i < (1024); i++)
+          {
+            waitCounter += 1;
+          }
+          //Test again
+          shmem[0] = waitCounter;
+          res = atomicExch(&active_inout[n_bodies+1], 1); 
+        }
+      }
+
+      lmem = &MEM_BUF[gridDim.x*(LMEM_STACK_SIZE*blockDim.x + LMEM_EXTRA_SIZE)];    //Use the extra large buffer
+      apprCount = direCount = 0;
+      acc_i[0] = acc_i[1] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+      if (ni == 1)    
+        approximate_gravity<8, blockDim2, 1>(
+            pos_i, group_pos,
+            eps2, node_begend,
+            multipole_data, body_pos,
+            shmem, lmem, ngb_i, apprCount, direCount, boxSizeInfo, curGroupSize, boxCenterInfo,
+            group_eps, 
+            acc_i);
+      else
+        approximate_gravity<8, blockDim2, 2>(
+            pos_i, group_pos,
+            eps2, node_begend,
+            multipole_data, body_pos,
+            shmem, lmem, ngb_i, apprCount, direCount, boxSizeInfo, curGroupSize, boxCenterInfo,
+            group_eps, 
+            acc_i);
+
+      lmem = &MEM_BUF[blockIdx.x*(LMEM_STACK_SIZE*blockDim.x + LMEM_EXTRA_SIZE)];
+
+      if(threadIdx.x == 0)
+      {
+        atomicExch(&active_inout[n_bodies+1], 0); //Release the lock
+      }
+    }//end if apprCount < 0
+#endif
+
+    if (laneId < nb_i) 
+    {
+      const int addr = body_i[0];
+      acc_out     [addr].x += acc_i[0].x;
+      acc_out     [addr].y += acc_i[0].y;
+      acc_out     [addr].z += acc_i[0].z;
+      acc_out     [addr].w += acc_i[0].w;
+//       ngb_out     [addr] = ngb_i;
+      ngb_out     [addr] = addr; //JB Fixed this for demo 
+      active_inout[addr] = 1;
+      interactions[addr].x = apprCount / ni;
+      interactions[addr].y = direCount / ni;
+      if (ni == 2)
+      {
+        const int addr = body_i[1];
+        acc_out     [addr].x += acc_i[1].x;
+        acc_out     [addr].y += acc_i[1].y;
+        acc_out     [addr].z += acc_i[1].z;
+        acc_out     [addr].w += acc_i[1].w;
+//       ngb_out     [addr] = ngb_i;
+        ngb_out     [addr] = addr; //JB Fixed this for demo 
+        active_inout[addr] = 1;     
+        interactions[addr].x = apprCount / ni;
+        interactions[addr].y = direCount / ni;
+      }
+    }
+  }     //end while
+}

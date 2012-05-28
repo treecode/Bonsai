@@ -807,7 +807,11 @@ void octree::approximate_gravity(tree_structure &tree)
       maxDir  = max(maxDir,tree.interactions[i].y);
       
       apprSum2     += tree.interactions[i].x*tree.interactions[i].x;
-      directSum2   += tree.interactions[i].y*tree.interactions[i].y;      
+      directSum2   += tree.interactions[i].y*tree.interactions[i].y;   
+      
+      fprintf(stderr, "%d\t Direct: %d\tApprox: %d\t Group: %d \n",
+              i, tree.interactions[i].y, tree.interactions[i].x, 
+              tree.body2group_list[i]);
     }
   
     //cerr << "Interaction at iter: " << iter << "\tdirect: " << directSum << "\tappr: " << apprSum << "\t";
@@ -816,10 +820,11 @@ void octree::approximate_gravity(tree_structure &tree)
     cout << "Interaction at (rank= " << mpiGetRank() << " ) iter: " << iter << "\tdirect: " << directSum << "\tappr: " << apprSum << "\t";
     cout << "avg dir: " << directSum / tree.n << "\tavg appr: " << apprSum / tree.n << "\tMaxdir: " << maxDir << "\tmaxAppr: " << maxAppr <<  endl;
     cout << "sigma dir: " << sqrt((directSum2  - directSum)/ tree.n) << "\tsigma appr: " << std::sqrt((apprSum2 - apprSum) / tree.n)  <<  endl;    
+    exit(0);
   #endif
   
   //CU_SAFE_CALL(clFinish(0));
-  
+
   
   if(mpiGetNProcs() == 1) //Only do it here if there is only one process
   {
@@ -879,7 +884,6 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
   fflush(stderr);
   fflush(stdout);
 
-
   //Set the kernel parameters, many!
   approxGravLET.set_arg<int>(0,    &tree.n_active_groups);
   approxGravLET.set_arg<int>(1,    &tree.n);
@@ -892,36 +896,36 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
   approxGravLET.set_arg<cl_mem>(6, &multiLoc);  
 
   approxGravLET.set_arg<cl_mem>(7, tree.bodies_acc1.p());
-  approxGravLET.set_arg<cl_mem>(8, tree.ngb.p());
-  approxGravLET.set_arg<cl_mem>(9, tree.activePartlist.p());
-  approxGravLET.set_arg<cl_mem>(10, tree.interactions.p());
+  approxGravLET.set_arg<cl_mem>(8, tree.bodies_Ppos.p());
+  approxGravLET.set_arg<cl_mem>(9, tree.ngb.p());
+  approxGravLET.set_arg<cl_mem>(10, tree.activePartlist.p());
+  approxGravLET.set_arg<cl_mem>(11, tree.interactions.p());
   
   void *boxSILoc = remoteTree.fullRemoteTree.a(2*(remoteP));
-  approxGravLET.set_arg<cl_mem>(11, &boxSILoc);  
+  approxGravLET.set_arg<cl_mem>(12, &boxSILoc);  
 
-  approxGravLET.set_arg<cl_mem>(12, tree.groupSizeInfo.p());
+  approxGravLET.set_arg<cl_mem>(13, tree.groupSizeInfo.p());
 
   void *boxCILoc = remoteTree.fullRemoteTree.a(2*(remoteP) + remoteN + nodeTexOffset);
-  approxGravLET.set_arg<cl_mem>(13, &boxCILoc);  
+  approxGravLET.set_arg<cl_mem>(14, &boxCILoc);  
 
-  approxGravLET.set_arg<cl_mem>(14, tree.groupCenterInfo.p());  
+  approxGravLET.set_arg<cl_mem>(15, tree.groupCenterInfo.p());  
   
-  void *bdyVelLoc = remoteTree.fullRemoteTree.a(1*(remoteP));
-  approxGravLET.set_arg<cl_mem>(15, &bdyVelLoc);  //<- Remote bodies velocity
+//   void *bdyVelLoc = remoteTree.fullRemoteTree.a(1*(remoteP));
+//   approxGravLET.set_arg<cl_mem>(16, &bdyVelLoc);  //<- Remote bodies velocity
   
-  approxGravLET.set_arg<cl_mem>(16, tree.bodies_Ppos.p()); //<- Predicted local body positions
-  approxGravLET.set_arg<cl_mem>(17, tree.bodies_Pvel.p()); //<- Predicted local body velocity
-  approxGravLET.set_arg<cl_mem>(18, tree.generalBuffer1.p()); //<- Predicted local body velocity
+  approxGravLET.set_arg<cl_mem>(16, tree.bodies_Pvel.p()); //<- Predicted local body velocity
+  approxGravLET.set_arg<cl_mem>(17, tree.generalBuffer1.p()); //<- Predicted local body velocity
   
-  approxGravLET.set_arg<real4>(19, remoteTree.fullRemoteTree, 4, "LET::texNodeSize",
+  approxGravLET.set_arg<real4>(18, remoteTree.fullRemoteTree, 4, "LET::texNodeSize",
                                2*(remoteP), remoteN );
-  approxGravLET.set_arg<real4>(20, remoteTree.fullRemoteTree, 4, "LET::texNodeCenter",
+  approxGravLET.set_arg<real4>(19, remoteTree.fullRemoteTree, 4, "LET::texNodeCenter",
                                2*(remoteP) + (remoteN + nodeTexOffset),
                                remoteN);
-  approxGravLET.set_arg<real4>(21, remoteTree.fullRemoteTree, 4, "LET::texMultipole",
+  approxGravLET.set_arg<real4>(20, remoteTree.fullRemoteTree, 4, "LET::texMultipole",
                                2*(remoteP) + 2*(remoteN + nodeTexOffset), 
                                3*remoteN);
-  approxGravLET.set_arg<real4>(22, remoteTree.fullRemoteTree, 4, "LET::texBody", 0, remoteP);  
+  approxGravLET.set_arg<real4>(21, remoteTree.fullRemoteTree, 4, "LET::texBody", 0, remoteP);  
     
   approxGravLET.setWork(-1, NTHREAD, nBlocksForTreeWalk);
  

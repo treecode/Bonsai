@@ -2,7 +2,6 @@
 typedef unsigned int uint;
 
 #include "stdio.h"
-#include "octree.h"
 
 //Warp based summation
 static __device__ int inexclusive_scan_warp(volatile int *ptr,bool inclusive, const unsigned int idx, int value) {

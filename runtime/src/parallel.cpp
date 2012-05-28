@@ -553,8 +553,20 @@ void octree::gpu_updateDomainDistribution(double timeLocal)
   extractSampleParticles.set_arg<cl_mem>(2,  localTree.bodies_Ppos.p());
   extractSampleParticles.set_arg<cl_mem>(3,  samplePositions.p());
   extractSampleParticles.setWork(nSamples, 256);
-  extractSampleParticles.execute(aSyncStream.s());            
-  samplePositions.d2h(nSamples, false, aSyncStream.s());
+  extractSampleParticles.execute(aSyncStream.s());      
+  
+  
+  //JB since Fermi had problems with pinned memory 
+  //we cant do this async
+  if (this->getDevContext()->getComputeCapability() < 350)
+  {
+    aSyncStream.sync();
+    samplePositions.d2h(nSamples);
+  }
+  else
+  {
+    samplePositions.d2h(nSamples, false, aSyncStream.s());
+  }
   
 
   //Get number of sample particles per process and domain size information

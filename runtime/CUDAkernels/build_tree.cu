@@ -2,7 +2,6 @@
 // //#include "/home/jbedorf/papers/GBPZ2010/codes/jb/build_tree/CUDA/support_kernels.cu"
 #include "support_kernels.cu"
 #include <stdio.h>
-#include "octree.h"
 
 #include "../profiling/bonsai_timing.h"
 PROF_MODULE(build_tree);
