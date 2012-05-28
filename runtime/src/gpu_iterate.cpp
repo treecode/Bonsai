@@ -917,15 +917,15 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
   approxGravLET.set_arg<cl_mem>(16, tree.bodies_Pvel.p()); //<- Predicted local body velocity
   approxGravLET.set_arg<cl_mem>(17, tree.generalBuffer1.p()); //<- Predicted local body velocity
   
-  approxGravLET.set_arg<real4>(18, remoteTree.fullRemoteTree, 4, "LET::texNodeSize",
+  approxGravLET.set_arg<real4>(18, remoteTree.fullRemoteTree, 4, "texNodeSize",
                                2*(remoteP), remoteN );
-  approxGravLET.set_arg<real4>(19, remoteTree.fullRemoteTree, 4, "LET::texNodeCenter",
+  approxGravLET.set_arg<real4>(19, remoteTree.fullRemoteTree, 4, "texNodeCenter",
                                2*(remoteP) + (remoteN + nodeTexOffset),
                                remoteN);
-  approxGravLET.set_arg<real4>(20, remoteTree.fullRemoteTree, 4, "LET::texMultipole",
+  approxGravLET.set_arg<real4>(20, remoteTree.fullRemoteTree, 4, "texMultipole",
                                2*(remoteP) + 2*(remoteN + nodeTexOffset), 
                                3*remoteN);
-  approxGravLET.set_arg<real4>(21, remoteTree.fullRemoteTree, 4, "LET::texBody", 0, remoteP);  
+  approxGravLET.set_arg<real4>(21, remoteTree.fullRemoteTree, 4, "texBody", 0, remoteP);  
     
   approxGravLET.setWork(-1, NTHREAD, nBlocksForTreeWalk);
  
