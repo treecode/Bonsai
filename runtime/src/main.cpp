@@ -627,7 +627,6 @@ int main(int argc, char** argv)
   string logFileName    = "gpuLog.log";
   string snapshotFile   = "snapshot_";
   int snapshotIter      = -1;
-  float  killDistance   = -1.0;
   float  remoDistance   = -1.0;
   int    snapShotAdd    =  0;
   int rebuild_tree_rate = 2;
@@ -668,7 +667,6 @@ int main(int argc, char** argv)
 		ADDUSAGE(" -o  --theta #          opening angle (theta) [" <<theta << "]");
 		ADDUSAGE("     --snapname #       snapshot base name (N-body time is appended in 000000 format) [" << snapshotFile << "]");
 		ADDUSAGE("     --snapiter #       snapshot iteration (N-body time) [" << snapshotIter << "]");
-		ADDUSAGE("     --killdist #       kill distance (-1 to disable) [" << killDistance << "]");
 		ADDUSAGE("     --rmdist #         Particle removal distance (-1 to disable) [" << remoDistance << "]");
 		ADDUSAGE("     --valueadd #       value to add to the snapshot [" << snapShotAdd << "]");
 		ADDUSAGE(" -r  --rebuild #        rebuild tree every # steps [" << rebuild_tree_rate << "]");
@@ -703,7 +701,6 @@ int main(int argc, char** argv)
 		opt.setOption( "logfile" );
 		opt.setOption( "snapname");
 		opt.setOption( "snapiter");
-		opt.setOption( "killdist");
 		opt.setOption( "rmdist");
 		opt.setOption( "valueadd");
 		opt.setOption( "reducebodies");
@@ -753,7 +750,6 @@ int main(int argc, char** argv)
 		if ((optarg = opt.getValue("theta")))        theta              = (float) atof  (optarg);
 		if ((optarg = opt.getValue("snapname")))     snapshotFile       = string(optarg);
 		if ((optarg = opt.getValue("snapiter")))     snapshotIter       = atoi  (optarg);
-		if ((optarg = opt.getValue("killdist")))     killDistance       = (float) atof  (optarg);
 		if ((optarg = opt.getValue("rmdist")))       remoDistance       = (float) atof  (optarg);
 		if ((optarg = opt.getValue("valueadd")))     snapShotAdd        = atoi  (optarg);
 		if ((optarg = opt.getValue("rebuild")))      rebuild_tree_rate  = atoi  (optarg);
@@ -784,7 +780,7 @@ int main(int argc, char** argv)
 	cerr << "Timestep: \t"          << timeStep     << "\t\ttEnd: \t\t"         << tEnd << endl;
 	cerr << "snapshotFile: \t"      << snapshotFile << "\tsnapshotIter: \t" << snapshotIter << endl;
 	cerr << "Input file: \t"        << fileName     << "\t\tdevID: \t\t"        << devID << endl;
-	cerr << "Kill distance: \t"      << killDistance     << "\t\tRemove dist: \t"   << remoDistance << endl;
+	cerr << "Remove dist: \t"   << remoDistance << endl;
 	cerr << "Snapshot Addition: \t"  << snapShotAdd << endl;
 	cerr << "Rebuild tree every " << rebuild_tree_rate << " timestep\n";
         
@@ -822,7 +818,7 @@ int main(int argc, char** argv)
   initTimers();
 
   //Creat the octree class and set the properties
-  octree *tree = new octree(argv, devID, theta, eps, snapshotFile, snapshotIter,  timeStep, (int)tEnd, killDistance, (int)remoDistance, snapShotAdd, rebuild_tree_rate, direct);
+  octree *tree = new octree(argv, devID, theta, eps, snapshotFile, snapshotIter,  timeStep, (int)tEnd, (int)remoDistance, snapShotAdd, rebuild_tree_rate, direct);
                             
                             
   //Get parallel processing information  
