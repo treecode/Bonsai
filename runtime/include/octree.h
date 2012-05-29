@@ -749,11 +749,11 @@ public:
     int argc = 0;
     mpiInit(argc, argv, procId, nProcs);
 
-#ifdef USE_MPI
-	devID = procId % getNumberOfCUDADevices();
-#else
-    devID = device;
-#endif
+    if(nProcs > 1)
+      devID = procId % getNumberOfCUDADevices();
+    else
+      devID = device;
+
     
 
     cerr << "Preset device : "  << devID << "\t" << device << "\t" << nProcs <<endl;
@@ -787,7 +787,7 @@ public:
     
     prevDurStep = -1;   //Set it to negative so we know its the first step
 
-    my_dev::base_mem::printMemUsage();   
+//     my_dev::base_mem::printMemUsage();   
     
     //Init at zero so we can check for n_dust later on
     localTree.n      = 0;
