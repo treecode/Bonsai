@@ -33,7 +33,7 @@ void octree::makeLET()
   //Exchange particles and start LET kernels
   vector<real4> LETParticles;
   essential_tree_exchange(LETParticles, localTree, remoteTree);
-  fprintf(stderr, "LET Exchange took (%d): %g \n", mpiGetRank(), get_time() - tTest);
+  LOGF(stderr, "LET Exchange took (%d): %g \n", mpiGetRank(), get_time() - tTest);
   
   letRunning = false;
   gravStream->sync();  //Sync LET execution
@@ -371,6 +371,12 @@ bool octree::iterate_once(IterationData &idata) {
       }
       else
       {
+        #ifdef DO_BLOCK_TIMESTEP
+          devContext.startTiming(execStream->s());
+          setActiveGrpsFunc(this->localTree);
+          devContext.stopTiming("setActiveGrpsFunc", 10, execStream->s());      
+          idata.Nact_since_last_tree_rebuild = 0;
+        #endif        
         //Dont rebuild only update the current boxes
         devContext.startTiming(execStream->s());
         this->compute_properties(this->localTree);
@@ -384,9 +390,9 @@ bool octree::iterate_once(IterationData &idata) {
 
       //Approximate gravity
       t1 = get_time();
-      devContext.startTiming(gravStream->s());
+//       devContext.startTiming(gravStream->s());
       approximate_gravity(this->localTree);
-      devContext.stopTiming("Approximation", 4, gravStream->s());
+//       devContext.stopTiming("Approximation", 4, gravStream->s());
 
 
       if(nProcs > 1)  makeLET();
@@ -403,6 +409,7 @@ bool octree::iterate_once(IterationData &idata) {
     idata.lastGravTime   = get_time() - t1;
 //     totalGravTime += lastGravTime;
     idata.totalGravTime += idata.lastGravTime - thisPartLETExTime;
+    idata.realGravTime  += idata.lastGravTime;    
 //     lastGravTime -= thisPartLETExTime;
     
     LOGF(stderr, "APPTIME [%d]: Iter: %d\t%g \n", procId, iter, idata.lastGravTime);
@@ -549,6 +556,7 @@ void octree::iterate_setup(IterationData &idata) {
   
   idata.lastGravTime   = get_time() - t1;
   idata.totalGravTime += idata.lastGravTime;
+  idata.realGravTime  += idata.lastGravTime;
   
   correct(this->localTree);
   compute_energies(this->localTree);
@@ -593,9 +601,9 @@ void octree::iterate_setup(IterationData &idata) {
 
 void octree::iterate_teardown(IterationData &idata) {
   double totalTime = get_time() - idata.startTime;
-  fprintf(stderr,"TIME [%02d] TOTAL: %g\t GRAV: %g\tBUILD: %g\tCOMM: %g\t WAIT: %g\n", 
-                  procId, totalTime, idata.totalGravTime, idata.totalBuildTime, 
-                  idata.totalDomTime, idata.lastWaitTime);     
+  fprintf(stderr,"TIME [%02d] TOTAL: %g\t GRAV: %g (%g)\tBUILD: %g\tCOMM: %g\t WAIT: %g\n", 
+                  procId, totalTime, idata.totalGravTime, idata.realGravTime,
+                  idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime);     
   
   if(execStream != NULL)
   {
@@ -880,7 +888,7 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
   int remoteP = remoteTree.remoteTreeStruct.x;
   int remoteN = remoteTree.remoteTreeStruct.y;
 
-  printf("LET node begend [%d]: %d %d iter-> %d\n", procId, node_begend.x, node_begend.y, iter);
+  LOG("LET node begend [%d]: %d %d iter-> %d\n", procId, node_begend.x, node_begend.y, iter);
   fflush(stderr);
   fflush(stdout);
 
@@ -976,26 +984,59 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
     cout << "avg dir: " << directSum / tree.n << "\tavg appr: " << apprSum / tree.n  << "\tMaxdir: " << maxDir << "\tmaxAppr: " << maxAppr <<  endl;
     cout << "sigma dir: " << sqrt((directSum2  - directSum)/ tree.n) << "\tsigma appr: " << std::sqrt((apprSum2 - apprSum) / tree.n)  <<  endl;
   #endif
-
-  if(doActiveParticles)
-  {
-    //Reduce the number of valid particles
-    getNActive.set_arg<int>(0,    &tree.n);
-    getNActive.set_arg<cl_mem>(1, tree.activePartlist.p());
-    getNActive.set_arg<cl_mem>(2, this->nactive.p());
-    getNActive.set_arg<int>(3, NULL, 128); //Dynamic shared memory , equal to number of threads
-    getNActive.setWork(-1, 128, NBLOCK_REDUCE);
-    //CU_SAFE_CALL(clFinish(0));
-    getNActive.execute(execStream->s());
     
-    //Reduce the last parts on the host
-    this->nactive.d2h();
-    tree.n_active_particles = this->nactive[0];
-    for (int i = 1; i < NBLOCK_REDUCE ; i++)
-        tree.n_active_particles += this->nactive[i];
+  if(doActiveParticles) //Only do it here if there is only one process
+  {
+   //#ifdef DO_BLOCK_TIMESTEP  
+  #if 0 //Demo mode
+      //Reduce the number of valid particles    
+      getNActive.set_arg<int>(0,    &tree.n);
+      getNActive.set_arg<cl_mem>(1, tree.activePartlist.p());
+      getNActive.set_arg<cl_mem>(2, this->nactive.p());
+      getNActive.set_arg<int>(3,    NULL, 128); //Dynamic shared memory , equal to number of threads
+      getNActive.setWork(-1, 128,   NBLOCK_REDUCE);
+      
+      //JB Need a sync here This is required otherwise the gravity overlaps the reduction
+      //and we get incorrect numbers. 
+      //Note Disabled this whole function for demo!
+      gravStream->sync(); 
+      getNActive.execute(execStream->s());
+      
+      
 
-    LOG("LET Active particles: %d (Process: %d ) \n",tree.n_active_particles, mpiGetRank());
-  }
+      //Reduce the last parts on the host
+      this->nactive.d2h();
+      tree.n_active_particles = this->nactive[0];
+      for (int i = 1; i < NBLOCK_REDUCE ; i++)
+          tree.n_active_particles += this->nactive[i];
+
+      LOG("Active particles: %d \n", tree.n_active_particles);
+    #else
+      tree.n_active_particles = tree.n;
+      LOG("Active particles: %d \n", tree.n_active_particles);
+    #endif
+  }    
+    
+
+//   if(doActiveParticles)
+//   {
+//     //Reduce the number of valid particles
+//     getNActive.set_arg<int>(0,    &tree.n);
+//     getNActive.set_arg<cl_mem>(1, tree.activePartlist.p());
+//     getNActive.set_arg<cl_mem>(2, this->nactive.p());
+//     getNActive.set_arg<int>(3, NULL, 128); //Dynamic shared memory , equal to number of threads
+//     getNActive.setWork(-1, 128, NBLOCK_REDUCE);
+//     //CU_SAFE_CALL(clFinish(0));
+//     getNActive.execute(execStream->s());
+//     
+//     //Reduce the last parts on the host
+//     this->nactive.d2h();
+//     tree.n_active_particles = this->nactive[0];
+//     for (int i = 1; i < NBLOCK_REDUCE ; i++)
+//         tree.n_active_particles += this->nactive[i];
+// 
+//     LOG("LET Active particles: %d (Process: %d ) \n",tree.n_active_particles, mpiGetRank());
+//   }
 }
 //end approximate
 

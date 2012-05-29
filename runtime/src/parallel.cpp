@@ -39,7 +39,7 @@ void octree::mpiInit(int argc,char *argv[], int &procId, int &nProcs)
 #endif
 
 #ifdef PRINT_MPI_DEBUG
-    fprintf(stderr, "Proc id: %d @ %s , total processes: %d (mpiInit) \n", procId, processor_name, nProcs);
+    LOGF(stderr, "Proc id: %d @ %s , total processes: %d (mpiInit) \n", procId, processor_name, nProcs);
 #endif
 
     //Allocate memory for the used buffers
@@ -168,7 +168,7 @@ void octree::determine_sample_freq(int numberOfParticles)
     int maxsample = (int)(NMAXSAMPLE*0.8); // 0.8 is safety factor    
     sampleFreq = (nTotalFreq+maxsample-1)/maxsample;
     
-    fprintf(stderr,"Sample FREQ: %d \n", sampleFreq);
+    LOGF(stderr,"Sample FREQ: %d \n", sampleFreq);
     
     prevSampFreq = sampleFreq;
     
@@ -528,7 +528,7 @@ void octree::gpu_updateDomainDistribution(double timeLocal)
   
   finalNRate      = localTree.n / nsamp_local;
   
-  fprintf(stderr, "NSAMP [%d]: sample: %d nrate: %f finalrate: %d localTree.n: %d  \
+  LOGF(stderr, "NSAMP [%d]: sample: %d nrate: %f finalrate: %d localTree.n: %d  \
                    previous: %d timeLocal: %f prevTimeLocal: %f \n",
                 procId, nsamp_local, nrate, finalNRate, localTree.n, prevSampFreq,
                 timeLocal, prevDurStep);  
@@ -1175,7 +1175,7 @@ int octree::exchange_particles_with_overflow_check(tree_structure &tree)
     }//end if mp exchang
   }//end for all boxes
   
-  printf("Required inter-process communication time: %lg ,proc: %d\n", get_time()-t1, myid);  
+  LOG("Required inter-process communication time: %lg ,proc: %d\n", get_time()-t1, myid);  
   t1 = get_time();       
   double t2= t1;
     
@@ -1205,7 +1205,7 @@ int octree::exchange_particles_with_overflow_check(tree_structure &tree)
   //have enough space to store the other buffers 
   tree.generalBuffer1.cresize(3*(idfirst+recvCount)*4, false);
   
-  printf("Benodigde gpu malloc tijd stap 1: %lg \t Size: %d \tRank: %d \t Size: %d \n", 
+  LOG("Benodigde gpu malloc tijd stap 1: %lg \t Size: %d \tRank: %d \t Size: %d \n", 
          get_time()-t1, idfirst+recvCount, mpiGetRank(), tree.bodies_Ppos.get_size()); 
   t1 = get_time();
 
@@ -1220,7 +1220,7 @@ int octree::exchange_particles_with_overflow_check(tree_structure &tree)
     tree.bodies_Ppos[idfirst+P] = recv_buffer3[P].Ppos;       tree.bodies_Pvel[idfirst+P]     = recv_buffer3[P].Pvel;
   }
 
-  printf("Required DATA in struct copy time: %lg \n", get_time()-t1); t1 = get_time();
+  LOG("Required DATA in struct copy time: %lg \n", get_time()-t1); t1 = get_time();
 
  
   if(ibend == -1){
@@ -1234,8 +1234,8 @@ int octree::exchange_particles_with_overflow_check(tree_structure &tree)
   //Resize the arrays of the tree    
   reallocateParticleMemory(tree);   
      
-  printf("Required gpu malloc time step 2: %lg \n", get_time()-t1);
-  printf("Total GPU interaction time: %lg \n", get_time()-t2);
+  LOG("Required gpu malloc time step 2: %lg \n", get_time()-t1);
+  LOG("Total GPU interaction time: %lg \n", get_time()-t2);
 
   int retValue = 0;
 
@@ -1271,6 +1271,7 @@ void octree::gpuRedistributeParticles()
   domainCheck.execute(execStream->s());            
   
   //Create a list of valid and invalid particles
+  this->resetCompact();  //Make sure compact has been reset
   int validCount;
   gpuSplit(devContext, validList, compactList, localTree.n, &validCount);                 
        
@@ -1467,7 +1468,7 @@ int octree::gpu_exchange_particles_with_overflow_check(tree_structure &tree,
   }
   
   
-  printf("Required inter-process communication time: %lg ,proc: %d\n", 
+  LOG("Required inter-process communication time: %lg ,proc: %d\n", 
          get_time()-t1, myid);  
 
   //Compute the new number of particles:
@@ -1507,7 +1508,7 @@ int octree::gpu_exchange_particles_with_overflow_check(tree_structure &tree,
                                             stepSize, 0);
      
  
-  fprintf(stderr, "Exchange, received particles: (%d): %d \tnewN: %d\tItems that can be insert in one step: %d\n", 
+  LOGF(stderr, "Exchange, received particles: (%d): %d \tnewN: %d\tItems that can be insert in one step: %d\n", 
                    procId, recvCount, newN, stepSize);     
 
   int insertOffset = 0;                   
@@ -1697,9 +1698,9 @@ void octree::essential_tree_exchange(vector<real4> &treeStructure, tree_structur
       delete[] letDataBuffer;
 
       //This determines if we interrupt the exchange by starting a gravity kernel on the GPU
-      if(execStream->isFinished())
+      if(gravStream->isFinished())
       {
-        fprintf(stderr,"GRAVFINISHED %d recvTree: %d\n", procId, recvTree);
+        LOGF(stderr,"GRAVFINISHED %d recvTree: %d\n", procId, recvTree);
         recvTree++;
         break;
       }
@@ -1804,7 +1805,7 @@ void octree::essential_tree_exchange(vector<real4> &treeStructure, tree_structur
       //Can only resize if we are sure the LET is not running
       if(letRunning)
       {
-        execStream->sync();     //Wait till the LET run is finished        
+        gravStream->sync();     //Wait till the LET run is finished        
       }      
       remote.fullRemoteTree.cresize(bufferSize, false);  //Change the size but ONLY if we need more memory  
     }
@@ -1968,7 +1969,7 @@ void octree::essential_tree_exchange(vector<real4> &treeStructure, tree_structur
     remote.remoteTreeStruct.w = totalTopNodes;
     
 //     fprintf(stderr,"Modifying the LET took: %g \n", get_time()-t1);
-    fprintf(stderr,"Number of local bodies: %d number LET bodies: %d , number LET nodes: %d top nodes: %d Processed trees: %d (%d) \n",
+    LOGF(stderr,"Number of local bodies: %d number LET bodies: %d , number LET nodes: %d top nodes: %d Processed trees: %d (%d) \n",
                     tree.n, totalParticles, totalNodes, totalTopNodes, PROCS, procTrees);
 
     delete[] particleSumOffsets;
@@ -1993,7 +1994,7 @@ void octree::essential_tree_exchange(vector<real4> &treeStructure, tree_structur
   
   totalLETExTime += thisPartLETExTime;
   
-  fprintf(stderr,"LETEX [%d] curStep: %g\t   Total: %g \n", procId, thisPartLETExTime, totalLETExTime);
+  LOGF(stderr,"LETEX [%d] curStep: %g\t   Total: %g \n", procId, thisPartLETExTime, totalLETExTime);
   
 }
 
@@ -2098,9 +2099,9 @@ void octree::create_local_essential_tree(real4* bodies, real4* multipole, real4*
     }
       
     //Start the tree-walk
-    printf("Start: %d end: %d \n", start, end);
-    cout << "Starting walk on: " << curLevel.size() << " items! \n"; 
-    
+    LOG("Start: %d end: %d \n", start, end);
+    LOG("Sarting walk on: %d items! \n", (int)curLevel.size());
+        
     
     int childNodeOffset         = end;
     int childParticleOffset     = 0;

@@ -516,7 +516,8 @@ public:
       IterationData() : Nact_since_last_tree_rebuild(0),
           totalGravTime(0), lastGravTime(0), totalBuildTime(0),
           lastBuildTime(0), totalDomTime(0), lastDomTime(0),
-          totalWaitTime(0), lastWaitTime(0), startTime(0) {}
+          totalWaitTime(0), lastWaitTime(0), startTime(0),
+          realGravTime(0) {}
 
       int    Nact_since_last_tree_rebuild;
       double totalGravTime;
@@ -528,6 +529,7 @@ public:
       double totalWaitTime;
       double lastWaitTime;
       double startTime;
+      double realGravTime;
   };
 
   void iterate_setup(IterationData &idata); 
