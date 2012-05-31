@@ -339,6 +339,29 @@ static __device__ bool split_node_grav_impbh(
   return (ds2 <= fabsf(nodeCOM.w));
 }
 
+//Minimum distance
+__device__ bool split_node_grav_md(
+    const float4 nodeCenter,
+    const float4 nodeSize,
+    const float4 groupCenter,
+    const float4 groupSize)
+{
+  //Compute the distance between the group and the cell
+  float3 dr = {fabs(groupCenter.x - nodeCenter.x) - (groupSize.x + nodeSize.x),
+               fabs(groupCenter.y - nodeCenter.y) - (groupSize.y + nodeSize.y),
+               fabs(groupCenter.z - nodeCenter.z) - (groupSize.z + nodeSize.z)};
+
+  dr.x += fabs(dr.x); dr.x *= 0.5f;
+  dr.y += fabs(dr.y); dr.y *= 0.5f;
+  dr.z += fabs(dr.z); dr.z *= 0.5f;
+
+  //Distance squared, no need to do sqrt since opening criteria has been squared
+  float ds2    = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
+
+  return (ds2 <= fabs(nodeCenter.w));
+}
+
+
 
 
 #define TEXTURES
@@ -470,18 +493,22 @@ void approximate_gravity(
         int node_data = __float_as_int(nodeSize.w);
 
         //Check if a cell has to be opened
-#ifndef TEXTURES
-        float4 nodeCOM = multipole_data[node*3];
-#else
-        float4 nodeCOM = tex1Dfetch(texMultipole,node*3);
-#endif
-
+#ifdef  IMPBH
+        //Improved barnes-hut method
+        #ifndef TEXTURES
+                float4 nodeCOM = multipole_data[node*3];
+        #else
+                float4 nodeCOM = tex1Dfetch(texMultipole,node*3);
+        #endif
         nodeCOM.w      = node_pos.w;
         bool   split   = split_node_grav_impbh(nodeCOM, group_pos, groupSize);
+#else
+        bool   split   = split_node_grav_md(node_pos, nodeSize, group_pos, groupSize); 
+#endif
 
 
         bool leaf       = node_pos.w <= 0;  //Small AND equal incase of a 1 particle cell       //Check if it is a leaf
-                 split = true;
+//                  split = true;
 
         bool flag    = (split && !leaf) && use_node;                        //Flag = use_node + split + not_a_leaf;Use only non_leaf nodes that are to be split
         uint mask    = BTEST(flag);                                       // mask = #FFFFFFFF if use_node+split+not_a_leaf==true, otherwise zero

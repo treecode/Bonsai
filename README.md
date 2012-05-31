@@ -68,7 +68,8 @@ Demo specific:
 * --reducedust   Cut down dust dataset by # factor
 * --direct      Enable N^2 direct gravitation 
 * --renderdev  Device ID to run the visualization on
-* --fullscreen Set fullscreen mode string
+* --fullscreen Set fullscreen mode string, format: [ width "x" height ][ ":"                        bitsPerPixel ][ "@" videoRate ]
+                
 * --displayfps Enable on-screen FPS display
 * --Tglow      Enable glowing particles @ # Myr
 * --dTglow     Reach full brightness in @ # Myr
