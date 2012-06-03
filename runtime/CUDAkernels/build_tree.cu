@@ -519,6 +519,8 @@ KERNEL_DECLARE(build_level_list)(const int n_nodes,
 
 } //end build_level_list
 
+#if 0
+//Old version based on distance
 
 //Finds nodes/leafs that will become groups
 //After executions valid_list contains the 
@@ -603,6 +605,81 @@ KERNEL_DECLARE(build_group_list2)(int    n_particles,
   validList[2*idx + 1] = (idx+1) | (uint)(validEnd   << 31);    
 }
 
+#else
+//New version based on coarse distribution
+//Finds nodes/leafs that will become groups
+//After executions valid_list contains the 
+//valid nodes/leafs that form groups
+KERNEL_DECLARE(build_group_list2)(const int n_particles,
+                                  uint      *validList,
+                                  const int n_coarseGroupLevelNodes,
+                                  uint2     *node_bodies,                                    
+                                  int       *node_level_list,
+                                  int       treeDepth)
+{
+  CUXTIMER("build_group_list2");
+  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
+  uint tid = threadIdx.x;
+  uint idx = bid * blockDim.x + tid;
+
+  __shared__ int shmem[128];
+
+  //Compact the node_level_list
+  if(bid == 0)
+  {
+    if(threadIdx.x < (MAXLEVELS*2))
+    {
+      shmem[threadIdx.x] = node_level_list[threadIdx.x];
+    }
+
+    __syncthreads(); //Can most likely do without since its one warp
+
+    //Only selection writes
+    if(threadIdx.x < MAXLEVELS)
+    {
+      node_level_list[threadIdx.x]  = shmem[threadIdx.x*2];
+      if(threadIdx.x == treeDepth-1)
+          node_level_list[threadIdx.x] = shmem[threadIdx.x*2-1]+1;
+    }
+  }//if bid == 0
+  //end compact node level list
+
+  //Note that we do not include the final particle
+  //Since there is no reason to check it
+  if (idx >= n_particles) return;
+
+  //Now we get some info from tree-structure for coarse groups
+  //Note that we do NOT include the last groups since it only sets
+  //the final particle to invalid, which we will do by default anyway
+  //this way we save a check on particle boundary
+  if (idx < (n_coarseGroupLevelNodes-1)) //THe -1 to prevent last node
+  {
+    const uint2 bij          =  node_bodies[idx];
+//     const uint firstChild    =  bij.x & ILEVELMASK;
+    const uint lastChild     =  bij.y;   
+
+    //Set the boundaries, start and end 
+    validList[2*lastChild - 1]  = (lastChild)   | (uint)(1 << 31);
+    validList[2*lastChild]      = (lastChild)   | (uint)(1 << 31);
+  }
+
+
+  //Multiples of the preferred group size are _always_ valid
+  int validStart = ((idx     % NCRIT) == 0);
+  int validEnd   = (((idx+1) % NCRIT) == 0);
+
+  
+  //Last particle is always the end, n_particles dont have 
+  //to be a multiple of NCRIT so this is required
+  if(idx+1 == n_particles) validEnd = 1;
+
+  //Set valid, note only set it if we write something valid
+  //otherwise we might overwrite the settings from the coarse group
+  if(validStart) validList[2*idx + 0] = (idx)   | (uint)(validStart << 31);
+  if(validEnd)   validList[2*idx + 1] = (idx+1) | (uint)(validEnd   << 31);    
+}
+
+#endif
  
 //Store per particle the group id it belongs to
 //and the start and end particle number of the groups  

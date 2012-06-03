@@ -220,6 +220,10 @@ void octree::build (tree_structure &tree) {
   my_dev::dev_mem<uint>   maxLevel(devContext);
   my_dev::dev_mem<uint4>  node_key(devContext);
   
+  my_dev::dev_mem<uint4>  body_key_copy(devContext);
+  
+  
+  
 
   int memBufOffset = validList.cmalloc_copy  (tree.generalBuffer1, tree.n*2, 0);
       memBufOffset = compactList.cmalloc_copy(tree.generalBuffer1, tree.n*2, memBufOffset);      
@@ -394,18 +398,68 @@ void octree::build (tree_structure &tree) {
                        
   LOG("Box max size: %f en max dist: %f \t %f en %f  \n", size, dist, sqrt(dist), maxDist);
   
+  //The coarse group boundaries are based on the tree-structure. These coarse boundaries
+  //will be used for getting the multi-box/group group boundaries. Also it serves as a 
+  //boundary mechanism independent of the max-distance trick between particles that we used 
+  //before
+  const int minCoarseGroups = 50;
+  int minCoarseGroupLevelIdx = 0;
+  for(int i=0; i < level; i++){
+    if( (tree.level_list[i].y - tree.level_list[i].x) >  minCoarseGroups)
+    {
+      minCoarseGroupLevelIdx = i;
+      break;
+    }
+  }
+  
+//   fprintf(stderr, "Gevonden op level: %d  %d %d \n", minCoarseGroupLevelIdx, 
+//           tree.level_list[minCoarseGroupLevelIdx].x , tree.level_list[minCoarseGroupLevelIdx].y);
+//   tree.node_bodies.d2h();
+//   for(int i=0; i < tree.level_list[minCoarseGroupLevelIdx].y; i++)
+//   {
+//     const uint2 bij          =  tree.node_bodies[i];
+//     const uint firstChild    =  bij.x & ILEVELMASK;
+//     const uint lastChild     =  bij.y;  //TODO maybe have to increase it by 1
+//     fprintf(stderr, "IN node: %d \t\t Start-end: %d \t %d \n",i, firstChild, lastChild);
+//   }
 
   validList.zeroMem();
   //The newest group creation method!
-  define_groups.set_arg<int>   (0, &tree.n);  
-  define_groups.set_arg<cl_mem>(1, validList.p());    
-  define_groups.set_arg<cl_mem>(2, tree.bodies_Ppos.p());
-  define_groups.set_arg<float> (3, &maxDist);
-  define_groups.set_arg<cl_mem>(4, tree.node_level_list.p());
-  define_groups.set_arg<int>   (5, &level);
+  define_groups.set_arg<int>    (0, &tree.n);  
+  define_groups.set_arg<cl_mem> (1, validList.p());    
+  define_groups.set_arg<int>    (2, &tree.level_list[minCoarseGroupLevelIdx].y);
+  define_groups.set_arg<cl_mem> (3, tree.node_bodies.p());
+  define_groups.set_arg<cl_mem> (4, tree.node_level_list.p());
+  define_groups.set_arg<int>    (5, &level);
   define_groups.setWork(tree.n, 128);  
   define_groups.execute(execStream->s());
   
+  execStream->sync();
+  
+//   validList.d2h();
+//   for(int i=0; i < 128; i++)
+//   {
+//     fprintf(stderr, "%d : \t %d \t\t %d \n", i,
+//             validList[2*i], validList[2*i+0]);
+//   }
+/*  
+  gpuCompact(devContext, validList, compactList, tree.n*2, &validCount);  
+  LOG("Found number of groups: %d \n", validCount/2);
+
+exit(0);*/
+
+
+//   validList.zeroMem();
+//   //The newest group creation method!
+//   define_groups.set_arg<int>   (0, &tree.n);  
+//   define_groups.set_arg<cl_mem>(1, validList.p());    
+//   define_groups.set_arg<cl_mem>(2, tree.bodies_Ppos.p());
+//   define_groups.set_arg<float> (3, &maxDist);
+//   define_groups.set_arg<cl_mem>(4, tree.node_level_list.p());
+//   define_groups.set_arg<int>   (5, &level);
+//   define_groups.setWork(tree.n, 128);  
+//   define_groups.execute(execStream->s());
+//   
    
   //Have to copy it back to host since we need it in compute props
   LOG("Finished level list \n");
@@ -430,6 +484,16 @@ void octree::build (tree_structure &tree) {
   store_groups.set_arg<cl_mem>(4, tree.group_list.p());     
   store_groups.setWork(-1, NCRIT, tree.n_groups);  
   store_groups.execute(execStream->s());  
+  
+  
+//   tree.group_list.d2h();
+//   for(int i=0; i < tree.n_groups; i++)
+//   {
+//     fprintf(stderr, "%d \t %d \t %d \n", i, 
+//             tree.group_list[i].x, tree.group_list[i].y);
+//   }
+  
+  
 
   //Memory allocation for the valid group lists
   if(tree.active_group_list.get_size() > 0)
