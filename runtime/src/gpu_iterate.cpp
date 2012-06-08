@@ -471,7 +471,7 @@ bool octree::iterate_once(IterationData &idata) {
     {
       compute_energies(this->localTree);
       double totalTime = get_time() - idata.startTime;
-      cout << " Finished: "  << t_current << "  > "  << tEnd << " loop alone took: " << totalTime <<  endl;
+      LOG("Finished: %f > %d \tLoop alone took: %f\n", t_current, tEnd, totalTime);
      
       my_dev::base_mem::printMemUsage();
 
@@ -601,7 +601,7 @@ void octree::iterate_setup(IterationData &idata) {
 
 void octree::iterate_teardown(IterationData &idata) {
   double totalTime = get_time() - idata.startTime;
-  fprintf(stderr,"TIME [%02d] TOTAL: %g\t GRAV: %g (%g)\tBUILD: %g\tCOMM: %g\t WAIT: %g\n", 
+  LOGF(stderr,"TIME [%02d] TOTAL: %g\t GRAV: %g (%g)\tBUILD: %g\tCOMM: %g\t WAIT: %g\n",
                   procId, totalTime, idata.totalGravTime, idata.realGravTime,
                   idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime);     
   

@@ -48,7 +48,8 @@ inline void __checkCudaErrors(cudaError err, const char *file, const int line )
 {                                                                                                                                          
     if(cudaSuccess != err)                                                                                                                 
     {                                                                                                                                      
-        fprintf(stderr, "%s(%i) : CUDA Runtime API error %d: %s.\n",file, line, (int)err, cudaGetErrorString( err ) );                     
+//        fprintf(stderr, "%s(%i) : CUDA Runtime API error %d: %s.\n",file, line, (int)err, cudaGetErrorString( err ) );
+        LOGF(stderr, "%s(%i) : CUDA Runtime API error %d: %s.\n",file, line, (int)err, cudaGetErrorString( err ) );
         exit(-1);                                                                                                                          
     }                                                                                                                                      
 }                                                                                                                                          
@@ -61,8 +62,8 @@ inline void __getLastCudaError(const char *errorMessage, const char *file, const
     cudaError_t err = cudaGetLastError();                                                                                                  
     if (cudaSuccess != err)                                                                                                                
     {                                                                                                                                      
-        fprintf(stderr, "%s(%i) : getLastCudaError() CUDA error : %s : (%d) %s.\n",                                                        
-        file, line, errorMessage, (int)err, cudaGetErrorString( err ) );                                                                   
+//        fprintf(stderr, "%s(%i) : getLastCudaError() CUDA error : %s : (%d) %s.\n", file, line, errorMessage, (int)err, cudaGetErrorString( err ) );
+        LOGF(stderr, "%s(%i) : getLastCudaError() CUDA error : %s : (%d) %s.\n", file, line, errorMessage, (int)err, cudaGetErrorString( err ) );
         exit(-1);                                                                                                                          
     }                                                                                                                                      
 }                                                                                                                                          
@@ -160,18 +161,18 @@ namespace my_dev {
       
       disable_timing = disableT;
       
-      printf("Creating CUDA context \n");
+      LOG("Creating CUDA context \n");
             
       // Get number of devices supporting CUDA
       ciDeviceCount = 0;
       CU_SAFE_CALL(cudaGetDeviceCount(&ciDeviceCount));
             
-      printf("Found %d suitable devices: \n",ciDeviceCount);
+      LOG("Found %d suitable devices: \n",ciDeviceCount);
       for(int i=0; i < ciDeviceCount; i++)
       {
         cudaDeviceProp deviceProp;   
         cudaGetDeviceProperties(&deviceProp, i);     
-        printf(" %d: %s\n",i, deviceProp.name);
+        LOG(" %d: %s\n",i, deviceProp.name);
       }
 
       return ciDeviceCount;
@@ -186,7 +187,7 @@ namespace my_dev {
       this->dev = dev;
       assert((int)dev < ciDeviceCount);
                   
-      printf("Trying to use device: %d ...", (int)dev);
+      LOG("Trying to use device: %d ...", (int)dev);
       //Faster and async kernel launches when using large size arrays of local memory
       //ctxCreateFlags |= CU_CTX_LMEM_RESIZE_TO_MAX;
 
@@ -196,23 +197,23 @@ namespace my_dev {
       int res = cudaSetDevice((int)dev);
       if(res != cudaSuccess)
       {
-        printf("failed (error #: %d), now trying all devices starting at 0 \n", res);
+        LOG("failed (error #: %d), now trying all devices starting at 0 \n", res);
 
 	      for(int i=0; i < ciDeviceCount; i++)
         {
-          printf("Trying device: %d  ...", i);
+	        LOG("Trying device: %d  ...", i);
           if(cudaSetDevice(i) != cudaSuccess)
           {
-            printf("failed!\n");
+            LOG("failed!\n");
             if(i+1 == ciDeviceCount)
             {
-              printf("All devices failed, exit! \n");
+              LOG("All devices failed, exit! \n");
               exit(0);
             }
           }
           else
           {
-            printf("success! \n");
+            LOG("success! \n");
             this->dev = i;
             break;
           }
@@ -220,7 +221,7 @@ namespace my_dev {
       }
       else
       {
-        printf("success!\n");
+        LOG("success!\n");
       }
 
       cudaDeviceProp deviceProp;                                                                                                     
@@ -349,12 +350,12 @@ namespace my_dev {
     
     static void printMemUsage()
     {      
-      printf("Current usage: %lld bytes ( %lld MB) \n", currentMemUsage, currentMemUsage / (1024*1024));
-      printf("Maximum usage: %lld bytes ( %lld MB) \n", maxMemUsage, maxMemUsage / (1024*1024));     
+      LOG("Current usage: %lld bytes ( %lld MB) \n", currentMemUsage, currentMemUsage / (1024*1024));
+      LOG("Maximum usage: %lld bytes ( %lld MB) \n", maxMemUsage, maxMemUsage / (1024*1024));
       
       size_t free, total;
       cudaMemGetInfo(&free, &total); 
-      printf("Build-in usage: free: %ld bytes ( %ld MB , total: %ld) \n", free, free / (1024*1024), total / (1024*1024));     
+      LOG("Build-in usage: free: %ld bytes ( %ld MB , total: %ld) \n", free, free / (1024*1024), total / (1024*1024));
       
     }  
     
@@ -811,10 +812,10 @@ namespace my_dev {
       assert(context_flag);
       assert(hDeviceMem_flag);
       if (size < n) {
-	cuda_free();
-	cmalloc(n, flags);
-	size = n;
-        printf("Resize in copy \n");
+        cuda_free();
+        cmalloc(n, flags);
+        size = n;
+        LOG("Resize in copy \n");
       }
       
       //Copy on the device
@@ -993,8 +994,8 @@ namespace my_dev {
       //so that the file loaded/specified is in fact a PTX file
       sprintf(hKernelFilename, "%s%s", subfolder, kernel_name);
       
-      printf("Loading source: %s ...", hKernelFilename);
-      printf("done!\n");
+      LOG("Loading source: %s ...", hKernelFilename);
+      LOG("done!\n");
 
       program_flag = true;
     }
@@ -1005,7 +1006,7 @@ namespace my_dev {
       assert(!kernel_flag);
       sprintf(hKernelName, kernel_name,"");
       
-      printf("%s \n", kernel_name);
+      LOG("%s \n", kernel_name);
       kernel_flag = true;
     }
     

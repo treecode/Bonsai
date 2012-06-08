@@ -47,7 +47,7 @@ void octree::compute_properties(tree_structure &tree) {
 
   
   propsLeafD.setWork(tree.n_leafs, 128);
-  LOG("PropsLeaf: "); propsLeafD.printWorkSize();
+  LOG("PropsLeaf: \n"); propsLeafD.printWorkSize();
   propsLeafD.execute(execStream->s()); 
    
   
@@ -72,9 +72,9 @@ void octree::compute_properties(tree_structure &tree) {
         
         propsNonLeafD.setWork(totalOnThisLevel, 128);
         
-        LOG("PropsNonLeaf, nodes on level %d : %d (start: %d end: %d) , config: \t",
+        LOG("PropsNonLeaf, nodes on level %d : %d (start: %d end: %d)\t\n",
             i, totalOnThisLevel,tree.node_level_list[i-1], tree.node_level_list[i]); 
-        propsNonLeafD.printWorkSize();
+//        propsNonLeafD.printWorkSize();
       }      
       propsNonLeafD.set_arg<int>(0,    &i); //set the level
       propsNonLeafD.execute(execStream->s());     
@@ -93,7 +93,7 @@ void octree::compute_properties(tree_structure &tree) {
   propsScalingD.set_arg<cl_mem>(9, tree.node_bodies.p());
   
   propsScalingD.setWork(tree.n_nodes, 128);
-  LOG("propsScaling: \t "); propsScalingD.printWorkSize();
+  LOG("propsScaling: \t \n"); propsScalingD.printWorkSize();
   propsScalingD.execute(execStream->s());   
 
 

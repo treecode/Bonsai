@@ -85,6 +85,7 @@ set (CCFILES
   src/parallel.cpp
   src/sort_bodies_gpu.cpp
   src/dustFunctions.cpp
+  src/log.cpp
   )
 
 set (HFILES

@@ -776,7 +776,7 @@ public:
 
     
 
-    cerr << "Preset device : "  << devID << "\t" << device << "\t" << nProcs <<endl;
+//    LOGF(stderr, "Settings device : %d\t"  << devID << "\t" << device << "\t" << nProcs <<endl;
 
     snapshotIter = snapI;
     snapshotFile = snapF;

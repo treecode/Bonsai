@@ -144,7 +144,7 @@ void octree::createORB()
   }
   
   #ifdef PRINT_MPI_DEBUG
-    if(procId == 0) cout << "Division: nx: " << nx << " ny: " << ny << " nz: " << nz << endl;
+    if(procId == 0) LOG("Division: nx: %d ny: %d nz: %d \n", nx, ny, nz);
   #endif
 }
 
@@ -164,7 +164,7 @@ void octree::determine_sample_freq(int numberOfParticles)
 
     #ifdef PRINT_MPI_DEBUG
     if(procId == 0)
-      cout << "Total number of particles: " << nTotalFreq << endl;
+      LOG("Total number of particles: %d\n", nTotalFreq);
     #endif
    
     int maxsample = (int)(NMAXSAMPLE*0.8); // 0.8 is safety factor    
@@ -1169,7 +1169,7 @@ int octree::exchange_particles_with_overflow_check(tree_structure &tree)
     nparticles[ibox] = iloc-firstloc[ibox];//Number of particles that has to be send to proc: ibox
   } // for(int ib=0;ib<nproc;ib++)
   
-  printf("Requires search time: %lg ,proc: %d found in our own box: %d n: %d  send to others: %ld \n", 
+  LOG("Required search time: %lg ,proc: %d found in our own box: %d n: %d  send to others: %ld \n",
          get_time()-t1, myid, nparticles[myid], tree.n, array2Send.size());
   
   t1 = get_time();
@@ -1186,7 +1186,7 @@ int octree::exchange_particles_with_overflow_check(tree_structure &tree)
   if(procId == 0)
   {
     totalsent = tmp;
-    cout << "Exchanged particles = " << totalsent << endl;
+    LOG("Exchanged particles = %d \n", totalsent);
   }
 
   if(iloc < nbody)

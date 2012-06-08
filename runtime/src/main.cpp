@@ -31,7 +31,10 @@ http://github.com/treecode/Bonsai
 #include "renderloop.h"
 
 #if ENABLE_LOG
-bool ENABLE_RUNTIME_LOG;
+  bool ENABLE_RUNTIME_LOG;
+  bool PREPEND_RANK;
+  int  PREPEND_RANK_PROCID;
+  int  PREPEND_RANK_NPROCS;
 #endif
 
 using namespace std;
@@ -99,13 +102,13 @@ void read_dumbp_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
   char fullFileName[256];
   sprintf(fullFileName, "%s", fileName.c_str());
 
-  cout << "Trying to read file: " << fullFileName << endl;
+  LOG("Trying to read file: %s \n", fullFileName);
 
   ifstream inputFile(fullFileName, ios::in);
 
   if(!inputFile.is_open())
   {
-    cout << "Can't open input file \n";
+    LOG("Can't open input file \n");
     exit(0);
   }
   
@@ -187,7 +190,7 @@ void read_dumbp_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
   bodyPositions.resize(bodyPositions.size()-1);  
   NTotal2 = particleCount-1;
   
-  cerr << "NTotal: " << NTotal << "\tper proc: " << perProc << "\tFor ourself:" << bodiesIDs.size() << endl;
+  LOGF(stderr, "NTotal:  %d\tper proc: %d\tFor ourself: %d \n", NTotal, perProc, (int)bodiesIDs.size());
 }
 
 
@@ -212,14 +215,14 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
   char fullFileName[256];
   sprintf(fullFileName, "%s", fileName.c_str());
 
-  cout << "Trying to read file: " << fullFileName << endl;
+  LOG("Trying to read file: %s \n", fullFileName);
   
   
   
   ifstream inputFile(fullFileName, ios::in | ios::binary);
   if(!inputFile.is_open())
   {
-    cout << "Can't open input file \n";
+    LOG("Can't open input file \n");
     exit(0);
   }
   
@@ -347,8 +350,8 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
 //   bodyPositions.resize(bodyPositions.size()-1);  
 //   NTotal2 = particleCount-1;
   NTotal2 = particleCount;
-  cerr << "NTotal: " << NTotal << "\tper proc: " << perProc << "\tFor ourself:" << bodiesIDs.size() << "\tNDust: " << dustPositions.size() << endl;
-  cerr << "NTotal: " << NTotal << "\tper proc: " << perProc << "\tFor ourself:" << bodiesIDs.size() << endl;  
+  LOGF(stderr,"NTotal: %d\tper proc: %d\tFor ourself: %d \tNDust: %d \n",
+               NTotal, perProc, (int)bodiesIDs.size(), (int)dustPositions.size());
 }
 
 
@@ -639,6 +642,7 @@ int main(int argc, char** argv)
 
 #if ENABLE_LOG
   ENABLE_RUNTIME_LOG = false;
+  PREPEND_RANK       = false;
 #endif
 
 #ifdef USE_OPENGL
@@ -676,6 +680,7 @@ int main(int argc, char** argv)
 #endif
 #if ENABLE_LOG
     ADDUSAGE("     --log              enable logging ");
+    ADDUSAGE("     --prepend-rank     prepend the MPI rank in front of the log-lines ");
 #endif
         ADDUSAGE("     --direct           enable N^2 direct gravitation [" << (direct ? "on" : "off") << "]");
 #ifdef USE_OPENGL
@@ -709,6 +714,7 @@ int main(int argc, char** argv)
 #endif /* USE_DUST */
 #if ENABLE_LOG
 		opt.setFlag("log");
+		opt.setFlag("prepend-rank");
 #endif
     opt.setFlag("direct");
 #ifdef USE_OPENGL
@@ -736,7 +742,8 @@ int main(int argc, char** argv)
     if (opt.getFlag("displayfps")) displayFPS = true;
 
 #if ENABLE_LOG
-    if (opt.getFlag("log")) ENABLE_RUNTIME_LOG = true;
+    if (opt.getFlag("log"))           ENABLE_RUNTIME_LOG = true;
+    if (opt.getFlag("prepend-rank"))  PREPEND_RANK       = true;
 #endif    
 		char *optarg = NULL;
 		if ((optarg = opt.getValue("infile")))       fileName           = string(optarg);
@@ -772,38 +779,52 @@ int main(int argc, char** argv)
 #endif
 	/************** end - command line arguments ********/
 
-	
-  cerr << "Used settings: \n";
-	cerr << "Input filename " << fileName << endl;
-	cerr << "Log filename " << logFileName << endl;
-	cerr << "Theta: \t\t"             << theta        << "\t\teps: \t\t"          << eps << endl;
-	cerr << "Timestep: \t"          << timeStep     << "\t\ttEnd: \t\t"         << tEnd << endl;
-	cerr << "snapshotFile: \t"      << snapshotFile << "\tsnapshotIter: \t" << snapshotIter << endl;
-	cerr << "Input file: \t"        << fileName     << "\t\tdevID: \t\t"        << devID << endl;
-	cerr << "Remove dist: \t"   << remoDistance << endl;
-	cerr << "Snapshot Addition: \t"  << snapShotAdd << endl;
-	cerr << "Rebuild tree every " << rebuild_tree_rate << " timestep\n";
+#if 0
+  LOGF(stderr, "Used settings: \n");
+  LOGF(stderr, "Input filename %s \n", fileName.c_str());
+  LOGF(stderr, "Log filename %s \n", logFileName.c_str());
+  LOGF(stderr, "Theta: \t\t%f\t\teps: \t\t%f \n", theta, eps);
+
+  LOGF(stderr, "Timestep: \t%f\t\\ttEnd: \t\t%f \n", timeStep, tEnd);
+  LOGF(stderr, "snapshotFile: \t%s\t\tsnapshotIter: \t\t%d \n", snapshotFile.c_str(), snapshotIter);
+  LOGF(stderr, "devID: \t\t%d \t\t Remove dist: \t%f \n", devID, remoDistance);
+  LOGF(stderr, "Snapshot Addition: \t%d \n", snapShotAdd);
+
+  LOGF(stderr, "Rebuild tree every %d timestep\n", rebuild_tree_rate);
+#endif
+  //NOte cant use LOGF here since MPI isnt initialized yet
+        cerr << "[INIT]\tUsed settings: \n";
+        cerr << "[INIT]\tInput filename " << fileName << endl;
+        cerr << "[INIT]\tLog filename " << logFileName << endl;
+        cerr << "[INIT]\tTheta: \t\t"             << theta        << "\t\teps: \t\t"          << eps << endl;
+        cerr << "[INIT]\tTimestep: \t"          << timeStep     << "\t\ttEnd: \t\t"         << tEnd << endl;
+        cerr << "[INIT]\tsnapshotFile: \t"      << snapshotFile << "\tsnapshotIter: \t" << snapshotIter << endl;
+        cerr << "[INIT]\tInput file: \t"        << fileName     << "\t\tdevID: \t\t"        << devID << endl;
+        cerr << "[INIT]\tRemove dist: \t"   << remoDistance << endl;
+        cerr << "[INIT]\tSnapshot Addition: \t"  << snapShotAdd << endl;
+        cerr << "[INIT]\tRebuild tree every " << rebuild_tree_rate << " timestep\n";
+
         
         if( reduce_bodies_factor > 1 )
-          cout << "Reduce number of non-dust bodies by " << reduce_bodies_factor << " \n";
+          cout << "[INIT]\tReduce number of non-dust bodies by " << reduce_bodies_factor << " \n";
         if( reduce_dust_factor > 1 )
-          cout << "Reduce number of dust bodies by " << reduce_dust_factor << " \n";
+          cout << "[INIT]\tReduce number of dust bodies by " << reduce_dust_factor << " \n";
         
         #if ENABLE_LOG
           if (ENABLE_RUNTIME_LOG)
-            cerr << " Runtime logging is ENABLED \n";
+            cerr << "[INIT]\tRuntime logging is ENABLED \n";
           else
-            cerr << " Runtime logging is DISABLED \n";
+            cerr << "[INIT]\tRuntime logging is DISABLED \n";
         #endif
-        cerr << " Direct gravitation is " << (direct ? "ENABLED" : "DISABLED") << endl;
+        cerr << "[INIT]\tDirect gravitation is " << (direct ? "ENABLED" : "DISABLED") << endl;
         #if USE_OPENGL
-                cerr << "Tglow = " << TstartGlow << endl;
-                cerr << "dTglow = " << dTstartGlow << endl;
+                cerr << "[INIT]\tTglow = " << TstartGlow << endl;
+                cerr << "[INIT]\tdTglow = " << dTstartGlow << endl;
         #endif
         #ifdef USE_MPI                
-          cerr << " Code is built WITH MPI Support \n";
+          cerr << "[INIT]\tCode is built WITH MPI Support \n";
         #else
-          cerr << " Code is built WITHOUT MPI Support \n";          
+          cerr << "[INIT]\tCode is built WITHOUT MPI Support \n";
         #endif
 
   int NTotal, NFirst, NSecond, NThird;
@@ -825,6 +846,12 @@ int main(int argc, char** argv)
   int procId = tree->mpiGetRank();
   int nProcs = tree->mpiGetNProcs();
   
+  #if ENABLE_LOG
+    #ifdef USE_MPI
+      PREPEND_RANK_PROCID = procId;
+      PREPEND_RANK_NPROCS = nProcs;
+    #endif
+  #endif
   //Used for profiler
   char *gpu_prof_log;
   gpu_prof_log=getenv("CUDA_PROFILE_LOG");
@@ -868,7 +895,7 @@ int main(int argc, char** argv)
   }
 
 #ifdef TIPSYOUTPUT
-	fprintf(stderr, " t_current = %g\n", tree->get_t_current());
+	LOGF(stderr, " t_current = %g\n", tree->get_t_current());
 #endif
   
   
@@ -898,7 +925,9 @@ int main(int argc, char** argv)
   tree->setDataSetProperties(NTotal, NFirst, NSecond, NThird);
   
   if(procId == 0)  
-    cout << "Dataset particle information:\t" << NTotal << " " << NFirst << " " << NSecond << " " << NThird << std::endl;
+    LOG("Dataset particle information: Ntotal: %d\tNFirst: %d\tNSecond: %d\tNThird: %d \n",
+        NTotal, NFirst, NSecond, NThird);
+
   
   //Sanity check for standard plummer spheres
   double mass = 0, totalMass;
@@ -915,7 +944,7 @@ int main(int argc, char** argv)
   totalMass = mass;
 #endif
   
-  if(procId == 0)   cerr << "Combined Mass: "  << totalMass << "\tNTotal: " << NTotal << std::endl;
+  if(procId == 0)   LOGF(stderr, "Combined Mass: %f \tNTotal: %d \n", totalMass, NTotal);
 
   //Domain setup
   tree->createORB();
@@ -932,16 +961,18 @@ int main(int argc, char** argv)
   {
     if(tree->procId == 0)
       for(int i = 0;i< tree->nProcs;i++)     
-      {      
-        cerr << "Domain: " << i << " " << tree->domainRLow[i].x << " " << tree->domainRLow[i].y << " " << tree->domainRLow[i].z << " " 
-                                       << tree->domainRHigh[i].x << " " << tree->domainRHigh[i].y << " " << tree->domainRHigh[i].z <<endl;
+      {
+        LOGF(stderr,"Domain: %d\t%f %f %f \t %f %f %f \n",
+                    i,
+                    tree->domainRLow[i].x,  tree->domainRLow[i].y,  tree->domainRLow[i].z,
+                    tree->domainRHigh[i].x, tree->domainRHigh[i].y, tree->domainRHigh[i].z);
       }
   }
 
   tree->mpiSync();    
   
 
-  printf("Starting! \n");
+  LOG("Starting! \n");
   
 
   double t0 = tree->get_time();
@@ -973,9 +1004,9 @@ int main(int argc, char** argv)
   if(nProcs > 1)
   {    
     double ttemp = tree->get_time();
-    cout << "Before exchange tree has : " << tree->localTree.n << " particles \n" ;
+    LOG("Before exchange tree has : %d particles \n", tree->localTree.n);
     while(tree->exchange_particles_with_overflow_check(tree->localTree));
-    cout << "After exchange tree has : " << tree->localTree.n << " particles \n" ;    
+    LOG("After exchange tree has : %d particles \n", tree->localTree.n);
     //Send the new and old particles to the device
     tree->localTree.bodies_pos.h2d();
     tree->localTree.bodies_vel.h2d();
@@ -991,14 +1022,14 @@ int main(int argc, char** argv)
     tree->localTree.bodies_Pvel.copy(tree->localTree.bodies_vel,
                                      tree->localTree.bodies_vel.get_size());
     
-    printf("Initial exchange Took in total: %lg sec\n", tree->get_time()-ttemp);
+    LOG("Initial exchange Took in total: %lg sec\n", tree->get_time()-ttemp);
   }
   
   //If required set the dust particles
   #ifdef USE_DUST
     if( (int)dustPositions.size() > 0)
     {
-      fprintf(stderr, "Allocating dust properties for %d dust particles \n",
+      LOGF(stderr, "Allocating dust properties for %d dust particles \n",
           (int)dustPositions.size());   
       tree->localTree.setNDust((int)dustPositions.size());
       tree->allocateDustMemory(tree->localTree);
@@ -1022,11 +1053,11 @@ int main(int argc, char** argv)
 #ifdef USE_OPENGL
   octree::IterationData idata;
   initAppRenderer(argc, argv, tree, idata, displayFPS);
-  printf("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);  
+  LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
 #else
   tree->iterate(); 
 
-  printf("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
+  LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
   
   logFile.close();
 
