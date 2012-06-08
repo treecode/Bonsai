@@ -130,5 +130,105 @@ void octree::compute_properties(tree_structure &tree) {
     real4 r_min, r_max;
     getBoundariesGroups(tree, r_min, r_max); 
   }
+  
+  
+  
+#if 1
+  my_dev::dev_mem<float4>  output_min(devContext);
+  my_dev::dev_mem<float4>  output_max(devContext); //Lower bounds used for scaling? TODO
+  
+  memBufOffset = output_min.cmalloc_copy(tree.generalBuffer1, tree.n_coarse_groups, 0);
+  memBufOffset = output_max.cmalloc_copy(tree.generalBuffer1, tree.n_coarse_groups, memBufOffset);
+
+
+  my_dev::dev_mem<uint>  atomicValues(devContext);
+  atomicValues.cmalloc(256, false);
+  atomicValues.zeroMem();
+
+  segmentedCoarseGroupBoundary.set_arg<int>(0,    &tree.n_coarse_groups);
+  segmentedCoarseGroupBoundary.set_arg<int>(1,    &tree.n_groups);
+  segmentedCoarseGroupBoundary.set_arg<cl_mem>(2, atomicValues.p());
+  segmentedCoarseGroupBoundary.set_arg<cl_mem>(3, tree.coarseGroupCompact.p());
+  segmentedCoarseGroupBoundary.set_arg<cl_mem>(4, tree.groupSizeInfo.p());
+  segmentedCoarseGroupBoundary.set_arg<cl_mem>(5, tree.groupCenterInfo.p());
+  segmentedCoarseGroupBoundary.set_arg<cl_mem>(6, output_min.p());
+  segmentedCoarseGroupBoundary.set_arg<cl_mem>(7, output_max.p());
+  segmentedCoarseGroupBoundary.setWork(-1, NTHREAD_BOUNDARY, NBLOCK_BOUNDARY);
+  segmentedCoarseGroupBoundary.execute(execStream->s());
+  
+  execStream->sync();
+  output_min.d2h();
+  output_max.d2h();
+
+#if 0
+  string nodeFileName = "fullTreeStructure.txt";
+  char fileName[256];
+  sprintf(fileName, "fullTreeStructure-%d.txt", mpiGetRank());
+  ofstream nodeFile;
+  //nodeFile.open(nodeFileName.c_str());
+  nodeFile.open(fileName);
+
+  nodeFile << "NODES" << endl;
+
+
+  LOG("Found coarse group boundarys before increase, number of groups %d : \n", tree.n_coarse_groups);
+  for(int i=0; i < tree.n_coarse_groups; i++)
+  {
+
+//	  LOG("min: %f\t%f\t%f\tmax: %f\t%f\t%f \n",
+//			  output_min[i].x,output_min[i].y,output_min[i].z,
+//			  output_max[i].x,output_max[i].y,output_max[i].z);
+
+	  float3 center = make_float3(
+			  	  	  0.5*(output_max[i].x+output_min[i].x),
+			  	  	  0.5*(output_max[i].y+output_min[i].y),
+			  	  	  0.5*(output_max[i].z+output_min[i].z));
+
+	  float3 size = make_float3(fmaxf(fabs(center.x-output_min[i].x), fabs(center.x-output_max[i].x)),
+	                               fmaxf(fabs(center.y-output_min[i].y), fabs(center.y-output_max[i].y)),
+	                               fmaxf(fabs(center.z-output_min[i].z), fabs(center.z-output_max[i].z)));
+      nodeFile <<  center.x << "\t" << center.y << "\t" << center.z;
+      nodeFile << "\t" << size.x << "\t" << size.y << "\t" << size.z << "\n";
+
+
+   }
+  {
+	  //Get the local domain boundary based on group positions and sizes
+
+	  real4 r_min, r_max;
+	  getBoundariesGroups(tree, r_min, r_max);
+
+	  float3 center = make_float3( 0.5*(r_max.x+ r_min.x),0.5*(r_max.y+ r_min.y),0.5*(r_max.z+ r_min.z));
+
+	  float3 size = make_float3(fmaxf(fabs(center.x- r_min.x), fabs(center.x-r_max.x)),
+	                            fmaxf(fabs(center.y- r_min.y), fabs(center.y-r_max.y)),
+	                            fmaxf(fabs(center.z- r_min.z), fabs(center.z-r_max.z)));
+
+      nodeFile <<  center.x << "\t" << center.y << "\t" << center.z;
+      nodeFile << "\t" << size.x << "\t" << size.y << "\t" << size.z << "\n";
+
+  }
+
+
+   nodeFile.close();
+
+   sprintf(fileName, "fullTreeStructureParticles-%d.txt", mpiGetRank());
+   ofstream partFile;
+   partFile.open(fileName);
+   tree.bodies_Ppos.d2h();
+   partFile << "POINTS\n";
+   for(int i=0; i < tree.n; i++)
+   {
+     float4  pos =  tree.bodies_Ppos[i];
+     //partFile << i << "\t" << pos.x << "\t" << pos.y << "\t" << pos.z << endl;
+     partFile << pos.x << "\t" << pos.y << "\t" << pos.z << endl;
+   }
+   partFile.close();
+#endif
+
+   sendCurrentRadiusInfoCoarse(&output_min[0], &output_max[0], tree.n_coarse_groups);
+
+#endif  
+
 
 }

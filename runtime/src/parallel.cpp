@@ -63,7 +63,9 @@ void octree::mpiInit(int argc,char *argv[], int &procId, int &nProcs)
     xlowPrev  = new double4[nProcs];
     xhighPrev = new double4[nProcs];
     
-
+    
+    globalCoarseGrpCount     = new uint[nProcs];
+    globalCoarseGrpOffsets   = new uint[nProcs];
 
     nSampleAndSizeValues    = new int2[nProcs];  
     curSysState             = new sampleRadInfo[nProcs];
@@ -172,6 +174,57 @@ void octree::determine_sample_freq(int numberOfParticles)
     
     prevSampFreq = sampleFreq;
     
+}
+
+
+void octree::sendCurrentRadiusInfoCoarse(real4 *rmin, real4 *rmax, int n_coarseGroups)
+{
+	#ifdef USE_MPI
+	  int *coarseGrpCountBytes = new int[nProcs];
+	  int *receiveOffsetsBytes = new int[nProcs];
+	  //Send the number of coarseGroups that belongs to this process, and gather
+	  //That information from the other processors
+	  MPI_Allgather(&n_coarseGroups,            sizeof(int),  MPI_BYTE,
+					this->globalCoarseGrpCount, sizeof(uint), MPI_BYTE, MPI_COMM_WORLD);
+
+	  //Compute offsets using prefix sum and total number of groups we will receive
+	  this->globalCoarseGrpOffsets[0] = 0;
+	  coarseGrpCountBytes[0]          = this->globalCoarseGrpCount[0]*sizeof(real4);
+	  receiveOffsetsBytes[0]          = 0;
+	  for(int i=1; i < nProcs; i++)
+	  {
+		this->globalCoarseGrpOffsets[i]  = this->globalCoarseGrpOffsets[i-1] + this->globalCoarseGrpCount[i-1];
+
+		coarseGrpCountBytes[i] = this->globalCoarseGrpCount[i]  *sizeof(real4);
+		receiveOffsetsBytes[i] = this->globalCoarseGrpOffsets[i]*sizeof(real4);
+
+		LOGF(stderr,"Proc: %d Received on idx: %d\t%d prefix: %d \n",
+					 procId, i, globalCoarseGrpCount[i], globalCoarseGrpOffsets[i]);
+	  }
+
+	  int totalNumberOfGroups = this->globalCoarseGrpOffsets[nProcs-1]+this->globalCoarseGrpCount[nProcs-1];
+
+	  //Allocate memory
+	  if(coarseGroupBoundMin) delete[]	coarseGroupBoundMin;
+	  if(coarseGroupBoundMax) delete[]	coarseGroupBoundMax;
+
+	  coarseGroupBoundMax = new real4[totalNumberOfGroups];
+	  coarseGroupBoundMin = new real4[totalNumberOfGroups];
+
+	  //Exchange the coarse group boundaries
+	  MPI_Allgatherv(rmin, n_coarseGroups*sizeof(real4), MPI_BYTE,
+					 coarseGroupBoundMin, coarseGrpCountBytes,
+					 receiveOffsetsBytes, MPI_BYTE, MPI_COMM_WORLD);
+	  MPI_Allgatherv(rmax, n_coarseGroups*sizeof(real4), MPI_BYTE,
+					 coarseGroupBoundMax, coarseGrpCountBytes,
+					 receiveOffsetsBytes, MPI_BYTE, MPI_COMM_WORLD);
+
+	  delete[] coarseGrpCountBytes;
+	  delete[] receiveOffsetsBytes;
+	#else
+	  //TODO check if we need something here
+	//  curSysState[0] = curProcState;
+	#endif
 }
 
 //Uses one communication by storing data in one buffer

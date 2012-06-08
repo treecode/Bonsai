@@ -172,7 +172,8 @@ void octree::load_kernels() {
   boundaryReductionGroups.setContext(devContext);  
   build_body2group_list.setContext(devContext);
   store_groups.setContext(devContext);
-  
+  segmentedCoarseGroupBoundary.setContext(devContext);
+  mark_coarse_group_boundaries.setContext(devContext);
   /* load kernels tree properties */
   
 #ifdef USE_CUDA
@@ -186,6 +187,8 @@ void octree::load_kernels() {
   boundaryReductionGroups.load_source("./build_tree.ptx", pathName.c_str());
   build_body2group_list.load_source("./build_tree.ptx", pathName.c_str());
   store_groups.load_source("./build_tree.ptx", pathName.c_str());
+  segmentedCoarseGroupBoundary.load_source("./build_tree.ptx", pathName.c_str());
+  mark_coarse_group_boundaries.load_source("./build_tree.ptx", pathName.c_str());
   
   /* create kernels */
 
@@ -198,7 +201,9 @@ void octree::load_kernels() {
   boundaryReduction.create("boundaryReduction");
   boundaryReductionGroups.create("boundaryReductionGroups");
   build_body2group_list.create("build_body2group_list");
-  store_groups.create("store_group_list");
+  store_groups.create("store_group_list");  
+  segmentedCoarseGroupBoundary.create("segmentedCoarseGroupBoundary");
+  mark_coarse_group_boundaries.create("mark_coarse_group_boundaries");
 
 #else
   build_key_list.load_source("build_tree.cl", "");

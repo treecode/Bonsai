@@ -226,7 +226,8 @@ void octree::build (tree_structure &tree) {
   
 
   int memBufOffset = validList.cmalloc_copy  (tree.generalBuffer1, tree.n*2, 0);
-      memBufOffset = compactList.cmalloc_copy(tree.generalBuffer1, tree.n*2, memBufOffset);      
+  int memBufOffsetValidList = memBufOffset;
+      memBufOffset = compactList.cmalloc_copy(tree.generalBuffer1, tree.n*2, memBufOffset);
       memBufOffset = node_key.cmalloc_copy   (tree.generalBuffer1, tree.n,   memBufOffset);
       memBufOffset = levelOffset.cmalloc_copy(tree.generalBuffer1, 256,      memBufOffset);
       memBufOffset = maxLevel.cmalloc_copy   (tree.generalBuffer1, 256,      memBufOffset);
@@ -401,7 +402,7 @@ void octree::build (tree_structure &tree) {
   //The coarse group boundaries are based on the tree-structure. These coarse boundaries
   //will be used for getting the multi-box/group group boundaries. Also it serves as a 
   //boundary mechanism independent of the max-distance trick between particles that we used 
-  //before
+  //before. So first find the min level from where we can take the boundaries
   const int minCoarseGroups = 50;
   int minCoarseGroupLevelIdx = 0;
   for(int i=0; i < level; i++){
@@ -411,18 +412,11 @@ void octree::build (tree_structure &tree) {
       break;
     }
   }
+  tree.courseGroupIdx = minCoarseGroupLevelIdx;
   
-//   fprintf(stderr, "Gevonden op level: %d  %d %d \n", minCoarseGroupLevelIdx, 
-//           tree.level_list[minCoarseGroupLevelIdx].x , tree.level_list[minCoarseGroupLevelIdx].y);
-//   tree.node_bodies.d2h();
-//   for(int i=0; i < tree.level_list[minCoarseGroupLevelIdx].y; i++)
-//   {
-//     const uint2 bij          =  tree.node_bodies[i];
-//     const uint firstChild    =  bij.x & ILEVELMASK;
-//     const uint lastChild     =  bij.y;  //TODO maybe have to increase it by 1
-//     fprintf(stderr, "IN node: %d \t\t Start-end: %d \t %d \n",i, firstChild, lastChild);
-//   }
-
+  
+  //Now use the previous computed offsets to build all boundaries. The coarse ones and the
+  //group ones (eg every number of particles)
   validList.zeroMem();
   //The newest group creation method!
   define_groups.set_arg<int>    (0, &tree.n);  
@@ -434,32 +428,6 @@ void octree::build (tree_structure &tree) {
   define_groups.setWork(tree.n, 128);  
   define_groups.execute(execStream->s());
   
-  execStream->sync();
-  
-//   validList.d2h();
-//   for(int i=0; i < 128; i++)
-//   {
-//     fprintf(stderr, "%d : \t %d \t\t %d \n", i,
-//             validList[2*i], validList[2*i+0]);
-//   }
-/*  
-  gpuCompact(devContext, validList, compactList, tree.n*2, &validCount);  
-  LOG("Found number of groups: %d \n", validCount/2);
-
-exit(0);*/
-
-
-//   validList.zeroMem();
-//   //The newest group creation method!
-//   define_groups.set_arg<int>   (0, &tree.n);  
-//   define_groups.set_arg<cl_mem>(1, validList.p());    
-//   define_groups.set_arg<cl_mem>(2, tree.bodies_Ppos.p());
-//   define_groups.set_arg<float> (3, &maxDist);
-//   define_groups.set_arg<cl_mem>(4, tree.node_level_list.p());
-//   define_groups.set_arg<int>   (5, &level);
-//   define_groups.setWork(tree.n, 128);  
-//   define_groups.execute(execStream->s());
-//   
    
   //Have to copy it back to host since we need it in compute props
   LOG("Finished level list \n");
@@ -469,11 +437,31 @@ exit(0);*/
     LOG("node_level_list: %d \t%d\n", i, tree.node_level_list[i]);
   }
   
-  gpuCompact(devContext, validList, compactList, tree.n*2, &validCount);  
-  LOG("Found number of groups: %d \n", validCount/2);
-
-  tree.n_groups = validCount/2;
   //Now compact validList to get the list of group ids
+  gpuCompact(devContext, validList, compactList, tree.n*2, &validCount);  
+  this->resetCompact();
+  tree.n_groups = validCount/2;
+  LOG("Found number of groups: %d \n", tree.n_groups);
+ 
+
+  //Mark the boundaries of the coarse groups. We have to do this again since it was combined
+  //with all other groups in the previous step
+  validList.zeroMem();  
+  mark_coarse_group_boundaries.set_arg<int>   (0, &tree.level_list[minCoarseGroupLevelIdx].y);
+  mark_coarse_group_boundaries.set_arg<cl_mem>(1, validList.p());
+  mark_coarse_group_boundaries.set_arg<cl_mem>(2, tree.node_bodies.p());
+  mark_coarse_group_boundaries.set_arg<cl_mem>(3, tree.node_level_list.p());
+  mark_coarse_group_boundaries.setWork(tree.level_list[minCoarseGroupLevelIdx].y, 128);  
+  mark_coarse_group_boundaries.execute(execStream->s());
+
+  //Store the group list but also compact the coarse group boundaries
+  my_dev::dev_mem<uint>  coarseGroupValidList(devContext);
+
+  memBufOffset = coarseGroupValidList. cmalloc_copy(tree.generalBuffer1, 
+                                                    tree.n_groups, memBufOffsetValidList);
+
+  tree.coarseGroupCompact.cmalloc(tree.level_list[minCoarseGroupLevelIdx].y, false);
+
   tree.group_list.cmalloc(tree.n_groups , false);  
   tree.n_active_groups = tree.n_groups; //Set all groups active in shared-time-step mode
   
@@ -482,19 +470,48 @@ exit(0);*/
   store_groups.set_arg<cl_mem>(2, compactList.p());    
   store_groups.set_arg<cl_mem>(3, tree.body2group_list.p());     
   store_groups.set_arg<cl_mem>(4, tree.group_list.p());     
+  store_groups.set_arg<cl_mem>(5, validList.p());  
+  store_groups.set_arg<cl_mem>(6, coarseGroupValidList.p());
   store_groups.setWork(-1, NCRIT, tree.n_groups);  
   store_groups.execute(execStream->s());  
-  
-  
-//   tree.group_list.d2h();
-//   for(int i=0; i < tree.n_groups; i++)
-//   {
-//     fprintf(stderr, "%d \t %d \t %d \n", i, 
-//             tree.group_list[i].x, tree.group_list[i].y);
-//   }
-  
-  
 
+  //Now compact validList to get the list of group ids
+
+  int n_course = 0;
+  gpuCompact(devContext, coarseGroupValidList, tree.coarseGroupCompact, tree.n_groups, &n_course);
+  this->resetCompact();
+  LOGF(stderr, "Coarse groups %d \n", n_course);
+  tree.n_coarse_groups = n_course;
+
+#if 0
+  tree.coarseGroupCompact.d2h();
+  tree.group_list.d2h();
+
+  for(int i=0; i < n_course; i++)
+  {
+	    int start = tree.group_list[tree.coarseGroupCompact[i]].x;
+	    int end   = tree.group_list[tree.coarseGroupCompact[i]].y;
+
+	    if(i == n_course-1){
+//	    	   fprintf(stderr,"Compactgrps Final %d\t %d \t %d\t%d\t Part: %d \t %d \n",
+//	    			   i, tree.coarseGroupCompact[i], tree.n_groups,
+//	    			   tree.n_groups - tree.coarseGroupCompact[i],
+//	    			   start, end);
+	    }
+	    else
+	    {
+	    int end2 = tree.group_list[tree.coarseGroupCompact[i+1]].x;
+
+
+//	   fprintf(stderr,"Compactgrps %d\t %d \t %d\t%d\t Part: %d \t %d \n",
+//				  i, tree.coarseGroupCompact[i],  tree.coarseGroupCompact[i+1],
+//				  tree.coarseGroupCompact[i+1] -  tree.coarseGroupCompact[i],
+//				  start, end2);
+	    }
+  }
+#endif
+
+  
   //Memory allocation for the valid group lists
   if(tree.active_group_list.get_size() > 0)
   {

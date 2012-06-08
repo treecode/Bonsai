@@ -11,6 +11,7 @@ PROF_MODULE(build_tree);
 //////////////////////////////
 #define LEVEL_MIN 3
 
+#if 1
 KERNEL_DECLARE(boundaryReduction)(const int n_particles,
                                             real4      *positions,
                                             float3     *output_min,
@@ -95,6 +96,7 @@ KERNEL_DECLARE(boundaryReduction)(const int n_particles,
 
 }
 
+#endif
 
 //Get the domain size, by taking into account the group size
 KERNEL_DECLARE(boundaryReductionGroups)(const int n_groups,
@@ -684,10 +686,12 @@ KERNEL_DECLARE(build_group_list2)(const int n_particles,
 //Store per particle the group id it belongs to
 //and the start and end particle number of the groups  
 KERNEL_DECLARE(store_group_list)(int    n_particles,
-                                            int n_groups,
-                                            uint  *validList,
-                                            uint  *body2group_list,
-                                            uint2 *group_list)
+                                 int n_groups,
+                                 uint  *validList,
+                                 uint  *body2group_list,
+                                 uint2 *group_list,
+                                 uint  *validListCoarseGrpPart,
+                                 uint  *validListCoarseGrp)
 {
   CUXTIMER("store_group_list");
   uint bid = blockIdx.y * gridDim.x + blockIdx.x;
@@ -702,6 +706,13 @@ KERNEL_DECLARE(store_group_list)(int    n_particles,
   if((start + tid) < end)
   {
     body2group_list[start + tid] = bid;
+
+    //Check if we need to mark this group as a coarse-group-boundary
+    //This could be combined with mark_coarse_group_boundaries to save a kernel launch
+    if(validListCoarseGrpPart[start + tid] == 1)
+    {
+      validListCoarseGrp[bid] = (bid) | (uint)(1 << 31);
+    }
   }
 
   if(tid == 0)
@@ -709,6 +720,33 @@ KERNEL_DECLARE(store_group_list)(int    n_particles,
      group_list[bid] = make_uint2(start,end);
   }
 }
+
+//Mark the particle boundaries that form the coarse groups. Used in the
+//store_group_list kernel
+KERNEL_DECLARE(mark_coarse_group_boundaries)(const int n_coarseGroupLevelNodes,
+                                            uint  *validList,
+                                            uint2 *node_bodies,                                    
+                                            int   *node_level_list)
+{
+  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
+  uint tid = threadIdx.x;
+  uint idx = bid * blockDim.x + tid;
+  //Now we get some info from tree-structure for coarse groups
+  //Note that we do NOT include the last groups since it only sets
+  //the final particle to invalid, which we will do by default anyway
+  //this way we save a check on particle boundary
+  if (idx < (n_coarseGroupLevelNodes-1)) //THe -1 to prevent last node
+  {
+    const uint2 bij          =  node_bodies[idx];
+    const uint firstChild    =  bij.x & ILEVELMASK;
+    const uint lastChild     =  bij.y;   
+
+    //Set the boundaries, start and end 
+    validList[firstChild]  = 1;
+    validList[lastChild]   = 1;
+  }
+}
+
 
 //////////// Functions specific for dust //////////////////
 
@@ -778,10 +816,10 @@ KERNEL_DECLARE(define_dust_groups)(int    n_particles,
 //since  in my infinite wisdom I decided to make the comparisons
 //slightly different when making the new define_dust_groups
 KERNEL_DECLARE(store_dust_groups)(int    n_groups,
-                                            uint  *validList,
-                                            uint  *body2group_list,
-                                            uint2 *group_list,
-                                            uint  *activeDustGroups)
+                                  uint  *validList,
+                                  uint  *body2group_list,
+                                  uint2 *group_list,
+                                  uint  *activeDustGroups)
 {
   uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   uint tid = threadIdx.x;
@@ -881,3 +919,125 @@ KERNEL_DECLARE(correct_dust_particles)(const int n_bodies,
   acc0    [idx] = a1;
 }
 
+
+
+
+//This is a simple place holder, example function
+//depending on the data to be summarized
+//it can be extended/modified
+//Using atomics to prevent launch overhead when there
+//are only few particles. Could be modified into 
+//non atomic with Dynamic Parallism
+KERNEL_DECLARE(segmentedCoarseGroupBoundary)(
+                                    const int n_coarse_groups, //Number of groups that have to be summarized
+                                    const int n_groups,
+                                    uint     *atomicValues,
+                                    uint     *coarseGroupList,
+                                    float4   *grpSizes,
+                                    float4   *grpPositions,
+                                    float4   *output_min,
+                                    float4   *output_max)
+{
+//   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
+  const uint tid = threadIdx.x;
+  //const uint idx = bid * blockDim.x + tid;
+
+  volatile __shared__ float3 shmem[512];
+  int *shmem2 = (int*)&shmem;
+
+  uint bid;
+
+  while(true)
+  {
+    //Get a ticket to the data-group that has to be processed
+    if(threadIdx.x == 0)
+    {
+      bid         = atomicAdd(&atomicValues[0], 1);
+      shmem2[0]    = bid;
+    }
+    __syncthreads();
+
+    bid   = shmem2[0];
+
+    if (bid >= n_coarse_groups) return; 
+
+    const uint firstChild    =  coarseGroupList[bid];
+    const uint lastChild     =  (bid == (n_coarse_groups-1)) ? n_groups : coarseGroupList[bid+1];
+     
+    __syncthreads();
+
+#if 1
+    float3 r_min = make_float3(+1e10f, +1e10f, +1e10f);
+    float3 r_max = make_float3(-1e10f, -1e10f, -1e10f);
+
+    volatile float3 *sh_rmin = (float3*)&shmem [ 0];
+    volatile float3 *sh_rmax = (float3*)&shmem[256];
+    sh_rmin[tid].x = r_min.x; sh_rmin[tid].y = r_min.y; sh_rmin[tid].z = r_min.z;
+    sh_rmax[tid].x = r_max.x; sh_rmax[tid].y = r_max.y; sh_rmax[tid].z = r_max.z;
+
+    // perform first level of reduction, reading from global memory, writing to shared memory
+    const int blockSize   = blockDim.x;
+    unsigned int i        = firstChild + tid;
+
+    float4 pos;
+    float4 size;
+
+    while (i < lastChild)
+    {
+        if (i < lastChild)
+        {
+          pos             = grpPositions[i];
+          size            = grpSizes[i];
+          r_min.x = fminf(pos.x-size.x, r_min.x);
+          r_min.y = fminf(pos.y-size.y, r_min.y);
+          r_min.z = fminf(pos.z-size.z, r_min.z);
+          r_max.x = fmaxf(pos.x+size.x, r_max.x);
+          r_max.y = fmaxf(pos.y+size.y, r_max.y);
+          r_max.z = fmaxf(pos.z+size.z, r_max.z);
+        }
+        if (i + blockSize < lastChild)
+        {
+          pos             = grpPositions[i+blockSize];
+          size            = grpSizes[i+blockSize];
+          r_min.x = fminf(pos.x-size.x, r_min.x);
+          r_min.y = fminf(pos.y-size.y, r_min.y);
+          r_min.z = fminf(pos.z-size.z, r_min.z);
+          r_max.x = fmaxf(pos.x+size.x, r_max.x);
+          r_max.y = fmaxf(pos.y+size.y, r_max.y);
+          r_max.z = fmaxf(pos.z+size.z, r_max.z);
+        }
+        i += 2*blockSize;
+      }
+
+      sh_rmin[tid].x = r_min.x; sh_rmin[tid].y = r_min.y; sh_rmin[tid].z = r_min.z;
+      sh_rmax[tid].x = r_max.x; sh_rmax[tid].y = r_max.y; sh_rmax[tid].z = r_max.z;
+
+      __syncthreads();
+      // do reduction in shared mem  
+      if(blockDim.x >= 512) if (tid < 256) {sh_MinMax(tid, tid + 256, &r_min, &r_max, sh_rmin, sh_rmax);} __syncthreads();
+      if(blockDim.x >= 256) if (tid < 128) {sh_MinMax(tid, tid + 128, &r_min, &r_max, sh_rmin, sh_rmax);} __syncthreads();
+      if(blockDim.x >= 128) if (tid < 64)  {sh_MinMax(tid, tid + 64,  &r_min, &r_max, sh_rmin, sh_rmax);} __syncthreads();
+
+      if (tid < 32) 
+      {
+        sh_MinMax(tid, tid + 32, &r_min, &r_max, sh_rmin,sh_rmax);
+        sh_MinMax(tid, tid + 16, &r_min, &r_max, sh_rmin,sh_rmax);
+        sh_MinMax(tid, tid +  8, &r_min, &r_max, sh_rmin,sh_rmax);
+        sh_MinMax(tid, tid +  4, &r_min, &r_max, sh_rmin,sh_rmax);
+        sh_MinMax(tid, tid +  2, &r_min, &r_max, sh_rmin,sh_rmax);
+        sh_MinMax(tid, tid +  1, &r_min, &r_max, sh_rmin,sh_rmax);
+      }
+
+
+      // write result for this block to global mem
+      if (tid == 0)
+      {
+        //Compiler doesnt allow: volatile float3 = float3
+    	output_min[bid].x = sh_rmin[0].x; output_min[bid].y = sh_rmin[0].y;
+        output_min[bid].z = sh_rmin[0].z;
+        output_max[bid].x = sh_rmax[0].x; output_max[bid].y = sh_rmax[0].y;
+        output_max[bid].z = sh_rmax[0].z;
+    }
+#endif
+  } //End while
+}//end segmentedSummary

@@ -439,7 +439,7 @@ bool octree::iterate_once(IterationData &idata) {
 
     //Compute energies
     devContext.startTiming(execStream->s());
-    double de = compute_energies(this->localTree); de=de;
+    double de = compute_energies(this->localTree);
     devContext.stopTiming("Energy", 7, execStream->s());
 
     if(snapshotIter > 0)

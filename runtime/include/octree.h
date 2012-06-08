@@ -98,6 +98,9 @@ class tree_structure
     int n_nodes;                          //Total number of nodes in the tree (including leafs)
     int n_groups;                         //Number of groups
     int n_levels;                         //Depth of the tree
+    
+    int courseGroupIdx;                   //Node idx that signifies end of coarse groups
+    int n_coarse_groups;
 
     bool needToReorder;			//Set to true if SetN is called so we know we need to change particle order
     my_dev::dev_mem<real4> bodies_pos;    //The particles positions
@@ -123,6 +126,7 @@ class tree_structure
     my_dev::dev_mem<uint>  body2group_list; //Contains per particle to which group it belongs
 
     my_dev::dev_mem<uint2>  group_list;     //The group to particle relation
+    my_dev::dev_mem<uint>   coarseGroupCompact; //Holds the ids of the groups that define the let boundaries
 
     //Variables used for properties
     my_dev::dev_mem<real4>  multipole;      //Array storing the properties for each node (mass, mono, quad pole)
@@ -257,6 +261,7 @@ class tree_structure
     interactions.setContext(*devContext);
 
     group_list.setContext(*devContext);
+    coarseGroupCompact.setContext(*devContext);
 
     //BH Opening
     boxSizeInfo.setContext(*devContext);
@@ -381,6 +386,8 @@ protected:
   my_dev::kernel  boundaryReduction;
   my_dev::kernel  boundaryReductionGroups;
   my_dev::kernel  build_body2group_list;
+  my_dev::kernel  segmentedCoarseGroupBoundary;
+  my_dev::kernel  mark_coarse_group_boundaries;
 
 
   // tree properties kernels
@@ -564,10 +571,22 @@ public:
   double4 *domainRLow, *domainRHigh;    //Contains the current domain distribution
   double4 *currentRLow, *currentRHigh;  //Contains the actual domain distribution, to be used
                                         //during the LET-tree generatino
+
+  std::vector<double4> currentRLowCoarse;		//The coarse group boundaries for all processes
+  std::vector<double4> currentRHighCoarse;		//The coarse group boundaries for all processes
+  std::vector<uint4>   currentRCoarseOffsets;	//The offsets to get to the right group and number of coarse groups
+  	  	  	  	  	  	  	  	  	  	  	    //uint4 for info, could be done in uint2
                                         
   double4 *xlowPrev, *xhighPrev;                                        
   
   int4 *domHistoryLow, *domHistoryHigh;         //used to remember the domain boundaries to improve load balance
+  
+  uint *globalCoarseGrpCount;
+  uint *globalCoarseGrpOffsets;
+  
+  real4 *coarseGroupBoundMin;		//Boundaries of coarse groups for all processors, min locations
+  real4 *coarseGroupBoundMax;		//Boundaries of coarse groups for all processors, max locations
+
 
   real maxLocalEps;               //Contains the maximum local eps/softening value
                                   //will be stored in cur_xlow[i].w after exchange
@@ -618,6 +637,7 @@ public:
 
   void sendSampleAndRadiusInfo(int nsample, real4 &rmin, real4 &rmax);
   void sendCurrentRadiusInfo(real4 &rmin, real4 &rmax);
+  void sendCurrentRadiusInfoCoarse(real4 *, real4*, int);
   
   //Function for Device assisted domain division
   void gpu_collect_sample_particles(int nSample, real4 *sampleParticles);
@@ -785,6 +805,10 @@ public:
     gravStream = NULL;
     copyStream = NULL;
     
+    coarseGroupBoundMin	= NULL;
+    coarseGroupBoundMax	= NULL;
+
+
     prevDurStep = -1;   //Set it to negative so we know its the first step
 
 //     my_dev::base_mem::printMemUsage();   
@@ -810,7 +834,13 @@ public:
     delete[] xlowPrev;
     delete[] xhighPrev;
     delete[] domHistoryLow;
-    delete[] domHistoryHigh;    
+    delete[] domHistoryHigh;   
+    
+    if(globalCoarseGrpCount)    delete[] globalCoarseGrpCount;
+    if(globalCoarseGrpOffsets)  delete[] globalCoarseGrpOffsets;    
+    if(coarseGroupBoundMin)		delete[] coarseGroupBoundMin;
+    if(coarseGroupBoundMax)		delete[] coarseGroupBoundMax;
+    
 #if USE_B40C
     delete sorter;
 #endif
