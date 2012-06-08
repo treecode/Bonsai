@@ -193,13 +193,13 @@ void octree::sendCurrentRadiusInfoCoarse(real4 *rmin, real4 *rmax, int n_coarseG
 	  receiveOffsetsBytes[0]          = 0;
 	  for(int i=1; i < nProcs; i++)
 	  {
-		this->globalCoarseGrpOffsets[i]  = this->globalCoarseGrpOffsets[i-1] + this->globalCoarseGrpCount[i-1];
+      this->globalCoarseGrpOffsets[i]  = this->globalCoarseGrpOffsets[i-1] + this->globalCoarseGrpCount[i-1];
 
-		coarseGrpCountBytes[i] = this->globalCoarseGrpCount[i]  *sizeof(real4);
-		receiveOffsetsBytes[i] = this->globalCoarseGrpOffsets[i]*sizeof(real4);
+      coarseGrpCountBytes[i] = this->globalCoarseGrpCount[i]  *sizeof(real4);
+      receiveOffsetsBytes[i] = this->globalCoarseGrpOffsets[i]*sizeof(real4);
 
-		LOGF(stderr,"Proc: %d Received on idx: %d\t%d prefix: %d \n",
-					 procId, i, globalCoarseGrpCount[i], globalCoarseGrpOffsets[i]);
+      LOGF(stderr,"Proc: %d Received on idx: %d\t%d prefix: %d \n",
+             procId, i, globalCoarseGrpCount[i], globalCoarseGrpOffsets[i]);
 	  }
 
 	  int totalNumberOfGroups = this->globalCoarseGrpOffsets[nProcs-1]+this->globalCoarseGrpCount[nProcs-1];
@@ -208,8 +208,14 @@ void octree::sendCurrentRadiusInfoCoarse(real4 *rmin, real4 *rmax, int n_coarseG
 	  if(coarseGroupBoundMin) delete[]	coarseGroupBoundMin;
 	  if(coarseGroupBoundMax) delete[]	coarseGroupBoundMax;
 
+    if(coarseGroupBoxCenter) delete[] coarseGroupBoxCenter;
+    if(coarseGroupBoxSize)   delete[] coarseGroupBoxSize;
+
 	  coarseGroupBoundMax = new real4[totalNumberOfGroups];
 	  coarseGroupBoundMin = new real4[totalNumberOfGroups];
+
+	  coarseGroupBoxCenter = new double4[totalNumberOfGroups];
+	  coarseGroupBoxSize   = new double4[totalNumberOfGroups];
 
 	  //Exchange the coarse group boundaries
 	  MPI_Allgatherv(rmin, n_coarseGroups*sizeof(real4), MPI_BYTE,
@@ -218,6 +224,22 @@ void octree::sendCurrentRadiusInfoCoarse(real4 *rmin, real4 *rmax, int n_coarseG
 	  MPI_Allgatherv(rmax, n_coarseGroups*sizeof(real4), MPI_BYTE,
 					 coarseGroupBoundMax, coarseGrpCountBytes,
 					 receiveOffsetsBytes, MPI_BYTE, MPI_COMM_WORLD);
+
+	  //Compute center and size
+	  for(int i= 0; i < totalNumberOfGroups; i++)
+	  {
+
+      double4 boxCenter = {     0.5*(coarseGroupBoundMin[i].x  + coarseGroupBoundMax[i].x),
+                                0.5*(coarseGroupBoundMin[i].y  + coarseGroupBoundMax[i].y),
+                                0.5*(coarseGroupBoundMin[i].z  + coarseGroupBoundMax[i].z), 0};
+      double4 boxSize   = {fabs(0.5*(coarseGroupBoundMax[i].x - coarseGroupBoundMin[i].x)),
+                           fabs(0.5*(coarseGroupBoundMax[i].y - coarseGroupBoundMin[i].y)),
+                           fabs(0.5*(coarseGroupBoundMax[i].z - coarseGroupBoundMin[i].z)), 0};
+
+      coarseGroupBoxCenter[i] = boxCenter;
+      coarseGroupBoxSize[i]   = boxSize;
+
+	  }
 
 	  delete[] coarseGrpCountBytes;
 	  delete[] receiveOffsetsBytes;
@@ -1701,11 +1723,17 @@ void octree::essential_tree_exchange(vector<real4> &treeStructure, tree_structur
       
       int particleCount, nodeCount;
       
-  //     double t1 = get_time();    
+       double t1 = get_time();
+//      create_local_essential_tree_count(bodies, multipole, nodeSizeInfo, nodeCenterInfo,
+//                                  boxCenter, boxSize, (float)currentRLow[ibox].w, node_begend.x, node_begend.y,
+//                                  particleCount, nodeCount);
       create_local_essential_tree_count(bodies, multipole, nodeSizeInfo, nodeCenterInfo,
-                                  boxCenter, boxSize, (float)currentRLow[ibox].w, node_begend.x, node_begend.y,
-                                  particleCount, nodeCount);    
-  //     printf("LET count: %lg\n", get_time()-t1);   
+                                        ibox, (float)currentRLow[ibox].w, node_begend.x, node_begend.y,
+                                        particleCount, nodeCount);
+
+
+       LOG("LET count: %lg \t Coarse groups %d\n", get_time()-t1,  globalCoarseGrpCount[ibox]);
+       LOG("LET count:  Particle count %d\n", particleCount);
       //Buffer that will contain all the data:
       //|real4| 2*particleCount*real4| nodes*real4 | nodes*real4 | nodes*3*real4 |
       //1 + 2*particleCount + nodeCount + nodeCount + 3*nodeCount
@@ -1725,9 +1753,12 @@ void octree::essential_tree_exchange(vector<real4> &treeStructure, tree_structur
       int bufferSize = 1 + 2*particleCount + 5*nodeCount;
       real4 *letDataBuffer = new real4[bufferSize];
           
+//      create_local_essential_tree_fill(bodies, velocities, multipole, nodeSizeInfo, nodeCenterInfo,
+//                                  boxCenter, boxSize, (float)currentRLow[ibox].w, node_begend.x, node_begend.y,
+//                                  particleCount, nodeCount, letDataBuffer);
       create_local_essential_tree_fill(bodies, velocities, multipole, nodeSizeInfo, nodeCenterInfo,
-                                  boxCenter, boxSize, (float)currentRLow[ibox].w, node_begend.x, node_begend.y,
-                                  particleCount, nodeCount, letDataBuffer);        
+                                      ibox, (float)currentRLow[ibox].w, node_begend.x, node_begend.y,
+                                      particleCount, nodeCount, letDataBuffer);
                                   
   /*    
       printf("LET count&fill: %lg\n", get_time()-t1);   
@@ -2289,9 +2320,12 @@ void octree::create_local_essential_tree(real4* bodies, real4* multipole, real4*
 }
 
 
+//void octree::create_local_essential_tree_fill(real4* bodies, real4* velocities, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+//                                         double4 boxCenter, double4 boxSize, float group_eps, int start, int end,
+//                                         int particleCount, int nodeCount, real4 *dataBuffer)
 void octree::create_local_essential_tree_fill(real4* bodies, real4* velocities, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,   
-                                         double4 boxCenter, double4 boxSize, float group_eps, int start, int end, 
-                                         int particleCount, int nodeCount, real4 *dataBuffer)
+                                              int remoteId, float group_eps, int start, int end,
+                                              int particleCount, int nodeCount, real4 *dataBuffer)
 {
     //Walk the tree as is done on device, level by level
     vector<int> curLevel;
@@ -2370,7 +2404,7 @@ void octree::create_local_essential_tree_fill(real4* bodies, real4* velocities, 
           //Very inefficient this but for testing I have to live with it...                                                                                   
           float node_eps_val = multipole[node*3 + 1].w; 
         #endif         
-        
+#if 0
         #ifdef IMPBH
           //Improved barnes hut version
           float4 nodeCOM     = multipole[node*3 + 0];
@@ -2392,6 +2426,74 @@ void octree::create_local_essential_tree_fill(real4* bodies, real4* velocities, 
           
         #endif         
         
+#endif //if0
+
+        bool split = false;
+      #if 0
+              double4 boxCenter = {     0.5*(currentRLow[remoteId].x  + currentRHigh[remoteId].x),
+                                        0.5*(currentRLow[remoteId].y  + currentRHigh[remoteId].y),
+                                        0.5*(currentRLow[remoteId].z  + currentRHigh[remoteId].z), 0};
+              double4 boxSize   = {fabs(0.5*(currentRHigh[remoteId].x - currentRLow[remoteId].x)),
+                                   fabs(0.5*(currentRHigh[remoteId].y - currentRLow[remoteId].y)),
+                                   fabs(0.5*(currentRHigh[remoteId].z - currentRLow[remoteId].z)), 0};
+
+              #ifdef IMPBH
+                //Improved barnes hut version
+                float4 nodeCOM     = multipole[node*3 + 0];
+                nodeCOM.w = nodeCenter.w;
+
+                #ifdef INDSOFT
+                   split = split_node_grav_impbh(nodeCOM, boxCenter, boxSize, group_eps, node_eps_val);
+                 #else
+                   split = split_node_grav_impbh(nodeCOM, boxCenter, boxSize);
+                #endif
+              #else
+                //Minimal distance version
+                #ifdef INDSOFT
+                  split = split_node(nodeCenter, nodeSize, boxCenter, boxSize, group_eps, node_eps_val);  //Check if node should be split
+                #else
+                  split = split_node(nodeCenter, nodeSize, boxCenter, boxSize);
+                #endif
+              #endif //if IMPBH
+
+      #else
+        for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+        {
+          //Compute this specific box...kinda expensive should just
+          //make this list when receiving it and look it up.
+          //For now just using for testing method
+          //TODO NOTE BUG ERROR
+          int coarseGrpId = globalCoarseGrpOffsets[remoteId] + i;
+
+          double4 boxCenter = coarseGroupBoxCenter[coarseGrpId];
+          double4 boxSize   = coarseGroupBoxSize  [coarseGrpId];
+
+          #ifdef IMPBH
+            //Improved barnes hut version
+            float4 nodeCOM     = multipole[node*3 + 0];
+            nodeCOM.w = nodeCenter.w;
+
+            #ifdef INDSOFT
+               split = split_node_grav_impbh(nodeCOM, boxCenter, boxSize, group_eps, node_eps_val);
+            #else
+               split = split_node_grav_impbh(nodeCOM, boxCenter, boxSize);
+            #endif
+
+          #else
+            //Minimal distance version
+
+            #ifdef INDSOFT
+              split = split_node(nodeCenter, nodeSize, boxCenter, boxSize, group_eps, node_eps_val);  //Check if node should be split
+            #else
+              split = split_node(nodeCenter, nodeSize, boxCenter, boxSize);
+            #endif
+          #endif //if IMPBH
+
+          //Early out if at least one box requires this info
+          if(split) break;
+        } //For globalCoarseGrpCount[remoteId]
+#endif
+
 
         uint temp = 0;  //A node that is not split and is not a leaf will get childinfo 0
         //if split & node add children to next lvl stack
@@ -2465,8 +2567,11 @@ void octree::create_local_essential_tree_fill(real4* bodies, real4* velocities, 
 
 
 
+//void octree::create_local_essential_tree_count(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+//                                         double4 boxCenter, double4 boxSize, float group_eps, int start, int end,
+//                                         int &particles, int &nodes)
 void octree::create_local_essential_tree_count(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,   
-                                         double4 boxCenter, double4 boxSize, float group_eps, int start, int end, 
+                                         int remoteId, float group_eps, int start, int end,
                                          int &particles, int &nodes)
 {
     //Walk the tree as is done on device, level by level
@@ -2520,30 +2625,76 @@ void octree::create_local_essential_tree_count(real4* bodies, real4* multipole, 
         #ifdef INDSOFT
           //Very inefficient this but for testing I have to live with it...                                                                                   
           float node_eps_val = multipole[node*3 + 1].w; 
-        #endif         
-        
+        #endif
+
+
+        bool split = false;
+
+#if 0
+        particleCount++;
+        double4 boxCenter = {     0.5*(currentRLow[remoteId].x  + currentRHigh[remoteId].x),
+                                  0.5*(currentRLow[remoteId].y  + currentRHigh[remoteId].y),
+                                  0.5*(currentRLow[remoteId].z  + currentRHigh[remoteId].z), 0};
+        double4 boxSize   = {fabs(0.5*(currentRHigh[remoteId].x - currentRLow[remoteId].x)),
+                             fabs(0.5*(currentRHigh[remoteId].y - currentRLow[remoteId].y)),
+                             fabs(0.5*(currentRHigh[remoteId].z - currentRLow[remoteId].z)), 0};
+
         #ifdef IMPBH
           //Improved barnes hut version
           float4 nodeCOM     = multipole[node*3 + 0];
           nodeCOM.w = nodeCenter.w;
-          
+
           #ifdef INDSOFT
-             bool   split   = split_node_grav_impbh(nodeCOM, boxCenter, boxSize, group_eps, node_eps_val);
-          #else
-             bool split = split_node_grav_impbh(nodeCOM, boxCenter, boxSize);  
+             split = split_node_grav_impbh(nodeCOM, boxCenter, boxSize, group_eps, node_eps_val);
+           #else
+             split = split_node_grav_impbh(nodeCOM, boxCenter, boxSize);
           #endif
-          
         #else
           //Minimal distance version
-          
           #ifdef INDSOFT
-            bool split = split_node(nodeCenter, nodeSize, boxCenter, boxSize, group_eps, node_eps_val);  //Check if node should be split
+            split = split_node(nodeCenter, nodeSize, boxCenter, boxSize, group_eps, node_eps_val);  //Check if node should be split
           #else
-            bool split = split_node(nodeCenter, nodeSize, boxCenter, boxSize);
-          #endif          
-          
-        #endif 
+            split = split_node(nodeCenter, nodeSize, boxCenter, boxSize);
+          #endif
+        #endif //if IMPBH
+
+#else
+
+        for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+        {
+          particleCount++;
+          //Test this specific box
+          int coarseGrpId = globalCoarseGrpOffsets[remoteId] + i;
+
+          double4 boxCenter = coarseGroupBoxCenter[coarseGrpId];
+          double4 boxSize   = coarseGroupBoxSize  [coarseGrpId];
+
         
+          #ifdef IMPBH
+            //Improved barnes hut version
+            float4 nodeCOM     = multipole[node*3 + 0];
+            nodeCOM.w = nodeCenter.w;
+
+            #ifdef INDSOFT
+               split = split_node_grav_impbh(nodeCOM, boxCenter, boxSize, group_eps, node_eps_val);
+            #else
+               split = split_node_grav_impbh(nodeCOM, boxCenter, boxSize);
+            #endif
+
+          #else
+            //Minimal distance version
+
+            #ifdef INDSOFT
+              split = split_node(nodeCenter, nodeSize, boxCenter, boxSize, group_eps, node_eps_val);  //Check if node should be split
+            #else
+              split = split_node(nodeCenter, nodeSize, boxCenter, boxSize);
+            #endif
+          #endif //if IMPBH
+
+          //Early out if at least one box requires this info
+          if(split) break;
+        } //For globalCoarseGrpCount[remoteId]
+#endif
         //if split & node add children to next lvl stack
         if(split && !leaf)
         {       
@@ -2576,7 +2727,7 @@ void octree::create_local_essential_tree_count(real4* bodies, real4* multipole, 
     }//end while
     
     particles = particleCount;
-    nodes = nodeCount;  
+    nodes     = nodeCount;
     
 /*    fprintf(stderr, "Count found: %d particles and %d nodes. Boxsize: (%f %f %f ) BoxCenter: (%f %f %f)\n", 
                     particles, nodes, boxSize.x ,boxSize.y, boxSize.z, boxCenter.x, boxCenter.y, boxCenter.z );  */ 

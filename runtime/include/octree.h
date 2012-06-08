@@ -587,6 +587,10 @@ public:
   real4 *coarseGroupBoundMin;		//Boundaries of coarse groups for all processors, min locations
   real4 *coarseGroupBoundMax;		//Boundaries of coarse groups for all processors, max locations
 
+  double4 *coarseGroupBoxCenter;//Center of bounding boxes
+  double4 *coarseGroupBoxSize;  //size of bounding boxes
+
+
 
   real maxLocalEps;               //Contains the maximum local eps/softening value
                                   //will be stored in cur_xlow[i].w after exchange
@@ -668,16 +672,29 @@ public:
                                    double4 boxCenter, double4 boxSize, float group_eps, int start, int end,
                                    vector<real4> &particles,    vector<real4> &multipoleData,
                                    vector<real4> &nodeSizeData, vector<real4> &nodeCenterData);
+//  void create_local_essential_tree_count(real4* bodies, real4* multipole,
+//                                         real4* nodeSizeInfo, real4* nodeCenterInfo,
+//                                         double4 boxCenter, double4 boxSize,
+//                                         float group_eps, int start, int end,
+//                                         int &particleCount, int &nodeCount);
+//  void create_local_essential_tree_fill(real4* bodies, real4* velocities,
+//                                        real4* multipole, real4* nodeSizeInfo,
+//                                        real4* nodeCenterInfo, double4 boxCenter,
+//                                        double4 boxSize,  float group_eps, int start,
+//                                        int end, int particleCount, int nodeCount, real4 *dataBuffer);
+
   void create_local_essential_tree_count(real4* bodies, real4* multipole,
                                          real4* nodeSizeInfo, real4* nodeCenterInfo,
-                                         double4 boxCenter, double4 boxSize, 
+                                         int remoteId,
                                          float group_eps, int start, int end,
                                          int &particleCount, int &nodeCount);
   void create_local_essential_tree_fill(real4* bodies, real4* velocities,
                                         real4* multipole, real4* nodeSizeInfo,
-                                        real4* nodeCenterInfo, double4 boxCenter, 
-                                        double4 boxSize,  float group_eps, int start,
+                                        real4* nodeCenterInfo,
+                                        int remoteId, float group_eps, int start,
                                         int end, int particleCount, int nodeCount, real4 *dataBuffer);
+
+
 
   real4* MP_exchange_bhlist(int ibox, int isource,
                                 int bufferSize, real4 *letDataBuffer);
@@ -841,6 +858,9 @@ public:
     if(coarseGroupBoundMin)		delete[] coarseGroupBoundMin;
     if(coarseGroupBoundMax)		delete[] coarseGroupBoundMax;
     
+    if(coarseGroupBoxCenter) delete[] coarseGroupBoxCenter;
+    if(coarseGroupBoxSize)   delete[] coarseGroupBoxSize;
+
 #if USE_B40C
     delete sorter;
 #endif
