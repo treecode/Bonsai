@@ -1001,7 +1001,8 @@ int main(int argc, char** argv)
    
   //Distribute the particles so each process has particles
   //assigned to his domain
-  if(nProcs > 1)
+//  if(nProcs > 1)
+  if(0)
   {    
     double ttemp = tree->get_time();
     LOG("Before exchange tree has : %d particles \n", tree->localTree.n);

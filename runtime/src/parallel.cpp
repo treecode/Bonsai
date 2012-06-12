@@ -4263,7 +4263,6 @@ void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries)
     LOGF(stderr, "Number of particles per process: %d \t %d \n", nTotal, nPerProc);
 
     boundaries[0]       = make_uint4(0x0, 0x0, 0x0, 0x0);
-    boundaries[nProcs]  = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
 
     int tempSum = 0;
     int procIdx = 1;
@@ -4285,6 +4284,9 @@ void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries)
 //          allHashes[i].x, allHashes[i].y, allHashes[i].z, allHashes[i].w);
 
     }//for totalNumberOfHashes
+
+    //Force final boundary to be the highest possible key value
+    boundaries[nProcs]  = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
 
   }//if procId == 0
 
