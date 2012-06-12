@@ -262,6 +262,8 @@ bool octree::iterate_once(IterationData &idata) {
     predict(this->localTree);
     devContext.stopTiming("Predict", 9, execStream->s());
     
+    parallelDataSummary(localTree);
+
     #ifdef USE_DUST
       //Predict, sort and set properties
       predictDustStep(this->localTree);          
@@ -288,9 +290,9 @@ bool octree::iterate_once(IterationData &idata) {
       {      
         if(nProcs > 1)
         { 
-          if(iter % rebuild_tree_rate == 0) 
-            //        if(0)
-            //        if(1)
+//          if(iter % rebuild_tree_rate == 0)
+                    if(0)
+//                    if(1)
           {     
             //If we do a redistribution we _always_ have to do 
             //an update of the particle domain, otherwise the boxes 
@@ -331,7 +333,7 @@ bool octree::iterate_once(IterationData &idata) {
       // bool rebuild_tree = Nact_since_last_tree_rebuild > 4*this->localTree.n;   
       bool rebuild_tree = true;
 
-      rebuild_tree = ((iter % rebuild_tree_rate) == 0) || forceTreeRebuild;    
+//      rebuild_tree = ((iter % rebuild_tree_rate) == 0) || forceTreeRebuild;
       if(rebuild_tree)
       {
         t1 = get_time();
@@ -510,6 +512,19 @@ void octree::iterate_setup(IterationData &idata) {
   //Will be at time 0
   //predict localtree
   predict(this->localTree);
+
+
+
+  //TEST
+//  parallelDataSummary(localTree);
+
+  //Start construction of the tree
+  sort_bodies(localTree, true);
+  build(localTree);
+  allocateTreePropMemory(localTree);
+  compute_properties(localTree);
+  //END TEST
+
   this->getBoundaries(localTree, r_min, r_max);
   //Build the tree using the predicted positions  
   //Compute the (new) node properties
@@ -793,7 +808,7 @@ void octree::approximate_gravity(tree_structure &tree)
   approxGrav.execute(gravStream->s());  //First half
 
   //Print interaction statistics
-  #if 0
+  #if 1
   
   tree.body2group_list.d2h();
   tree.interactions.d2h();
@@ -817,9 +832,9 @@ void octree::approximate_gravity(tree_structure &tree)
       apprSum2     += tree.interactions[i].x*tree.interactions[i].x;
       directSum2   += tree.interactions[i].y*tree.interactions[i].y;   
       
-      fprintf(stderr, "%d\t Direct: %d\tApprox: %d\t Group: %d \n",
-              i, tree.interactions[i].y, tree.interactions[i].x, 
-              tree.body2group_list[i]);
+//      fprintf(stderr, "%d\t Direct: %d\tApprox: %d\t Group: %d \n",
+//              i, tree.interactions[i].y, tree.interactions[i].x,
+//              tree.body2group_list[i]);
     }
   
     //cerr << "Interaction at iter: " << iter << "\tdirect: " << directSum << "\tappr: " << apprSum << "\t";
@@ -828,7 +843,7 @@ void octree::approximate_gravity(tree_structure &tree)
     cout << "Interaction at (rank= " << mpiGetRank() << " ) iter: " << iter << "\tdirect: " << directSum << "\tappr: " << apprSum << "\t";
     cout << "avg dir: " << directSum / tree.n << "\tavg appr: " << apprSum / tree.n << "\tMaxdir: " << maxDir << "\tmaxAppr: " << maxAppr <<  endl;
     cout << "sigma dir: " << sqrt((directSum2  - directSum)/ tree.n) << "\tsigma appr: " << std::sqrt((apprSum2 - apprSum) / tree.n)  <<  endl;    
-    exit(0);
+//    exit(0);
   #endif
   
   //CU_SAFE_CALL(clFinish(0));

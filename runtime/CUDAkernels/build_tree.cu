@@ -1041,3 +1041,184 @@ KERNEL_DECLARE(segmentedCoarseGroupBoundary)(
 #endif
   } //End while
 }//end segmentedSummary
+
+
+
+//Function to mark the particles that are already assigned to
+//a hash
+extern "C" __global__ void build_parallel_grps(
+                             uint   compact_list_len,
+                             uint   offset,
+                             uint  *compact_list,
+                             uint4 *bodies_key,
+                             uint4 *parGrpBlockKey,
+                             uint2 *parGrpBlockInfo,
+                             uint  *startBoundary){
+
+  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
+  uint tid = threadIdx.x;
+//   uint id  = bid * blockDim.x + tid;
+
+  if (bid >= compact_list_len) return;
+
+  //Each block handles a bunch of particles
+  uint  bi   = compact_list[bid*2];
+  uint  bj   = compact_list[bid*2+1] + 1;
+
+#define NPARALLEL 1024
+
+  if((bj - bi) > NPARALLEL)
+  {
+    if(tid == 0)
+    {
+      //Set the key to invalid and in item w a value that marks it invalid
+      //This is redundent, and not used. Could be used for validation
+      parGrpBlockInfo[offset+bid] =  (uint2){0, 0};
+      parGrpBlockKey [offset+bid] = (uint4){0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF,0};
+    }
+    return;
+  }
+
+  int nparticles = bj-bi;
+
+  //Only has to be done by one thread, other threads are just here for data writing
+
+  //For each block we store the first particle, the particles key and the last particle
+  //key is 3 uints -> so we have the last one free keep free
+  //since we cannot store the pid and number of particles
+  //if N-particles is high (> 2M)
+  if(tid == 0)
+  {
+    uint4 key  = bodies_key[bi];
+    key.w = bj-bi;
+
+    uint2 blockInfo = (uint2){bi, bj};
+
+    parGrpBlockInfo[offset+bid] = blockInfo;
+    parGrpBlockKey [offset+bid] = key;
+
+
+    //Set the start boundary, which indicates the particle
+    //that forms the start of the parallel hash and refers
+    //to the group that has this particle as start
+    startBoundary[bi] = (uint)( offset+bid | (uint)(1 << 31));
+  }
+
+
+  for(int i=0; i < nparticles; i += blockDim.x)
+  {
+    if(i + tid < nparticles)
+    {
+      //sets the key to FF to indicate the body is used
+      bodies_key[bi+i+tid] = (uint4){0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF};
+    }
+  }
+
+
+
+} //end cl_build_parallel_reduce
+
+
+//This is a simple place holder, example function
+//depending on the data to be summarized
+//it can be extended/modified
+//Using atomics to prevent launch overhead when there
+//are only few particles. Could be modified into
+//non atomic with Dynamic Parallism
+extern "C" __global__ void segmentedSummaryBasic (
+                                            const int n_groups, //Number of groups that have to be summarized
+                                            uint     *validGroups,
+                                            uint     *atomicValues,
+                                            uint2    *hashGroupInfo,
+                                            uint4    *hashGroupKey,
+                                            uint4    *hashGroupResult,
+                                            uint4    *sourceData)
+{
+//   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
+  const uint tid = threadIdx.x;
+  //const uint idx = bid * blockDim.x + tid;
+
+
+  volatile __shared__ int shmem[256];
+
+  uint bid;
+
+  while(true)
+  {
+    //Get a ticket to the data-group that has to be processed
+    if(threadIdx.x == 0)
+    {
+      bid         = atomicAdd(&atomicValues[0], 1);
+      shmem[0]    = bid;
+    }
+    __syncthreads();
+
+    bid   = shmem[0];
+
+    if (bid >= n_groups) return;
+
+    int hashGrpID        = validGroups[bid];
+
+    __syncthreads();
+
+    //Start and end index of the data values to be processed
+    int start = hashGroupInfo[hashGrpID].x;
+    int end   = hashGroupInfo[hashGrpID].y;
+
+
+    volatile int *sh_sum = (int*)&shmem [ 0];
+
+    int localSum = 0;
+    sh_sum[tid]  = 0;
+
+    // perform first level of reduction, reading from global memory, writing to shared memory
+    const int blockSize   = blockDim.x;
+    unsigned int i        = start;
+
+    #if 0  //We can use the below when we add interactions count
+    // we reduce multiple elements per thread.  The number is determined by the
+    // number of active thread blocks (via gridSize).  More blocks will result
+    // in a larger gridSize and therefore fewer elements per thread
+    //based on reduce6 example
+    while (i < end) {
+      if(i + tid < end)
+      {
+        //Ad a reduction over the interactions here later on
+        localSum += 1;
+      }
+      i += blockSize;
+    }
+
+    sh_sum[tid] = localSum;
+
+    __syncthreads();
+    // do reduction in shared mem
+    if(blockDim.x >= 512) if (tid < 256) { sh_sum[tid] = localSum = localSum + sh_sum[tid + 256];} __syncthreads();
+    if(blockDim.x >= 256) if (tid < 128) { sh_sum[tid] = localSum = localSum + sh_sum[tid + 128];} __syncthreads();
+    if(blockDim.x >= 128) if (tid < 64)  { sh_sum[tid] = localSum = localSum + sh_sum[tid + 64];} __syncthreads();
+
+    if (tid < 32)
+    {
+      sh_sum[tid] = localSum = localSum + sh_sum[tid + 32];
+      sh_sum[tid] = localSum = localSum + sh_sum[tid + 16];
+      sh_sum[tid] = localSum = localSum + sh_sum[tid + 8];
+      sh_sum[tid] = localSum = localSum + sh_sum[tid + 4];
+      sh_sum[tid] = localSum = localSum + sh_sum[tid + 2];
+      sh_sum[tid] = localSum = localSum + sh_sum[tid + 1];
+    }
+    #endif
+
+    // write result for this block to global mem
+    if (tid == 0)
+    {
+      uint4 data           = hashGroupKey[hashGrpID];
+//       data.w               = sh_sum[0];
+      hashGroupResult[bid] = data;
+    }
+
+  } //End while
+}//end segmentedSummary
+
+
+
+

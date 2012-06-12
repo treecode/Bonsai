@@ -187,6 +187,7 @@ void octree::sendCurrentRadiusInfoCoarse(real4 *rmin, real4 *rmax, int n_coarseG
     MPI_Allgather(&n_coarseGroups,            sizeof(int),  MPI_BYTE,
                   this->globalCoarseGrpCount, sizeof(uint), MPI_BYTE, MPI_COMM_WORLD);
 
+
     //Compute offsets using prefix sum and total number of groups we will receive
     this->globalCoarseGrpOffsets[0] = 0;
     coarseGrpCountBytes[0]          = this->globalCoarseGrpCount[0]*sizeof(real4);
@@ -1320,6 +1321,137 @@ int octree::exchange_particles_with_overflow_check(tree_structure &tree)
   return retValue;
 }
 
+
+
+
+
+//Function that uses the GPU to get a set of particles that have to be
+//send to other processes
+void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
+{
+  //Memory buffers to hold the extracted particle information
+  my_dev::dev_mem<uint>  validList(devContext);
+  my_dev::dev_mem<uint>  compactList(devContext);
+
+  int memOffset1 = compactList.cmalloc_copy(localTree.generalBuffer1,
+                                            localTree.n, 0);
+  int memOffset2 = validList.cmalloc_copy(localTree.generalBuffer1,
+                                            localTree.n, memOffset1);
+
+
+  uint4 lowerBoundary = boundaries[this->procId];
+  uint4 upperBoundary = boundaries[this->procId+1];
+
+  validList.zeroMem();
+  domainCheckSFC.set_arg<int>(0,     &localTree.n);
+  domainCheckSFC.set_arg<uint4>(1,   &lowerBoundary);
+  domainCheckSFC.set_arg<uint4>(2,   &upperBoundary);
+  domainCheckSFC.set_arg<cl_mem>(3,  localTree.bodies_key.p());
+  domainCheckSFC.set_arg<cl_mem>(4,  validList.p());
+  domainCheckSFC.setWork(localTree.n, 128);
+  domainCheckSFC.execute(execStream->s());
+
+  //Create a list of valid and invalid particles
+  this->resetCompact();  //Make sure compact has been reset
+  int validCount;
+  gpuSplit(devContext, validList, compactList, localTree.n, &validCount);
+
+  LOGF(stderr, "Found %d particles outside my domain, inside: %d \n", validCount, localTree.n-validCount);
+
+  execStream->sync();
+  mpiSync();
+
+
+  //Check if the memory size, of the generalBuffer is large enough to store the exported particles
+  //if not allocate more but make sure that the copy of compactList survives
+  int tempSize = localTree.generalBuffer1.get_size() - localTree.n;
+  int needSize = (int)(1.01f*(validCount*(sizeof(bodyStruct)/sizeof(int))));
+
+  LOGF(stderr, "Temp: %d needed: %d \n", tempSize, needSize);
+
+  if(tempSize < needSize)
+  {
+    int itemsNeeded = needSize + localTree.n + 4096; //Slightly larger as before for offset space
+
+    //Copy the compact list to the host we need this list intact
+    compactList.d2h();
+    int *tempBuf = new int[localTree.n];
+    memcpy(tempBuf, &compactList[0], localTree.n*sizeof(int));
+
+    //Resize the general buffer
+    localTree.generalBuffer1.cresize(itemsNeeded, false);
+    //Reset memory pointers
+    memOffset1 = compactList.cmalloc_copy(localTree.generalBuffer1,
+                              localTree.n, 0);
+
+    //Restore the compactList
+    memcpy(&compactList[0], tempBuf, localTree.n*sizeof(int));
+    compactList.h2d();
+
+    delete[] tempBuf;
+  }
+
+  my_dev::dev_mem<bodyStruct>  bodyBuffer(devContext);
+
+  memOffset1 = bodyBuffer.cmalloc_copy(localTree.generalBuffer1,
+                              localTree.n, memOffset1);
+
+  extractOutOfDomainParticlesAdvancedSFC.set_arg<int>(0,    &validCount);
+  extractOutOfDomainParticlesAdvancedSFC.set_arg<cl_mem>(1, compactList.p());
+  extractOutOfDomainParticlesAdvancedSFC.set_arg<cl_mem>(2, localTree.bodies_Ppos.p());
+  extractOutOfDomainParticlesAdvancedSFC.set_arg<cl_mem>(3, localTree.bodies_Pvel.p());
+  extractOutOfDomainParticlesAdvancedSFC.set_arg<cl_mem>(4, localTree.bodies_pos.p());
+  extractOutOfDomainParticlesAdvancedSFC.set_arg<cl_mem>(5, localTree.bodies_vel.p());
+  extractOutOfDomainParticlesAdvancedSFC.set_arg<cl_mem>(6, localTree.bodies_acc0.p());
+  extractOutOfDomainParticlesAdvancedSFC.set_arg<cl_mem>(7, localTree.bodies_acc1.p());
+  extractOutOfDomainParticlesAdvancedSFC.set_arg<cl_mem>(8, localTree.bodies_time.p());
+  extractOutOfDomainParticlesAdvancedSFC.set_arg<cl_mem>(9, localTree.bodies_ids.p());
+  extractOutOfDomainParticlesAdvancedSFC.set_arg<cl_mem>(10, localTree.bodies_key.p());
+  extractOutOfDomainParticlesAdvancedSFC.set_arg<cl_mem>(11, bodyBuffer.p());
+  extractOutOfDomainParticlesAdvancedSFC.setWork(validCount, 128);
+  extractOutOfDomainParticlesAdvancedSFC.execute(execStream->s());
+
+  bodyBuffer.d2h(validCount);
+
+  //Now we have to move particles from the back of the array to the invalid spots
+  //this can be done in parallel with exchange operation to hide some time
+
+  //One integer for counting, true-> initialize to zero so counting starts at 0
+  my_dev::dev_mem<uint>  atomicBuff(devContext, 1, true);
+
+  //Internal particle movement
+  internalMoveSFC.set_arg<int>(0,    &validCount);
+  internalMoveSFC.set_arg<int>(1,    &localTree.n);
+  internalMoveSFC.set_arg<uint4>(2,    &lowerBoundary);
+  internalMoveSFC.set_arg<uint4>(3,    &upperBoundary);
+  internalMoveSFC.set_arg<cl_mem>(4, compactList.p());
+  internalMoveSFC.set_arg<cl_mem>(5, atomicBuff.p());
+  internalMoveSFC.set_arg<cl_mem>(6, localTree.bodies_Ppos.p());
+  internalMoveSFC.set_arg<cl_mem>(7, localTree.bodies_Pvel.p());
+  internalMoveSFC.set_arg<cl_mem>(8, localTree.bodies_pos.p());
+  internalMoveSFC.set_arg<cl_mem>(9, localTree.bodies_vel.p());
+  internalMoveSFC.set_arg<cl_mem>(10, localTree.bodies_acc0.p());
+  internalMoveSFC.set_arg<cl_mem>(11, localTree.bodies_acc1.p());
+  internalMoveSFC.set_arg<cl_mem>(12, localTree.bodies_time.p());
+  internalMoveSFC.set_arg<cl_mem>(13, localTree.bodies_ids.p());
+  internalMoveSFC.set_arg<cl_mem>(14, localTree.bodies_key.p());
+  internalMoveSFC.setWork(validCount, 128);
+  internalMoveSFC.execute(execStream->s());
+
+  this->gpu_exchange_particles_with_overflow_check_SFC(localTree, &bodyBuffer[0], compactList, validCount);
+
+} //End gpuRedistributeParticles
+
+
+
+
+
+
+
+
+
+
+
 //Function that uses the GPU to get a set of particles that have to be 
 //send to other processes
 void octree::gpuRedistributeParticles()
@@ -1641,8 +1773,255 @@ int octree::gpu_exchange_particles_with_overflow_check(tree_structure &tree,
   return retValue;
 }
 
-//Local essential tree functions
 
+inline int cmp_uint4(uint4 a, uint4 b) {
+  if      (a.x < b.x) return -1;
+  else if (a.x > b.x) return +1;
+  else {
+    if       (a.y < b.y) return -1;
+    else  if (a.y > b.y) return +1;
+    else {
+      if       (a.z < b.z) return -1;
+      else  if (a.z > b.z) return +1;
+      return 0;
+    } //end z
+  }  //end y
+} //end x, function
+
+
+//Exchange particles with other processes
+int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
+                                                       bodyStruct *particlesToSend,
+                                                       my_dev::dev_mem<uint> &extractList,
+                                                       int nToSend)
+{
+  int myid      = procId;
+  int nproc     = nProcs;
+  int iloc      = 0;
+  int nbody     = nToSend;
+
+
+  bodyStruct  tmpp;
+
+  int *firstloc   = new int[nProcs+1];
+  int *nparticles = new int[nProcs+1];
+
+  // Loop over particles and determine which particle needs to go where
+  // reorder the bodies in such a way that bodies that have to be send
+  // away are stored after each other in the array
+  double t1 = get_time();
+
+  //Array reserve some memory at forehand , 1%
+  vector<bodyStruct> array2Send;
+  array2Send.reserve((int)(nToSend*1.5));
+
+  for(int ib=0;ib<nproc;ib++)
+  {
+    int ibox       = (ib+myid)%nproc;
+    firstloc[ibox] = iloc;      //Index of the first particle send to proc: ibox
+
+    for(int i=iloc; i<nbody;i++)
+    {
+      uint4 lowerBoundary = tree.parallelBoundaries[ibox];
+      uint4 upperBoundary = tree.parallelBoundaries[ibox+1];
+
+      uint4 key  = particlesToSend[i].key;
+      int bottom = cmp_uint4(key, lowerBoundary);
+      int top    = cmp_uint4(key, upperBoundary);
+
+
+      if(bottom >= 0 && top < 0)
+      {
+        //Reorder the particle information
+        tmpp                  = particlesToSend[iloc];
+        particlesToSend[iloc] = particlesToSend[i];
+        particlesToSend[i]    = tmpp;
+
+        //Put the particle in the array of to send particles
+        array2Send.push_back(particlesToSend[iloc]);
+
+        iloc++;
+      }// end if
+    }//for i=iloc
+    nparticles[ibox] = iloc-firstloc[ibox];//Number of particles that has to be send to proc: ibox
+  } // for(int ib=0;ib<nproc;ib++)
+
+
+//   printf("Required search time: %lg ,proc: %d found in our own box: %d n: %d  to others: %ld \n",
+//          get_time()-t1, myid, nparticles[myid], tree.n, array2Send.size());
+
+
+  if(iloc < nbody)
+  {
+      cerr << procId <<" exchange_particle error: particle in no box...iloc: " << iloc
+                     << " and nbody: " << nbody << "\n";
+      exit(0);
+  }
+
+
+  /*totalsent = nbody - nparticles[myid];
+
+  int tmp;
+  MPI_Reduce(&totalsent,&tmp,1, MPI_INT, MPI_SUM,0,MPI_COMM_WORLD);
+  if(procId == 0)
+  {
+    totalsent = tmp;
+    cout << "Exchanged particles = " << totalsent << endl;
+  }*/
+
+  t1 = get_time();
+
+  //Allocate two times the amount of memory of that which we send
+  vector<bodyStruct> recv_buffer3(nbody*2);
+  unsigned int recvCount = 0;
+
+  //Exchange the data with the other processors
+  int ibend = -1;
+  int nsend;
+  int isource = 0;
+  for(int ib=nproc-1;ib>0;ib--)
+  {
+    int ibox = (ib+myid)%nproc; //index to send...
+
+    if (ib == nproc-1)
+    {
+      isource= (myid+1)%nproc;
+    }
+    else
+    {
+      isource = (isource+1)%nproc;
+      if (isource == myid)isource = (isource+1)%nproc;
+    }
+
+    if(MP_exchange_particle_with_overflow_check<bodyStruct>(ibox, &array2Send[0],
+                                                    recv_buffer3, firstloc[ibox] - nparticles[myid],
+                                                    nparticles[ibox], isource,
+                                                    nsend, recvCount))
+    {
+      ibend = ibox; //Here we get if exchange failed
+      ib = 0;
+    }//end if mp exchang
+  }//end for all boxes
+
+
+  if(ibend == -1){
+
+  }else{
+      //Something went wrong
+    cerr << "ERROR in exchange_particles_with_overflow_check! \n"; exit(0);
+  }
+
+
+  LOG("Required inter-process communication time: %lg ,proc: %d\n",
+         get_time()-t1, myid);
+
+  //Compute the new number of particles:
+  int newN = tree.n + recvCount - nToSend;
+
+  execStream->sync();   //make certain that the particle movement on the device
+                        //is complete before we resize
+
+  //Have to resize the bodies vector to keep the numbering correct
+  //but do not reduce the size since we need to preserve the particles
+  //in the oversized memory
+  tree.bodies_pos.cresize (newN + 1, false);
+  tree.bodies_acc0.cresize(newN,     false);
+  tree.bodies_acc1.cresize(newN,     false);
+  tree.bodies_vel.cresize (newN,     false);
+  tree.bodies_time.cresize(newN,     false);
+  tree.bodies_ids.cresize (newN + 1, false);
+  tree.bodies_Ppos.cresize(newN + 1, false);
+  tree.bodies_Pvel.cresize(newN + 1, false);
+  tree.bodies_key.cresize(newN + 1, false);
+
+
+
+  //This one has to be at least the same size as the number of particles inorder to
+  //have enough space to store the other buffers
+  //Can only be resized after we are done since we still have
+  //parts of memory pointing to that buffer (extractList)
+  //Note that we allocate some extra memory to make everything texture/memory alligned
+  tree.generalBuffer1.cresize(3*(newN)*4 + 4096, false);
+
+  //Now we have to copy the data in batches incase the generalBuffer1 is not large enough
+  //Amount we can store:
+  int spaceInIntSize    = 3*(newN)*4;
+  int newParticleSpace  = spaceInIntSize / (sizeof(bodyStruct) / sizeof(int));
+  int stepSize          = newParticleSpace;
+
+  my_dev::dev_mem<bodyStruct>  bodyBuffer(devContext);
+
+  int memOffset1 = bodyBuffer.cmalloc_copy(localTree.generalBuffer1,
+                                            stepSize, 0);
+
+
+  LOGF(stderr, "Exchange, received particles: (%d): %d \tnewN: %d\tItems that can be insert in one step: %d\n",
+                   procId, recvCount, newN, stepSize);
+
+  int insertOffset = 0;
+  for(unsigned int i=0; i < recvCount; i+= stepSize)
+  {
+    int items = min(stepSize, (int)(recvCount-i));
+
+    if(items > 0)
+    {
+      //Copy the data from the MPI receive buffers into the GPU-send buffer
+      memcpy(&bodyBuffer[0], &recv_buffer3[insertOffset], sizeof(bodyStruct)*items);
+
+      bodyBuffer.h2d(items);
+
+//       int threads = max(nToSend, (int)recvCount);
+
+      //Start the kernel that puts everything in place
+      insertNewParticlesSFC.set_arg<int>(0,    &nToSend);
+      insertNewParticlesSFC.set_arg<int>(1,    &items);
+      insertNewParticlesSFC.set_arg<int>(2,    &tree.n);
+      insertNewParticlesSFC.set_arg<int>(3,    &insertOffset);
+      insertNewParticlesSFC.set_arg<cl_mem>(4, localTree.bodies_Ppos.p());
+      insertNewParticlesSFC.set_arg<cl_mem>(5, localTree.bodies_Pvel.p());
+      insertNewParticlesSFC.set_arg<cl_mem>(6, localTree.bodies_pos.p());
+      insertNewParticlesSFC.set_arg<cl_mem>(7, localTree.bodies_vel.p());
+      insertNewParticlesSFC.set_arg<cl_mem>(8, localTree.bodies_acc0.p());
+      insertNewParticlesSFC.set_arg<cl_mem>(9, localTree.bodies_acc1.p());
+      insertNewParticlesSFC.set_arg<cl_mem>(10, localTree.bodies_time.p());
+      insertNewParticlesSFC.set_arg<cl_mem>(11, localTree.bodies_ids.p());
+      insertNewParticlesSFC.set_arg<cl_mem>(12, localTree.bodies_key.p());
+      insertNewParticlesSFC.set_arg<cl_mem>(13, bodyBuffer.p());
+      insertNewParticlesSFC.setWork(items, 128);
+      insertNewParticlesSFC.execute(execStream->s());
+    }
+
+    insertOffset += items;
+  }
+
+//   printf("Benodigde gpu malloc tijd stap 1: %lg \t Size: %d \tRank: %d \t Size: %d \n",
+//          get_time()-t1, newN, mpiGetRank(), tree.bodies_Ppos.get_size());
+//   t1 = get_time();
+
+
+  tree.setN(newN);
+
+  //Resize the arrays of the tree
+  reallocateParticleMemory(tree);
+
+//   printf("Benodigde gpu malloc tijd stap 2: %lg \n", get_time()-t1);
+//   printf("Totale GPU interactie tijd: %lg \n", get_time()-t2);
+
+
+
+
+
+  int retValue = 0;
+
+  delete[] firstloc;
+  delete[] nparticles;
+
+  return retValue;
+}
+
+//////////////////////////////////////////////////////
+// ***** Local essential tree functions ************//
+//////////////////////////////////////////////////////
 
 void octree::essential_tree_exchange(vector<real4> &treeStructure, tree_structure &tree, tree_structure &remote)
 {
@@ -2111,6 +2490,38 @@ bool split_node_grav_impbh(float4 nodeCOM, double4 boxCenter, double4 boxSize)
    if (ds2     <= fabs(nodeCOM.w))           return true;
    if (fabs(ds2 - fabs(nodeCOM.w)) < 10e-04) return true; //Limited precision can result in round of errors. Use this as extra safe guard
    
+//   return true;
+   return false;
+}
+
+//Improved Barnes Hut criterium
+
+bool split_node_grav_impbh_SFCtest(float4 nodeCOM, double4 boxCenter, double4 boxSize, float &ds2)
+
+{
+  //Compute the distance between the group and the cell
+  float3 dr = make_float3(fabs((float)boxCenter.x - nodeCOM.x) - (float)boxSize.x,
+                          fabs((float)boxCenter.y - nodeCOM.y) - (float)boxSize.y,
+                          fabs((float)boxCenter.z - nodeCOM.z) - (float)boxSize.z);
+
+  dr.x += fabs(dr.x); dr.x *= 0.5f;
+  dr.y += fabs(dr.y); dr.y *= 0.5f;
+  dr.z += fabs(dr.z); dr.z *= 0.5f;
+
+  //Distance squared, no need to do sqrt since opening criteria has been squared
+//  float ds2    = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
+  ds2    = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
+
+
+  #ifdef INDSOFT
+    if(ds2      <= ((group_eps + node_eps ) * (group_eps + node_eps) ))           return true;
+    //Limited precision can result in round of errors. Use this as extra safe guard
+    if(fabs(ds2 -  ((group_eps + node_eps ) * (group_eps + node_eps) )) < 10e-04) return true;
+  #endif
+
+   if (ds2     <= fabs(nodeCOM.w))           return true;
+   if (fabs(ds2 - fabs(nodeCOM.w)) < 10e-04) return true; //Limited precision can result in round of errors. Use this as extra safe guard
+
    return false;
 }
 
@@ -2826,7 +3237,243 @@ void octree::create_local_essential_tree_fill(real4* bodies, real4* velocities, 
 }
 #endif
 
+#if 0
+//Does not work,this one tries to order the boxes so the one needed is up front
+
+//void octree::create_local_essential_tree_count(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+//                                         double4 boxCenter, double4 boxSize, float group_eps, int start, int end,
+//                                         int &particles, int &nodes)
+void octree::create_local_essential_tree_count(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+                                         int remoteId, float group_eps, int start, int end,
+                                         int &particles, int &nodes)
+{
+
+    //Walk the tree as is done on device, level by level
+    vector<combNodeCheck> curLevel;
+    vector<combNodeCheck> nextLevel;
+
+    curLevel.reserve(1024*128);
+    nextLevel.reserve(1024*128);
+
+    vector<int> coarseIDs;
+
+    int particleCount   = 0;
+    int nodeCount       = 0;
+
+    int level           = 0;
+
+    int extraChecks = 0;
+    int uselessChecks = 0;
+    int splitChecks = 0;
+
+    LOGF(stderr,"Test loop value: %d", this->globalCoarseGrpCount[remoteId]);
+
+
+
+    //Add the initial coarse boxes to this level
+    for(int i=0; i < this->globalCoarseGrpCount[remoteId]; i++)
+    {
+      coarseIDs.push_back(this->globalCoarseGrpOffsets[remoteId] + i);
+    }
+
+    //Add the initial nodes to the curLevel list
+    for(int i=start; i < end; i++)
+    {
+      combNodeCheck check;
+      check.nodeID    = i;
+      check.coarseIDs = coarseIDs;
+      curLevel.push_back(check);
+    }
+
+    //Add the nodes before the start and end to the node list
+    for(int i=0; i < start; i++)
+    {
+      nodeCount++;
+    }
+
+    //Start the tree-walk
+    while(curLevel.size() > 0)
+    {
+      for(unsigned int i=0; i < curLevel.size(); i++)
+      {
+        //Read node data
+        combNodeCheck check = curLevel[i];
+        int node           = check.nodeID;
+
+//        LOGF(stderr, "LET count On level: %d\tNode: %d\tGoing to check: %d\n",
+//                          level,node, check.coarseIDs.size());
+
+        real4 nodeCenter = nodeCenterInfo[node];
+        real4 nodeSize   = nodeSizeInfo[node];
+        bool leaf        = nodeCenter.w <= 0;
+
+        union{float f; int i;} u; //__float_as_int
+        u.f           = nodeSize.w;
+        int childinfo = u.i;
+
+        int child, nchild;
+        if(!leaf)
+        {
+          //Node
+          child    =    childinfo & 0x0FFFFFFF;                         //Index to the first child of the node
+          nchild   = (((childinfo & 0xF0000000) >> 28)) ;         //The number of children this node has
+        }
+        else
+        {
+          //Leaf
+          child   =   childinfo & BODYMASK;                                     //thre first body in the leaf
+          nchild  = (((childinfo & INVBMASK) >> LEAFBIT)+1);     //number of bodies in the leaf masked with the flag
+        }
+
+        bool split = false;
+
+        int splitIdxToUse = 0;
+
+         splitChecks++;
+
+         vector<int> checkIDs;
+         bool curSplit = false;
+
+//        for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+         float ds2;
+         float ds2min = 10e10f;
+         int   ds2min_idx = -1;
+
+        for(int k=0; k < check.coarseIDs.size(); k++)
+        {
+          extraChecks++;
+        //  particleCount++;
+          //Test this specific box
+          int coarseGrpId = check.coarseIDs[k];
+
+          if(coarseGrpId < 0) LOGF(stderr,"FAIIIIIIIIIIIIIIIIIIL %d \n", coarseGrpId);
+
+          double4 boxCenter = coarseGroupBoxCenter[coarseGrpId];
+          double4 boxSize   = coarseGroupBoxSize  [coarseGrpId];
+
+
+          #ifdef IMPBH
+            //Improved barnes hut version
+            float4 nodeCOM     = multipole[node*3 + 0];
+            nodeCOM.w = nodeCenter.w;
+
+            #ifdef INDSOFT
+              curSplit = split_node_grav_impbh(nodeCOM, boxCenter, boxSize, group_eps, node_eps_val);
+            #else
+              curSplit = split_node_grav_impbh_SFCtest(nodeCOM, boxCenter, boxSize, ds2);
+//              curSplit = split_node_grav_impbh(nodeCOM, boxCenter, boxSize);
+            #endif
+
+          #else
+            //Minimal distance version
+
+            #ifdef INDSOFT
+              curSplit = split_node(nodeCenter, nodeSize, boxCenter, boxSize, group_eps, node_eps_val);  //Check if node should be split
+            #else
+              curSplit = split_node(nodeCenter, nodeSize, boxCenter, boxSize);
+            #endif
+          #endif //if IMPBH
+
+            //Early out if at least one box requires this info
+          if(curSplit){
+            split = true;
+
+//            if(0)
+            if(level < 2)
+            {
+              //Stop right away
+              checkIDs.insert(checkIDs.begin(), &check.coarseIDs[k], &check.coarseIDs[0]+check.coarseIDs.size());
+              break;
+
+            }
+            else
+            {
+              //Now order checkIDs
+              if(ds2 < ds2min)
+              {
+                checkIDs.insert(checkIDs.begin(),coarseGrpId);
+//                LOGF(stderr,"TestSmaller: %f %f \t %d", ds2min, ds2, ds2min_idx);
+                ds2min = ds2;
+//                ds2min_idx = coarseGrpId;
+
+              }
+              else
+              {
+//                LOGF(stderr,"FAILED: %f %f \t %d", ds2min, ds2, ds2min_idx);
+              }
+            }//level > 30
+//              splitIdxToUse = k;
+//              LOGF(stderr, "LET count On level: %d\tNode: %d\tStart: %d\tEnd: %d\tChecks: %d \n",
+//                  level,node, startCoarseBox, splitIdxToUse, splitIdxToUse-startCoarseBox+1);
+
+//              extraChecks += splitIdxToUse-startCoarseBox;
+//              break;
+          }//if curSplit
+        } //For globalCoarseGrpCount[remoteId]
+
+//        if(ds2min_idx >= 0)
+//        checkIDs.push_back(ds2min_idx);
+//        if(ds2min_idx < 0)
+//        {
+//          LOGF(stderr, "ERRRRRRRRRRRRRRRRRRRRRRRRRRRRRRROR %f %d split: %d\n", ds2min, ds2min_idx, split);
+//        }
+
+        if(split == false)
+        {
+//          uselessChecks +=  boxIndicesToUse.size()-startCoarseBox;
+        }
+
+        //if split & node add children to next lvl stack
+        if(split && !leaf)
+        {
+          for(int i=child; i < child+nchild; i++)
+          {
+//            nextLevel.push_back(make_int2(i, splitIdxToUse));
+            combNodeCheck check;
+            check.nodeID    = i;
+            check.coarseIDs = checkIDs;
+            nextLevel.push_back(check);
+//            nextLevel.push_back(make_int2(i, splitIdxToUse));
+          }
+        }
+
+        //if split & leaf add particles to particle list
+        if(split && leaf)
+        {
+          for(int i=child; i < child+nchild; i++)
+          {
+            particleCount++;
+          }
+        }
+
+        //Increase the nodeCount, since this node will be part of the tree-structure
+        nodeCount++;
+      } //end for curLevel.size
+
+
+      //Put next level stack into current level and continue
+      curLevel.clear();
+
+//       cout << "Next level: " << nextLevel.size() << endl;
+      curLevel.assign(nextLevel.begin(), nextLevel.end());
+      nextLevel.clear();
+      level++;
+    }//end while
+
+    particles = particleCount;
+    nodes     = nodeCount;
+
+    LOGF(stderr, "LET Extra checks: %d SplitChecks: %d UselessChecks: %d\n", extraChecks, splitChecks, uselessChecks);
+
+/*    fprintf(stderr, "Count found: %d particles and %d nodes. Boxsize: (%f %f %f ) BoxCenter: (%f %f %f)\n",
+                    particles, nodes, boxSize.x ,boxSize.y, boxSize.z, boxCenter.x, boxCenter.y, boxCenter.z );  */
+}
+
+#endif
+
 #if 1
+//This one goes over all coarse grps and removes the ones where the split
+//fails. Does test them all
 
 //void octree::create_local_essential_tree_count(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
 //                                         double4 boxCenter, double4 boxSize, float group_eps, int start, int end,
@@ -3049,13 +3696,15 @@ void octree::create_local_essential_tree_count(real4* bodies, real4* multipole, 
 /*    fprintf(stderr, "Count found: %d particles and %d nodes. Boxsize: (%f %f %f ) BoxCenter: (%f %f %f)\n",
                     particles, nodes, boxSize.x ,boxSize.y, boxSize.z, boxCenter.x, boxCenter.y, boxCenter.z );  */
 }
-
-#else
+#endif
+#if 0
+//This one remembers the index of where the split happend and uses this as start next time
+//all before are ignored
 
 //void octree::create_local_essential_tree_count(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
 //                                         double4 boxCenter, double4 boxSize, float group_eps, int start, int end,
 //                                         int &particles, int &nodes)
-void octree::create_local_essential_tree_count(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,   
+void octree::create_local_essential_tree_count(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
                                          int remoteId, float group_eps, int start, int end,
                                          int &particles, int &nodes)
 {
@@ -3065,7 +3714,7 @@ void octree::create_local_essential_tree_count(real4* bodies, real4* multipole, 
 
     int particleCount   = 0;
     int nodeCount       = 0;
-    
+
     int level           = 0;
 
     int extraChecks = 0;
@@ -3079,7 +3728,7 @@ void octree::create_local_essential_tree_count(real4* bodies, real4* multipole, 
     {
       curLevel.push_back(make_int2(i,0));
     }
-    
+
     //Add the initial coarse boxes to this level
     for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
     {
@@ -3091,8 +3740,8 @@ void octree::create_local_essential_tree_count(real4* bodies, real4* multipole, 
     {
       nodeCount++;
     }
-      
-    //Start the tree-walk       
+
+    //Start the tree-walk
     while(curLevel.size() > 0)
     {
       for(unsigned int i=0; i < curLevel.size(); i++)
@@ -3103,28 +3752,28 @@ void octree::create_local_essential_tree_count(real4* bodies, real4* multipole, 
         real4 nodeCenter = nodeCenterInfo[node];
         real4 nodeSize   = nodeSizeInfo[node];
         bool leaf        = nodeCenter.w <= 0;
-        
+
         union{float f; int i;} u; //__float_as_int
-        u.f           = nodeSize.w;      
+        u.f           = nodeSize.w;
         int childinfo = u.i;
-        
+
         int child, nchild;
         if(!leaf)
         {
           //Node
           child    =    childinfo & 0x0FFFFFFF;                         //Index to the first child of the node
-          nchild   = (((childinfo & 0xF0000000) >> 28)) ;         //The number of children this node has              
+          nchild   = (((childinfo & 0xF0000000) >> 28)) ;         //The number of children this node has
         }
         else
         {
           //Leaf
           child   =   childinfo & BODYMASK;                                     //thre first body in the leaf
-          nchild  = (((childinfo & INVBMASK) >> LEAFBIT)+1);     //number of bodies in the leaf masked with the flag        
+          nchild  = (((childinfo & INVBMASK) >> LEAFBIT)+1);     //number of bodies in the leaf masked with the flag
         }
-        
+
         #ifdef INDSOFT
-          //Very inefficient this but for testing I have to live with it...                                                                                   
-          float node_eps_val = multipole[node*3 + 1].w; 
+          //Very inefficient this but for testing I have to live with it...
+          float node_eps_val = multipole[node*3 + 1].w;
         #endif
 
 
@@ -3172,7 +3821,7 @@ void octree::create_local_essential_tree_count(real4* bodies, real4* multipole, 
           double4 boxCenter = coarseGroupBoxCenter[coarseGrpId];
           double4 boxSize   = coarseGroupBoxSize  [coarseGrpId];
 
-        
+
           #ifdef IMPBH
             //Improved barnes hut version
             float4 nodeCOM     = multipole[node*3 + 0];
@@ -3211,6 +3860,201 @@ void octree::create_local_essential_tree_count(real4* bodies, real4* multipole, 
         }
 
 #endif
+        //if split & node add children to next lvl stack
+        if(split && !leaf)
+        {
+          for(int i=child; i < child+nchild; i++)
+          {
+            nextLevel.push_back(make_int2(i, splitIdxToUse));
+          }
+        }
+
+        //if split & leaf add particles to particle list
+        if(split && leaf)
+        {
+          for(int i=child; i < child+nchild; i++)
+          {
+            particleCount++;
+          }
+        }
+
+        //Increase the nodeCount, since this node will be part of the tree-structure
+        nodeCount++;
+      } //end for curLevel.size
+
+
+
+//      Hier gebleven dit werkt niet. Er is altijd wel 1 group die het heeft
+//      Oplossing, per node bijgaan houden waar we zitten in de lijst
+//      Dit kan door curLevel en nextLevel niet als int op te slaan maar als int2
+//      en dan in x het nodeID en in y de i waar we gebleven waren met de split
+
+
+      //End reduce the boxes to use
+
+      //Put next level stack into current level and continue
+      curLevel.clear();
+
+//       cout << "Next level: " << nextLevel.size() << endl;
+      curLevel.assign(nextLevel.begin(), nextLevel.end());
+      nextLevel.clear();
+      level++;
+    }//end while
+
+    particles = particleCount;
+    nodes     = nodeCount;
+
+    LOGF(stderr, "LET Extra checks: %d SplitChecks: %d UselessChecks: %d\n", extraChecks, splitChecks, uselessChecks);
+
+/*    fprintf(stderr, "Count found: %d particles and %d nodes. Boxsize: (%f %f %f ) BoxCenter: (%f %f %f)\n",
+                    particles, nodes, boxSize.x ,boxSize.y, boxSize.z, boxCenter.x, boxCenter.y, boxCenter.z );  */
+}
+#endif
+
+
+#if 0
+//This is the one that goes over the full box-grp
+
+//void octree::create_local_essential_tree_count(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+//                                         double4 boxCenter, double4 boxSize, float group_eps, int start, int end,
+//                                         int &particles, int &nodes)
+void octree::create_local_essential_tree_count(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,   
+                                         int remoteId, float group_eps, int start, int end,
+                                         int &particles, int &nodes)
+{
+    //Walk the tree as is done on device, level by level
+    vector<int2> curLevel;
+    vector<int2> nextLevel;
+
+    int particleCount   = 0;
+    int nodeCount       = 0;
+    
+    int level           = 0;
+
+    int extraChecks = 0;
+    int uselessChecks = 0;
+    int splitChecks = 0;
+
+    vector<int> boxIndicesToUse;
+
+    //Add the initial nodes to the curLevel list
+    for(int i=start; i < end; i++)
+    {
+      curLevel.push_back(make_int2(i,0));
+    }
+    
+    //Add the initial coarse boxes to this level
+    for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+    {
+      boxIndicesToUse.push_back(globalCoarseGrpOffsets[remoteId] + i);
+    }
+
+    //Add the nodes before the start and end to the node list
+    for(int i=0; i < start; i++)
+    {
+      nodeCount++;
+    }
+
+    double4 boxCenter = {     0.5*(currentRLow[remoteId].x  + currentRHigh[remoteId].x),
+                              0.5*(currentRLow[remoteId].y  + currentRHigh[remoteId].y),
+                              0.5*(currentRLow[remoteId].z  + currentRHigh[remoteId].z), 0};
+    double4 boxSize   = {fabs(0.5*(currentRHigh[remoteId].x - currentRLow[remoteId].x)),
+                         fabs(0.5*(currentRHigh[remoteId].y - currentRLow[remoteId].y)),
+                         fabs(0.5*(currentRHigh[remoteId].z - currentRLow[remoteId].z)), 0};
+
+    LOGF(stderr,"TEST: %f %f %f || %f %f %f \n", boxCenter.x, boxCenter.y, boxCenter.z,
+        boxSize.x, boxSize.y, boxSize.z);
+      
+    //Start the tree-walk       
+    while(curLevel.size() > 0)
+    {
+      for(unsigned int i=0; i < curLevel.size(); i++)
+      {
+        //Read node data
+        int node           = curLevel[i].x;
+        int startCoarseBox = curLevel[i].y;
+        real4 nodeCenter = nodeCenterInfo[node];
+        real4 nodeSize   = nodeSizeInfo[node];
+        bool leaf        = nodeCenter.w <= 0;
+        
+        union{float f; int i;} u; //__float_as_int
+        u.f           = nodeSize.w;      
+        int childinfo = u.i;
+        
+        int child, nchild;
+        if(!leaf)
+        {
+          //Node
+          child    =    childinfo & 0x0FFFFFFF;                         //Index to the first child of the node
+          nchild   = (((childinfo & 0xF0000000) >> 28)) ;         //The number of children this node has              
+        }
+        else
+        {
+          //Leaf
+          child   =   childinfo & BODYMASK;                                     //thre first body in the leaf
+          nchild  = (((childinfo & INVBMASK) >> LEAFBIT)+1);     //number of bodies in the leaf masked with the flag        
+        }
+        
+        #ifdef INDSOFT
+          //Very inefficient this but for testing I have to live with it...                                                                                   
+          float node_eps_val = multipole[node*3 + 1].w; 
+        #endif
+
+
+        bool split = false;
+
+        int splitIdxToUse = 0;
+
+         splitChecks++;
+
+//        for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+//        for(int k=startCoarseBox; k < boxIndicesToUse.size(); k++)
+        {
+        //  particleCount++;
+          //Test this specific box
+//          int coarseGrpId = boxIndicesToUse[k];
+//
+//          double4 boxCenter = coarseGroupBoxCenter[coarseGrpId];
+//          double4 boxSize   = coarseGroupBoxSize  [coarseGrpId];
+
+        
+          #ifdef IMPBH
+            //Improved barnes hut version
+            float4 nodeCOM     = multipole[node*3 + 0];
+            nodeCOM.w = nodeCenter.w;
+
+            #ifdef INDSOFT
+               split = split_node_grav_impbh(nodeCOM, boxCenter, boxSize, group_eps, node_eps_val);
+            #else
+               split = split_node_grav_impbh(nodeCOM, boxCenter, boxSize);
+            #endif
+
+          #else
+            //Minimal distance version
+
+            #ifdef INDSOFT
+              split = split_node(nodeCenter, nodeSize, boxCenter, boxSize, group_eps, node_eps_val);  //Check if node should be split
+            #else
+              split = split_node(nodeCenter, nodeSize, boxCenter, boxSize);
+            #endif
+          #endif //if IMPBH
+
+            //Early out if at least one box requires this info
+          if(split){
+//              splitIdxToUse = k;
+//              LOGF(stderr, "LET count On level: %d\tNode: %d\tStart: %d\tEnd: %d\tChecks: %d \n",
+//                  level,node, startCoarseBox, splitIdxToUse, splitIdxToUse-startCoarseBox+1);
+
+//              extraChecks += splitIdxToUse-startCoarseBox;
+//              break;
+          }
+        } //For globalCoarseGrpCount[remoteId]
+
+        if(split == false)
+        {
+          uselessChecks +=  boxIndicesToUse.size()-startCoarseBox;
+        }
+
         //if split & node add children to next lvl stack
         if(split && !leaf)
         {       
@@ -3261,6 +4105,7 @@ void octree::create_local_essential_tree_count(real4* bodies, real4* multipole, 
                     particles, nodes, boxSize.x ,boxSize.y, boxSize.z, boxCenter.x, boxCenter.y, boxCenter.z );  */ 
 }
 #endif
+
 
 
 real4* octree::MP_exchange_bhlist(int ibox, int isource, 
@@ -3328,3 +4173,148 @@ void octree::ICRecv(int recvFrom, vector<real4> &bodyPositions, vector<real4> &b
    MPI_Recv( (int *)&bodiesIDs[0],      nreceive*sizeof(int),    MPI_BYTE, recvFrom, procId*2+3, MPI_COMM_WORLD,&status);
 #endif
 }
+
+
+int cmp_uint4_host(uint4 a, uint4 b) {
+  if      (a.x < b.x) return -1;
+  else if (a.x > b.x) return +1;
+  else {
+    if       (a.y < b.y) return -1;
+    else  if (a.y > b.y) return +1;
+    else {
+      if       (a.z < b.z) return -1;
+      else  if (a.z > b.z) return +1;
+      return 0;
+    } //end z
+  }  //end y
+} //end x, function
+
+
+struct cmp_ph_key{
+  bool operator () (const uint4 &a, const uint4 &b){
+    return ( cmp_uint4_host( a, b) < 1);
+  }
+};
+
+
+void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries)
+{
+#ifdef USE_MPI
+
+  int *nReceiveCnts  = new int[nProcs];
+  int *nReceiveDpls  = new int[nProcs];
+
+  //First receive the number of hashes
+  MPI_Gather(&nHashes, 1, MPI_INT, nReceiveCnts, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+  int totalNumberOfHashes = 0;
+  uint4 *allHashes       = NULL;
+
+  //Compute receive offsets (only proc 0)
+  if(procId == 0)
+  {
+    totalNumberOfHashes += nReceiveCnts[0];
+    nReceiveCnts[0] = nReceiveCnts[0]*sizeof(uint4);
+    nReceiveDpls[0] = 0;
+
+    for(int i=1; i < nProcs; i++)
+    {
+      totalNumberOfHashes += nReceiveCnts[i];
+      nReceiveCnts[i]      = nReceiveCnts[i]*sizeof(uint4);
+      nReceiveDpls[i]      = nReceiveDpls[i-1] + nReceiveCnts[i-1];
+    }
+    allHashes = new uint4[totalNumberOfHashes];
+  }
+
+  //Collect hashes on process 0
+  MPI_Gatherv(&hashes[0], nHashes*sizeof(uint4), MPI_BYTE,
+              &allHashes[0], nReceiveCnts, nReceiveDpls, MPI_BYTE,
+              0, MPI_COMM_WORLD);
+
+//  MPI_Gatherv((procId ? &sampleArray[0] : MPI_IN_PLACE), nsample*sizeof(real4), MPI_BYTE,
+//              &sampleArray[0], nReceiveCnts, nReceiveDpls, MPI_BYTE,
+//              0, MPI_COMM_WORLD);
+
+
+  if(procId == 0)
+  {
+    //Check if we have received all data
+    int nTotal = 0;
+
+//    for(int i=0; i < totalNumberOfHashes; i++)
+//    {
+//      LOGF(stderr, "%d\t%d %d %d\t%d\n", i,
+//          allHashes[i].x, allHashes[i].y, allHashes[i].z, allHashes[i].w);
+//    }
+
+    std::sort(allHashes, allHashes+totalNumberOfHashes, cmp_ph_key());
+
+    for(int i=0; i < totalNumberOfHashes; i++)
+    {
+      nTotal += allHashes[i].w;
+
+//      LOGF(stderr, "After sort %d\t%d %d %d\t%d\n", i,
+//          allHashes[i].x, allHashes[i].y, allHashes[i].z, allHashes[i].w);
+    }
+
+    //Per process:
+    int nPerProc = nTotal / nProcs;
+
+    LOGF(stderr, "Number of particles per process: %d \t %d \n", nTotal, nPerProc);
+
+    boundaries[0]       = make_uint4(0x0, 0x0, 0x0, 0x0);
+    boundaries[nProcs]  = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
+
+    int tempSum = 0;
+    int procIdx = 1;
+    for(int i=0; i < totalNumberOfHashes; i++)
+    {
+//      LOGF(stderr, "NON-Boundary at: %d\t%d %d %d %d \t %d \n",
+//                    i, allHashes[i].x,allHashes[i].y,allHashes[i].z,allHashes[i].w, tempSum);
+        tempSum += allHashes[i].w;
+        if(tempSum >= nPerProc)
+        {
+          LOGF(stderr, "Boundary at: %d\t%d %d %d %d \t %d \n",
+              i, allHashes[i+1].x,allHashes[i+1].y,allHashes[i+1].z,allHashes[i+1].w, tempSum);
+
+          tempSum = 0;
+          boundaries[procIdx++] = allHashes[i+1];
+        }
+
+//      LOGF(stderr, "After sort %d\t%d %d %d\t%d\n", i,
+//          allHashes[i].x, allHashes[i].y, allHashes[i].z, allHashes[i].w);
+
+    }//for totalNumberOfHashes
+
+  }//if procId == 0
+
+  //Send the boundaries to all processes
+  MPI_Bcast(boundaries,  sizeof(uint4)*(nProcs+1),MPI_BYTE,0,MPI_COMM_WORLD);
+
+  for(int i=0; i < nProcs; i++)
+  {
+    LOGF(stderr, "Proc: %d Going from: >= %u %u %u  to < %u %u %u \n",i,
+         boundaries[i].x,boundaries[i].y,boundaries[i].z,boundaries[i+1].x,boundaries[i+1].y,boundaries[i+1].z);
+  }
+
+
+  delete[] nReceiveCnts;
+  delete[] nReceiveDpls;
+
+#endif
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

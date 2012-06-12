@@ -18,6 +18,21 @@ static __device__ inline int isinbox(real4 pos, double4 xlow, double4 xhigh)
     return 1;
 }
 
+static __device__ inline int cmp_uint4(uint4 a, uint4 b) {
+  if      (a.x < b.x) return -1;
+  else if (a.x > b.x) return +1;
+  else {
+    if       (a.y < b.y) return -1;
+    else  if (a.y > b.y) return +1;
+    else {
+      if       (a.z < b.z) return -1;
+      else  if (a.z > b.z) return +1;
+      return 0;
+    } //end z
+  }  //end y
+} //end x, function
+
+
 
 KERNEL_DECLARE(doDomainCheck)(int    n_bodies,
                                            double4  xlow,
@@ -110,6 +125,7 @@ typedef struct bodyStruct
   float2 time;
   int   id;
   int   temp;
+  uint4 key;
 } bodyStruct;
 
 
@@ -223,7 +239,159 @@ KERNEL_DECLARE(insertNewParticles)(int       n_extract,
   body_id[idx]  = source[id].id;
 }
 
+//Check if a particles key is within the min and max boundaries
+KERNEL_DECLARE(domainCheckSFC)(int    n_bodies,
+                               uint4  lowBoundary,
+                               uint4  highBoundary,
+                               uint4  *body_key,
+                               int    *validList    //Valid is 1 if particle is outside domain
+){
+  CUXTIMER("domainCheckSFC");
+  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
+  uint tid = threadIdx.x;
+  uint id  = bid * blockDim.x + tid;
 
+  if (id >= n_bodies) return;
+
+  uint4 key = body_key[id];
+
+  int bottom = cmp_uint4(key, lowBoundary);
+  int top    = cmp_uint4(key, highBoundary);
+
+  int valid = 0;
+  if(bottom >= 0 && top < 0)
+  {
+    //INside
+  }
+  else
+  {
+    //    outside
+    valid = 1;
+  }
+  validList[id] = id | ((valid) << 31);
+}
+
+
+
+KERNEL_DECLARE(internalMoveSFC) (int       n_extract,
+                                  int       n_bodies,
+                                  uint4  lowBoundary,
+                                  uint4  highBoundary,
+                                  int       *extractList,
+                                  int       *indexList,
+                                  real4     *Ppos,
+                                  real4     *Pvel,
+                                  real4     *pos,
+                                  real4     *vel,
+                                  real4     *acc0,
+                                  real4     *acc1,
+                                  float2    *time,
+                                  int       *body_id,
+                                  uint4     *body_key)
+{
+  CUXTIMER("internalMoveSFC");
+  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
+  uint tid = threadIdx.x;
+  uint id  = bid * blockDim.x + tid;
+
+  if(id >= n_extract) return;
+
+  int srcIdx     = (n_bodies-n_extract) + id;
+
+
+  uint4 key  = body_key[srcIdx];
+  int bottom = cmp_uint4(key, lowBoundary);
+  int top    = cmp_uint4(key, highBoundary);
+
+
+  if((bottom >= 0 && top < 0))
+  {
+    int dstIdx = atomicAdd(indexList, 1);
+    dstIdx     = extractList[dstIdx];
+
+    //Move!
+    Ppos[dstIdx] = Ppos[srcIdx];
+    Pvel[dstIdx] = Pvel[srcIdx];
+    pos[dstIdx]  = pos[srcIdx];
+    vel[dstIdx]  = vel[srcIdx];
+    acc0[dstIdx] = acc0[srcIdx];
+    acc1[dstIdx] = acc1[srcIdx];
+    time[dstIdx] = time[srcIdx];
+    body_key[dstIdx] = body_key[srcIdx];
+    body_id[dstIdx]  = body_id[srcIdx];
+  }//if inside
+
+}
+
+KERNEL_DECLARE(extractOutOfDomainParticlesAdvancedSFC)(int n_extract,
+                                                       int *extractList,
+                                                       real4 *Ppos,
+                                                       real4 *Pvel,
+                                                       real4 *pos,
+                                                       real4 *vel,
+                                                       real4 *acc0,
+                                                       real4 *acc1,
+                                                       float2 *time,
+                                                       int   *body_id,
+                                                       uint4 *body_key,
+                                                       bodyStruct *destination)
+{
+  CUXTIMER("extractOutOfDomainParticlesAdvancedSFC");
+  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
+  uint tid = threadIdx.x;
+  uint id  = bid * blockDim.x + tid;
+
+  if(id >= n_extract) return;
+
+  //copy the data from a struct of arrays into a array of structs
+  destination[id].Ppos = Ppos[extractList[id]];
+  destination[id].Pvel = Pvel[extractList[id]];
+  destination[id].pos  = pos[extractList[id]];
+  destination[id].vel  = vel[extractList[id]];
+  destination[id].acc0  = acc0[extractList[id]];
+  destination[id].acc1  = acc1[extractList[id]];
+  destination[id].time  = time[extractList[id]];
+  destination[id].id    = body_id[extractList[id]];
+  destination[id].key   = body_key[extractList[id]];
+
+}
+
+KERNEL_DECLARE(insertNewParticlesSFC)(int       n_extract,
+                                              int       n_insert,
+                                              int       n_oldbodies,
+                                              int       offset,
+                                              real4     *Ppos,
+                                              real4     *Pvel,
+                                              real4     *pos,
+                                              real4     *vel,
+                                              real4     *acc0,
+                                              real4     *acc1,
+                                              float2    *time,
+                                              int       *body_id,
+                                              uint4     *body_key,
+                                              bodyStruct *source)
+{
+  CUXTIMER("insertNewParticlesSFC");
+  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
+  uint tid = threadIdx.x;
+  uint id  = bid * blockDim.x + tid;
+
+  if(id >= n_insert) return;
+
+  //The newly added particles are added at the end of the array
+  int idx = (n_oldbodies-n_extract) + id + offset;
+
+  //copy the data from a struct of arrays into a array of structs
+  Ppos[idx]     = source[id].Ppos;
+  Pvel[idx]     = source[id].Pvel;
+  pos[idx]      = source[id].pos;
+  vel[idx]      = source[id].vel;
+  acc0[idx]     = source[id].acc0;
+  acc1[idx]     = source[id].acc1;
+  time[idx]     = source[id].time;
+  body_id[idx]  = source[id].id;
+  body_key[idx] = source[id].key;
+}
 
 
 

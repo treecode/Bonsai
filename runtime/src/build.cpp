@@ -103,6 +103,8 @@ void octree::allocateParticleMemory(tree_structure &tree)
 //    int remoteSize = (n_bodies*0.1) +  (n_bodies*0.1); //TODO some more realistic number
     int remoteSize = (int)(n_bodies*0.5); //TODO some more realistic number
     this->remoteTree.fullRemoteTree.cmalloc(remoteSize, true);    
+
+    tree.parallelBoundaries.cmalloc(mpiGetNProcs()+1, true);
   }
   
 }
@@ -531,3 +533,231 @@ void octree::build (tree_structure &tree) {
   /*************************/
 
 }
+
+
+
+
+//This function builds a hash-table for the particle-keys which is required for the
+//domain distribution based on the SFC
+
+void octree::parallelDataSummary(tree_structure &tree) {
+
+  int level      = 0;
+  int validCount = 0;
+  int offset     = 0;
+
+  /******** create memory buffers **********/
+
+  my_dev::dev_mem<uint>  validList(devContext);
+  my_dev::dev_mem<uint>  compactList(devContext);
+  my_dev::dev_mem<uint4>  node_key(devContext);
+
+
+  int memBufOffset = validList.cmalloc_copy  (tree.generalBuffer1, tree.n*2, 0);
+      memBufOffset = compactList.cmalloc_copy(tree.generalBuffer1, tree.n*2, memBufOffset);
+      memBufOffset = node_key.cmalloc_copy   (tree.generalBuffer1, tree.n,   memBufOffset);
+
+
+  validList.zeroMem();
+
+
+  //Total amount of space in the generalbuffer: at least:
+  //- 3x n_bodies*uint4/float4 , so 12*int size
+  // validList          = 0-2*n_bodies (int)             Remaining: 10*n_bodies
+  // compactList        = 2*n_bodies - 4*n_bodies (int)  Remaining:  8*n_bodies
+  // node_key           = 4*n_bodies - 8*n_bodies (int)  Remaining:  4*n_bodies
+
+
+  /********** Reserve memory for the build in buffers ****************/
+  my_dev::dev_mem<uint4>  parGrpBlockKey(devContext);
+  parGrpBlockKey.cmalloc(tree.n, true);
+
+  my_dev::dev_mem<uint2>  parGrpBlockInfo(devContext);
+  parGrpBlockInfo.cmalloc(tree.n, true);
+
+  my_dev::dev_mem<uint>   startBoundaryIndex(devContext);
+  startBoundaryIndex.cmalloc(tree.n+1, true); //+1 to set final border
+  startBoundaryIndex.zeroMem();
+
+  /******** set kernels parameters **********/
+
+
+  build_valid_list.set_arg<int>(0,     &tree.n);
+  build_valid_list.set_arg<int>(1,     &level);
+  build_valid_list.set_arg<cl_mem>(2,  tree.bodies_key.p());
+  build_valid_list.set_arg<cl_mem>(3,  validList.p());
+  build_valid_list.setWork(tree.n, 128);
+
+  build_parallel_grps.set_arg<int>(0,     &validCount);
+  build_parallel_grps.set_arg<int>(1,     &offset);
+  build_parallel_grps.set_arg<cl_mem>(2,  compactList.p());
+  build_parallel_grps.set_arg<cl_mem>(3,  tree.bodies_key.p());
+  build_parallel_grps.set_arg<cl_mem>(4,  parGrpBlockKey.p());
+  build_parallel_grps.set_arg<cl_mem>(5,  parGrpBlockInfo.p());
+  build_parallel_grps.set_arg<cl_mem>(6,  startBoundaryIndex.p());
+
+
+
+  /********** build  list of keys ********/
+
+//  this->compute_keys(bodies_pos, bodies_key, n_bodies, tree.corner, tree.domain_fac);
+
+  real4 r_min = {+1e10, +1e10, +1e10, +1e10};
+  real4 r_max = {-1e10, -1e10, -1e10, -1e10};
+
+  if(1)
+  {
+    getBoundaries(tree, r_min, r_max);
+    //Sync the boundary over the various processes
+    if(this->mpiGetNProcs() > 1)
+    {
+      this->sendCurrentRadiusInfo(r_min, r_max);
+    }
+  }
+
+  //Compute the boundarys of the tree
+  real size     = 1.001f*std::max(r_max.z - r_min.z,
+                         std::max(r_max.y - r_min.y, r_max.x - r_min.x));
+
+  tree.corner   = make_real4(0.5f*(r_min.x + r_max.x) - 0.5f*size,
+                             0.5f*(r_min.y + r_max.y) - 0.5f*size,
+                             0.5f*(r_min.z + r_max.z) - 0.5f*size, size);
+  tree.corner.w = size/(1 << MAXLEVELS);
+
+  build_key_list.set_arg<cl_mem>(0,   tree.bodies_key.p());
+  build_key_list.set_arg<cl_mem>(1,   tree.bodies_Ppos.p());
+  build_key_list.set_arg<int>(2,      &tree.n);
+  build_key_list.set_arg<real4>(3,    &tree.corner);
+  build_key_list.setWork(tree.n, 128); //128 threads per block
+  build_key_list.execute(execStream->s());
+
+  /******  build the levels *********/
+
+  int nodeSum = 0;
+
+  this->resetCompact();
+  this->devMemCountsx.waitForCopyEvent();
+
+
+  for (level = 0; level < MAXLEVELS; level++) {
+    // mark bodies to be combined into nodes
+    build_valid_list.set_arg<int>(1, &level);
+    build_valid_list.execute(execStream->s());
+
+    //gpuCompact to get number of created nodes
+    gpuCompact(devContext, validList, compactList, tree.n*2, &validCount);
+
+    nodeSum += validCount / 2;
+    LOG("ValidCount (%d): %d \tSum: %d Offset: %d\n", 0, validCount, nodeSum, offset);
+
+    validCount /= 2;
+
+    if (validCount == 0) break;
+
+    // Assemble nodes
+    build_parallel_grps.set_arg<int>(0, &validCount);
+    build_parallel_grps.set_arg<int>(1, &offset);
+    build_parallel_grps.setWork(-1, 128, validCount);
+    build_parallel_grps.execute(execStream->s());
+
+    offset += validCount;
+  } //end for lvl
+
+  this->resetCompact();
+  this->devMemCountsx.waitForCopyEvent();
+
+  //Compact the starts of each block/group. Since this is based on the particle positions
+  //this gives us a way to sort the hash-group-keys without having to actually sort the
+  //list. This sorting/reordering will take place in the segmentedSummaryBasic kernel
+  gpuCompact(devContext, startBoundaryIndex, compactList, tree.n+1, &validCount);
+
+  fprintf(stderr,"Number of hash-blocks: %d , of which valid: %d\n", offset, validCount);
+
+  //Get the properties: key+number of particles with that key, + possibly interaction count
+  tree.parallelHashes.cmalloc(validCount, true);
+
+  my_dev::dev_mem<uint>   atomicValues(devContext);
+  atomicValues.cmalloc(256, true);
+  atomicValues.zeroMem();
+
+  segmentedSummaryBasic.set_arg<int>(0,     &validCount);
+  segmentedSummaryBasic.set_arg<cl_mem>(1,  compactList.p());
+  segmentedSummaryBasic.set_arg<cl_mem>(2,  atomicValues.p());
+  segmentedSummaryBasic.set_arg<cl_mem>(3,  parGrpBlockInfo.p());
+  segmentedSummaryBasic.set_arg<cl_mem>(4,  parGrpBlockKey.p());
+  segmentedSummaryBasic.set_arg<cl_mem>(5,  tree.parallelHashes.p());
+  segmentedSummaryBasic.set_arg<cl_mem>(6,  tree.bodies_key.p());
+  //Fix number of groups to reduce launch overhead for small groups , persistent threads
+  segmentedSummaryBasic.setWork(-1, NTHREAD_BOUNDARY, NBLOCK_BOUNDARY);
+  segmentedSummaryBasic.execute();
+
+
+
+  uint sum = 0;
+  tree.parallelHashes.d2h();
+//  if(procId == 0){
+//  for(int i=0; i < validCount; i++)
+//  {
+//    fprintf(stderr,"%d \t Key: %d %d %d \tsize->\t %d\n", i,
+//        tree.parallelHashes[i].x, tree.parallelHashes[i].y,
+//        tree.parallelHashes[i].z, tree.parallelHashes[i].w);
+//    sum += tree.parallelHashes[i].w;
+//  }
+//  fprintf(stderr,"Total particles: %d \n", sum);
+//  }
+//
+//  exit(0);
+
+  gpu_collect_hashes(validCount, &tree.parallelHashes[0], &tree.parallelBoundaries[0]);
+
+
+  //Compute keys again, needed for the redistribution
+  //TODO since we have to recalc them, we might be able to save
+  //some memory and compute steps above here. Note we can call this
+  //in parallel with the communication of the hashes
+  build_key_list.execute(execStream->s());
+
+//  fflush(stderr);
+//  fflush(stdout);
+//  mpiSync();
+//  tree.bodies_key.d2h();
+//  for(int i=0; i < tree.n; i++)
+//  {
+//    if(procId == 0)
+//    LOGF(stderr, "Particle at: %d\t%d %d %d %d \n",
+//        i, tree.bodies_key[i].x,tree.bodies_key[i].y,
+//           tree.bodies_key[i].z,tree.bodies_key[i].w);
+//
+//  }
+//  mpiSync();
+//  exit(0);
+
+
+  gpuRedistributeParticles_SFC(&tree.parallelBoundaries[0]);
+
+
+  build_key_list.execute(execStream->s());
+//Hier gebleven, de key list matched niet met de boundary list ??
+
+
+
+//  tree.bodies_key.d2h();
+//  for(int i=0; i < tree.n; i++)
+//  {
+//    if(procId == 1)
+//    LOGF(stderr, "Particle at: %d\t%d %d %d %d \n",
+//        i, tree.bodies_key[i].x,tree.bodies_key[i].y,
+//           tree.bodies_key[i].z,tree.bodies_key[i].w);
+//
+//  }
+//
+//
+//  mpiSync();
+//
+//fprintf(stderr,"TEST TEST TEST\n");
+//exit(0);
+  /*************************/
+
+}
+
+

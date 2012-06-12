@@ -316,6 +316,13 @@ void octree::load_kernels() {
   extractOutOfDomainBody.setContext(devContext);  
   insertNewParticles.setContext(devContext);  
   internalMove.setContext(devContext);  
+  build_parallel_grps.setContext(devContext);
+  segmentedSummaryBasic.setContext(devContext);
+  domainCheckSFC.setContext(devContext);
+  internalMoveSFC.setContext(devContext);
+  extractOutOfDomainParticlesAdvancedSFC.setContext(devContext);
+  insertNewParticlesSFC.setContext(devContext);
+
 
 #ifdef USE_CUDA
   domainCheck.load_source("./parallel.ptx", pathName.c_str());
@@ -325,12 +332,26 @@ void octree::load_kernels() {
   insertNewParticles.load_source("./parallel.ptx", pathName.c_str());
   internalMove.load_source("./parallel.ptx", pathName.c_str());
   
+  build_parallel_grps.load_source("./build_tree.ptx", pathName.c_str());
+  segmentedSummaryBasic.load_source("./build_tree.ptx", pathName.c_str());
+  domainCheckSFC.load_source("./parallel.ptx", pathName.c_str());
+  internalMoveSFC.load_source("./parallel.ptx", pathName.c_str());
+  extractOutOfDomainParticlesAdvancedSFC.load_source("./parallel.ptx", pathName.c_str());
+  insertNewParticlesSFC.load_source("./parallel.ptx", pathName.c_str());
+
   domainCheck.create("doDomainCheck");
   extractSampleParticles.create("extractSampleParticles");
   extractOutOfDomainR4.create("extractOutOfDomainParticlesR4");
   extractOutOfDomainBody.create("extractOutOfDomainParticlesAdvanced");
   insertNewParticles.create("insertNewParticles");
   internalMove.create("internalMove");
+
+  build_parallel_grps.create("build_parallel_grps");
+  segmentedSummaryBasic.create("segmentedSummaryBasic");
+  domainCheckSFC.create("domainCheckSFC");
+  internalMoveSFC.create("internalMoveSFC");
+  extractOutOfDomainParticlesAdvancedSFC.create("extractOutOfDomainParticlesAdvancedSFC");
+  insertNewParticlesSFC.create("insertNewParticlesSFC");
 
 #else
 

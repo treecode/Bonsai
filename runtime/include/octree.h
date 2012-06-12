@@ -76,6 +76,7 @@ typedef struct bodyStruct
   float2 time;
   int   id;
   int   temp;
+  uint4 key;
 } bodyStruct;
 
 typedef struct sampleRadInfo
@@ -148,6 +149,9 @@ class tree_structure
 
     my_dev::dev_mem<float4> boxCenterInfo;
     my_dev::dev_mem<float4> groupCenterInfo;
+
+    my_dev::dev_mem<uint4> parallelHashes;
+    my_dev::dev_mem<uint4> parallelBoundaries;
 
     //Combined buffers:
     /*
@@ -268,6 +272,9 @@ class tree_structure
     groupSizeInfo.setContext(*devContext);
     boxCenterInfo.setContext(*devContext);
     groupCenterInfo.setContext(*devContext);
+
+    parallelHashes.setContext(*devContext);
+    parallelBoundaries.setContext(*devContext);
 
     //General buffers
     generalBuffer1.setContext(*devContext);
@@ -390,6 +397,8 @@ protected:
   my_dev::kernel  mark_coarse_group_boundaries;
 
 
+
+
   // tree properties kernels
   my_dev::kernel  propsNonLeafD, propsLeafD, propsScalingD;
 
@@ -416,6 +425,14 @@ protected:
   my_dev::kernel extractOutOfDomainBody;
   my_dev::kernel insertNewParticles;
   my_dev::kernel internalMove;
+
+  my_dev::kernel build_parallel_grps;
+  my_dev::kernel segmentedSummaryBasic;
+
+  my_dev::kernel domainCheckSFC;
+  my_dev::kernel internalMoveSFC;
+  my_dev::kernel extractOutOfDomainParticlesAdvancedSFC;
+  my_dev::kernel insertNewParticlesSFC;
 
 #ifdef USE_B40C
   Sort90 *sorter;
@@ -653,6 +670,9 @@ public:
   void gpuRedistributeParticles();
 
   int  exchange_particles_with_overflow_check(tree_structure &localTree);
+  int gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
+                                                  bodyStruct *particlesToSend,
+                                                  my_dev::dev_mem<uint> &extractList, int nToSend);
 
   template<class T>
   int MP_exchange_particle_with_overflow_check(int ibox,
@@ -704,6 +724,12 @@ public:
   void ICSend(int destination, real4 *bodyPositions, real4 *bodyVelocities,  int *bodiesIDs, int size);
 
   void makeLET();
+
+  void parallelDataSummary(tree_structure &tree);
+
+  void gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries);
+  void gpuRedistributeParticles_SFC(uint4 *boundaries);
+
 
   //End functions for parallel code
   
