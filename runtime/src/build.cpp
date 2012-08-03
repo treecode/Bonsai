@@ -105,6 +105,9 @@ void octree::allocateParticleMemory(tree_structure &tree)
     this->remoteTree.fullRemoteTree.cmalloc(remoteSize, true);    
 
     tree.parallelBoundaries.cmalloc(mpiGetNProcs()+1, true);
+    //Some default value for number of hashes, will be increased if required
+    //should be ' n_bodies / NPARALLEL' for now just alloc 10%
+    tree.parallelHashes.cmalloc(n_bodies*0.1, true);
   }
   
 }
@@ -238,6 +241,7 @@ void octree::build (tree_structure &tree) {
   levelOffset.zeroMem();
   maxLevel.zeroMem();
   
+
   //Memory layout of the above (in uint):
   //[[validList--2*tree.n],[compactList--2*tree.n],[node_key--4*tree.n],
   // [levelOffset--256], [maxLevel--256], [free--at-least: 12-8*tree.n-256]]
@@ -328,9 +332,6 @@ void octree::build (tree_structure &tree) {
  
   /***** Link the tree ******/
   
-  link_tree.set_arg<int>(0, &offset);   //Offset=number of nodes
-  
-  
   //The maximum number of levels that can be used is MAXLEVEl 
   //if max level is larger than that the program will exit
   LOG("Max level : %d \n", level);
@@ -347,10 +348,22 @@ void octree::build (tree_structure &tree) {
   tree.n_levels = level-1;
 
   tree.level_list.d2h();
+  tree.startLevelMin = 0;
   for(int i=0; i < level; i++)
+  {
     LOG("%d\t%d\t%d\n", i, tree.level_list[i].x, tree.level_list[i].y);
+    //Figure out which level is used as min_level
+    if(((tree.level_list[i].y - tree.level_list[i].x) > START_LEVEL_MIN_NODES) && (tree.startLevelMin == 0))
+    {
+      tree.startLevelMin = i;
+    }
+  }
+  LOG("Start at: Level: %d  begend: %d %d \n", tree.startLevelMin,
+      tree.level_list[tree.startLevelMin].x, tree.level_list[tree.startLevelMin].y);
  
   //Link the tree      
+  link_tree.set_arg<int>(0, &offset);   //Offset=number of nodes
+  link_tree.set_arg<int>(9, &tree.startLevelMin);
   link_tree.execute(execStream->s());
   
 
@@ -405,16 +418,21 @@ void octree::build (tree_structure &tree) {
   //will be used for getting the multi-box/group group boundaries. Also it serves as a 
   //boundary mechanism independent of the max-distance trick between particles that we used 
   //before. So first find the min level from where we can take the boundaries
-  const int minCoarseGroups = 50;
-  int minCoarseGroupLevelIdx = 0;
-  for(int i=0; i < level; i++){
-    if( (tree.level_list[i].y - tree.level_list[i].x) >  minCoarseGroups)
-    {
-      minCoarseGroupLevelIdx = i;
-      break;
-    }
-  }
-  tree.courseGroupIdx = minCoarseGroupLevelIdx;
+//  const int minCoarseGroups = 50;
+//  int minCoarseGroupLevelIdx = 0;
+//  for(int i=0; i < level; i++){
+//    if( (tree.level_list[i].y - tree.level_list[i].x) >  minCoarseGroups)
+//    {
+//      minCoarseGroupLevelIdx = i;
+//      break;
+//    }
+//  }
+//  tree.courseGroupIdx = minCoarseGroupLevelIdx;
+
+  //In the updated version we use the minimum tree-level, which ensures
+  //that groups are based on the tree-structure. The +1
+  tree.courseGroupIdx        = tree.startLevelMin;
+  int minCoarseGroupLevelIdx = tree.startLevelMin;
   
   
   //Now use the previous computed offsets to build all boundaries. The coarse ones and the
@@ -423,7 +441,7 @@ void octree::build (tree_structure &tree) {
   //The newest group creation method!
   define_groups.set_arg<int>    (0, &tree.n);  
   define_groups.set_arg<cl_mem> (1, validList.p());    
-  define_groups.set_arg<int>    (2, &tree.level_list[minCoarseGroupLevelIdx].y);
+  define_groups.set_arg<uint2>  (2, &tree.level_list[minCoarseGroupLevelIdx]);
   define_groups.set_arg<cl_mem> (3, tree.node_bodies.p());
   define_groups.set_arg<cl_mem> (4, tree.node_level_list.p());
   define_groups.set_arg<int>    (5, &level);
@@ -449,7 +467,7 @@ void octree::build (tree_structure &tree) {
   //Mark the boundaries of the coarse groups. We have to do this again since it was combined
   //with all other groups in the previous step
   validList.zeroMem();  
-  mark_coarse_group_boundaries.set_arg<int>   (0, &tree.level_list[minCoarseGroupLevelIdx].y);
+  mark_coarse_group_boundaries.set_arg<uint2> (0, &tree.level_list[minCoarseGroupLevelIdx]);
   mark_coarse_group_boundaries.set_arg<cl_mem>(1, validList.p());
   mark_coarse_group_boundaries.set_arg<cl_mem>(2, tree.node_bodies.p());
   mark_coarse_group_boundaries.set_arg<cl_mem>(3, tree.node_level_list.p());
@@ -485,32 +503,76 @@ void octree::build (tree_structure &tree) {
   LOGF(stderr, "Coarse groups %d \n", n_course);
   tree.n_coarse_groups = n_course;
 
-#if 0
+#if 1
   tree.coarseGroupCompact.d2h();
   tree.group_list.d2h();
 
+
+mpiSync();
+if(procId == 0){
   for(int i=0; i < n_course; i++)
   {
 	    int start = tree.group_list[tree.coarseGroupCompact[i]].x;
 	    int end   = tree.group_list[tree.coarseGroupCompact[i]].y;
 
 	    if(i == n_course-1){
-//	    	   fprintf(stderr,"Compactgrps Final %d\t %d \t %d\t%d\t Part: %d \t %d \n",
-//	    			   i, tree.coarseGroupCompact[i], tree.n_groups,
-//	    			   tree.n_groups - tree.coarseGroupCompact[i],
-//	    			   start, end);
+	    	   LOGF(stderr,"Compactgrps Final %d \t %d \t %d\t%d\t Part: %d \t %d \n",
+	    			   i,tree.coarseGroupCompact[i], tree.n_groups,
+	    			   tree.n_groups - tree.coarseGroupCompact[i],
+	    			   start, end);
 	    }
 	    else
 	    {
 	    int end2 = tree.group_list[tree.coarseGroupCompact[i+1]].x;
 
 
-//	   fprintf(stderr,"Compactgrps %d\t %d \t %d\t%d\t Part: %d \t %d \n",
-//				  i, tree.coarseGroupCompact[i],  tree.coarseGroupCompact[i+1],
-//				  tree.coarseGroupCompact[i+1] -  tree.coarseGroupCompact[i],
-//				  start, end2);
+	    LOGF(stderr,"Compactgrps %d \t %d \t %d\t%d\t Part: %d \t %d \n",
+				  i, tree.coarseGroupCompact[i],  tree.coarseGroupCompact[i+1],
+				  tree.coarseGroupCompact[i+1] -  tree.coarseGroupCompact[i],
+				  start, end2);
 	    }
   }
+
+  //Print tree level information
+  tree.n_children.d2h();
+  tree.node_bodies.d2h();
+//  for(int i=0; i < 4; i++)
+  {
+    int i = tree.startLevelMin;
+    for(int j=tree.level_list[i].x; j < tree.level_list[i].y; j++)
+    {
+
+      int childinfo = tree.n_children[j];
+      uint2 bij     = tree.node_bodies[j];
+      uint level = (bij.x &  LEVELMASK) >> BITLEVELS;
+      uint bi    =  bij.x & ILEVELMASK;
+      uint bj    =  bij.y;
+      bool leaf = 0;
+      const int LEVEL_MIN = 3;
+      if ((int)level > (int)(LEVEL_MIN - 1))
+        leaf = ((bj - bi) <= NLEAF);
+      int child, nchild;
+      if(!leaf)
+      {
+        //Node
+        child    =    childinfo & 0x0FFFFFFF;                         //Index to the first child of the node
+        nchild   = (((childinfo & 0xF0000000) >> 28)) ;         //The number of children this node has
+      }
+      else
+      {
+        //Leaf
+        child   =   childinfo & BODYMASK;                                     //thre first body in the leaf
+        nchild  = (((childinfo & INVBMASK) >> LEAFBIT)+1);     //number of bodies in the leaf masked with the flag
+      }
+
+      LOGF(stderr,"Tree node: %d @ level: %d From Particle; %d to %d  Child info: %d %d leaf: %d\n",
+          j, i, bi, bj, child, nchild, leaf);
+    }
+  }
+
+}
+
+//  exit(0);
 #endif
 
   
@@ -546,41 +608,40 @@ void octree::parallelDataSummary(tree_structure &tree) {
   int validCount = 0;
   int offset     = 0;
 
-  /******** create memory buffers **********/
+  double t0 = get_time();
+  /******** create memory buffers and reserve memory using the shared buffer **********/
 
-  my_dev::dev_mem<uint>  validList(devContext);
-  my_dev::dev_mem<uint>  compactList(devContext);
-  my_dev::dev_mem<uint4>  node_key(devContext);
-
+  my_dev::dev_mem<uint>   validList(devContext);
+  my_dev::dev_mem<uint>   compactList(devContext);
+  my_dev::dev_mem<uint4>  parGrpBlockKey(devContext);
+  my_dev::dev_mem<uint2>  parGrpBlockInfo(devContext);
+  my_dev::dev_mem<uint>   startBoundaryIndex(devContext);
+  my_dev::dev_mem<uint>   atomicValues(devContext);
 
   int memBufOffset = validList.cmalloc_copy  (tree.generalBuffer1, tree.n*2, 0);
       memBufOffset = compactList.cmalloc_copy(tree.generalBuffer1, tree.n*2, memBufOffset);
-      memBufOffset = node_key.cmalloc_copy   (tree.generalBuffer1, tree.n,   memBufOffset);
+      memBufOffset = parGrpBlockKey.cmalloc_copy(tree.generalBuffer1, tree.n, memBufOffset);
+      memBufOffset = parGrpBlockInfo.cmalloc_copy(tree.generalBuffer1, tree.n, memBufOffset);
+      memBufOffset = startBoundaryIndex.cmalloc_copy(tree.generalBuffer1, tree.n+1, memBufOffset); //+1 to set final border
+      memBufOffset = atomicValues.cmalloc_copy(tree.generalBuffer1, 256, memBufOffset); //+1 to set final border
 
-
-  validList.zeroMem();
-
+  validList.zeroMemGPUAsync(copyStream->s());
+  atomicValues.zeroMemGPUAsync(copyStream->s());
+  startBoundaryIndex.zeroMemGPUAsync(copyStream->s());
 
   //Total amount of space in the generalbuffer: at least:
   //- 3x n_bodies*uint4/float4 , so 12*int size
   // validList          = 0-2*n_bodies (int)             Remaining: 10*n_bodies
   // compactList        = 2*n_bodies - 4*n_bodies (int)  Remaining:  8*n_bodies
-  // node_key           = 4*n_bodies - 8*n_bodies (int)  Remaining:  4*n_bodies
+  // parGrpBlockKey     = 4*n_bodies - 8*n_bodies (int)  Remaining:  4*n_bodies
+  // parGrpBlockInfo     = 8*n_bodies - 10*n_bodies (int)  Remaining:  2*n_bodies
+  // startBoundaryIndex = 10*n_bodies - 11*n_bodies+1 (int) Remianing: n_bodies-1
 
 
-  /********** Reserve memory for the build in buffers ****************/
-  my_dev::dev_mem<uint4>  parGrpBlockKey(devContext);
-  parGrpBlockKey.cmalloc(tree.n, true);
-
-  my_dev::dev_mem<uint2>  parGrpBlockInfo(devContext);
-  parGrpBlockInfo.cmalloc(tree.n, true);
-
-  my_dev::dev_mem<uint>   startBoundaryIndex(devContext);
-  startBoundaryIndex.cmalloc(tree.n+1, true); //+1 to set final border
-  startBoundaryIndex.zeroMem();
+  real4 r_min = {+1e10, +1e10, +1e10, +1e10};
+  real4 r_max = {-1e10, -1e10, -1e10, -1e10};
 
   /******** set kernels parameters **********/
-
 
   build_valid_list.set_arg<int>(0,     &tree.n);
   build_valid_list.set_arg<int>(1,     &level);
@@ -597,35 +658,19 @@ void octree::parallelDataSummary(tree_structure &tree) {
   build_parallel_grps.set_arg<cl_mem>(6,  startBoundaryIndex.p());
 
 
-
   /********** build  list of keys ********/
 
-//  this->compute_keys(bodies_pos, bodies_key, n_bodies, tree.corner, tree.domain_fac);
+  getBoundaries(tree, r_min, r_max); //Used for predicted position keys further down
+  LOGF(stderr, "BVfore hashes took: %f \n", get_time()-t0);
 
-  real4 r_min = {+1e10, +1e10, +1e10, +1e10};
-  real4 r_max = {-1e10, -1e10, -1e10, -1e10};
 
-  if(1)
-  {
-    getBoundaries(tree, r_min, r_max);
-    //Sync the boundary over the various processes
-    if(this->mpiGetNProcs() > 1)
-    {
-      this->sendCurrentRadiusInfo(r_min, r_max);
-    }
-  }
-
-  //Compute the boundarys of the tree
-  real size     = 1.001f*std::max(r_max.z - r_min.z,
-                         std::max(r_max.y - r_min.y, r_max.x - r_min.x));
-
-  tree.corner   = make_real4(0.5f*(r_min.x + r_max.x) - 0.5f*size,
-                             0.5f*(r_min.y + r_max.y) - 0.5f*size,
-                             0.5f*(r_min.z + r_max.z) - 0.5f*size, size);
-  tree.corner.w = size/(1 << MAXLEVELS);
+  //Compute keys based on the non-predicted positions to make sure
+  //particles are sorted. Improves efficiency of hash creation (less hashes required)
+  //and sorting (less items to sort and hashes are already in sorted order).
 
   build_key_list.set_arg<cl_mem>(0,   tree.bodies_key.p());
-  build_key_list.set_arg<cl_mem>(1,   tree.bodies_Ppos.p());
+//  build_key_list.set_arg<cl_mem>(1,   tree.bodies_Ppos.p());
+  build_key_list.set_arg<cl_mem>(1,   tree.bodies_pos.p());
   build_key_list.set_arg<int>(2,      &tree.n);
   build_key_list.set_arg<real4>(3,    &tree.corner);
   build_key_list.setWork(tree.n, 128); //128 threads per block
@@ -637,8 +682,12 @@ void octree::parallelDataSummary(tree_structure &tree) {
 
   this->resetCompact();
   this->devMemCountsx.waitForCopyEvent();
+  copyStream->sync();
 
 
+  //TODO rewrite this in similar way as build_tree loop, to remove copy
+  //TODO change this in a way that information is extracted from the tree-structure
+  //this way it should be must faster than it is now
   for (level = 0; level < MAXLEVELS; level++) {
     // mark bodies to be combined into nodes
     build_valid_list.set_arg<int>(1, &level);
@@ -661,7 +710,7 @@ void octree::parallelDataSummary(tree_structure &tree) {
     build_parallel_grps.execute(execStream->s());
 
     offset += validCount;
-  } //end for lvl
+  } //end for level
 
   this->resetCompact();
   this->devMemCountsx.waitForCopyEvent();
@@ -671,14 +720,11 @@ void octree::parallelDataSummary(tree_structure &tree) {
   //list. This sorting/reordering will take place in the segmentedSummaryBasic kernel
   gpuCompact(devContext, startBoundaryIndex, compactList, tree.n+1, &validCount);
 
-  fprintf(stderr,"Number of hash-blocks: %d , of which valid: %d\n", offset, validCount);
+  LOGF(stderr,"Number of hash-blocks: %d , of which valid: %d\n", offset, validCount);
 
   //Get the properties: key+number of particles with that key, + possibly interaction count
-  tree.parallelHashes.cmalloc(validCount, true);
-
-  my_dev::dev_mem<uint>   atomicValues(devContext);
-  atomicValues.cmalloc(256, true);
-  atomicValues.zeroMem();
+  execStream->sync();
+  tree.parallelHashes.cresize(validCount, false); //Possibly increase but never decrease
 
   segmentedSummaryBasic.set_arg<int>(0,     &validCount);
   segmentedSummaryBasic.set_arg<cl_mem>(1,  compactList.p());
@@ -689,33 +735,49 @@ void octree::parallelDataSummary(tree_structure &tree) {
   segmentedSummaryBasic.set_arg<cl_mem>(6,  tree.bodies_key.p());
   //Fix number of groups to reduce launch overhead for small groups , persistent threads
   segmentedSummaryBasic.setWork(-1, NTHREAD_BOUNDARY, NBLOCK_BOUNDARY);
-  segmentedSummaryBasic.execute();
+  segmentedSummaryBasic.execute(execStream->s());
+
+  tree.parallelHashes.d2h(validCount, false, execStream->s());
+
+  //Sync the boundary over the various processes
+  if(this->mpiGetNProcs() > 1)
+  {
+    this->sendCurrentRadiusInfo(r_min, r_max);
+  }
+
+  //Compute the boundarys of the tree
+  real size     = 1.001f*std::max(r_max.z - r_min.z,
+                         std::max(r_max.y - r_min.y, r_max.x - r_min.x));
+
+  tree.corner   = make_real4(0.5f*(r_min.x + r_max.x) - 0.5f*size,
+                             0.5f*(r_min.y + r_max.y) - 0.5f*size,
+                             0.5f*(r_min.z + r_max.z) - 0.5f*size, size);
+  tree.corner.w = size/(1 << MAXLEVELS);
 
 
-
-  uint sum = 0;
-  tree.parallelHashes.d2h();
-//  if(procId == 0){
-//  for(int i=0; i < validCount; i++)
-//  {
-//    fprintf(stderr,"%d \t Key: %d %d %d \tsize->\t %d\n", i,
-//        tree.parallelHashes[i].x, tree.parallelHashes[i].y,
-//        tree.parallelHashes[i].z, tree.parallelHashes[i].w);
-//    sum += tree.parallelHashes[i].w;
-//  }
-//  fprintf(stderr,"Total particles: %d \n", sum);
-//  }
-//
-//  exit(0);
-
-  gpu_collect_hashes(validCount, &tree.parallelHashes[0], &tree.parallelBoundaries[0]);
-
+  execStream->sync(); //Make sure segmentedSummaryBasic and d2h completed
 
   //Compute keys again, needed for the redistribution
-  //TODO since we have to recalc them, we might be able to save
-  //some memory and compute steps above here. Note we can call this
-  //in parallel with the communication of the hashes
+  // Note we can call this in parallel with the communication of the hashes.
+  //THis is done on predicted positions, to make sure that particles AFTER
+  //prediction are separated by boundaries
+  build_key_list.set_arg<cl_mem>(1,   tree.bodies_Ppos.p());
+  build_key_list.set_arg<real4>(3,    &tree.corner);
   build_key_list.execute(execStream->s());
+
+  LOGF(stderr, "Compute hashes took: %f \n", get_time()-t0);
+
+   //No leak in this call, checked. TODO clean up comment
+  gpu_collect_hashes(validCount, &tree.parallelHashes[0], &tree.parallelBoundaries[0]);
+  
+
+  LOGF(stderr, "Computing and exchanging and update domain took: %f \n", get_time()-t0);
+  t0 = get_time();
+
+  //TODO IMPORTANT, make sure we get the corret particle
+  //info wwhen we get the info since we do not sort all data
+  //after predict, never mind we have not clled sort at this point
+  //in execution
 
 //  fflush(stderr);
 //  fflush(stdout);
@@ -729,18 +791,11 @@ void octree::parallelDataSummary(tree_structure &tree) {
 //           tree.bodies_key[i].z,tree.bodies_key[i].w);
 //
 //  }
-//  mpiSync();
-//  exit(0);
 
 
-  gpuRedistributeParticles_SFC(&tree.parallelBoundaries[0]);
+   gpuRedistributeParticles_SFC(&tree.parallelBoundaries[0]);
 
-
-  build_key_list.execute(execStream->s());
-//Hier gebleven, de key list matched niet met de boundary list ??
-
-
-
+   LOGF(stderr, "Redistribute domain took: %f \n", get_time()-t0);
 //  tree.bodies_key.d2h();
 //  for(int i=0; i < tree.n; i++)
 //  {

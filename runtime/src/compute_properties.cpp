@@ -160,6 +160,39 @@ void octree::compute_properties(tree_structure &tree) {
   output_min.d2h();
   output_max.d2h();
 
+  //TODO, summarize the coarse groups using the tree-structure information
+  //and then send this to the other process, such that it can use the
+  //tree-walk to process the data
+
+#if 0
+
+  //Write the tree structure to file
+  tree.multipole.d2h();
+  tree.boxSizeInfo.d2h();
+  tree.boxCenterInfo.d2h();
+  for(int i=0; i < 5; i++)
+  {
+    char fileName[256];
+    sprintf(fileName, "fullTreeStructure-%d-level-%d.txt", mpiGetRank(), i);
+    ofstream nodeFile;
+    //nodeFile.open(nodeFileName.c_str());
+    nodeFile.open(fileName);
+    nodeFile << "NODES" << endl;
+
+    for(int j=tree.level_list[i].x; j < tree.level_list[i].y; j++)
+    {   //nodeFile << i << "\t" << tree.boxCenterInfo[i].x << "\t" << tree.boxCenterInfo[i].y;
+        //nodeFile << "\t" << 2*tree.boxSizeInfo[i].x << "\t" << 2*tree.boxSizeInfo[i].y << "\t";
+
+        nodeFile << tree.boxCenterInfo[j].x << "\t" << tree.boxCenterInfo[j].y << "\t" << tree.boxCenterInfo[j].z;
+        nodeFile << "\t"  << tree.boxSizeInfo[j].x << "\t" << tree.boxSizeInfo[j].y << "\t" << tree.boxSizeInfo[j].z << "\n";
+
+    }//for j
+    nodeFile.close();
+  }//for i
+
+#endif
+
+
 #if 0
   string nodeFileName = "fullTreeStructure.txt";
   char fileName[256];
@@ -224,6 +257,8 @@ void octree::compute_properties(tree_structure &tree) {
      partFile << pos.x << "\t" << pos.y << "\t" << pos.z << endl;
    }
    partFile.close();
+
+
 #endif
 
    sendCurrentRadiusInfoCoarse(&output_min[0], &output_max[0], tree.n_coarse_groups);

@@ -18,12 +18,18 @@ void octree::makeLET()
   my_dev::dev_stream memCpyStream;
   
   localTree.bodies_Ppos.d2h(false, memCpyStream.s());
-  localTree.bodies_Pvel.d2h(false, memCpyStream.s());
+//  localTree.bodies_Pvel.d2h(false, memCpyStream.s());
   localTree.multipole.d2h(false, memCpyStream.s());   
   localTree.boxSizeInfo.d2h(false, memCpyStream.s());
   localTree.boxCenterInfo.d2h(false, memCpyStream.s());
   
   //Exchange domain boundaries, while memory copies take place
+  
+//  TODO, move the sync of vel, multipole, boxsize and center
+//  to somewhere in the parallel.cpp after the count, since the
+//  data is not needed before that
+  //We need both the boxsizes , multipole (for com)
+  //in the count so we have to sync
 
   rMinLocalTreeGroups.w = this->maxLocalEps;
   sendCurrentRadiusInfo(rMinLocalTreeGroups,rMaxLocalTreeGroups);  
@@ -261,8 +267,18 @@ bool octree::iterate_once(IterationData &idata) {
     devContext.startTiming(execStream->s());
     predict(this->localTree);
     devContext.stopTiming("Predict", 9, execStream->s());
-    
-    parallelDataSummary(localTree);
+
+
+    if(nProcs > 1)
+    {
+      double tZ = get_time();
+      devContext.startTiming(execStream->s());
+      parallelDataSummary(localTree);
+      devContext.stopTiming("UpdateDomain", 6, execStream->s());
+      LOGF(stderr,"DomainUpdate: %f \n", get_time()-tZ);
+    }
+
+
 
     #ifdef USE_DUST
       //Predict, sort and set properties
@@ -275,24 +291,24 @@ bool octree::iterate_once(IterationData &idata) {
       direct_gravity(this->localTree);
       devContext.stopTiming("Direct_gravity", 4);
 
-#ifdef USE_DUST
-      devContext.startTiming(gravStream->s());
-      direct_dust(this->localTree);
-      devContext.stopTiming("Direct_dust", 4, gravStream->s());
-#endif      
+      #ifdef USE_DUST
+            devContext.startTiming(gravStream->s());
+            direct_dust(this->localTree);
+            devContext.stopTiming("Direct_dust", 4, gravStream->s());
+      #endif
     }
     else
     {
       bool needDomainUpdate = true;
 
       //Redistribute the particles
+
       if(1)
       {      
         if(nProcs > 1)
         { 
-//          if(iter % rebuild_tree_rate == 0)
-                    if(0)
-//                    if(1)
+          // if(iter % rebuild_tree_rate == 0)
+          if(0)
           {     
             //If we do a redistribution we _always_ have to do 
             //an update of the particle domain, otherwise the boxes 
@@ -315,16 +331,14 @@ bool octree::iterate_once(IterationData &idata) {
           }
           else
           {
+            //TODO make a new function for this for the SFC decomp
+
             //Only send new box sizes, incase we do not exchange particles
             //but continue with the current tree_structure
             gpu_updateDomainOnly();
 
             needDomainUpdate = false;
-          } //if (iter % X )
-          //         else
-          //         {
-          //           //Only exchange, do not update domain decomposition
-          //         }
+          }
         } //if nProcs > 1
       }//if (0)        
 
@@ -340,6 +354,7 @@ bool octree::iterate_once(IterationData &idata) {
         //Rebuild the tree
         this->sort_bodies(this->localTree, needDomainUpdate);
 
+
         devContext.startTiming(execStream->s());
         this->build(this->localTree);
         devContext.stopTiming("Tree-construction", 2, execStream->s());
@@ -352,23 +367,23 @@ bool octree::iterate_once(IterationData &idata) {
         this->compute_properties(this->localTree);
         devContext.stopTiming("Compute-properties", 3, execStream->s());
 
-#ifdef DO_BLOCK_TIMESTEP
-        devContext.startTiming(execStream->s());
-        setActiveGrpsFunc(this->localTree);
-        devContext.stopTiming("setActiveGrpsFunc", 10, execStream->s());      
-        idata.Nact_since_last_tree_rebuild = 0;
-#endif
+        #ifdef DO_BLOCK_TIMESTEP
+                devContext.startTiming(execStream->s());
+                setActiveGrpsFunc(this->localTree);
+                devContext.stopTiming("setActiveGrpsFunc", 10, execStream->s());
+                idata.Nact_since_last_tree_rebuild = 0;
+        #endif
 
         idata.lastBuildTime   = get_time() - t1;
         idata.totalBuildTime += idata.lastBuildTime;  
 
 
-#ifdef USE_DUST
-        //Sort and set properties      
-        sort_dust(this->localTree);
-        make_dust_groups(this->localTree);
-        setDustGroupProperties(this->localTree);        
-#endif          
+        #ifdef USE_DUST
+                //Sort and set properties
+                sort_dust(this->localTree);
+                make_dust_groups(this->localTree);
+                setDustGroupProperties(this->localTree);
+        #endif
 
       }
       else
@@ -384,26 +399,25 @@ bool octree::iterate_once(IterationData &idata) {
         this->compute_properties(this->localTree);
         devContext.stopTiming("Compute-properties", 3, execStream->s());
 
-#ifdef USE_DUST
-        setDustGroupProperties(this->localTree);
-#endif          
+        #ifdef USE_DUST
+                setDustGroupProperties(this->localTree);
+        #endif
 
       }//end rebuild tree
 
       //Approximate gravity
       t1 = get_time();
-//       devContext.startTiming(gravStream->s());
+      //devContext.startTiming(gravStream->s());
       approximate_gravity(this->localTree);
-//       devContext.stopTiming("Approximation", 4, gravStream->s());
-
+      //devContext.stopTiming("Approximation", 4, gravStream->s());
 
       if(nProcs > 1)  makeLET();
 
-#ifdef USE_DUST
-      devContext.startTiming(gravStream->s());
-      approximate_dust(this->localTree);
-      devContext.stopTiming("Approximation_dust", 4, gravStream->s());
-#endif        
+      #ifdef USE_DUST
+            devContext.startTiming(gravStream->s());
+            approximate_dust(this->localTree);
+            devContext.stopTiming("Approximation_dust", 4, gravStream->s());
+      #endif
     }
 
     gravStream->sync();
@@ -514,9 +528,8 @@ void octree::iterate_setup(IterationData &idata) {
   predict(this->localTree);
 
 
-
-  //TEST
-  parallelDataSummary(localTree);
+  if(nProcs > 1)
+    parallelDataSummary(localTree);
 
   //Start construction of the tree
   sort_bodies(localTree, true);
@@ -530,19 +543,20 @@ void octree::iterate_setup(IterationData &idata) {
   //Compute the (new) node properties
   compute_properties(this->localTree);
   
-#ifdef DO_BLOCK_TIMESTEP
-        devContext.startTiming(execStream->s());
-        setActiveGrpsFunc(this->localTree);
-        devContext.stopTiming("setActiveGrpsFunc", 10, execStream->s());      
-//         idata.Nact_since_last_tree_rebuild = 0;
-#endif  
-  
+  #ifdef DO_BLOCK_TIMESTEP
+          devContext.startTiming(execStream->s());
+          setActiveGrpsFunc(this->localTree);
+          devContext.stopTiming("setActiveGrpsFunc", 10, execStream->s());
+          //idata.Nact_since_last_tree_rebuild = 0;
+  #endif
+
   t1 = get_time();
    
-  //Approximate gravity
+  //Approximate gravity  
   devContext.startTiming(gravStream->s());
   approximate_gravity(this->localTree);
   devContext.stopTiming("Approximation", 4, gravStream->s());
+  LOGF(stderr, "APP TEST: %g \n", get_time() - t1);
   
   #ifdef USE_DUST
       //Sort the dust
@@ -590,7 +604,6 @@ void octree::iterate_setup(IterationData &idata) {
       if(1)
       {
         nextSnapTime += snapshotIter;       
-        
         
         string fileName; fileName.resize(256);
         sprintf(&fileName[0], "%s_%06d", snapshotFile.c_str(), time + snapShotAdd);
@@ -766,7 +779,7 @@ void octree::direct_gravity(tree_structure &tree)
 void octree::approximate_gravity(tree_structure &tree)
 { 
   uint2 node_begend;
-  int level_start = 2;
+  int level_start = tree.startLevelMin;
   node_begend.x   = tree.level_list[level_start].x;
   node_begend.y   = tree.level_list[level_start].y;
 
@@ -794,9 +807,7 @@ void octree::approximate_gravity(tree_structure &tree)
   approxGrav.set_arg<cl_mem>(15, tree.groupCenterInfo.p());
   approxGrav.set_arg<cl_mem>(16, tree.bodies_Pvel.p());
   approxGrav.set_arg<cl_mem>(17,  tree.generalBuffer1.p()); //Instead of using Local memory
-  
-  
-  
+
   
   approxGrav.set_arg<real4>(18, tree.boxSizeInfo, 4, "texNodeSize");
   approxGrav.set_arg<real4>(19, tree.boxCenterInfo, 4, "texNodeCenter");
@@ -807,8 +818,48 @@ void octree::approximate_gravity(tree_structure &tree)
   approxGrav.setWork(-1, NTHREAD, nBlocksForTreeWalk);
   approxGrav.execute(gravStream->s());  //First half
 
+
+#if 0
+  my_dev::dev_mem<real4>  coarseGroupBoxCenterGPU(devContext, this->globalCoarseGrpCount[0]);
+  my_dev::dev_mem<real4>  coarseGroupBoxSizeGPU(devContext, this->globalCoarseGrpCount[0]);
+
+
+
+
+  int box = procId % nProcs;
+  for(int i=this->globalCoarseGrpOffsets[box] ; i < this->globalCoarseGrpCount[box]; i++)
+  {
+    coarseGroupBoxCenterGPU[i] = make_float4(coarseGroupBoxCenter[i].x,  coarseGroupBoxCenter[i].y,
+        coarseGroupBoxCenter[i].z, coarseGroupBoxCenter[i].w);
+    coarseGroupBoxSizeGPU[i]   = make_float4(coarseGroupBoxSize[i].x,  coarseGroupBoxSize[i].y,
+        coarseGroupBoxSize[i].z, coarseGroupBoxSize[i].w);
+  }
+  coarseGroupBoxSizeGPU.h2d();
+  coarseGroupBoxCenterGPU.h2d();
+
+  tree.interactions.zeroMem();
+
+  approxGrav.set_arg<int>(0,    &this->globalCoarseGrpCount[box]);
+  approxGrav.set_arg<cl_mem>(12, coarseGroupBoxSizeGPU.p());
+  approxGrav.set_arg<cl_mem>(13, tree.groupSizeInfo.p());
+  approxGrav.set_arg<cl_mem>(14, coarseGroupBoxCenterGPU.p());
+
+  approxGrav.setWork(-1, NTHREAD, nBlocksForTreeWalk);
+  approxGrav.execute(gravStream->s());  //First half
+
+
+  gravStream->sync();
+
+  fprintf(stderr, "Test run klaar!! coarse groups: %d source: %d\n",this->globalCoarseGrpCount[box],box);
+
+
+
+#endif
+
+
+
   //Print interaction statistics
-  #if 1
+  #if 0
   
   tree.body2group_list.d2h();
   tree.interactions.d2h();
@@ -831,10 +882,11 @@ void octree::approximate_gravity(tree_structure &tree)
       
       apprSum2     += tree.interactions[i].x*tree.interactions[i].x;
       directSum2   += tree.interactions[i].y*tree.interactions[i].y;   
-      
-//      fprintf(stderr, "%d\t Direct: %d\tApprox: %d\t Group: %d \n",
-//              i, tree.interactions[i].y, tree.interactions[i].x,
-//              tree.body2group_list[i]);
+
+      if(i < 1000)
+      fprintf(stderr, "%d\t Direct: %d\tApprox: %d\t Group: %d \n",
+              i, tree.interactions[i].y, tree.interactions[i].x,
+              tree.body2group_list[i]);
     }
   
     //cerr << "Interaction at iter: " << iter << "\tdirect: " << directSum << "\tappr: " << apprSum << "\t";
@@ -844,6 +896,9 @@ void octree::approximate_gravity(tree_structure &tree)
     cout << "avg dir: " << directSum / tree.n << "\tavg appr: " << apprSum / tree.n << "\tMaxdir: " << maxDir << "\tmaxAppr: " << maxAppr <<  endl;
     cout << "sigma dir: " << sqrt((directSum2  - directSum)/ tree.n) << "\tsigma appr: " << std::sqrt((apprSum2 - apprSum) / tree.n)  <<  endl;    
 //    exit(0);
+    mpiSync();
+    exit(0);
+
   #endif
   
   //CU_SAFE_CALL(clFinish(0));
@@ -969,7 +1024,7 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
   letRunning = true;
 
  //Print interaction statistics
-  #if 1
+  #if 0
     tree.interactions.d2h();
 //     tree.body2group_list.d2h();
     
@@ -1243,8 +1298,8 @@ double octree::compute_energies(tree_structure &tree)
                                vel.z*vel.z);
     hEpot += tree.bodies_pos[i].w*0.5*tree.bodies_acc0[i].w;
     
-    fprintf(stderr, "%d\t Vel: %f %f %f Mass: %f Pot: %f \n", 
-            i,vel.x, vel.y, vel.z,tree.bodies_pos[i].w, tree.bodies_acc0[i].w);
+//    fprintf(stderr, "%d\t Vel: %f %f %f Mass: %f Pot: %f \n",
+//            i,vel.x, vel.y, vel.z,tree.bodies_pos[i].w, tree.bodies_acc0[i].w);
 
   }
   MPI_Barrier(MPI_COMM_WORLD);
@@ -1316,8 +1371,6 @@ double octree::compute_energies(tree_structure &tree)
   LOGF(stderr, "iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n", 
 		  iter, this->t_current, Etot, Ekin, Epot, de, de_max, dde, dde_max, get_time() - tinit);          
   }
-
-//  mpiSync(); exit(0);
 
   return de;
 }

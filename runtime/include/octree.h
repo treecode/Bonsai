@@ -102,6 +102,8 @@ class tree_structure
     
     int courseGroupIdx;                   //Node idx that signifies end of coarse groups
     int n_coarse_groups;
+    uint startLevelMin;                   //The level from which we start the tree-walk
+                                          //this is decided by the tree-structure creation
 
     bool needToReorder;			//Set to true if SetN is called so we know we need to change particle order
     my_dev::dev_mem<real4> bodies_pos;    //The particles positions
@@ -714,6 +716,57 @@ public:
                                         int remoteId, float group_eps, int start,
                                         int end, int particleCount, int nodeCount, real4 *dataBuffer);
 
+  void create_local_essential_tree_count_novector(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+                                           int remoteId, float group_eps, int start, int end,
+                                           int &particles, int &nodes);
+
+  void create_local_essential_tree_count_vector_filter(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+                                           int remoteId, float group_eps, int start, int end,
+                                           int &particles, int &nodes);
+
+  void create_local_essential_tree_count_novector_startend(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+                                           int remoteId, float group_eps, int start, int end,
+                                           int &particles, int &nodes);
+  void create_local_essential_tree_count_novector_startend2(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+                                           int remoteId, float group_eps, int start, int end,
+                                           int &particles, int &nodes);
+
+    void create_local_essential_tree_count_novector_startend3(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+                                           int remoteId, float group_eps, int start, int end,
+                                           int &particles, int &nodes);
+    
+    void create_local_essential_tree_count_novector_startend4(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+                                           int remoteId, float group_eps, int start, int end,
+                                           int &particles, int &nodes);
+    
+    void create_local_essential_tree_count_novector_startend5(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+                                           int remoteId, float group_eps, int start, int end,
+                                           int &particles, int &nodes);
+
+    void create_local_essential_tree_fill_novector_startend4(real4* bodies, real4* velocities, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+                                                  int remoteId, float group_eps, int start, int end,
+                                                  int particleCount, int nodeCount, real4 *dataBuffer);
+
+
+  void create_local_essential_tree_count_recursive_part2(
+      real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+      int nodeID, vector<int> &remoteGrps, uint remoteGrpStart,
+      int &particles, int &nodes);
+
+  void create_local_essential_tree_count_recursive(
+      real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+      int remoteId, float group_eps, int start, int end,
+      int &particles, int &nodes);
+
+
+  void create_local_essential_tree_count_recursive_try2(
+      real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+      int remoteId, float group_eps, int start, int end,
+      int &particles, int &nodes);
+
+  void create_local_essential_tree_count_recursive_part2_try2(
+      real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+      int nodeID, uint remoteGrpID, int &particles, int &nodes, bool &allDone);
 
 
   real4* MP_exchange_bhlist(int ibox, int isource,
@@ -801,13 +854,12 @@ public:
 #endif
 
     devContext_flag = false;
-    iter = 0;
-    t_current = t_previous = 0;
+    iter            = 0;
+    t_current       = t_previous = 0;
     
     src_directory = NULL;
 
-    if(argv != NULL)
-      execPath = argv[0];
+    if(argv != NULL)  execPath = argv[0];
     //First init mpi
     int argc = 0;
     mpiInit(argc, argv, procId, nProcs);
@@ -817,8 +869,18 @@ public:
     else
       devID = device;
 
-    
-
+    char *gpu_prof_log;
+    gpu_prof_log=getenv("CUDA_PROFILE_LOG");
+    if(gpu_prof_log){
+      char tmp[50];
+      sprintf(tmp,"process_%d-%d_%s",procId,nProcs, gpu_prof_log);
+      #ifdef WIN32
+          SetEnvironmentVariable("CUDA_PROFILE_LOG", tmp);
+      #else
+          setenv("CUDA_PROFILE_LOG",tmp,1);
+          LOGF(stderr, "TESTING log on proc: %d val: %s \n", procId, tmp);
+      #endif
+    }
 //    LOGF(stderr, "Settings device : %d\t"  << devID << "\t" << device << "\t" << nProcs <<endl;
 
     snapshotIter = snapI;

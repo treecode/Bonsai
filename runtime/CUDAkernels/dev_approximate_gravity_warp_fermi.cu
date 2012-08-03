@@ -457,6 +457,9 @@ void approximate_gravity(
         bool leaf       = node_pos.w <= 0;  //Small AND equal incase of a 1 particle cell       //Check if it is a leaf
         //         split = true;
 
+
+
+
         bool flag    = (split && !leaf) && use_node;                        //Flag = use_node + split + not_a_leaf;Use only non_leaf nodes that are to be split
         uint mask    = BTEST(flag);                                       // mask = #FFFFFFFF if use_node+split+not_a_leaf==true, otherwise zero
         int child    =    node_data & 0x0FFFFFFF;                         //Index to the first child of the node
@@ -465,14 +468,14 @@ void approximate_gravity(
         /***
          **** --> calculate prefix
          ***/
-
-
         int n_total = inclusive_scan_warp(prefix,  nchild);               // inclusive scan to compute memory offset of each child (return total # of children)
         int offset  = prefix[laneId];
         offset     += n_offset - nchild;                                  // convert inclusive into exclusive scan for referencing purpose
 
+
         for (int i = n_offset; i < n_offset + n_total; i += WARP_SIZE)         //nullify part of the array that will be filled with children
           nodesM[laneId + i] = 0;                                          //but do not touch those parts which has already been filled
+
 
 #if 0  /* the following gives different result than then one in else */
         /* the results become the same if I uncomment printf above */
@@ -487,17 +490,27 @@ void approximate_gravity(
           if (nodesM[offset + 6] == 0) nodesM[offset + 6] = child + 6;
           if (nodesM[offset + 7] == 0) nodesM[offset + 7] = child + 7;
         }
-#else
+#elif0
         if (flag) nodesM[offset] = child;                            //Thread with the node that is about to be split
         //writes the first child in the array of nodes
         /*** in the following 8 lines, we calculate indexes of all the children that have to be walked from the index of the first child***/
-        if (flag && nodesM[offset + 1] == 0) nodesM[offset + 1] = child + 1; 
+        if (flag && nodesM[offset + 1] == 0) nodesM[offset + 1] = child + 1;
         if (flag && nodesM[offset + 2] == 0) nodesM[offset + 2] = child + 2;
         if (flag && nodesM[offset + 3] == 0) nodesM[offset + 3] = child + 3;
         if (flag && nodesM[offset + 4] == 0) nodesM[offset + 4] = child + 4;
         if (flag && nodesM[offset + 5] == 0) nodesM[offset + 5] = child + 5;
         if (flag && nodesM[offset + 6] == 0) nodesM[offset + 6] = child + 6;
         if (flag && nodesM[offset + 7] == 0) nodesM[offset + 7] = child + 7;
+#else
+        //This code does not require reading of nodesM before writing thereby preventing
+        //possible synchronization , not completed writes , problems
+        if(flag)
+        {
+          for(int i=0; i < nchild; i++)
+          {
+            nodesM[offset + i] = child + i;
+          }
+        }
 #endif
         n_offset += n_total;    //Increase the offset in the array by the number of newly added nodes
 
@@ -803,6 +816,9 @@ __launch_bounds__(NTHREAD)
 
     if (bid >= n_active_groups) return;
 
+//    if(laneId == 0)
+//    printf("On dev working on: %d \n", bid);
+
     int grpOffset = 0;
 
     /*********** set necessary thread constants **********/
@@ -983,6 +999,7 @@ __launch_bounds__(NTHREAD)
     bid   = shmem[0];
 
     if (bid >= n_active_groups) return;
+
 
     int grpOffset = 0;
 

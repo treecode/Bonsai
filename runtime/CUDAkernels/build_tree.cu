@@ -9,7 +9,7 @@ PROF_MODULE(build_tree);
 //////////////////////////////
 //////////////////////////////
 //////////////////////////////
-#define LEVEL_MIN 3
+//#define LEVEL_MIN 3
 
 #if 1
 KERNEL_DECLARE(boundaryReduction)(const int n_particles,
@@ -321,6 +321,9 @@ KERNEL_DECLARE(cl_build_nodes)(uint level,
   uint n = (*compact_list_len)/2;
   uint offset = *level_offset;
 
+  //We reuse last_level as indicator if we are allowed to create LEAF nodes
+  bool minLevelReached = (int)*last_level;
+
   for (; id < n; id += gridDim.x * gridDim.y * blockDim.x)
   {
     uint  bi   = compact_list[id*2];
@@ -334,7 +337,8 @@ KERNEL_DECLARE(cl_build_nodes)(uint level,
     node_key   [offset+id] = key;
     n_children [offset+id] = 0;
   
-    if ((int)level > (int)(LEVEL_MIN - 1)) 
+//    if ((int)level > (int)(LEVEL_MIN - 1))
+    if(minLevelReached)
       if (bj - bi <= NLEAF)                            //Leaf can only have NLEAF particles, if its more there will be a split
         for (int i = bi; i < bj; i++)
           bodies_key[i] = make_uint4(0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF); //sets the key to FF to indicate the body is used
@@ -364,8 +368,17 @@ KERNEL_DECLARE(cl_build_nodes)(uint level,
       level_list[level] = (n > 0) ? make_uint2(offset, offset + n) : make_uint2(0, 0);
       *level_offset = offset + n;
 
+
+      //Set last_level to a value to indicate we are now allowed to make
+      //leafs. It will later be overwritten to indicate the final level
+      if(n > START_LEVEL_MIN_NODES){
+          *last_level = 1;
+      }
+
       if ((level > 0) && (n <= 0) && (level_list[level - 1].x > 0))
         *last_level = level;
+
+
 
       // reset retirement count so that next run succeeds
       retirementCountBuildNodes = 0; 
@@ -387,7 +400,8 @@ KERNEL_DECLARE(cl_link_tree)(int n_nodes,
                             uint2 *level_list,           //TODO could make this constant if it proves usefull
                             uint* valid_list,
                             uint4 *node_keys,
-                            uint4 *bodies_key) {
+                            uint4 *bodies_key,
+                            uint  levelMin) {
 
   CUXTIMER("cl_link_tree");
   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
@@ -462,7 +476,7 @@ KERNEL_DECLARE(cl_link_tree)(int n_nodes,
   uint valid =  id | (uint)(0 << 31); 
 
   
-  if ((int)level > (int)(LEVEL_MIN - 1)) 
+  if ((int)level > (int)(levelMin))
     if ((bj - bi) <= NLEAF)    
       valid = id | (uint)(1 << 31);   //Distinguish leaves and nodes
 
@@ -614,7 +628,7 @@ KERNEL_DECLARE(build_group_list2)(int    n_particles,
 //valid nodes/leafs that form groups
 KERNEL_DECLARE(build_group_list2)(const int n_particles,
                                   uint      *validList,
-                                  const int n_coarseGroupLevelNodes,
+                                  const uint2 n_coarseGroupLevelNodes,
                                   uint2     *node_bodies,                                    
                                   int       *node_level_list,
                                   int       treeDepth)
@@ -654,7 +668,7 @@ KERNEL_DECLARE(build_group_list2)(const int n_particles,
   //Note that we do NOT include the last groups since it only sets
   //the final particle to invalid, which we will do by default anyway
   //this way we save a check on particle boundary
-  if (idx < (n_coarseGroupLevelNodes-1)) //THe -1 to prevent last node
+  if ((idx >= n_coarseGroupLevelNodes.x) && (idx < (n_coarseGroupLevelNodes.y-1))) //THe -1 to prevent last node
   {
     const uint2 bij          =  node_bodies[idx];
 //     const uint firstChild    =  bij.x & ILEVELMASK;
@@ -723,7 +737,7 @@ KERNEL_DECLARE(store_group_list)(int    n_particles,
 
 //Mark the particle boundaries that form the coarse groups. Used in the
 //store_group_list kernel
-KERNEL_DECLARE(mark_coarse_group_boundaries)(const int n_coarseGroupLevelNodes,
+KERNEL_DECLARE(mark_coarse_group_boundaries)(const uint2 n_coarseGroupLevelNodes,
                                             uint  *validList,
                                             uint2 *node_bodies,                                    
                                             int   *node_level_list)
@@ -735,7 +749,7 @@ KERNEL_DECLARE(mark_coarse_group_boundaries)(const int n_coarseGroupLevelNodes,
   //Note that we do NOT include the last groups since it only sets
   //the final particle to invalid, which we will do by default anyway
   //this way we save a check on particle boundary
-  if (idx < (n_coarseGroupLevelNodes-1)) //THe -1 to prevent last node
+  if ((idx >= n_coarseGroupLevelNodes.x) && (idx < (n_coarseGroupLevelNodes.y-1))) //THe -1 to prevent last node
   {
     const uint2 bij          =  node_bodies[idx];
     const uint firstChild    =  bij.x & ILEVELMASK;
@@ -1043,9 +1057,8 @@ KERNEL_DECLARE(segmentedCoarseGroupBoundary)(
 }//end segmentedSummary
 
 
-
-//Function to mark the particles that are already assigned to
-//a hash
+#if 0
+//Function to mark the particles that are already assigned to a hash
 extern "C" __global__ void build_parallel_grps(
                              uint   compact_list_len,
                              uint   offset,
@@ -1065,7 +1078,7 @@ extern "C" __global__ void build_parallel_grps(
   uint  bi   = compact_list[bid*2];
   uint  bj   = compact_list[bid*2+1] + 1;
 
-#define NPARALLEL 1024
+  #define NPARALLEL 1024
 
   if((bj - bi) > NPARALLEL)
   {
@@ -1102,7 +1115,7 @@ extern "C" __global__ void build_parallel_grps(
     //that forms the start of the parallel hash and refers
     //to the group that has this particle as start
     startBoundary[bi] = (uint)( offset+bid | (uint)(1 << 31));
-  }
+  } //tid == 0
 
 
   for(int i=0; i < nparticles; i += blockDim.x)
@@ -1112,13 +1125,85 @@ extern "C" __global__ void build_parallel_grps(
       //sets the key to FF to indicate the body is used
       bodies_key[bi+i+tid] = (uint4){0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF};
     }
-  }
-
-
+  } //for nparticles
 
 } //end cl_build_parallel_reduce
 
+#else
 
+//Function to mark the particles that are already assigned to a hash
+extern "C" __global__ void build_parallel_grps(
+                             uint   compact_list_len,
+                             uint   offset,
+                             uint  *compact_list,
+                             uint4 *bodies_key,
+                             uint4 *parGrpBlockKey,
+                             uint2 *parGrpBlockInfo,
+                             uint  *startBoundary){
+
+  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
+  uint tid = threadIdx.x;
+//   uint id  = bid * blockDim.x + tid;
+
+  if (bid >= compact_list_len) return;
+
+  //Each block handles a bunch of particles
+  uint  bi   = compact_list[bid*2];
+  uint  bj   = compact_list[bid*2+1] + 1;
+
+  #define NPARALLEL 1024
+
+  if((bj - bi) > NPARALLEL)
+  {
+    if(tid == 0)
+    {
+      //Set the key to invalid and in item w a value that marks it invalid
+      //the .w item is redundant, and not used. Could be used for validation
+      parGrpBlockInfo[offset+bid] = (uint2){0, 0};
+      parGrpBlockKey [offset+bid] = (uint4){0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF,0};
+    }
+    return;
+  }
+
+  int nparticles = bj-bi;
+
+  //Only has to be done by one thread, other threads are just here for data writing
+
+  //For each block we store the first particle, the particles key and the last particle
+  //key is 3 uints -> so we have the last one free keep free
+  //since we cannot store the pid and number of particles
+  //if N-particles is high (> 2M)
+  if(tid == 0)
+  {
+    uint4 key  = bodies_key[bi];
+    key.w = bj-bi;
+
+    uint2 blockInfo = (uint2){bi, bj};
+
+    parGrpBlockInfo[offset+bid] = blockInfo;
+    parGrpBlockKey [offset+bid] = key;
+
+
+    //Set the start boundary, which indicates the particle
+    //that forms the start of the parallel hash and refers
+    //to the group that has this particle as start
+    startBoundary[bi] = (uint)( offset+bid | (uint)(1 << 31));
+  } //tid == 0
+
+
+  for(int i=0; i < nparticles; i += blockDim.x)
+  {
+    if(i + tid < nparticles)
+    {
+      //sets the key to FF to indicate the body is used
+      bodies_key[bi+i+tid] = (uint4){0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF};
+    }
+  } //for nparticles
+
+} //end cl_build_parallel_reduce
+#endif
+
+static __device__ uint retirementCountSegmentedSummaryBasic = 0;
 //This is a simple place holder, example function
 //depending on the data to be summarized
 //it can be extended/modified
@@ -1129,10 +1214,10 @@ extern "C" __global__ void segmentedSummaryBasic (
                                             const int n_groups, //Number of groups that have to be summarized
                                             uint     *validGroups,
                                             uint     *atomicValues,
-                                            uint2    *hashGroupInfo,
-                                            uint4    *hashGroupKey,
-                                            uint4    *hashGroupResult,
-                                            uint4    *sourceData)
+                                            uint2    *hashGroupInfo,    //parGrpBlockInfo
+                                            uint4    *hashGroupKey,     //parGrpBlockKey
+                                            uint4    *hashGroupResult,  //parallelHashes
+                                            uint4    *sourceData)       //bodies_key
 {
 //   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   const uint tid = threadIdx.x;
@@ -1153,6 +1238,7 @@ extern "C" __global__ void segmentedSummaryBasic (
     }
     __syncthreads();
 
+
     bid   = shmem[0];
 
     if (bid >= n_groups) return;
@@ -1161,11 +1247,18 @@ extern "C" __global__ void segmentedSummaryBasic (
 
     __syncthreads();
 
+
+#if 0  //We can use the below when we add interactions count
+// we reduce multiple elements per thread.  The number is determined by the
+// number of active thread blocks (via gridSize).  More blocks will result
+// in a larger gridSize and therefore fewer elements per thread
+
     //Start and end index of the data values to be processed
     int start = hashGroupInfo[hashGrpID].x;
     int end   = hashGroupInfo[hashGrpID].y;
 
 
+//based on reduce6 example
     volatile int *sh_sum = (int*)&shmem [ 0];
 
     int localSum = 0;
@@ -1175,11 +1268,7 @@ extern "C" __global__ void segmentedSummaryBasic (
     const int blockSize   = blockDim.x;
     unsigned int i        = start;
 
-    #if 0  //We can use the below when we add interactions count
-    // we reduce multiple elements per thread.  The number is determined by the
-    // number of active thread blocks (via gridSize).  More blocks will result
-    // in a larger gridSize and therefore fewer elements per thread
-    //based on reduce6 example
+
     while (i < end) {
       if(i + tid < end)
       {

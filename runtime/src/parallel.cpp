@@ -4,6 +4,8 @@
 #include "mpi.h"
 #endif
 
+
+
 inline int host_float_as_int(float val)
 {
   union{float f; int i;} u; //__float_as_int
@@ -1331,7 +1333,7 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
 {
   //Memory buffers to hold the extracted particle information
   my_dev::dev_mem<uint>  validList(devContext);
-  my_dev::dev_mem<uint>  compactList(devContext);
+  my_dev::dev_mem<uint>  compactList(devContext);  
 
   int memOffset1 = compactList.cmalloc_copy(localTree.generalBuffer1,
                                             localTree.n, 0);
@@ -1339,6 +1341,7 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
                                             localTree.n, memOffset1);
 
 
+  
   uint4 lowerBoundary = boundaries[this->procId];
   uint4 upperBoundary = boundaries[this->procId+1];
 
@@ -1350,6 +1353,7 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
   domainCheckSFC.set_arg<cl_mem>(4,  validList.p());
   domainCheckSFC.setWork(localTree.n, 128);
   domainCheckSFC.execute(execStream->s());
+  execStream->sync();
 
   //Create a list of valid and invalid particles
   this->resetCompact();  //Make sure compact has been reset
@@ -1358,16 +1362,13 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
 
   LOGF(stderr, "Found %d particles outside my domain, inside: %d \n", validCount, localTree.n-validCount);
 
-  execStream->sync();
-  mpiSync();
-
-
+  
   //Check if the memory size, of the generalBuffer is large enough to store the exported particles
   //if not allocate more but make sure that the copy of compactList survives
   int tempSize = localTree.generalBuffer1.get_size() - localTree.n;
   int needSize = (int)(1.01f*(validCount*(sizeof(bodyStruct)/sizeof(int))));
 
-  LOGF(stderr, "Temp: %d needed: %d \n", tempSize, needSize);
+//  LOGF(stderr, "Temp: %d needed: %d \n", tempSize, needSize);
 
   if(tempSize < needSize)
   {
@@ -1390,7 +1391,7 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
 
     delete[] tempBuf;
   }
-
+  
   my_dev::dev_mem<bodyStruct>  bodyBuffer(devContext);
 
   memOffset1 = bodyBuffer.cmalloc_copy(localTree.generalBuffer1,
@@ -1417,7 +1418,11 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
   //this can be done in parallel with exchange operation to hide some time
 
   //One integer for counting, true-> initialize to zero so counting starts at 0
-  my_dev::dev_mem<uint>  atomicBuff(devContext, 1, true);
+//  my_dev::dev_mem<uint>  atomicBuff(devContext, 1, true);
+  my_dev::dev_mem<uint>  atomicBuff(devContext);
+  memOffset1 = atomicBuff.cmalloc_copy(localTree.generalBuffer1,1, memOffset1);
+  atomicBuff.zeroMem();
+
 
   //Internal particle movement
   internalMoveSFC.set_arg<int>(0,    &validCount);
@@ -1439,7 +1444,6 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
   internalMoveSFC.execute(execStream->s());
 
   this->gpu_exchange_particles_with_overflow_check_SFC(localTree, &bodyBuffer[0], compactList, validCount);
-
 } //End gpuRedistributeParticles
 
 
@@ -1746,7 +1750,7 @@ int octree::gpu_exchange_particles_with_overflow_check(tree_structure &tree,
       insertNewParticles.set_arg<cl_mem>(11, localTree.bodies_ids.p());
       insertNewParticles.set_arg<cl_mem>(12, bodyBuffer.p());
       insertNewParticles.setWork(items, 128);
-      insertNewParticles.execute(execStream->s()); 
+      insertNewParticles.execute(execStream->s());       
     }
     
     insertOffset += items;    
@@ -1893,6 +1897,7 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
       if (isource == myid)isource = (isource+1)%nproc;
     }
 
+
     if(MP_exchange_particle_with_overflow_check<bodyStruct>(ibox, &array2Send[0],
                                                     recv_buffer3, firstloc[ibox] - nparticles[myid],
                                                     nparticles[ibox], isource,
@@ -1943,6 +1948,7 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
   //Note that we allocate some extra memory to make everything texture/memory alligned
   tree.generalBuffer1.cresize(3*(newN)*4 + 4096, false);
 
+
   //Now we have to copy the data in batches incase the generalBuffer1 is not large enough
   //Amount we can store:
   int spaceInIntSize    = 3*(newN)*4;
@@ -1952,8 +1958,7 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
   my_dev::dev_mem<bodyStruct>  bodyBuffer(devContext);
 
   int memOffset1 = bodyBuffer.cmalloc_copy(localTree.generalBuffer1,
-                                            stepSize, 0);
-
+                                              stepSize, 0);
 
   LOGF(stderr, "Exchange, received particles: (%d): %d \tnewN: %d\tItems that can be insert in one step: %d\n",
                    procId, recvCount, newN, stepSize);
@@ -1997,8 +2002,6 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
 //   printf("Benodigde gpu malloc tijd stap 1: %lg \t Size: %d \tRank: %d \t Size: %d \n",
 //          get_time()-t1, newN, mpiGetRank(), tree.bodies_Ppos.get_size());
 //   t1 = get_time();
-
-
   tree.setN(newN);
 
   //Resize the arrays of the tree
@@ -2006,9 +2009,6 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
 
 //   printf("Benodigde gpu malloc tijd stap 2: %lg \n", get_time()-t1);
 //   printf("Totale GPU interactie tijd: %lg \n", get_time()-t2);
-
-
-
 
 
   int retValue = 0;
@@ -2032,7 +2032,7 @@ void octree::essential_tree_exchange(vector<real4> &treeStructure, tree_structur
   bool mergeOwntree = false;          //Default do not include our own tree-structre, thats mainly used for testing 
   int step          = nProcs - 1;     //Default merge all remote trees into one structure
 //   step              = 1;
-  int level_start   = 2;              //Default depth of where to start the tree-walk, default 2
+  int level_start   = tree.startLevelMin; //Depth of where to start the tree-walk
   int procTrees     = 0;              //Number of trees that we've received and processed
 
   real4  *bodies              = &tree.bodies_Ppos[0];
@@ -2109,13 +2109,11 @@ void octree::essential_tree_exchange(vector<real4> &treeStructure, tree_structur
                                         ibox, (float)currentRLow[ibox].w, node_begend.x, node_begend.y,
                                         particleCount, nodeCount);
 
-
        LOG("LET count: %lg \t Coarse groups %d\n", get_time()-t1,  globalCoarseGrpCount[ibox]);
        LOG("LET count:  Particle count %d Node count: %d\n", particleCount, nodeCount);
       //Buffer that will contain all the data:
       //|real4| 2*particleCount*real4| nodes*real4 | nodes*real4 | nodes*3*real4 |
       //1 + 2*particleCount + nodeCount + nodeCount + 3*nodeCount
-      
 
       //Increase the number of particles and the number of nodes by the texture-offset such that these are correctly
       //aligned in memory
@@ -2137,6 +2135,8 @@ void octree::essential_tree_exchange(vector<real4> &treeStructure, tree_structur
       create_local_essential_tree_fill(bodies, velocities, multipole, nodeSizeInfo, nodeCenterInfo,
                                       ibox, (float)currentRLow[ibox].w, node_begend.x, node_begend.y,
                                       particleCount, nodeCount, letDataBuffer);
+      LOG("LET count&fill: %lg\n", get_time()-t1);
+
                                   
   /*    
       printf("LET count&fill: %lg\n", get_time()-t1);   
@@ -2431,7 +2431,7 @@ void octree::essential_tree_exchange(vector<real4> &treeStructure, tree_structur
     remote.remoteTreeStruct.w = totalTopNodes;
     
 //     fprintf(stderr,"Modifying the LET took: %g \n", get_time()-t1);
-    LOGF(stderr,"Number of local bodies: %d number LET bodies: %d , number LET nodes: %d top nodes: %d Processed trees: %d (%d) \n",
+    LOGF(stderr,"Number of local bodies: %d number LET bodies: %d number LET nodes: %d top nodes: %d Processed trees: %d (%d) \n",
                     tree.n, totalParticles, totalNodes, totalTopNodes, PROCS, procTrees);
 
     delete[] particleSumOffsets;
@@ -2447,9 +2447,7 @@ void octree::essential_tree_exchange(vector<real4> &treeStructure, tree_structur
     //only done during the last approximate_gravity_let call
     bool doActivePart = (procTrees == mpiGetNProcs() -1);
 
-    approximate_gravity_let(this->localTree, this->remoteTree, bufferSize, doActivePart);    
-    
- 
+    approximate_gravity_let(this->localTree, this->remoteTree, bufferSize, doActivePart);  
     
   } //end z
   delete[] treeBuffers;  
@@ -2457,10 +2455,15 @@ void octree::essential_tree_exchange(vector<real4> &treeStructure, tree_structur
   totalLETExTime += thisPartLETExTime;
   
   LOGF(stderr,"LETEX [%d] curStep: %g\t   Total: %g \n", procId, thisPartLETExTime, totalLETExTime);
-  
+}
+
+inline double cust_fabs2(double a)
+{
+  return (a > 0) ? a : -a;
 }
 
 
+int globalCHECKCount;
 //Improved Barnes Hut criterium
 #ifdef INDSOFT
 bool split_node_grav_impbh(float4 nodeCOM, double4 boxCenter, double4 boxSize,
@@ -2469,6 +2472,8 @@ bool split_node_grav_impbh(float4 nodeCOM, double4 boxCenter, double4 boxSize,
 bool split_node_grav_impbh(float4 nodeCOM, double4 boxCenter, double4 boxSize)
 #endif
 {
+  globalCHECKCount++;
+#if 1
   //Compute the distance between the group and the cell
   float3 dr = make_float3(fabs((float)boxCenter.x - nodeCOM.x) - (float)boxSize.x,
                           fabs((float)boxCenter.y - nodeCOM.y) - (float)boxSize.y,
@@ -2477,6 +2482,7 @@ bool split_node_grav_impbh(float4 nodeCOM, double4 boxCenter, double4 boxSize)
   dr.x += fabs(dr.x); dr.x *= 0.5f;
   dr.y += fabs(dr.y); dr.y *= 0.5f;
   dr.z += fabs(dr.z); dr.z *= 0.5f;
+
 
   //Distance squared, no need to do sqrt since opening criteria has been squared
   float ds2    = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
@@ -2492,7 +2498,35 @@ bool split_node_grav_impbh(float4 nodeCOM, double4 boxCenter, double4 boxSize)
    
 //   return true;
    return false;
+#else
+
+   //Compute the distance between the group and the cell
+   float3 dr = make_float3(cust_fabs2((float)boxCenter.x - nodeCOM.x) - (float)boxSize.x,
+       cust_fabs2((float)boxCenter.y - nodeCOM.y) - (float)boxSize.y,
+       cust_fabs2((float)boxCenter.z - nodeCOM.z) - (float)boxSize.z);
+
+   dr.x += cust_fabs2(dr.x); dr.x *= 0.5f;
+   dr.y += cust_fabs2(dr.y); dr.y *= 0.5f;
+   dr.z += cust_fabs2(dr.z); dr.z *= 0.5f;
+
+   //Distance squared, no need to do sqrt since opening criteria has been squared
+   float ds2    = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
+
+   #ifdef INDSOFT
+     if(ds2      <= ((group_eps + node_eps ) * (group_eps + node_eps) ))           return true;
+     //Limited precision can result in round of errors. Use this as extra safe guard
+     if(cust_fabs2(ds2 -  ((group_eps + node_eps ) * (group_eps + node_eps) )) < 10e-04) return true;
+   #endif
+
+    if (ds2     <= cust_fabs2(nodeCOM.w))           return true;
+    if (cust_fabs2(ds2 - cust_fabs2(nodeCOM.w)) < 10e-04) return true; //Limited precision can result in round of errors. Use this as extra safe guard
+
+ //   return true;
+    return false;
+#endif
 }
+
+
 
 //Improved Barnes Hut criterium
 
@@ -2744,6 +2778,17 @@ void octree::create_local_essential_tree_fill(real4* bodies, real4* velocities, 
                                               int remoteId, float group_eps, int start, int end,
                                               int particleCount, int nodeCount, real4 *dataBuffer)
 {
+
+#if 1
+  create_local_essential_tree_fill_novector_startend4(bodies, velocities, multipole, nodeSizeInfo, nodeCenterInfo,
+                                                remoteId, group_eps, start, end,
+                                                particleCount, nodeCount, dataBuffer);
+
+  return;
+
+
+#endif
+
     //Walk the tree as is done on device, level by level
     vector<combNodeCheck> curLevel;
     vector<combNodeCheck> nextLevel;
@@ -2873,10 +2918,7 @@ void octree::create_local_essential_tree_fill(real4* bodies, real4* velocities, 
 
         for(int k=0; k < check.coarseIDs.size(); k++)
         {
-          //Compute this specific box...kinda expensive should just
-          //make this list when receiving it and look it up.
-          //For now just using for testing method
-          //TODO NOTE BUG ERROR
+          //Read box info
           int coarseGrpId = check.coarseIDs[k];
 
           double4 boxCenter = coarseGroupBoxCenter[coarseGrpId];
@@ -3482,15 +3524,96 @@ void octree::create_local_essential_tree_count(real4* bodies, real4* multipole, 
                                          int remoteId, float group_eps, int start, int end,
                                          int &particles, int &nodes)
 {
+  globalCHECKCount = 0;
+#if 0
+  create_local_essential_tree_count_recursive(
+      bodies, multipole, nodeSizeInfo, nodeCenterInfo,
+      remoteId, group_eps, start, end, particles, nodes);
+
+  LOGF(stderr,"LET Number of total CHECKS: %d \n", globalCHECKCount);
+  return;
+
+#elif 0
+
+  //Fastest so far, but recursive
+  create_local_essential_tree_count_recursive_try2(
+      bodies, multipole, nodeSizeInfo, nodeCenterInfo,
+      remoteId, group_eps, start, end, particles, nodes);
+
+  LOGF(stderr,"LET Number of total CHECKS: %d \n", globalCHECKCount);
+  return;
+
+#elif 0
+  create_local_essential_tree_count_novector(bodies, multipole, nodeSizeInfo, nodeCenterInfo,
+                                         remoteId, group_eps, start, end, particles, nodes);
+  LOGF(stderr,"LET Number of total CHECKS: %d \n", globalCHECKCount);
+  return;
+
+#elif 0
+  create_local_essential_tree_count_vector_filter(bodies, multipole, nodeSizeInfo, nodeCenterInfo,
+      remoteId, group_eps, start, end, particles, nodes);
+  LOGF(stderr,"LET Number of total CHECKS: %d \n", globalCHECKCount);
+  return;
+
+
+#elif 0
+
+  //Was the Fastest non-recursive version untill create_local_essential_tree_count_novector_startend4
+  create_local_essential_tree_count_novector_startend(bodies, multipole, nodeSizeInfo, nodeCenterInfo,
+      remoteId, group_eps, start, end, particles, nodes);
+  LOGF(stderr,"LET Number of total CHECKS: %d \n", globalCHECKCount);
+
+    return;
+
+#elif 0
+
+  //SLOW
+  create_local_essential_tree_count_novector_startend2(bodies, multipole, nodeSizeInfo, nodeCenterInfo,
+      remoteId, group_eps, start, end, particles, nodes);
+  LOGF(stderr,"LET Number of total CHECKS: %d \n", globalCHECKCount);
+
+    return;
+    
+#elif 0
+
+  //Second best
+  create_local_essential_tree_count_novector_startend3(bodies, multipole, nodeSizeInfo, nodeCenterInfo,
+      remoteId, group_eps, start, end, particles, nodes);
+  LOGF(stderr,"LET Number of total CHECKS: %d \n", globalCHECKCount);
+
+    return;    
+
+#elif 1
+
+  //Fastest so far, it sorts the boxes by putting most used ones in the back
+  //Which reduces opening checks. Since there should be less unneeded checks
+  //on the deeper levels of the tree
+  create_local_essential_tree_count_novector_startend4(bodies, multipole, nodeSizeInfo, nodeCenterInfo,
+      remoteId, group_eps, start, end, particles, nodes);
+  LOGF(stderr,"LET Number of total CHECKS: %d \n", globalCHECKCount);
+
+    return;    
+    
+#elif 0
+
+  //Creates seperate box lists for differnt top nodes. Some sort of initial filter, does not help compared
+    //to number startend4
+  create_local_essential_tree_count_novector_startend5(bodies, multipole, nodeSizeInfo, nodeCenterInfo,
+      remoteId, group_eps, start, end, particles, nodes);
+  LOGF(stderr,"LET Number of total CHECKS: %d \n", globalCHECKCount);
+
+    return;
+
+#endif
 
     //Walk the tree as is done on device, level by level
     vector<combNodeCheck> curLevel;
     vector<combNodeCheck> nextLevel;
 
-    curLevel.reserve(1024*128);
-    nextLevel.reserve(1024*128);
+    curLevel.reserve(1024*64);
+    nextLevel.reserve(1024*64);
 
-    vector<int> coarseIDs;
+
 
     int particleCount   = 0;
     int nodeCount       = 0;
@@ -3501,6 +3624,7 @@ void octree::create_local_essential_tree_count(real4* bodies, real4* multipole, 
     int uselessChecks = 0;
     int splitChecks = 0;
 
+    vector<int> coarseIDs;
     //Add the initial coarse boxes to this level
     for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
     {
@@ -3565,6 +3689,7 @@ void octree::create_local_essential_tree_count(real4* bodies, real4* multipole, 
         bool split = false;
 
         int splitIdxToUse = 0;
+        vector<int> checkIDs;
 #if 0
         splitChecks++;
         double4 boxCenter = {     0.5*(currentRLow[remoteId].x  + currentRHigh[remoteId].x),
@@ -3596,7 +3721,2223 @@ void octree::create_local_essential_tree_count(real4* bodies, real4* multipole, 
 #else
          splitChecks++;
 
-         vector<int> checkIDs;
+
+         bool curSplit = false;
+
+//        for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+        for(int k=0; k < check.coarseIDs.size(); k++)
+        {
+          extraChecks++;
+        //  particleCount++;
+          //Test this specific box
+          int coarseGrpId = check.coarseIDs[k];
+
+          double4 boxCenter = coarseGroupBoxCenter[coarseGrpId];
+          double4 boxSize   = coarseGroupBoxSize  [coarseGrpId];
+
+
+          #ifdef IMPBH
+            //Improved barnes hut version
+            float4 nodeCOM     = multipole[node*3 + 0];
+            nodeCOM.w = nodeCenter.w;
+
+            #ifdef INDSOFT
+              curSplit = split_node_grav_impbh(nodeCOM, boxCenter, boxSize, group_eps, node_eps_val);
+            #else
+              curSplit = split_node_grav_impbh(nodeCOM, boxCenter, boxSize);
+            #endif
+
+          #else
+            //Minimal distance version
+
+            #ifdef INDSOFT
+              curSplit = split_node(nodeCenter, nodeSize, boxCenter, boxSize, group_eps, node_eps_val);  //Check if node should be split
+            #else
+              curSplit = split_node(nodeCenter, nodeSize, boxCenter, boxSize);
+            #endif
+          #endif //if IMPBH
+
+            //Early out if at least one box requires this info
+          if(curSplit){
+            split = true;
+            
+            if(leaf) break;
+            
+            checkIDs.push_back(coarseGrpId);
+//              splitIdxToUse = k;
+//              LOGF(stderr, "LET count On level: %d\tNode: %d\tStart: %d\tEnd: %d\tChecks: %d \n",
+//                  level,node, startCoarseBox, splitIdxToUse, splitIdxToUse-startCoarseBox+1);
+
+//              extraChecks += splitIdxToUse-startCoarseBox;
+//              break;
+          }
+        } //For globalCoarseGrpCount[remoteId]
+
+        if(split == false)
+        {
+//          uselessChecks +=  boxIndicesToUse.size()-startCoarseBox;
+        }
+
+#endif
+        //if split & node add children to next lvl stack
+        if(split && !leaf)
+        {
+          for(int i=child; i < child+nchild; i++)
+          {
+//            nextLevel.push_back(make_int2(i, splitIdxToUse));
+            combNodeCheck check;
+            check.nodeID    = i;
+            check.coarseIDs = checkIDs;
+            nextLevel.push_back(check);
+//            nextLevel.push_back(make_int2(i, splitIdxToUse));
+          }
+        }
+
+        //if split & leaf add particles to particle list
+        if(split && leaf)
+        {
+          for(int i=child; i < child+nchild; i++)
+          {
+            particleCount++;
+          }
+        }
+
+        //Increase the nodeCount, since this node will be part of the tree-structure
+        nodeCount++;
+      } //end for curLevel.size
+
+
+      //Put next level stack into current level and continue
+      curLevel.clear();
+
+//       cout << "Next level: " << nextLevel.size() << endl;
+      curLevel.assign(nextLevel.begin(), nextLevel.end());
+      nextLevel.clear();
+      level++;
+    }//end while
+
+    particles = particleCount;
+    nodes     = nodeCount;
+
+    LOGF(stderr,"LET Number of total CHECKS: %d \n", globalCHECKCount);
+    LOGF(stderr, "LET Extra checks: %d SplitChecks: %d UselessChecks: %d\n", extraChecks, splitChecks, uselessChecks);
+
+/*    fprintf(stderr, "Count found: %d particles and %d nodes. Boxsize: (%f %f %f ) BoxCenter: (%f %f %f)\n",
+                    particles, nodes, boxSize.x ,boxSize.y, boxSize.z, boxCenter.x, boxCenter.y, boxCenter.z );  */
+}
+
+typedef struct{
+  int nodeID;
+  int coarseIDOffset;
+} combNodeCheck2;
+
+void octree::create_local_essential_tree_count_novector(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+                                         int remoteId, float group_eps, int start, int end,
+                                         int &particles, int &nodes)
+{
+    //Walk the tree as is done on device, level by level
+//    vector<combNodeCheck> curLevel;
+//    vector<combNodeCheck> nextLevel;
+
+    combNodeCheck2 *curLevel = new combNodeCheck2[1024*64];
+    combNodeCheck2 *nextLevel = new combNodeCheck2[1024*64];
+
+    int curLevelCount = 0;
+    int nextLevelCount = 0;
+
+
+    int particleCount   = 0;
+    int nodeCount       = 0;
+
+    int level           = 0;
+
+    int extraChecks = 0;
+    int uselessChecks = 0;
+    int splitChecks = 0;
+
+
+    double4 bigBoxCenter = {     0.5*(currentRLow[remoteId].x  + currentRHigh[remoteId].x),
+                              0.5*(currentRLow[remoteId].y  + currentRHigh[remoteId].y),
+                              0.5*(currentRLow[remoteId].z  + currentRHigh[remoteId].z), 0};
+    double4 bigBoxSize   = {fabs(0.5*(currentRHigh[remoteId].x - currentRLow[remoteId].x)),
+                         fabs(0.5*(currentRHigh[remoteId].y - currentRLow[remoteId].y)),
+                         fabs(0.5*(currentRHigh[remoteId].z - currentRLow[remoteId].z)), 0};
+
+//    vector<int> coarseIDs;
+//    //Add the initial coarse boxes to this level
+//    for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+//    {
+//      coarseIDs.push_back(globalCoarseGrpOffsets[remoteId] + i);
+//    }
+
+    int *coarseIDs = new int[globalCoarseGrpCount[remoteId]];
+    //Add the initial coarse boxes to this level
+    for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+    {
+      coarseIDs[i] = globalCoarseGrpOffsets[remoteId] + i;
+    }
+
+    //Add the initial nodes to the curLevel list
+    for(int i=start; i < end; i++)
+    {
+      combNodeCheck2 check;
+      check.nodeID    = i;
+      check.coarseIDOffset = 0;
+//      check.coarseIDs.insert(check.coarseIDs.begin(), coarseIDs, coarseIDs+globalCoarseGrpCount[remoteId]);
+      curLevel[curLevelCount++] = check;
+    }
+
+/*    //Filter out the initial boxes that will fail anyway
+    for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+    {
+     // coarseIDs[i] = globalCoarseGrpOffsets[remoteId] + i;
+      bool split;
+      for(int j=start; j < end; j++)
+      {
+        real4 nodeCenter  = nodeCenterInfo[j];
+        real4 nodeSize    = nodeSizeInfo[j];
+        double4 boxCenter = coarseGroupBoxCenter[coarseIDs[i]];
+        double4 boxSize   = coarseGroupBoxSize  [coarseIDs[i]];
+        float4 nodeCOM    = multipole[j*3 + 0];
+        nodeCOM.w         = nodeCenter.w;
+
+        split |= split_node_grav_impbh(nodeCOM, boxCenter, boxSize);
+
+        if(!split_node_grav_impbh(nodeCOM, boxCenter, boxSize))
+        {
+//          LOGF(stderr,"LET INITIAL Failed on box %d node: %d\n", i, j);
+        }
+      }
+      if(split == false)
+      {
+        LOGF(stderr,"LET INITIAL Failed on %d \n", i);
+      }
+    }
+*/
+    curLevelCount = 0;
+    //Add the initial nodes to the curLevel list
+    for(int i=start; i < end; i++)
+    {
+      combNodeCheck2 check;
+      check.nodeID    = i;
+      check.coarseIDOffset = globalCoarseGrpCount[remoteId]+1; //Out of range default
+
+      for(int j=0; j < globalCoarseGrpCount[remoteId]; j++)
+      {
+        real4 nodeCenter  = nodeCenterInfo[i];
+        real4 nodeSize    = nodeSizeInfo[i];
+        double4 boxCenter = coarseGroupBoxCenter[coarseIDs[j]];
+        double4 boxSize   = coarseGroupBoxSize  [coarseIDs[j]];
+        float4 nodeCOM    = multipole[j*3 + 0];
+        nodeCOM.w         = nodeCenter.w;
+
+        //Skip all previous not needed checks
+        if(split_node_grav_impbh(nodeCOM, boxCenter, boxSize))
+        {
+          check.coarseIDOffset = j;
+//          LOGF(stderr,"LET INITIAL Start node: %d at grp %d \n", i, j);
+          break;
+        }
+      }
+      curLevel[curLevelCount++] = check;
+    }
+
+
+
+
+    //Add the nodes before the start and end to the node list
+    for(int i=0; i < start; i++)
+    {
+      nodeCount++;
+    }
+
+    //Start the tree-walk
+    while(curLevelCount > 0)
+    {
+      for(unsigned int i=0; i < curLevelCount; i++)
+      {
+        //Read node data
+        combNodeCheck2 check = curLevel[i];
+        int node           = check.nodeID;
+
+//        LOGF(stderr, "LET count On level: %d\tNode: %d\tGoing to check: %d\n",
+//                          level,node, check.coarseIDs.size());
+
+        real4 nodeCenter = nodeCenterInfo[node];
+        real4 nodeSize   = nodeSizeInfo[node];
+        bool leaf        = nodeCenter.w <= 0;
+
+        union{float f; int i;} u; //__float_as_int
+        u.f           = nodeSize.w;
+        int childinfo = u.i;
+
+        int child, nchild;
+        if(!leaf)
+        {
+          //Node
+          child    =    childinfo & 0x0FFFFFFF;                         //Index to the first child of the node
+          nchild   = (((childinfo & 0xF0000000) >> 28)) ;         //The number of children this node has
+        }
+        else
+        {
+          //Leaf
+          child   =   childinfo & BODYMASK;                                     //thre first body in the leaf
+          nchild  = (((childinfo & INVBMASK) >> LEAFBIT)+1);     //number of bodies in the leaf masked with the flag
+        }
+
+        #ifdef INDSOFT
+          //Very inefficient this but for testing I have to live with it...
+          float node_eps_val = multipole[node*3 + 1].w;
+        #endif
+
+
+        bool split = false;
+
+        int splitIdxToUse = 0;
+//        vector<int> checkIDs;
+#if 0
+        splitChecks++;
+        double4 boxCenter = {     0.5*(currentRLow[remoteId].x  + currentRHigh[remoteId].x),
+                                  0.5*(currentRLow[remoteId].y  + currentRHigh[remoteId].y),
+                                  0.5*(currentRLow[remoteId].z  + currentRHigh[remoteId].z), 0};
+        double4 boxSize   = {fabs(0.5*(currentRHigh[remoteId].x - currentRLow[remoteId].x)),
+                             fabs(0.5*(currentRHigh[remoteId].y - currentRLow[remoteId].y)),
+                             fabs(0.5*(currentRHigh[remoteId].z - currentRLow[remoteId].z)), 0};
+
+        #ifdef IMPBH
+          //Improved barnes hut version
+          float4 nodeCOM     = multipole[node*3 + 0];
+          nodeCOM.w = nodeCenter.w;
+
+          #ifdef INDSOFT
+             split = split_node_grav_impbh(nodeCOM, boxCenter, boxSize, group_eps, node_eps_val);
+           #else
+             split = split_node_grav_impbh(nodeCOM, boxCenter, boxSize);
+          #endif
+        #else
+          //Minimal distance version
+          #ifdef INDSOFT
+            split = split_node(nodeCenter, nodeSize, boxCenter, boxSize, group_eps, node_eps_val);  //Check if node should be split
+          #else
+            split = split_node(nodeCenter, nodeSize, boxCenter, boxSize);
+          #endif
+        #endif //if IMPBH
+
+#else
+         splitChecks++;
+
+
+         bool curSplit = false;
+
+         int newOffset = 0;
+
+//        for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+        for(int k=check.coarseIDOffset; k < globalCoarseGrpCount[remoteId]; k++)
+        {
+          extraChecks++;
+        //  particleCount++;
+          //Test this specific box
+          int coarseGrpId = coarseIDs[k];
+
+          double4 boxCenter = coarseGroupBoxCenter[coarseGrpId];
+          double4 boxSize   = coarseGroupBoxSize  [coarseGrpId];
+
+
+          #ifdef IMPBH
+            //Improved barnes hut version
+            float4 nodeCOM     = multipole[node*3 + 0];
+            nodeCOM.w = nodeCenter.w;
+
+            #ifdef INDSOFT
+              curSplit = split_node_grav_impbh(nodeCOM, boxCenter, boxSize, group_eps, node_eps_val);
+            #else
+              curSplit = split_node_grav_impbh(nodeCOM, boxCenter, boxSize);
+            #endif
+
+          #else
+            //Minimal distance version
+
+            #ifdef INDSOFT
+              curSplit = split_node(nodeCenter, nodeSize, boxCenter, boxSize, group_eps, node_eps_val);  //Check if node should be split
+            #else
+              curSplit = split_node(nodeCenter, nodeSize, boxCenter, boxSize);
+            #endif
+          #endif //if IMPBH
+
+            //Early out if at least one box requires this info
+          if(curSplit){
+            split = true;
+            newOffset = k;
+            break;
+//              splitIdxToUse = k;
+//              LOGF(stderr, "LET count On level: %d\tNode: %d\tStart: %d\tEnd: %d\tChecks: %d \n",
+//                  level,node, startCoarseBox, splitIdxToUse, splitIdxToUse-startCoarseBox+1);
+
+//              extraChecks += splitIdxToUse-startCoarseBox;
+//              break;
+          }
+          else
+          {
+            //Check the big box
+//            curSplit = split_node(nodeCenter, nodeSize, bigBoxCenter, bigBoxSize);
+//            if(curSplit == false) break;
+          }
+        } //For globalCoarseGrpCount[remoteId]
+
+        if(split == false)
+        {
+//          uselessChecks +=  boxIndicesToUse.size()-startCoarseBox;
+        }
+
+#endif
+        //if split & node add children to next lvl stack
+        if(split && !leaf)
+        {
+          for(int i=child; i < child+nchild; i++)
+          {
+//            nextLevel.push_back(make_int2(i, splitIdxToUse));
+            combNodeCheck2 check;
+            check.nodeID    = i;
+            check.coarseIDOffset = newOffset;
+            nextLevel[nextLevelCount++] = check;
+//            nextLevel.push_back(make_int2(i, splitIdxToUse));
+          }
+        }
+
+        //if split & leaf add particles to particle list
+        if(split && leaf)
+        {
+          for(int i=child; i < child+nchild; i++)
+          {
+            particleCount++;
+          }
+        }
+
+        //Increase the nodeCount, since this node will be part of the tree-structure
+        nodeCount++;
+      } //end for curLevel.size
+
+
+      //Put next level stack into current level and continue
+//      curLevel.clear();
+////       cout << "Next level: " << nextLevel.size() << endl;
+//      curLevel.assign(nextLevel.begin(), nextLevel.end());
+//      nextLevel.clear();
+
+      curLevelCount = nextLevelCount;
+      combNodeCheck2 *temp = curLevel;
+      curLevel = nextLevel;
+      nextLevel = temp;
+      nextLevelCount = 0;
+
+      level++;
+    }//end while
+
+    particles = particleCount;
+    nodes     = nodeCount;
+
+    LOGF(stderr, "LET Extra checks: %d SplitChecks: %d UselessChecks: %d\n", extraChecks, splitChecks, uselessChecks);
+
+/*    fprintf(stderr, "Count found: %d particles and %d nodes. Boxsize: (%f %f %f ) BoxCenter: (%f %f %f)\n",
+                    particles, nodes, boxSize.x ,boxSize.y, boxSize.z, boxCenter.x, boxCenter.y, boxCenter.z );  */
+}
+
+
+typedef struct{
+  int nodeID;
+  int coarseIDOffset;
+  int coarseIDEnd;
+} combNodeCheck3;
+
+void octree::create_local_essential_tree_count_novector_startend(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+                                         int remoteId, float group_eps, int start, int end,
+                                         int &particles, int &nodes)
+{
+    //Walk the tree as is done on device, level by level
+//    vector<combNodeCheck> curLevel;
+//    vector<combNodeCheck> nextLevel;
+
+  combNodeCheck3 *curLevel = new combNodeCheck3[1024*64];
+  combNodeCheck3 *nextLevel = new combNodeCheck3[1024*64];
+
+    int curLevelCount = 0;
+    int nextLevelCount = 0;
+
+
+    int particleCount   = 0;
+    int nodeCount       = 0;
+
+    int level           = 0;
+
+    int extraChecks = 0;
+    int uselessChecks = 0;
+    int splitChecks = 0;
+
+
+    double4 bigBoxCenter = {     0.5*(currentRLow[remoteId].x  + currentRHigh[remoteId].x),
+                              0.5*(currentRLow[remoteId].y  + currentRHigh[remoteId].y),
+                              0.5*(currentRLow[remoteId].z  + currentRHigh[remoteId].z), 0};
+    double4 bigBoxSize   = {fabs(0.5*(currentRHigh[remoteId].x - currentRLow[remoteId].x)),
+                         fabs(0.5*(currentRHigh[remoteId].y - currentRLow[remoteId].y)),
+                         fabs(0.5*(currentRHigh[remoteId].z - currentRLow[remoteId].z)), 0};
+
+//    vector<int> coarseIDs;
+//    //Add the initial coarse boxes to this level
+//    for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+//    {
+//      coarseIDs.push_back(globalCoarseGrpOffsets[remoteId] + i);
+//    }
+
+    int *coarseIDs = new int[globalCoarseGrpCount[remoteId]];
+    //Add the initial coarse boxes to this level
+    for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+    {
+      coarseIDs[i] = globalCoarseGrpOffsets[remoteId] + i;
+    }
+
+    //Add the initial nodes to the curLevel list
+    for(int i=start; i < end; i++)
+    {
+      combNodeCheck3 check;
+      check.nodeID    = i;
+      check.coarseIDOffset = 0;
+      check.coarseIDEnd = globalCoarseGrpCount[remoteId];
+//      check.coarseIDs.insert(check.coarseIDs.begin(), coarseIDs, coarseIDs+globalCoarseGrpCount[remoteId]);
+      curLevel[curLevelCount++] = check;
+    }
+
+   //Filter out the initial boxes that will fail anyway
+    for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+    {
+     // coarseIDs[i] = globalCoarseGrpOffsets[remoteId] + i;
+      bool split;
+      for(int j=start; j < end; j++)
+      {
+        real4 nodeCenter  = nodeCenterInfo[j];
+        real4 nodeSize    = nodeSizeInfo[j];
+        double4 boxCenter = coarseGroupBoxCenter[coarseIDs[i]];
+        double4 boxSize   = coarseGroupBoxSize  [coarseIDs[i]];
+        float4 nodeCOM    = multipole[j*3 + 0];
+        nodeCOM.w         = nodeCenter.w;
+
+        split |= split_node_grav_impbh(nodeCOM, boxCenter, boxSize);
+
+        if(!split_node_grav_impbh(nodeCOM, boxCenter, boxSize))
+        {
+//          LOGF(stderr,"LET INITIAL Failed on box %d node: %d\n", i, j);
+        }
+      }
+      if(split == false)
+      {
+        LOGF(stderr,"LET INITIAL Failed on %d \n", i);
+      }
+    }
+
+//    curLevelCount = 0;
+//    //Add the initial nodes to the curLevel list
+//    for(int i=start; i < end; i++)
+//    {
+//      combNodeCheck3 check;
+//      check.nodeID    = i;
+//      check.coarseIDOffset = 0; //Out of range default
+//      check.coarseIDEnd    = globalCoarseGrpCount[remoteId]; //Out of range default
+//
+////      for(int j=0; j < globalCoarseGrpCount[remoteId]; j++)
+////      {
+////        real4 nodeCenter  = nodeCenterInfo[i];
+////        real4 nodeSize    = nodeSizeInfo[i];
+////        double4 boxCenter = coarseGroupBoxCenter[coarseIDs[j]];
+////        double4 boxSize   = coarseGroupBoxSize  [coarseIDs[j]];
+////        float4 nodeCOM    = multipole[j*3 + 0];
+////        nodeCOM.w         = nodeCenter.w;
+////
+////        //Skip all previous not needed checks
+////        if(split_node_grav_impbh(nodeCOM, boxCenter, boxSize))
+////        {
+////          check.coarseIDOffset = j;
+//////          LOGF(stderr,"LET INITIAL Start node: %d at grp %d \n", i, j);
+////          break;
+////        }
+////      }
+//      curLevel[curLevelCount++] = check;
+//    }
+
+
+
+
+    //Add the nodes before the start and end to the node list
+    for(int i=0; i < start; i++)
+    {
+      nodeCount++;
+    }
+
+    //Start the tree-walk
+    while(curLevelCount > 0)
+    {
+      for(unsigned int i=0; i < curLevelCount; i++)
+      {
+        //Read node data
+        combNodeCheck3 check = curLevel[i];
+        int node           = check.nodeID;
+
+//        LOGF(stderr, "LET count On level: %d\tNode: %d\tGoing to check: %d\n",
+//                          level,node, check.coarseIDs.size());
+
+        real4 nodeCenter = nodeCenterInfo[node];
+        real4 nodeSize   = nodeSizeInfo[node];
+        bool leaf        = nodeCenter.w <= 0;
+
+        union{float f; int i;} u; //__float_as_int
+        u.f           = nodeSize.w;
+        int childinfo = u.i;
+
+        int child, nchild;
+        if(!leaf)
+        {
+          //Node
+          child    =    childinfo & 0x0FFFFFFF;                         //Index to the first child of the node
+          nchild   = (((childinfo & 0xF0000000) >> 28)) ;         //The number of children this node has
+        }
+        else
+        {
+          //Leaf
+          child   =   childinfo & BODYMASK;                                     //thre first body in the leaf
+          nchild  = (((childinfo & INVBMASK) >> LEAFBIT)+1);     //number of bodies in the leaf masked with the flag
+        }
+
+        #ifdef INDSOFT
+          //Very inefficient this but for testing I have to live with it...
+          float node_eps_val = multipole[node*3 + 1].w;
+        #endif
+
+
+        bool split = false;
+
+        int splitIdxToUse = 0;
+//        vector<int> checkIDs;
+#if 0
+        splitChecks++;
+        double4 boxCenter = {     0.5*(currentRLow[remoteId].x  + currentRHigh[remoteId].x),
+                                  0.5*(currentRLow[remoteId].y  + currentRHigh[remoteId].y),
+                                  0.5*(currentRLow[remoteId].z  + currentRHigh[remoteId].z), 0};
+        double4 boxSize   = {fabs(0.5*(currentRHigh[remoteId].x - currentRLow[remoteId].x)),
+                             fabs(0.5*(currentRHigh[remoteId].y - currentRLow[remoteId].y)),
+                             fabs(0.5*(currentRHigh[remoteId].z - currentRLow[remoteId].z)), 0};
+
+        #ifdef IMPBH
+          //Improved barnes hut version
+          float4 nodeCOM     = multipole[node*3 + 0];
+          nodeCOM.w = nodeCenter.w;
+
+          #ifdef INDSOFT
+             split = split_node_grav_impbh(nodeCOM, boxCenter, boxSize, group_eps, node_eps_val);
+           #else
+             split = split_node_grav_impbh(nodeCOM, boxCenter, boxSize);
+          #endif
+        #else
+          //Minimal distance version
+          #ifdef INDSOFT
+            split = split_node(nodeCenter, nodeSize, boxCenter, boxSize, group_eps, node_eps_val);  //Check if node should be split
+          #else
+            split = split_node(nodeCenter, nodeSize, boxCenter, boxSize);
+          #endif
+        #endif //if IMPBH
+
+#else
+         splitChecks++;
+
+
+         bool curSplit = false;
+
+         int newOffset = -1;
+         int newEnd  = 0;
+         bool didBigCheck = false;
+
+//        for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+        for(int k=check.coarseIDOffset; k < check.coarseIDEnd; k++)
+        {
+          extraChecks++;
+        //  particleCount++;
+          //Test this specific box
+          int coarseGrpId = coarseIDs[k];
+
+          double4 boxCenter = coarseGroupBoxCenter[coarseGrpId];
+          double4 boxSize   = coarseGroupBoxSize  [coarseGrpId];
+
+
+          #ifdef IMPBH
+            //Improved barnes hut version
+            float4 nodeCOM     = multipole[node*3 + 0];
+            nodeCOM.w = nodeCenter.w;
+
+            #ifdef INDSOFT
+              curSplit = split_node_grav_impbh(nodeCOM, boxCenter, boxSize, group_eps, node_eps_val);
+            #else
+              curSplit = split_node_grav_impbh(nodeCOM, boxCenter, boxSize);
+            #endif
+
+          #else
+            //Minimal distance version
+
+            #ifdef INDSOFT
+              curSplit = split_node(nodeCenter, nodeSize, boxCenter, boxSize, group_eps, node_eps_val);  //Check if node should be split
+            #else
+              curSplit = split_node(nodeCenter, nodeSize, boxCenter, boxSize);
+            #endif
+          #endif //if IMPBH
+
+            //Early out if at least one box requires this info
+          if(curSplit){
+            split = true;
+
+            if(leaf)  break;  //Early out if this is a leaf, since we wont have to check any further
+
+            if(newOffset < 0)
+              newOffset = k;
+            newEnd = k+1;
+
+
+//            break;
+//              splitIdxToUse = k;
+//              LOGF(stderr, "LET count On level: %d\tNode: %d\tStart: %d\tEnd: %d\tChecks: %d \n",
+//                  level,node, startCoarseBox, splitIdxToUse, splitIdxToUse-startCoarseBox+1);
+
+//              extraChecks += splitIdxToUse-startCoarseBox;
+//              break;
+          }
+          else
+          {
+            //Instead of checking all boxes we can just go over the tree-structure again
+            //if we fail to check if there is any more grp that is required
+
+
+            //Check the big box
+//            if(!didBigCheck)
+//            {
+//              curSplit = split_node(nodeCenter, nodeSize, bigBoxCenter, bigBoxSize);
+//              if(curSplit == false) break;
+//              didBigCheck = true;
+//            }
+          }
+        } //For globalCoarseGrpCount[remoteId]
+
+        if(split == false)
+        {
+//          uselessChecks +=  boxIndicesToUse.size()-startCoarseBox;
+        }
+
+#endif
+        //if split & node add children to next lvl stack
+        if(split && !leaf)
+        {
+          for(int i=child; i < child+nchild; i++)
+          {
+//            nextLevel.push_back(make_int2(i, splitIdxToUse));
+            combNodeCheck3 check;
+            check.nodeID    = i;
+            check.coarseIDOffset = newOffset;
+            check.coarseIDEnd    = newEnd;
+            nextLevel[nextLevelCount++] = check;
+//            nextLevel.push_back(make_int2(i, splitIdxToUse));
+          }
+        }
+
+        //if split & leaf add particles to particle list
+        if(split && leaf)
+        {
+          for(int i=child; i < child+nchild; i++)
+          {
+            particleCount++;
+          }
+        }
+
+        //Increase the nodeCount, since this node will be part of the tree-structure
+        nodeCount++;
+      } //end for curLevel.size
+
+
+      //Put next level stack into current level and continue
+//      curLevel.clear();
+////       cout << "Next level: " << nextLevel.size() << endl;
+//      curLevel.assign(nextLevel.begin(), nextLevel.end());
+//      nextLevel.clear();
+
+      curLevelCount = nextLevelCount;
+      combNodeCheck3 *temp = curLevel;
+      curLevel = nextLevel;
+      nextLevel = temp;
+      nextLevelCount = 0;
+
+      level++;
+    }//end while
+
+    particles = particleCount;
+    nodes     = nodeCount;
+
+    LOGF(stderr, "LET Extra checks: %d SplitChecks: %d UselessChecks: %d\n", extraChecks, splitChecks, uselessChecks);
+
+/*    fprintf(stderr, "Count found: %d particles and %d nodes. Boxsize: (%f %f %f ) BoxCenter: (%f %f %f)\n",
+                    particles, nodes, boxSize.x ,boxSize.y, boxSize.z, boxCenter.x, boxCenter.y, boxCenter.z );  */
+}
+
+void octree::create_local_essential_tree_count_novector_startend2(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+                                         int remoteId, float group_eps, int start, int end,
+                                         int &particles, int &nodes)
+{
+    //Walk the tree as is done on device, level by level
+
+  combNodeCheck3 *curLevel = new combNodeCheck3[1024*64];
+  combNodeCheck3 *nextLevel = new combNodeCheck3[1024*64];
+
+    int curLevelCount = 0;
+    int nextLevelCount = 0;
+
+
+    int particleCount   = 0;
+    int nodeCount       = 0;
+
+    int level           = 0;
+
+    int extraChecks = 0;
+    int uselessChecks = 0;
+    int splitChecks = 0;
+
+
+    double4 bigBoxCenter = {     0.5*(currentRLow[remoteId].x  + currentRHigh[remoteId].x),
+                              0.5*(currentRLow[remoteId].y  + currentRHigh[remoteId].y),
+                              0.5*(currentRLow[remoteId].z  + currentRHigh[remoteId].z), 0};
+    double4 bigBoxSize   = {fabs(0.5*(currentRHigh[remoteId].x - currentRLow[remoteId].x)),
+                         fabs(0.5*(currentRHigh[remoteId].y - currentRLow[remoteId].y)),
+                         fabs(0.5*(currentRHigh[remoteId].z - currentRLow[remoteId].z)), 0};
+
+
+    int *coarseIDs = new int[globalCoarseGrpCount[remoteId]];
+    //Add the initial coarse boxes to this level
+    for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+    {
+      coarseIDs[i] = globalCoarseGrpOffsets[remoteId] + i;
+    }
+
+    //Add the initial nodes to the curLevel list
+    for(int i=start; i < end; i++)
+    {
+      combNodeCheck3 check;
+      check.nodeID    = i;
+      check.coarseIDOffset = 0;
+      check.coarseIDEnd = globalCoarseGrpCount[remoteId];
+      curLevel[curLevelCount++] = check;
+    }
+
+    //Add the nodes before the start and end to the node list
+    for(int i=0; i < start; i++)
+    {
+      nodeCount++;
+    }
+
+    //Start the tree-walk
+    while(curLevelCount > 0)
+    {
+      for(unsigned int i=0; i < curLevelCount; i++)
+      {
+        //Read node data
+        combNodeCheck3 check = curLevel[i];
+        int node           = check.nodeID;
+
+
+        real4 nodeCenter = nodeCenterInfo[node];
+        real4 nodeSize   = nodeSizeInfo[node];
+        bool leaf        = nodeCenter.w <= 0;
+
+        union{float f; int i;} u; //__float_as_int
+        u.f           = nodeSize.w;
+        int childinfo = u.i;
+
+        int child, nchild;
+        if(!leaf)
+        {
+          //Node
+          child    =    childinfo & 0x0FFFFFFF;                         //Index to the first child of the node
+          nchild   = (((childinfo & 0xF0000000) >> 28)) ;         //The number of children this node has
+        }
+        else
+        {
+          //Leaf
+          child   =   childinfo & BODYMASK;                                     //thre first body in the leaf
+          nchild  = (((childinfo & INVBMASK) >> LEAFBIT)+1);     //number of bodies in the leaf masked with the flag
+        }
+
+        #ifdef INDSOFT
+          //Very inefficient this but for testing I have to live with it...
+          float node_eps_val = multipole[node*3 + 1].w;
+        #endif
+
+
+        bool split = false;
+
+        int splitIdxToUse = 0;
+//        vector<int> checkIDs;
+#if 0
+
+
+#else
+         splitChecks++;
+
+
+         bool curSplit = false;
+
+         int newOffset = -1;
+         int newEnd  = 0;
+         bool didBigCheck = false;
+
+         int coarseGrpId = coarseIDs[check.coarseIDOffset];
+
+         double4 boxCenter = coarseGroupBoxCenter[coarseGrpId];
+         double4 boxSize   = coarseGroupBoxSize  [coarseGrpId];
+
+        #ifdef IMPBH
+          //Improved barnes hut version
+          float4 nodeCOM     = multipole[node*3 + 0];
+          nodeCOM.w = nodeCenter.w;
+
+          #ifdef INDSOFT
+            curSplit = split_node_grav_impbh(nodeCOM, boxCenter, boxSize, group_eps, node_eps_val);
+          #else
+            curSplit = split_node_grav_impbh(nodeCOM, boxCenter, boxSize);
+          #endif
+
+        #else
+          //Minimal distance version
+
+          #ifdef INDSOFT
+            curSplit = split_node(nodeCenter, nodeSize, boxCenter, boxSize, group_eps, node_eps_val);  //Check if node should be split
+          #else
+            curSplit = split_node(nodeCenter, nodeSize, boxCenter, boxSize);
+          #endif
+        #endif //if IMPBH
+
+           if(curSplit)
+           {
+             //Continue like this
+             newOffset = check.coarseIDOffset;
+             newEnd    = check.coarseIDEnd;
+             split = true;
+           }
+           else
+           {
+             //Check others
+              for(int k=check.coarseIDOffset+1; k < check.coarseIDEnd; k++)
+              {
+                //Test this specific box
+                int coarseGrpId = coarseIDs[k];
+
+                double4 boxCenter = coarseGroupBoxCenter[coarseGrpId];
+                double4 boxSize   = coarseGroupBoxSize  [coarseGrpId];
+
+                //Improved barnes hut version
+                float4 nodeCOM     = multipole[node*3 + 0];
+                nodeCOM.w = nodeCenter.w;
+                curSplit = split_node_grav_impbh(nodeCOM, boxCenter, boxSize);
+
+                  //Early out if at least one box requires this info
+                if(curSplit)
+                {
+                  split = true;
+
+                  if(leaf)  break;  //Early out if this is a leaf, since we wont have to check any further
+
+                  newOffset = k;
+                  newEnd    = check.coarseIDEnd;
+                  break;
+                }//if cursplit
+              }//end for loop
+           }//end else
+
+
+
+#endif //if old method
+
+        //if split & node add children to next lvl stack
+        if(split && !leaf)
+        {
+          for(int i=child; i < child+nchild; i++)
+          {
+//            nextLevel.push_back(make_int2(i, splitIdxToUse));
+            combNodeCheck3 check;
+            check.nodeID    = i;
+            check.coarseIDOffset = newOffset;
+            check.coarseIDEnd    = newEnd;
+            nextLevel[nextLevelCount++] = check;
+//            nextLevel.push_back(make_int2(i, splitIdxToUse));
+          }
+        }
+
+        //if split & leaf add particles to particle list
+        if(split && leaf)
+        {
+          for(int i=child; i < child+nchild; i++)
+          {
+            particleCount++;
+          }
+        }
+
+        //Increase the nodeCount, since this node will be part of the tree-structure
+        nodeCount++;
+      } //end for curLevel.size
+
+
+      curLevelCount = nextLevelCount;
+      combNodeCheck3 *temp = curLevel;
+      curLevel = nextLevel;
+      nextLevel = temp;
+      nextLevelCount = 0;
+
+      level++;
+    }//end while
+
+    particles = particleCount;
+    nodes     = nodeCount;
+
+    LOGF(stderr, "LET Extra checks: %d SplitChecks: %d UselessChecks: %d\n", extraChecks, splitChecks, uselessChecks);
+
+}
+
+
+typedef struct{
+  int nodeID;
+  int coarseIDs[64];
+  int coarseIDCount;
+} combNodeCheck4;
+
+
+void octree::create_local_essential_tree_count_novector_startend3(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+                                         int remoteId, float group_eps, int start, int end,
+                                         int &particles, int &nodes)
+{
+    //Walk the tree as is done on device, level by level
+
+  combNodeCheck4 *curLevel = new combNodeCheck4[1024*64];
+  combNodeCheck4 *nextLevel = new combNodeCheck4[1024*64];
+
+    int curLevelCount = 0;
+    int nextLevelCount = 0;
+
+
+    int particleCount   = 0;
+    int nodeCount       = 0;
+
+    int level           = 0;
+
+    int extraChecks = 0;
+    int uselessChecks = 0;
+    int splitChecks = 0;
+
+
+    double4 bigBoxCenter = {     0.5*(currentRLow[remoteId].x  + currentRHigh[remoteId].x),
+                              0.5*(currentRLow[remoteId].y  + currentRHigh[remoteId].y),
+                              0.5*(currentRLow[remoteId].z  + currentRHigh[remoteId].z), 0};
+    double4 bigBoxSize   = {fabs(0.5*(currentRHigh[remoteId].x - currentRLow[remoteId].x)),
+                         fabs(0.5*(currentRHigh[remoteId].y - currentRLow[remoteId].y)),
+                         fabs(0.5*(currentRHigh[remoteId].z - currentRLow[remoteId].z)), 0};
+
+
+    int *coarseIDs = new int[globalCoarseGrpCount[remoteId]];
+    //Add the initial coarse boxes to this level
+    for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+    {
+      coarseIDs[i] = globalCoarseGrpOffsets[remoteId] + i;
+    }
+
+    //Add the initial nodes to the curLevel list
+    for(int i=start; i < end; i++)
+    {
+      combNodeCheck4 check;
+      check.nodeID    = i;
+      for(int j=0; j < globalCoarseGrpCount[remoteId]; j++)
+      {
+        check.coarseIDs[j] = globalCoarseGrpOffsets[remoteId] + j;
+      }      
+      check.coarseIDCount =  globalCoarseGrpCount[remoteId];
+      curLevel[curLevelCount++] = check;
+    }
+
+    //Add the nodes before the start and end to the node list
+    for(int i=0; i < start; i++)
+    {
+      nodeCount++;
+    }
+
+    //Start the tree-walk
+    while(curLevelCount > 0)
+    {
+      for(unsigned int i=0; i < curLevelCount; i++)
+      {
+        //Read node data
+        combNodeCheck4 check = curLevel[i];
+        int node           = check.nodeID;
+
+
+        real4 nodeCenter = nodeCenterInfo[node];
+        real4 nodeSize   = nodeSizeInfo[node];
+        bool leaf        = nodeCenter.w <= 0;
+
+        union{float f; int i;} u; //__float_as_int
+        u.f           = nodeSize.w;
+        int childinfo = u.i;
+
+        int child, nchild;
+        if(!leaf)
+        {
+          //Node
+          child    =    childinfo & 0x0FFFFFFF;                         //Index to the first child of the node
+          nchild   = (((childinfo & 0xF0000000) >> 28)) ;         //The number of children this node has
+        }
+        else
+        {
+          //Leaf
+          child   =   childinfo & BODYMASK;                                     //thre first body in the leaf
+          nchild  = (((childinfo & INVBMASK) >> LEAFBIT)+1);     //number of bodies in the leaf masked with the flag
+        }
+
+        #ifdef INDSOFT
+          //Very inefficient this but for testing I have to live with it...
+          float node_eps_val = multipole[node*3 + 1].w;
+        #endif
+
+
+        bool split = false;
+
+        int splitIdxToUse = 0;
+        
+#if 0
+
+#else
+         splitChecks++;
+
+
+         bool curSplit = false;
+
+         int newOffset = 0;
+         bool didBigCheck = false;
+         
+         int tempList[128];
+
+//        for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+        for(int k=0; k < check.coarseIDCount; k++)
+        {
+          extraChecks++;
+
+          //Test this specific box
+          int coarseGrpId = check.coarseIDs[k];
+
+          double4 boxCenter = coarseGroupBoxCenter[coarseGrpId];
+          double4 boxSize   = coarseGroupBoxSize  [coarseGrpId];
+
+
+          #ifdef IMPBH
+            //Improved barnes hut version
+            float4 nodeCOM     = multipole[node*3 + 0];
+            nodeCOM.w = nodeCenter.w;
+
+            #ifdef INDSOFT
+              curSplit = split_node_grav_impbh(nodeCOM, boxCenter, boxSize, group_eps, node_eps_val);
+            #else
+              curSplit = split_node_grav_impbh(nodeCOM, boxCenter, boxSize);
+            #endif
+
+          #else
+            //Minimal distance version
+
+            #ifdef INDSOFT
+              curSplit = split_node(nodeCenter, nodeSize, boxCenter, boxSize, group_eps, node_eps_val);  //Check if node should be split
+            #else
+              curSplit = split_node(nodeCenter, nodeSize, boxCenter, boxSize);
+            #endif
+          #endif //if IMPBH
+
+            //Early out if at least one box requires this info
+          if(curSplit){
+            split = true;
+
+            if(leaf)  break;  //Early out if this is a leaf, since we wont have to check any further
+            
+            tempList[newOffset++] = check.coarseIDs[k];
+          }
+        } //For globalCoarseGrpCount[remoteId]
+
+
+#endif //if old method
+
+        //if split & node add children to next lvl stack
+        if(split && !leaf)
+        {
+          for(int i=child; i < child+nchild; i++)
+          {
+            combNodeCheck4 check;
+            check.nodeID    = i;
+            check.coarseIDCount = newOffset;
+
+            memcpy(check.coarseIDs, tempList, sizeof(int)*newOffset);
+            
+            nextLevel[nextLevelCount++] = check;
+//            nextLevel.push_back(make_int2(i, splitIdxToUse));
+          }
+        }
+
+        //if split & leaf add particles to particle list
+        if(split && leaf)
+        {
+          for(int i=child; i < child+nchild; i++)
+          {
+            particleCount++;
+          }
+        }
+
+        //Increase the nodeCount, since this node will be part of the tree-structure
+        nodeCount++;
+      } //end for curLevel.size
+
+
+      curLevelCount = nextLevelCount;
+      combNodeCheck4 *temp = curLevel;
+      curLevel = nextLevel;
+      nextLevel = temp;
+      nextLevelCount = 0;
+
+      level++;
+    }//end while
+
+    particles = particleCount;
+    nodes     = nodeCount;
+
+    LOGF(stderr, "LET Extra checks: %d SplitChecks: %d UselessChecks: %d\n", extraChecks, splitChecks, uselessChecks);
+
+}
+
+
+
+struct cmp_key_value{
+  bool operator () (const int2 &a, const int2 &b){
+    return ( a.y < b.y);
+  }
+};
+
+//This one sorts the groups by the most strict one as last
+//and the least hit ones in the beginning, to quickly
+//filter out things the deeper we go
+void octree::create_local_essential_tree_count_novector_startend4(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+                                         int remoteId, float group_eps, int start, int end,
+                                         int &particles, int &nodes)
+{
+    //Walk the tree as is done on device, level by level
+    const int stackSize = 128;
+    combNodeCheck3 *curLevel  = new combNodeCheck3[1024*stackSize];
+    combNodeCheck3 *nextLevel = new combNodeCheck3[1024*stackSize];
+    
+
+
+    int curLevelCount  = 0;
+    int nextLevelCount = 0;
+
+
+    int particleCount   = 0;
+    int nodeCount       = 0;
+
+    int level           = 0;
+
+    double4 bigBoxCenter = {  0.5*(currentRLow[remoteId].x  + currentRHigh[remoteId].x),
+                              0.5*(currentRLow[remoteId].y  + currentRHigh[remoteId].y),
+                              0.5*(currentRLow[remoteId].z  + currentRHigh[remoteId].z), 0};
+    double4 bigBoxSize   = {fabs(0.5*(currentRHigh[remoteId].x - currentRLow[remoteId].x)),
+                            fabs(0.5*(currentRHigh[remoteId].y - currentRLow[remoteId].y)),
+                            fabs(0.5*(currentRHigh[remoteId].z - currentRLow[remoteId].z)), 0};
+
+    int2 *coarseIDsTest = new int2[globalCoarseGrpCount[remoteId]];                         
+    int  *coarseIDs     = new int[globalCoarseGrpCount[remoteId]];
+    //Add the initial coarse boxes to this level
+    for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+    {
+      coarseIDs[i] = globalCoarseGrpOffsets[remoteId] + i;
+
+      coarseIDsTest[i].x = globalCoarseGrpOffsets[remoteId] + i;
+      coarseIDsTest[i].y = 0;
+    }
+
+    //Add the initial nodes to the curLevel list
+    for(int i=start; i < end; i++)
+    {
+      combNodeCheck3 check;
+      check.nodeID    = i;
+      check.coarseIDOffset = 0;
+      check.coarseIDEnd = globalCoarseGrpCount[remoteId];
+      curLevel[curLevelCount++] = check;
+    }
+
+    //Compute which boxes are most likely to be used and then sort 
+    //them. Saves another few percent
+    for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+    {
+      for(int j=start; j < end; j++)
+      {
+        real4 nodeCenter  = nodeCenterInfo[j];
+        real4 nodeSize    = nodeSizeInfo[j];
+        double4 boxCenter = coarseGroupBoxCenter[coarseIDs[i]];
+        double4 boxSize   = coarseGroupBoxSize  [coarseIDs[i]];
+        float4 nodeCOM    = multipole[j*3 + 0];
+        nodeCOM.w         = nodeCenter.w;
+     
+        if(split_node_grav_impbh(nodeCOM, boxCenter, boxSize))
+        {
+          coarseIDsTest[i].y++;
+        }
+      } //for j
+    } // for i
+
+    std::sort(coarseIDsTest, coarseIDsTest+globalCoarseGrpCount[remoteId], cmp_key_value());
+    
+    
+     for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+    {
+//       LOGF(stderr, "Box histo2 : %d \t %d \t %d \n", i, coarseIDsTest[i].x, coarseIDsTest[i].y);
+      coarseIDs[i] = coarseIDsTest[i].x;
+    }   
+    //Pre-processing done
+    
+
+    //Add the nodes before the start and end to the node list
+    for(int i=0; i < start; i++)
+    {
+      nodeCount++;
+    }
+    
+    int maxSizeTemp = -1;
+
+    //Start the tree-walk
+    while(curLevelCount > 0)
+    {
+      maxSizeTemp = max(maxSizeTemp, curLevelCount);
+      
+      for(unsigned int i=0; i < curLevelCount; i++)
+      {
+        //Read node data
+        combNodeCheck3 check = curLevel[i];
+        int node             = check.nodeID;
+
+        real4 nodeCenter = nodeCenterInfo[node];
+        real4 nodeSize   = nodeSizeInfo[node];
+        bool leaf        = nodeCenter.w <= 0;
+
+        union{float f; int i;} u; //__float_as_int
+        u.f           = nodeSize.w;
+        int childinfo = u.i;
+
+        int child, nchild;
+        if(!leaf)
+        {
+          //Node
+          child    =    childinfo & 0x0FFFFFFF;                         //Index to the first child of the node
+          nchild   = (((childinfo & 0xF0000000) >> 28)) ;         //The number of children this node has
+        }
+        else
+        {
+          //Leaf
+          child   =   childinfo & BODYMASK;                                     //thre first body in the leaf
+          nchild  = (((childinfo & INVBMASK) >> LEAFBIT)+1);     //number of bodies in the leaf masked with the flag
+        }
+
+        #ifdef INDSOFT
+          //Very inefficient this but for testing I have to live with it...
+          float node_eps_val = multipole[node*3 + 1].w;
+        #endif
+
+
+        bool split = false;
+
+        int splitIdxToUse = 0;
+
+        int newOffset = -1;
+        int newEnd  = 0;
+         
+#if 0
+        double4 boxCenter = {     0.5*(currentRLow[remoteId].x  + currentRHigh[remoteId].x),
+                                  0.5*(currentRLow[remoteId].y  + currentRHigh[remoteId].y),
+                                  0.5*(currentRLow[remoteId].z  + currentRHigh[remoteId].z), 0};
+        double4 boxSize   = {fabs(0.5*(currentRHigh[remoteId].x - currentRLow[remoteId].x)),
+                             fabs(0.5*(currentRHigh[remoteId].y - currentRLow[remoteId].y)),
+                             fabs(0.5*(currentRHigh[remoteId].z - currentRLow[remoteId].z)), 0};
+
+        #ifdef IMPBH
+          //Improved barnes hut version
+          float4 nodeCOM     = multipole[node*3 + 0];
+          nodeCOM.w = nodeCenter.w;
+
+          #ifdef INDSOFT
+             split = split_node_grav_impbh(nodeCOM, boxCenter, boxSize, group_eps, node_eps_val);
+           #else
+             split = split_node_grav_impbh(nodeCOM, boxCenter, boxSize);
+          #endif
+        #else
+          //Minimal distance version
+          #ifdef INDSOFT
+            split = split_node(nodeCenter, nodeSize, boxCenter, boxSize, group_eps, node_eps_val);  //Check if node should be split
+          #else
+            split = split_node(nodeCenter, nodeSize, boxCenter, boxSize);
+          #endif
+        #endif //if IMPBH
+
+#else
+         bool curSplit = false;
+         bool didBigCheck = false;
+         
+//          if(split_node(nodeCenter, nodeSize, bigBoxCenter, bigBoxSize))
+         {
+           for(int k=check.coarseIDOffset; k < check.coarseIDEnd; k++)
+           {
+            //Test this specific box
+            int coarseGrpId = coarseIDs[k];
+
+            double4 boxCenter = coarseGroupBoxCenter[coarseGrpId];
+            double4 boxSize   = coarseGroupBoxSize  [coarseGrpId];
+
+
+            #ifdef IMPBH
+              //Improved Barnes Hut version
+              float4 nodeCOM     = multipole[node*3 + 0];
+              nodeCOM.w = nodeCenter.w;
+
+              #ifdef INDSOFT
+                curSplit = split_node_grav_impbh(nodeCOM, boxCenter, boxSize, group_eps, node_eps_val);
+              #else
+                curSplit = split_node_grav_impbh(nodeCOM, boxCenter, boxSize);
+              #endif
+
+            #else
+              //Minimal distance version
+
+              #ifdef INDSOFT
+                curSplit = split_node(nodeCenter, nodeSize, boxCenter, boxSize, group_eps, node_eps_val);  //Check if node should be split
+              #else
+                curSplit = split_node(nodeCenter, nodeSize, boxCenter, boxSize);
+              #endif
+            #endif //if IMPBH
+
+             //Check if this box needs to go along for the ride further
+             //down the tree
+            if(curSplit)
+            {
+              split = true;
+
+              if(leaf)  break;  //Early out if this is a leaf, since we wont have to check any further
+
+              if(newOffset < 0)
+                newOffset = k;
+              newEnd = k+1;
+            } //if curSplit
+          } //For globalCoarseGrpCount[remoteId]
+        }//Big-check
+#endif
+        //if split & node add children to next lvl stack
+        if(split && !leaf)
+        {
+          for(int i=child; i < child+nchild; i++)
+          {
+            combNodeCheck3 check;
+            check.nodeID                = i;
+            check.coarseIDOffset        = newOffset;
+            check.coarseIDEnd           = newEnd;
+            nextLevel[nextLevelCount++] = check;
+          }
+        }
+
+        //if split & leaf add particles to particle list
+        if(split && leaf)
+        {
+          for(int i=child; i < child+nchild; i++)
+          {
+            particleCount++;
+          }
+        }
+
+        //Increase the nodeCount, since this node will be part of the tree-structure
+        nodeCount++;
+      } //end for curLevel.size
+
+
+      //Put next level stack into current level and continue
+      curLevelCount         = nextLevelCount;
+      combNodeCheck3 *temp  = curLevel;
+      curLevel              = nextLevel;
+      nextLevel             = temp;
+      nextLevelCount        = 0;
+
+      level++;
+    }//end while
+
+    particles = particleCount;
+    nodes     = nodeCount;
+    
+    delete[] curLevel;
+    delete[] nextLevel;    
+    delete[] coarseIDsTest;    
+    delete[] coarseIDs;        
+    
+
+//    LOGF(stderr, "LET Extra checks: %d SplitChecks: %d UselessChecks: %d maxStack: %d\n", extraChecks, splitChecks, uselessChecks, maxSizeTemp);
+
+}
+
+void octree::create_local_essential_tree_fill_novector_startend4(real4* bodies, real4* velocities, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+                                              int remoteId, float group_eps, int start, int end,
+                                              int particleCount, int nodeCount, real4 *dataBuffer)
+{
+  //Walk the tree as is done on device, level by level
+  const int stackSize = 128;
+  combNodeCheck3 *curLevel  = new combNodeCheck3[1024*stackSize];
+  combNodeCheck3 *nextLevel = new combNodeCheck3[1024*stackSize];
+
+  int curLevelCount  = 0;
+  int nextLevelCount = 0;
+
+
+  int level           = 0;
+
+  double4 bigBoxCenter = {  0.5*(currentRLow[remoteId].x  + currentRHigh[remoteId].x),
+                            0.5*(currentRLow[remoteId].y  + currentRHigh[remoteId].y),
+                            0.5*(currentRLow[remoteId].z  + currentRHigh[remoteId].z), 0};
+  double4 bigBoxSize   = {fabs(0.5*(currentRHigh[remoteId].x - currentRLow[remoteId].x)),
+                          fabs(0.5*(currentRHigh[remoteId].y - currentRLow[remoteId].y)),
+                          fabs(0.5*(currentRHigh[remoteId].z - currentRLow[remoteId].z)), 0};
+
+  int2 *coarseIDsTest = new int2[globalCoarseGrpCount[remoteId]];
+  int *coarseIDs      = new int [globalCoarseGrpCount[remoteId]];
+  //Add the initial coarse boxes to this level
+  for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+  {
+    coarseIDs[i] = globalCoarseGrpOffsets[remoteId] + i;
+
+    coarseIDsTest[i].x = globalCoarseGrpOffsets[remoteId] + i;
+    coarseIDsTest[i].y = 0;
+  }
+
+  //Add the initial nodes to the curLevel list
+  for(int i=start; i < end; i++)
+  {
+    combNodeCheck3 check;
+    check.nodeID    = i;
+    check.coarseIDOffset = 0;
+    check.coarseIDEnd = globalCoarseGrpCount[remoteId];
+    curLevel[curLevelCount++] = check;
+  }
+
+  //Compute which boxes are most likely to be used and then sort
+  //them. Saves another few percent
+  for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+  {
+    for(int j=start; j < end; j++)
+    {
+      real4 nodeCenter  = nodeCenterInfo[j];
+      real4 nodeSize    = nodeSizeInfo[j];
+      double4 boxCenter = coarseGroupBoxCenter[coarseIDs[i]];
+      double4 boxSize   = coarseGroupBoxSize  [coarseIDs[i]];
+      float4 nodeCOM    = multipole[j*3 + 0];
+      nodeCOM.w         = nodeCenter.w;
+
+      if(split_node_grav_impbh(nodeCOM, boxCenter, boxSize))
+      {
+        coarseIDsTest[i].y++;
+      }
+    } //for j
+  } // for i
+
+  std::sort(coarseIDsTest, coarseIDsTest+globalCoarseGrpCount[remoteId], cmp_key_value());
+
+
+   for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+  {
+//       LOGF(stderr, "Box histo2 : %d \t %d \t %d \n", i, coarseIDsTest[i].x, coarseIDsTest[i].y);
+    coarseIDs[i] = coarseIDsTest[i].x;
+  }
+  //Pre-processing done
+
+
+
+    double massSum = 0;
+
+    int particleOffset     = 1;
+    int velParticleOffset  = particleOffset      + particleCount;
+    int nodeSizeOffset     = velParticleOffset   + particleCount;
+    int nodeCenterOffset   = nodeSizeOffset      + nodeCount;
+    int multiPoleOffset    = nodeCenterOffset    + nodeCount;
+
+    //|real4| 2*particleCount*real4| nodes*real4 | nodes*real4 | nodes*3*real4 |
+    //Info about #particles, #nodes, start and end of tree-walk
+    //The particle positions and velocities
+    //The nodeSizeData
+    //The nodeCenterData
+    //The multipole data
+
+    //Add the nodes before the start and end to the node list
+    for(int i=0; i < start; i++)
+    {
+      dataBuffer[nodeSizeOffset++]   = nodeSizeInfo[i];
+      dataBuffer[nodeCenterOffset++] = nodeCenterInfo[i];
+
+      dataBuffer[multiPoleOffset++]  = multipole[i*3 + 0];
+      dataBuffer[multiPoleOffset++]  = multipole[i*3 + 1];
+      dataBuffer[multiPoleOffset++]  = multipole[i*3 + 2];
+    }
+
+    //Start the tree-walk
+    //Variables to rewrite the tree-structure indices
+    int childNodeOffset         = end;
+    int childParticleOffset     = 0;
+
+    //Start the tree-walk
+    while(curLevelCount > 0)
+    {
+      for(unsigned int i=0; i < curLevelCount; i++)
+      {
+        //Read node data
+        combNodeCheck3 check = curLevel[i];
+        int node             = check.nodeID;
+
+        real4 nodeCenter = nodeCenterInfo[node];
+        real4 nodeSize   = nodeSizeInfo[node];
+        bool leaf        = nodeCenter.w <= 0;
+
+        union{float f; int i;} u; //__float_as_int
+        u.f           = nodeSize.w;
+        int childinfo = u.i;
+
+        int child, nchild;
+        if(!leaf)
+        {
+          //Node
+          child    =    childinfo & 0x0FFFFFFF;                   //Index to the first child of the node
+          nchild   = (((childinfo & 0xF0000000) >> 28)) ;         //The number of children this node has
+        }
+        else
+        {
+          //Leaf
+          child   =    childinfo & BODYMASK;                     //the first body in the leaf
+          nchild  = (((childinfo & INVBMASK) >> LEAFBIT)+1);     //number of bodies in the leaf masked with the flag
+        }
+
+
+        #ifdef INDSOFT
+          //Very inefficient this but for testing I have to live with it...
+          float node_eps_val = multipole[node*3 + 1].w;
+        #endif
+
+        bool split = false;
+
+        int splitIdxToUse = 0;
+
+        int newOffset = -1;
+        int newEnd  = 0;
+
+
+      #if 0
+              double4 boxCenter = {     0.5*(currentRLow[remoteId].x  + currentRHigh[remoteId].x),
+                                        0.5*(currentRLow[remoteId].y  + currentRHigh[remoteId].y),
+                                        0.5*(currentRLow[remoteId].z  + currentRHigh[remoteId].z), 0};
+              double4 boxSize   = {fabs(0.5*(currentRHigh[remoteId].x - currentRLow[remoteId].x)),
+                                   fabs(0.5*(currentRHigh[remoteId].y - currentRLow[remoteId].y)),
+                                   fabs(0.5*(currentRHigh[remoteId].z - currentRLow[remoteId].z)), 0};
+
+              #ifdef IMPBH
+                //Improved barnes hut version
+                float4 nodeCOM     = multipole[node*3 + 0];
+                nodeCOM.w = nodeCenter.w;
+
+                #ifdef INDSOFT
+                   split = split_node_grav_impbh(nodeCOM, boxCenter, boxSize, group_eps, node_eps_val);
+                 #else
+                   split = split_node_grav_impbh(nodeCOM, boxCenter, boxSize);
+                #endif
+              #else
+                //Minimal distance version
+                #ifdef INDSOFT
+                  split = split_node(nodeCenter, nodeSize, boxCenter, boxSize, group_eps, node_eps_val);  //Check if node should be split
+                #else
+                  split = split_node(nodeCenter, nodeSize, boxCenter, boxSize);
+                #endif
+              #endif //if IMPBH
+
+      #else
+
+        bool curSplit = false;
+        bool didBigCheck = false;
+
+//          if(split_node(nodeCenter, nodeSize, bigBoxCenter, bigBoxSize))
+        {
+          for(int k=check.coarseIDOffset; k < check.coarseIDEnd; k++)
+          {
+           //Test this specific box
+           int coarseGrpId = coarseIDs[k];
+
+
+          double4 boxCenter = coarseGroupBoxCenter[coarseGrpId];
+          double4 boxSize   = coarseGroupBoxSize  [coarseGrpId];
+
+          #ifdef IMPBH
+            //Improved barnes hut version
+            float4 nodeCOM     = multipole[node*3 + 0];
+            nodeCOM.w = nodeCenter.w;
+
+            #ifdef INDSOFT
+            curSplit = split_node_grav_impbh(nodeCOM, boxCenter, boxSize, group_eps, node_eps_val);
+            #else
+            curSplit = split_node_grav_impbh(nodeCOM, boxCenter, boxSize);
+            #endif
+
+          #else
+            //Minimal distance version
+
+            #ifdef INDSOFT
+            curSplit = split_node(nodeCenter, nodeSize, boxCenter, boxSize, group_eps, node_eps_val);  //Check if node should be split
+            #else
+            curSplit = split_node(nodeCenter, nodeSize, boxCenter, boxSize);
+            #endif
+          #endif //if IMPBH
+
+            //Check if this box needs to go along for the ride further
+            //down the tree
+           if(curSplit)
+           {
+             split = true;
+
+             if(leaf)  break;  //Early out if this is a leaf, since we wont have to check any further
+
+             if(newOffset < 0)
+               newOffset = k;
+             newEnd = k+1;
+           } //if curSplit
+         } //For globalCoarseGrpCount[remoteId]
+       }//Big-check
+#endif
+
+        uint temp = 0;  //A node that is not split and is not a leaf will get childinfo 0
+        //if split & node add children to next lvl stack
+        if(split && !leaf)
+        {
+          for(int i=child; i < child+nchild; i++)
+          {
+            combNodeCheck3 check;
+            check.nodeID                = i;
+            check.coarseIDOffset        = newOffset;
+            check.coarseIDEnd           = newEnd;
+            nextLevel[nextLevelCount++] = check;
+          }
+
+          temp = childNodeOffset | (nchild << 28);
+          //Update reference to children
+          childNodeOffset += nchild;
+        }
+
+        //if split & leaf add particles to particle list
+        if(split && leaf)
+        {
+          for(int i=child; i < child+nchild; i++)
+          {
+             dataBuffer[particleOffset++] = bodies[i];
+             dataBuffer[velParticleOffset++] = velocities[i];
+             massSum += bodies[i].w;
+          }
+
+          temp = childParticleOffset | ((nchild-1) << LEAFBIT);
+          childParticleOffset += nchild;
+        }
+
+
+
+        //Add the node data to the appropriate arrays and modify the node reference
+        //start ofset for its children, should be nodeCount at start of this level +numberofnodes on this level
+        //plus a counter that counts the number of childs of the nodes we have tested
+
+        //New childoffset:
+        union{int i; float f;} itof; //__int_as_float
+        itof.i         = temp;
+        float tempConv = itof.f;
+
+        //Add node properties and update references
+        real4 nodeSizeInfoTemp  = nodeSizeInfo[node];
+        nodeSizeInfoTemp.w      = tempConv;             //Replace child reference
+
+        dataBuffer[nodeSizeOffset++]   = nodeSizeInfoTemp;
+        dataBuffer[nodeCenterOffset++] = nodeCenterInfo[node];
+        dataBuffer[multiPoleOffset++]  = multipole[node*3 + 0];
+        dataBuffer[multiPoleOffset++]  = multipole[node*3 + 1];
+        dataBuffer[multiPoleOffset++]  = multipole[node*3 + 2];
+
+        if(!split)
+        {
+          massSum += multipole[node*3 + 0].w;
+        }
+      } //end for curLevel.size
+
+
+      //Put next level stack into current level and continue
+      curLevelCount         = nextLevelCount;
+      combNodeCheck3 *temp  = curLevel;
+      curLevel              = nextLevel;
+      nextLevel             = temp;
+      nextLevelCount        = 0;
+
+      level++;
+    }//end while
+    
+    delete[] curLevel;
+    delete[] nextLevel;    
+    delete[] coarseIDsTest;    
+    delete[] coarseIDs;       
+
+    //   cout << "New offsets: "  << particleOffset << " \t" << nodeSizeOffset << " \t" << nodeCenterOffset << endl;
+    //    cout << "Mass sum: " << massSum  << endl;
+    //   cout << "Mass sumtest: " << multipole[0*0 + 0].w << endl;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+typedef struct{
+  int nodeID;
+  int coarseIDList;
+  int coarseIDOffset;
+  int coarseIDEnd;
+} combNodeCheck5;
+
+//This one makes a seperate list for each top node
+void octree::create_local_essential_tree_count_novector_startend5(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+                                         int remoteId, float group_eps, int start, int end,
+                                         int &particles, int &nodes)
+{
+    //Walk the tree as is done on device, level by level
+    const int stackSize = 128;
+    combNodeCheck5 *curLevel  = new combNodeCheck5[1024*stackSize];
+    combNodeCheck5 *nextLevel = new combNodeCheck5[1024*stackSize];
+
+    int curLevelCount  = 0;
+    int nextLevelCount = 0;
+
+
+    int particleCount   = 0;
+    int nodeCount       = 0;
+
+    int level           = 0;
+
+    int extraChecks = 0;
+    int uselessChecks = 0;
+    int splitChecks = 0;
+
+
+    double4 bigBoxCenter = {  0.5*(currentRLow[remoteId].x  + currentRHigh[remoteId].x),
+                              0.5*(currentRLow[remoteId].y  + currentRHigh[remoteId].y),
+                              0.5*(currentRLow[remoteId].z  + currentRHigh[remoteId].z), 0};
+    double4 bigBoxSize   = {fabs(0.5*(currentRHigh[remoteId].x - currentRLow[remoteId].x)),
+                            fabs(0.5*(currentRHigh[remoteId].y - currentRLow[remoteId].y)),
+                            fabs(0.5*(currentRHigh[remoteId].z - currentRLow[remoteId].z)), 0};
+
+
+    int **coarseIDLists = new int*[end-start];
+
+    int *coarseIDs = new int[globalCoarseGrpCount[remoteId]];
+    //Add the initial coarse boxes to this level
+    for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+    {
+      coarseIDs[i] = globalCoarseGrpOffsets[remoteId] + i;
+    }
+
+    //Add the initial nodes to the curLevel list
+    for(int i=start; i < end; i++)
+    {
+
+    }
+
+    //Filters out the boxes for the topnodes. Idea is that there will be
+    //less boxes to be checked further down the tree
+    int coarseListIdx = 0;
+    for(int j=start; j < end; j++)
+    {
+      coarseIDLists[coarseListIdx] = new int[globalCoarseGrpCount[remoteId]];
+      int foundBoxes = 0;
+      for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+      {
+        real4 nodeCenter  = nodeCenterInfo[j];
+        real4 nodeSize    = nodeSizeInfo[j];
+        double4 boxCenter = coarseGroupBoxCenter[coarseIDs[i]];
+        double4 boxSize   = coarseGroupBoxSize  [coarseIDs[i]];
+        float4 nodeCOM    = multipole[j*3 + 0];
+        nodeCOM.w         = nodeCenter.w;
+
+        if(split_node_grav_impbh(nodeCOM, boxCenter, boxSize))
+        {
+          coarseIDLists[coarseListIdx][foundBoxes++] = coarseIDs[i];
+        }
+      } //for i
+
+
+      combNodeCheck5 check;
+      check.nodeID          = j;
+      check.coarseIDOffset  = 0;
+      check.coarseIDList    = coarseListIdx;
+      check.coarseIDEnd     = foundBoxes;
+      curLevel[curLevelCount++] = check;
+
+      coarseListIdx++;
+
+    } // for j
+
+//    for(int j=0; j < end-start; j++)
+//    {
+//      combNodeCheck5 check = curLevel[j];
+//      LOGF(stderr ,"Top node info; %d %d %d\n", check.nodeID, check.coarseIDList, check.coarseIDEnd);
+//    }
+
+    //Preprocessing done
+
+
+    //Add the nodes before the start and end to the node list
+    for(int i=0; i < start; i++)
+    {
+      nodeCount++;
+    }
+
+    int maxSizeTemp = -1;
+
+    //Start the tree-walk
+    while(curLevelCount > 0)
+    {
+      maxSizeTemp = max(maxSizeTemp, curLevelCount);
+
+      for(unsigned int i=0; i < curLevelCount; i++)
+      {
+        //Read node data
+        combNodeCheck5 check = curLevel[i];
+        int node           = check.nodeID;
+
+//        LOGF(stderr, "LET count On level: %d\tNode: %d\tGoing to check: %d\n",
+//                          level,node, check.coarseIDs.size());
+
+        real4 nodeCenter = nodeCenterInfo[node];
+        real4 nodeSize   = nodeSizeInfo[node];
+        bool leaf        = nodeCenter.w <= 0;
+
+        union{float f; int i;} u; //__float_as_int
+        u.f           = nodeSize.w;
+        int childinfo = u.i;
+
+        int child, nchild;
+        if(!leaf)
+        {
+          //Node
+          child    =    childinfo & 0x0FFFFFFF;                         //Index to the first child of the node
+          nchild   = (((childinfo & 0xF0000000) >> 28)) ;         //The number of children this node has
+        }
+        else
+        {
+          //Leaf
+          child   =   childinfo & BODYMASK;                                     //thre first body in the leaf
+          nchild  = (((childinfo & INVBMASK) >> LEAFBIT)+1);     //number of bodies in the leaf masked with the flag
+        }
+
+        #ifdef INDSOFT
+          //Very inefficient this but for testing I have to live with it...
+          float node_eps_val = multipole[node*3 + 1].w;
+        #endif
+
+
+        bool split = false;
+
+        int splitIdxToUse = 0;
+
+        int newOffset = -1;
+        int newEnd  = 0;
+
+#if 0 //Old big LET method
+        splitChecks++;
+        double4 boxCenter = {     0.5*(currentRLow[remoteId].x  + currentRHigh[remoteId].x),
+                                  0.5*(currentRLow[remoteId].y  + currentRHigh[remoteId].y),
+                                  0.5*(currentRLow[remoteId].z  + currentRHigh[remoteId].z), 0};
+        double4 boxSize   = {fabs(0.5*(currentRHigh[remoteId].x - currentRLow[remoteId].x)),
+                             fabs(0.5*(currentRHigh[remoteId].y - currentRLow[remoteId].y)),
+                             fabs(0.5*(currentRHigh[remoteId].z - currentRLow[remoteId].z)), 0};
+
+        #ifdef IMPBH
+          //Improved barnes hut version
+          float4 nodeCOM     = multipole[node*3 + 0];
+          nodeCOM.w = nodeCenter.w;
+
+          #ifdef INDSOFT
+             split = split_node_grav_impbh(nodeCOM, boxCenter, boxSize, group_eps, node_eps_val);
+           #else
+             split = split_node_grav_impbh(nodeCOM, boxCenter, boxSize);
+          #endif
+        #else
+          //Minimal distance version
+          #ifdef INDSOFT
+            split = split_node(nodeCenter, nodeSize, boxCenter, boxSize, group_eps, node_eps_val);  //Check if node should be split
+          #else
+            split = split_node(nodeCenter, nodeSize, boxCenter, boxSize);
+          #endif
+        #endif //if IMPBH
+
+#else
+         splitChecks++;
+
+
+         bool curSplit = false;
+
+
+         bool didBigCheck = false;
+
+//          if(split_node(nodeCenter, nodeSize, bigBoxCenter, bigBoxSize))
+         {
+           for(int k=check.coarseIDOffset; k < check.coarseIDEnd; k++)
+           {
+            extraChecks++;
+            //Test this specific box
+
+//            int coarseGrpId = coarseIDs[k];
+            int coarseGrpId = coarseIDLists[check.coarseIDList][k];
+
+            double4 boxCenter = coarseGroupBoxCenter[coarseGrpId];
+            double4 boxSize   = coarseGroupBoxSize  [coarseGrpId];
+
+
+            #ifdef IMPBH
+              //Improved barnes hut version
+              float4 nodeCOM     = multipole[node*3 + 0];
+              nodeCOM.w = nodeCenter.w;
+
+              #ifdef INDSOFT
+                curSplit = split_node_grav_impbh(nodeCOM, boxCenter, boxSize, group_eps, node_eps_val);
+              #else
+                curSplit = split_node_grav_impbh(nodeCOM, boxCenter, boxSize);
+              #endif
+
+            #else
+              //Minimal distance version
+
+              #ifdef INDSOFT
+                curSplit = split_node(nodeCenter, nodeSize, boxCenter, boxSize, group_eps, node_eps_val);  //Check if node should be split
+              #else
+                curSplit = split_node(nodeCenter, nodeSize, boxCenter, boxSize);
+              #endif
+            #endif //if IMPBH
+
+             //Check if this box needs to go along for the ride further
+             //down the tree
+            if(curSplit){
+              split = true;
+
+              if(leaf)  break;  //Early out if this is a leaf, since we wont have to check any further
+
+              if(newOffset < 0)
+                newOffset = k;
+              newEnd = k+1;
+            }
+          } //For globalCoarseGrpCount[remoteId]
+        }//Bigcheck
+
+
+#endif
+        //if split & node add children to next lvl stack
+        if(split && !leaf)
+        {
+          for(int i=child; i < child+nchild; i++)
+          {
+            combNodeCheck5 check2;
+            check2.nodeID    = i;
+            check2.coarseIDOffset = newOffset;
+            check2.coarseIDEnd    = newEnd;
+            check2.coarseIDList = check.coarseIDList;
+            nextLevel[nextLevelCount++] = check2;
+          }
+        }
+
+        //if split & leaf add particles to particle list
+        if(split && leaf)
+        {
+          for(int i=child; i < child+nchild; i++)
+          {
+            particleCount++;
+          }
+        }
+
+        //Increase the nodeCount, since this node will be part of the tree-structure
+        nodeCount++;
+      } //end for curLevel.size
+
+
+      //Put next level stack into current level and continue
+      curLevelCount = nextLevelCount;
+      combNodeCheck5 *temp = curLevel;
+      curLevel = nextLevel;
+      nextLevel = temp;
+      nextLevelCount = 0;
+
+      level++;
+    }//end while
+
+    particles = particleCount;
+    nodes     = nodeCount;
+
+    LOGF(stderr, "LET Extra checks: %d SplitChecks: %d UselessChecks: %d maxStack: %d\n", extraChecks, splitChecks, uselessChecks, maxSizeTemp);
+
+/*    fprintf(stderr, "Count found: %d particles and %d nodes. Boxsize: (%f %f %f ) BoxCenter: (%f %f %f)\n",
+                    particles, nodes, boxSize.x ,boxSize.y, boxSize.z, boxCenter.x, boxCenter.y, boxCenter.z );  */
+}
+
+//This one does an initial filter but note that its not helping
+//at all since we filter anyway on level further down....
+void octree::create_local_essential_tree_count_vector_filter(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+                                         int remoteId, float group_eps, int start, int end,
+                                         int &particles, int &nodes)
+{
+
+    //Walk the tree as is done on device, level by level
+    vector<combNodeCheck> curLevel;
+    vector<combNodeCheck> nextLevel;
+
+    curLevel.reserve(1024*64);
+    nextLevel.reserve(1024*64);
+
+
+
+    int particleCount   = 0;
+    int nodeCount       = 0;
+
+    int level           = 0;
+
+    int extraChecks = 0;
+    int uselessChecks = 0;
+    int splitChecks = 0;
+
+    vector<int> coarseIDs;
+    //Add the initial coarse boxes to this level
+    for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+    {
+      coarseIDs.push_back(globalCoarseGrpOffsets[remoteId] + i);
+    }
+
+    //Add the initial nodes to the curLevel list
+    for(int i=start; i < end; i++)
+    {
+      combNodeCheck check;
+      check.nodeID    = i;
+
+      for(int j=0; j < globalCoarseGrpCount[remoteId]; j++)
+      {
+        real4 nodeCenter  = nodeCenterInfo[i];
+        real4 nodeSize    = nodeSizeInfo[i];
+        double4 boxCenter = coarseGroupBoxCenter[coarseIDs[j]];
+        double4 boxSize   = coarseGroupBoxSize  [coarseIDs[j]];
+        float4 nodeCOM    = multipole[j*3 + 0];
+        nodeCOM.w         = nodeCenter.w;
+
+        //Skip all previous not needed checks
+        if(split_node_grav_impbh(nodeCOM, boxCenter, boxSize))
+        {
+          check.coarseIDs.push_back(coarseIDs[j]);
+        }
+      }
+
+//      check.coarseIDs = coarseIDs;
+      curLevel.push_back(check);
+    }
+
+    //Add the nodes before the start and end to the node list
+    for(int i=0; i < start; i++)
+    {
+      nodeCount++;
+    }
+
+    //Start the tree-walk
+    while(curLevel.size() > 0)
+    {
+      for(unsigned int i=0; i < curLevel.size(); i++)
+      {
+        //Read node data
+        combNodeCheck check = curLevel[i];
+        int node           = check.nodeID;
+
+//        LOGF(stderr, "LET count On level: %d\tNode: %d\tGoing to check: %d\n",
+//                          level,node, check.coarseIDs.size());
+
+        real4 nodeCenter = nodeCenterInfo[node];
+        real4 nodeSize   = nodeSizeInfo[node];
+        bool leaf        = nodeCenter.w <= 0;
+
+        union{float f; int i;} u; //__float_as_int
+        u.f           = nodeSize.w;
+        int childinfo = u.i;
+
+        int child, nchild;
+        if(!leaf)
+        {
+          //Node
+          child    =    childinfo & 0x0FFFFFFF;                         //Index to the first child of the node
+          nchild   = (((childinfo & 0xF0000000) >> 28)) ;         //The number of children this node has
+        }
+        else
+        {
+          //Leaf
+          child   =   childinfo & BODYMASK;                                     //thre first body in the leaf
+          nchild  = (((childinfo & INVBMASK) >> LEAFBIT)+1);     //number of bodies in the leaf masked with the flag
+        }
+
+        #ifdef INDSOFT
+          //Very inefficient this but for testing I have to live with it...
+          float node_eps_val = multipole[node*3 + 1].w;
+        #endif
+
+
+        bool split = false;
+
+        int splitIdxToUse = 0;
+        vector<int> checkIDs;
+#if 0
+        splitChecks++;
+        double4 boxCenter = {     0.5*(currentRLow[remoteId].x  + currentRHigh[remoteId].x),
+                                  0.5*(currentRLow[remoteId].y  + currentRHigh[remoteId].y),
+                                  0.5*(currentRLow[remoteId].z  + currentRHigh[remoteId].z), 0};
+        double4 boxSize   = {fabs(0.5*(currentRHigh[remoteId].x - currentRLow[remoteId].x)),
+                             fabs(0.5*(currentRHigh[remoteId].y - currentRLow[remoteId].y)),
+                             fabs(0.5*(currentRHigh[remoteId].z - currentRLow[remoteId].z)), 0};
+
+        #ifdef IMPBH
+          //Improved barnes hut version
+          float4 nodeCOM     = multipole[node*3 + 0];
+          nodeCOM.w = nodeCenter.w;
+
+          #ifdef INDSOFT
+             split = split_node_grav_impbh(nodeCOM, boxCenter, boxSize, group_eps, node_eps_val);
+           #else
+             split = split_node_grav_impbh(nodeCOM, boxCenter, boxSize);
+          #endif
+        #else
+          //Minimal distance version
+          #ifdef INDSOFT
+            split = split_node(nodeCenter, nodeSize, boxCenter, boxSize, group_eps, node_eps_val);  //Check if node should be split
+          #else
+            split = split_node(nodeCenter, nodeSize, boxCenter, boxSize);
+          #endif
+        #endif //if IMPBH
+
+#else
+         splitChecks++;
+
+
          bool curSplit = false;
 
 //        for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
@@ -3696,6 +6037,285 @@ void octree::create_local_essential_tree_count(real4* bodies, real4* multipole, 
 /*    fprintf(stderr, "Count found: %d particles and %d nodes. Boxsize: (%f %f %f ) BoxCenter: (%f %f %f)\n",
                     particles, nodes, boxSize.x ,boxSize.y, boxSize.z, boxCenter.x, boxCenter.y, boxCenter.z );  */
 }
+
+
+void octree::create_local_essential_tree_count_recursive_part2(
+    real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+    int nodeID,
+    vector<int> &remoteGrps, uint remoteGrpStart,
+    int &particles, int &nodes)
+{
+    //Read node data
+
+    int node = nodeID;
+
+    real4 nodeCenter = nodeCenterInfo[node];
+    real4 nodeSize   = nodeSizeInfo[node];
+    bool leaf        = nodeCenter.w <= 0;
+
+    union{float f; int i;} u; //__float_as_int
+    u.f           = nodeSize.w;
+    int childinfo = u.i;
+
+    int child, nchild;
+    if(!leaf)
+    {
+      //Node
+      child    =    childinfo & 0x0FFFFFFF;                         //Index to the first child of the node
+      nchild   = (((childinfo & 0xF0000000) >> 28)) ;         //The number of children this node has
+    }
+    else
+    {
+      //Leaf
+      child   =   childinfo & BODYMASK;                                     //thre first body in the leaf
+      nchild  = (((childinfo & INVBMASK) >> LEAFBIT)+1);     //number of bodies in the leaf masked with the flag
+    }
+
+    bool split = false;
+
+    int splitIdxToUse = 0;
+
+    bool curSplit = false;
+
+    int coarseGrpStart;
+
+//        for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+    for(int k=remoteGrpStart; k < remoteGrps.size(); k++)
+    {
+      //Test this specific box
+      coarseGrpStart  = k;
+      int coarseGrpId = remoteGrps[k];
+
+      double4 boxCenter = coarseGroupBoxCenter[coarseGrpId];
+      double4 boxSize   = coarseGroupBoxSize  [coarseGrpId];
+
+      //Improved barnes hut version
+      float4 nodeCOM     = multipole[node*3 + 0];
+      nodeCOM.w = nodeCenter.w;
+
+      curSplit = split_node_grav_impbh(nodeCOM, boxCenter, boxSize);
+
+       //Early out if at least one box requires this info
+      if(curSplit){
+        split = true;
+        break;
+      }
+    } //For globalCoarseGrpCount[remoteId]
+
+
+    //if split & node add children to next lvl stack
+    if(split && !leaf)
+    {
+      for(int i=child; i < child+nchild; i++)
+      {
+        nodes++;
+        create_local_essential_tree_count_recursive_part2(
+            bodies, multipole, nodeSizeInfo, nodeCenterInfo,
+            i, remoteGrps, coarseGrpStart ,particles, nodes);
+      }
+    }
+
+    //if split & leaf add particles to particle list
+    if(split && leaf)
+    {
+      for(int i=child; i < child+nchild; i++)
+      {
+        particles++;
+      }
+    }
+}
+
+
+void octree::create_local_essential_tree_count_recursive(
+    real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+    int remoteId, float group_eps, int start, int end,
+    int &particles, int &nodes)
+{
+    vector<int> coarseIDs;
+
+    int particleCount   = 0;
+    int nodeCount       = 0;
+
+    int level           = 0;
+
+    int extraChecks = 0;
+    int uselessChecks = 0;
+    int splitChecks = 0;
+
+    //Add the initial coarse boxes to this level
+    for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+    {
+      coarseIDs.push_back(globalCoarseGrpOffsets[remoteId] + i);
+    }
+
+    nodeCount += start;
+    //Add the initial nodes to the curLevel list
+    for(int i=start; i < end; i++)
+    {
+      nodeCount++;
+      create_local_essential_tree_count_recursive_part2(
+          bodies, multipole, nodeSizeInfo, nodeCenterInfo,
+          i, coarseIDs, 0,particleCount, nodeCount);
+
+    }
+
+
+    particles = particleCount;
+    nodes     = nodeCount;
+
+    LOGF(stderr, "LET Extra checks: %d SplitChecks: %d UselessChecks: %d\n", extraChecks, splitChecks, uselessChecks);
+
+/*    fprintf(stderr, "Count found: %d particles and %d nodes. Boxsize: (%f %f %f ) BoxCenter: (%f %f %f)\n",
+                    particles, nodes, boxSize.x ,boxSize.y, boxSize.z, boxCenter.x, boxCenter.y, boxCenter.z );  */
+}
+
+
+
+
+
+void octree::create_local_essential_tree_count_recursive_try2(
+    real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+    int remoteId, float group_eps, int start, int end,
+    int &particles, int &nodes)
+{
+    int particleCount   = 0;
+    int nodeCount       = 0;
+
+    int level           = 0;
+
+    int extraChecks = 0;
+    int uselessChecks = 0;
+    int splitChecks = 0;
+
+    uint2 node_begend;
+    node_begend.x   = this->localTree.level_list[2].x;
+    node_begend.y   = this->localTree.level_list[2].y;
+
+    //Add the initial coarse boxes to this level
+    for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+    {
+//      if(procId == 1)   LOGF(stderr,"Going to check : %d \n", globalCoarseGrpOffsets[remoteId] + i);
+      bool allDone = false;
+      for(int k = node_begend.x; k < node_begend.y; k++)
+      {
+        create_local_essential_tree_count_recursive_part2_try2(
+               bodies, multipole, nodeSizeInfo, nodeCenterInfo,
+               k, globalCoarseGrpOffsets[remoteId] + i,particleCount, nodeCount, allDone);
+      }
+
+    }
+
+    nodeCount += start;
+    //Add the initial nodes to the curLevel list
+    for(int i=start; i < end; i++)
+    {
+      nodeCount++;
+    }
+
+
+    particles = particleCount;
+    nodes     = nodeCount;
+
+    LOGF(stderr, "LET Extra checks: %d SplitChecks: %d UselessChecks: %d\n", extraChecks, splitChecks, uselessChecks);
+
+/*    fprintf(stderr, "Count found: %d particles and %d nodes. Boxsize: (%f %f %f ) BoxCenter: (%f %f %f)\n",
+                    particles, nodes, boxSize.x ,boxSize.y, boxSize.z, boxCenter.x, boxCenter.y, boxCenter.z );  */
+}
+
+
+//This one checks only one box
+void octree::create_local_essential_tree_count_recursive_part2_try2(
+    real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
+    int nodeID, uint remoteGrpID, int &particles, int &nodes, bool &allDone)
+{
+    //Read node data
+
+    int node = nodeID;
+
+    real4 nodeCenter = nodeCenterInfo[node];
+    real4 nodeSize   = nodeSizeInfo[node];
+    bool leaf        = nodeCenter.w <= 0;
+
+    union{float f; int i;} u; //__float_as_int
+    u.f           = nodeSize.w;
+    int childinfo = u.i;
+
+    int child, nchild;
+    if(!leaf)
+    {
+      //Node
+      child    =    childinfo & 0x0FFFFFFF;                         //Index to the first child of the node
+      nchild   = (((childinfo & 0xF0000000) >> 28)) ;         //The number of children this node has
+
+      //Early out if this node has been processed before
+      if(childinfo == 0xFFFFFFFF) return;
+    }
+    else
+    {
+      //Leaf
+      child   =   childinfo & BODYMASK;                                     //thre first body in the leaf
+      nchild  = (((childinfo & INVBMASK) >> LEAFBIT)+1);     //number of bodies in the leaf masked with the flag
+
+      //Early out if this leaf has been processed before
+      if(childinfo == 0xFFFFFFFF) return;
+    }
+
+    bool split = false;
+
+    //Test this specific box
+    double4 boxCenter = coarseGroupBoxCenter[remoteGrpID];
+    double4 boxSize   = coarseGroupBoxSize  [remoteGrpID];
+
+    //Improved barnes hut version
+    float4 nodeCOM     = multipole[node*3 + 0];
+    nodeCOM.w = nodeCenter.w;
+
+    split = split_node_grav_impbh(nodeCOM, boxCenter, boxSize);
+
+    //if split & node add children to next lvl stack
+    if(split && !leaf)
+    {
+      int nNodesDone = 0;
+      for(int i=child; i < child+nchild; i++)
+      {
+        bool thisOneDone = false;
+        nodes++;
+        create_local_essential_tree_count_recursive_part2_try2(
+            bodies, multipole, nodeSizeInfo, nodeCenterInfo,
+            i, remoteGrpID ,particles, nodes, thisOneDone);
+        if(thisOneDone) nNodesDone++;
+      }
+      if(nNodesDone == nchild)
+      {
+//        LOGF(stderr, "Processed a full node! [%d - %d ] %d DONE? : %d\n",child, child+nchild, nNodesDone, nNodesDone == nchild);
+        nodeSizeInfo[node].w = host_int_as_float(0xFFFFFFFF);
+      }
+//      if(nNodesDone >= nchild/2)
+//      {
+////        LOGF(stderr, "ALMOST a full node! [%d - %d ] %d DONE? : %d\n",
+////            child, child+nchild, nNodesDone, nNodesDone == nchild);
+//        nodeSizeInfo[node].w = host_int_as_float(0xFFFFFFFF);
+//      }
+    }
+
+    //if split & leaf add particles to particle list
+    if(split && leaf)
+    {
+      for(int i=child; i < child+nchild; i++)
+      {
+        particles++;
+      }
+      //Modify this leaf, so we do not process it anymore
+      nodeSizeInfo[node].w = host_int_as_float(0xFFFFFFFF);
+      allDone = true;
+//      LOGF(stderr, "Processed a leaf %d\n", node);
+    }
+}
+
+
+
+
+
 #endif
 #if 0
 //This one remembers the index of where the split happend and uses this as start next time
@@ -4197,9 +6817,12 @@ struct cmp_ph_key{
 };
 
 
+
+
 void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries)
 {
 #ifdef USE_MPI
+  double t0 = get_time();
 
   int *nReceiveCnts  = new int[nProcs];
   int *nReceiveDpls  = new int[nProcs];
@@ -4208,7 +6831,7 @@ void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries)
   MPI_Gather(&nHashes, 1, MPI_INT, nReceiveCnts, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
   int totalNumberOfHashes = 0;
-  uint4 *allHashes       = NULL;
+  uint4 *allHashes        = NULL;
 
   //Compute receive offsets (only proc 0)
   if(procId == 0)
@@ -4226,9 +6849,10 @@ void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries)
     allHashes = new uint4[totalNumberOfHashes];
   }
 
+
   //Collect hashes on process 0
-  MPI_Gatherv(&hashes[0], nHashes*sizeof(uint4), MPI_BYTE,
-              &allHashes[0], nReceiveCnts, nReceiveDpls, MPI_BYTE,
+  MPI_Gatherv(&hashes[0],    nHashes*sizeof(uint4), MPI_BYTE,
+              &allHashes[0], nReceiveCnts,          nReceiveDpls, MPI_BYTE,
               0, MPI_COMM_WORLD);
 
 //  MPI_Gatherv((procId ? &sampleArray[0] : MPI_IN_PLACE), nsample*sizeof(real4), MPI_BYTE,
@@ -4241,20 +6865,12 @@ void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries)
     //Check if we have received all data
     int nTotal = 0;
 
-//    for(int i=0; i < totalNumberOfHashes; i++)
-//    {
-//      LOGF(stderr, "%d\t%d %d %d\t%d\n", i,
-//          allHashes[i].x, allHashes[i].y, allHashes[i].z, allHashes[i].w);
-//    }
-
-    std::sort(allHashes, allHashes+totalNumberOfHashes, cmp_ph_key());
-
+    //std::sort(allHashes, allHashes+totalNumberOfHashes, cmp_ph_key());
+    std::stable_sort(allHashes, allHashes+totalNumberOfHashes, cmp_ph_key());
     for(int i=0; i < totalNumberOfHashes; i++)
     {
+      //TODO this loop information can be extracted from somewhere else...
       nTotal += allHashes[i].w;
-
-//      LOGF(stderr, "After sort %d\t%d %d %d\t%d\n", i,
-//          allHashes[i].x, allHashes[i].y, allHashes[i].z, allHashes[i].w);
     }
 
     //Per process:
@@ -4268,8 +6884,8 @@ void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries)
     int procIdx = 1;
     for(int i=0; i < totalNumberOfHashes; i++)
     {
-//      LOGF(stderr, "NON-Boundary at: %d\t%d %d %d %d \t %d \n",
-//                    i, allHashes[i].x,allHashes[i].y,allHashes[i].z,allHashes[i].w, tempSum);
+    //  LOGF(stderr, "NON-Boundary at: %d\t%d %d %d %d \t %d \n",
+    //                i, allHashes[i].x,allHashes[i].y,allHashes[i].z,allHashes[i].w, tempSum);
         tempSum += allHashes[i].w;
         if(tempSum >= nPerProc)
         {
@@ -4288,15 +6904,20 @@ void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries)
     //Force final boundary to be the highest possible key value
     boundaries[nProcs]  = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
 
+    delete[] allHashes;
   }//if procId == 0
+
 
   //Send the boundaries to all processes
   MPI_Bcast(boundaries,  sizeof(uint4)*(nProcs+1),MPI_BYTE,0,MPI_COMM_WORLD);
 
-  for(int i=0; i < nProcs; i++)
-  {
-    LOGF(stderr, "Proc: %d Going from: >= %u %u %u  to < %u %u %u \n",i,
-         boundaries[i].x,boundaries[i].y,boundaries[i].z,boundaries[i+1].x,boundaries[i+1].y,boundaries[i+1].z);
+  if(procId == 0){
+    for(int i=0; i < nProcs; i++)
+    {
+      LOGF(stderr, "Proc: %d Going from: >= %u %u %u  to < %u %u %u \n",i,
+           boundaries[i].x,boundaries[i].y,boundaries[i].z,boundaries[i+1].x,boundaries[i+1].y,boundaries[i+1].z);
+    }
+    LOGF(stderr, "Exchanging and sorting of hashes took: %f \n", get_time()-t0);
   }
 
 
@@ -4308,7 +6929,309 @@ void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries)
 
 
 
+#if 0
 
+
+//Sort using our custom merge sort, this requires that the subranges are sorted
+//already!
+
+#if 0
+//Merge the received results with the already available data, this works
+//for two processes only
+uint4 *result = new uint4[totalNumberOfHashes];
+merge_sort(result, &allHashes[0],nReceiveCnts[0] / sizeof(uint4),
+                   &allHashes[nReceiveDpls[1] / sizeof(uint4) ], nReceiveCnts[1] / sizeof(uint4));
+memcpy(allHashes, result, sizeof(uint4)*totalNumberOfHashes);
+#endif
+
+#if 0
+
+//Multiple merges to merge the different items
+uint4 *result = new uint4[totalNumberOfHashes];
+bool ping = true;
+for(int i=0; i < nProcs-1; i++)
+{
+  if(ping)
+  {
+    merge_sort(result, &allHashes[0],nReceiveDpls[i+1] / sizeof(uint4),
+                       &allHashes[nReceiveDpls[i+1] / sizeof(uint4) ], //start
+                       nReceiveCnts[i+1] / sizeof(uint4)); //items
+    ping = false;
+    fprintf(stderr,"StartA at: %d  count: %d \n",nReceiveDpls[i+1] / sizeof(uint4), nReceiveCnts[i+1] / sizeof(uint4));
+  }
+  else
+  {
+    merge_sort(allHashes, &result[0],nReceiveDpls[i+1] / sizeof(uint4),
+                        &allHashes[nReceiveDpls[i+1] / sizeof(uint4) ], //start
+                        nReceiveCnts[i+1] / sizeof(uint4));             //items
+    ping = true;
+    fprintf(stderr,"StartB at: %d  count: %d \n",nReceiveDpls[i+1] / sizeof(uint4), nReceiveCnts[i+1] / sizeof(uint4));
+  }
+}
+
+if(!ping)
+{
+  memcpy(allHashes, result, sizeof(uint4)*totalNumberOfHashes);
+}
+
+#endif
+
+
+//Test ex
+#if 0
+//Multi-merge
+uint4 *result = new uint4[totalNumberOfHashes]; //TEST
+int *sizes  = new int[nProcs];
+int *starts = new int[nProcs];
+
+for(int z = 0 ; z < nProcs; z++)
+{
+  sizes[z] = nReceiveCnts[z] / sizeof(uint4);
+  starts[z] = nReceiveDpls[z] / sizeof(uint4);
+}
+
+merge_sort2(result, allHashes,sizes, starts, nProcs);
+//end test ex
+memcpy(allHashes, result, sizeof(uint4)*totalNumberOfHashes);
+#endif
+
+#if 0
+//Multi-merge using priority queue
+uint4 *result = new uint4[totalNumberOfHashes]; //TEST
+int *sizes  = new int[nProcs];
+int *starts = new int[nProcs];
+
+for(int z = 0 ; z < nProcs; z++)
+{
+  sizes[z] = nReceiveCnts[z] / sizeof(uint4);
+  starts[z] = nReceiveDpls[z] / sizeof(uint4);
+}
+
+merge_sort3(result, allHashes,sizes, starts, nProcs);
+//end test ex
+memcpy(allHashes, result, sizeof(uint4)*totalNumberOfHashes);
+#endif
+
+
+
+LOGF(stderr, "Domain hash sort: %f on number of particles: %d\n",
+    get_time()-t1, totalNumberOfHashes);
+
+    sumTime += get_time()-t1;
+
+
+int sum = 0;
+for(int i=0; i < totalNumberOfHashes-1; i++)
+{
+  int comp = cmp_uint4_host(allHashes[i], allHashes[i+1]);
+
+  if(comp > 0)
+  {
+    LOGF(stderr, "Sorting FAILED to get the correct order :(  %d \n", comp);
+    LOGF(stderr,"%d \t Key: %d %d %d \tsize->\t %d\n", i,
+        allHashes[i].x, allHashes[i].y, allHashes[i].z, allHashes[i].w);
+
+    LOGF(stderr,"%d \t Key: %d %d %d \tsize->\t %d\n", i+1,
+        allHashes[i+1].x, allHashes[i+1].y, allHashes[i+1].z, allHashes[i+1].w);
+  }
+
+
+ // LOGF(stderr,"%d \t Key: %d %d %d \tsize->\t %d\n", i,
+//      allHashes[i].x, allHashes[i].y, allHashes[i].z, allHashes[i].w);
+  sum += allHashes[i].w;
+}
+
+//   LOGF(stderr,"%d \t Key: %d %d %d \tsize->\t %d\n", totalNumberOfHashes-1,        allHashes[totalNumberOfHashes-1].x, allHashes[totalNumberOfHashes-1].y, allHashes[totalNumberOfHashes-1].z, allHashes[totalNumberOfHashes-1].w);
+
+
+sum += allHashes[totalNumberOfHashes-1].w;
+LOGF(stderr,"Total particlesA: %d \n", sum);
+
+
+
+
+
+Old sorting codes
+
+void merge_sort(uint4 *result, uint4 *left, int sizeLeft, uint4 *right, int sizeRight)
+{
+  uint iLeft = 0;
+  uint iRight = 0;
+  uint res = 0;
+
+  while(iLeft < sizeLeft && iRight < sizeRight)
+  {
+//      uint4 valLeft  = left[iLeft];
+//      uint4 valRight = right[iRight];
+
+      int comp = cmp_uint4_host(left[iLeft], right[iRight]);
+
+      if (comp <= 0)
+      {
+        result[res++] = left[iLeft];
+        ++iLeft;
+      }
+      if (comp >= 0)
+      {
+        result[res++] = right[iRight];
+        ++iRight;
+      }
+  }
+
+  if(iLeft!=sizeLeft)
+    memcpy(&result[res], &left[iLeft],   sizeof(uint4)*(sizeLeft-iLeft));
+  else
+    memcpy(&result[res], &right[iRight], sizeof(uint4)*(sizeRight-iRight));
+}
+
+void merge_sort2(uint4 *result, uint4 *data, int *sizes, int *starts, int nLists)
+{
+  uint iLeft = 0;
+  uint iRight = 0;
+  uint res = 0;
+
+  fprintf(stderr, "Merge sorting, total lists: %d \n", nLists);
+
+  uint4 *queue  = new uint4[nLists];
+  int4 *readIdx = new int4[nLists];
+
+  for(int i=0; i < nLists; i++)
+  {
+    queue[i]   = data[starts[i]];
+
+    int4 read;
+    read.x = i; //Source file
+    read.y = starts[i]; //read Index in Data
+    read.z = sizes[i]-1; //items left to process
+
+    fprintf(stderr, "List: %d  Start: %d  Items: %d \n", i, starts[i], sizes[i]);
+
+    readIdx[i] = read;
+    //TODO should check on length !!! when adding first item
+    //in case length is 0
+  }
+
+  int itemsInQueue = nLists;
+
+  while(1)
+  {
+    int idxSmallest = 0;
+    //Find the smallest item in the queue
+    for(int j=1; j < itemsInQueue; j++)
+    {
+//      fprintf(stderr, "Comparing; %d and %d  \t %d ",
+//          queue[idxSmallest].x, queue[j].x, cmp_uint4_host(queue[idxSmallest], queue[j]));
+
+      if(cmp_uint4_host(queue[idxSmallest], queue[j]) >= 0)
+        idxSmallest = j;
+    }
+
+    //Add items j to the list and refill queue
+    result[res++] = queue[idxSmallest];
+
+    if(readIdx[idxSmallest].z > 0)
+    {
+      readIdx[idxSmallest].z--; //decrease items left
+      readIdx[idxSmallest].y++; //increase read location
+      queue[idxSmallest] = data[readIdx[idxSmallest].y];
+    }
+    else
+    {
+      queue[idxSmallest] = queue[itemsInQueue-1];
+      readIdx[idxSmallest] = readIdx[itemsInQueue-1];
+      itemsInQueue -= 1; //decrease items in queue
+    }
+
+    if(itemsInQueue == 0) break;
+
+  }//end while
+
+//  if(iLeft!=sizeLeft)
+//    memcpy(&result[res], &left[iLeft],   sizeof(uint4)*(sizeLeft-iLeft));
+//  else
+//    memcpy(&result[res], &right[iRight], sizeof(uint4)*(sizeRight-iRight));
+}
+
+typedef struct queueObject
+{
+  uint4 key;
+  int4 val;
+} queueObject;
+
+struct cmp_ph_key_test{
+  bool operator () (const queueObject &a, const queueObject &b){
+    return ( cmp_uint4_host( b.key, a.key) < 1); //note reverse
+  }
+};
+#include <queue>
+void merge_sort3(uint4 *result, uint4 *data, int *sizes, int *starts, int nLists)
+{
+  std::priority_queue<queueObject, vector<queueObject>, cmp_ph_key_test> queue;
+
+  uint iLeft = 0;
+  uint iRight = 0;
+  uint res = 0;
+
+  fprintf(stderr, "Merge3 sorting, total lists: %d \n", nLists);
+
+//  uint4 *queue  = new uint4[nLists];
+//  int4 *readIdx = new int4[nLists];
+
+  for(int i=0; i < nLists; i++)
+  {
+    queueObject obj;
+    obj.key = data[starts[i]];
+
+    int4 read;
+    read.x = i; //Source file
+    read.y = starts[i]; //read Index in Data
+    read.z = sizes[i]-1; //items left to process
+
+    obj.val = read;
+
+    queue.push(obj);
+    //TODO should check on length !!! when adding first item
+    //in case length is 0
+  }
+
+  int itemsInQueue = nLists;
+
+  while(1)
+  {
+    int idxSmallest = 0;
+    //Find the smallest item in the queue
+
+    queueObject obj = queue.top();
+
+//    fprintf(stderr, "Item 0: %d ", obj.key.x);
+//    queue.pop();
+//    obj = queue.top();
+//    fprintf(stderr, "Item 1: %d ", obj.key.x);
+//
+//    exit(0);
+
+
+    //Add items j to the list and refill queue
+    result[res++] = obj.key;
+
+    queue.pop();
+
+    if(obj.val.z > 0)
+    {
+      obj.val.z--; //decrease items left
+      obj.val.y++; //increase read location
+      obj.key = data[obj.val.y];
+      queue.push(obj);
+//      fprintf(stderr, "Adding items from list: %d  from loc: %d  left: %d \n",
+//          readIdx[idxSmallest].x, readIdx[idxSmallest].y, readIdx[idxSmallest].z);
+    }
+
+    if(queue.empty()) break;
+
+  }//end while
+
+}
+#endif
 
 
 

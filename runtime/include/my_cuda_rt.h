@@ -138,6 +138,7 @@ namespace my_dev {
     ~context() {
       if (hContext_flag )
       {
+        CU_SAFE_CALL(cudaDeviceReset());
       }
     }
 
@@ -393,6 +394,8 @@ namespace my_dev {
     bool hDeviceMem_flag;
     bool childMemory; //Indicates that this is a shared buffer that will be freed by a parent
     
+    bool eventSet;
+    
     void cuda_free() {      
       if(childMemory) //Only free if we are NOT a child
       {
@@ -421,16 +424,19 @@ namespace my_dev {
     ///////// Constructors
 
     dev_mem() {
+//       CU_SAFE_CALL(cudaEventCreate(&asyncCopyEvent));
+      eventSet = false;
       size              = 0;
       pinned_mem        = false;
       hDeviceMem_flag   = false;
       context_flag      = false;
       host_ptr          = NULL;
       childMemory       = false;
-      CU_SAFE_CALL(cudaEventCreate(&asyncCopyEvent));
     }
 
     dev_mem(class context &c) {
+      CU_SAFE_CALL(cudaEventCreate(&asyncCopyEvent));
+      eventSet = true;
       size              = 0;      
       pinned_mem        = false;
       context_flag      = false;
@@ -438,7 +444,6 @@ namespace my_dev {
       host_ptr          = NULL;
       childMemory       = false;
       setContext(c);
-      CU_SAFE_CALL(cudaEventCreate(&asyncCopyEvent));
     }
     
     //CUDA has no memory flags like opencl
@@ -446,6 +451,8 @@ namespace my_dev {
     //compatability
     dev_mem(class context &c, int n, bool zero = false,
 	    int flags = 0, bool pinned = false) {
+      CU_SAFE_CALL(cudaEventCreate(&asyncCopyEvent));
+      eventSet = true;
       context_flag      = false;
       childMemory       = false;      
       hDeviceMem_flag   = false;
@@ -454,7 +461,6 @@ namespace my_dev {
       setContext(c);
       if (zero) this->ccalloc(n, pinned, flags);
       else      this->cmalloc(n, pinned, flags);
-      CU_SAFE_CALL(cudaEventCreate(&asyncCopyEvent));
     }
     
 //     dev_mem(class context &c, std::vector<T> data,
@@ -484,8 +490,15 @@ namespace my_dev {
 
     void setContext(class context &c) {      
       context_flag     = true;
+      
+      if(eventSet == false)
+      {
+        CU_SAFE_CALL(cudaEventCreate(&asyncCopyEvent));
+        eventSet = true;
+      }
+      
       //JB: Had to add this to get it to run under Linux ?
-      CU_SAFE_CALL(cudaEventCreate(&asyncCopyEvent));
+//       CU_SAFE_CALL(cudaEventCreate(&asyncCopyEvent));
     }
 
 
@@ -710,6 +723,13 @@ namespace my_dev {
       CU_SAFE_CALL(cudaMemset((void*)hDeviceMem, 0, size*sizeof(T)));     
     }
 
+    void zeroMemGPUAsync(cudaStream_t stream)
+    {
+      assert(context_flag);
+      assert(hDeviceMem_flag);
+
+      CU_SAFE_CALL(cudaMemsetAsync((void*)hDeviceMem, 0, size*sizeof(T), stream));
+    }
    
     ///////////
 

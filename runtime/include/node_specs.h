@@ -62,6 +62,8 @@ inline int getTreeWalkBlocksPerSM(int devMajor, int devMinor)
 
 #define MAXLEVELS 30
 
+//Minimum number of nodes that is required  before we make leafs
+#define START_LEVEL_MIN_NODES 16
 
 #define BITLEVELS 27
 #define ILEVELMASK 0x07FFFFFF

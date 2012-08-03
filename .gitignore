@@ -12,3 +12,5 @@
 *.la
 *.a
 
+#Temporary editor files
+*~

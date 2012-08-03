@@ -26,12 +26,14 @@
     extern int PREPEND_RANK_NPROCS;
 
     const char prependPattern[] = {"[Proc: %d (%d)]\t"};
+    
+    char stderrBUFF[4096];
 
     //Standard out, note we write to a buffer to make
     //sure the whole line is output in one flush
     extern void prependrankLOG(const char *fmt, ...)
     {
-           char stderrBUFF[4096];
+           
            va_list ap;
            va_start(ap, fmt);
 
@@ -44,7 +46,7 @@
 
     extern void prependrankLOGF(const char *fmt, ...)
     {
-           char stderrBUFF[4096];
+//            char stderrBUFF[4096];
            va_list ap;
            va_start(ap, fmt);
 

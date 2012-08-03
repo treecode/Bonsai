@@ -838,9 +838,30 @@ int main(int argc, char** argv)
 
   initTimers();
 
+  int pid = -1;
+  #ifdef WIN32
+    pid = _getpid(void);
+  #else
+    pid = (int)getpid();
+  #endif
+  //Used for profiler, note this has to be done before initing to
+  //octree otherwise it has no effect...Therefore use pid instead of mpi procId
+  char *gpu_prof_log;
+  gpu_prof_log=getenv("CUDA_PROFILE_LOG");
+  if(gpu_prof_log){
+    char tmp[50];
+    sprintf(tmp,"process_%d_%s",pid,gpu_prof_log);
+    #ifdef WIN32
+//        SetEnvironmentVariable("CUDA_PROFILE_LOG", tmp);
+    #else
+//        setenv("CUDA_PROFILE_LOG",tmp,1);
+        LOGF(stderr, "TESTING log on proc: %d val: %s \n", pid, tmp);
+    #endif
+  }
+
+
   //Creat the octree class and set the properties
   octree *tree = new octree(argv, devID, theta, eps, snapshotFile, snapshotIter,  timeStep, (int)tEnd, (int)remoDistance, snapShotAdd, rebuild_tree_rate, direct);
-                            
                             
   //Get parallel processing information  
   int procId = tree->mpiGetRank();
@@ -852,18 +873,7 @@ int main(int argc, char** argv)
       PREPEND_RANK_NPROCS = nProcs;
     #endif
   #endif
-  //Used for profiler
-  char *gpu_prof_log;
-  gpu_prof_log=getenv("CUDA_PROFILE_LOG");
-  if(gpu_prof_log){
-    char tmp[50];
-    sprintf(tmp,"process%d_%s",procId,gpu_prof_log);
-#ifdef WIN32
-    SetEnvironmentVariable("CUDA_PROFILE_LOG", tmp);
-#else
-    setenv("CUDA_PROFILE_LOG",tmp,1);
-#endif
-  }
+
       
   if(nProcs > 1)
   {
