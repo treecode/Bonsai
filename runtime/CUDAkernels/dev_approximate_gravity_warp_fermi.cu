@@ -286,7 +286,12 @@ __device__ bool split_node_grav_impbh(
   //Distance squared, no need to do sqrt since opening criteria has been squared
   const float ds2    = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
 
-  return (ds2 <= fabsf(nodeCOM.w));
+//  return (ds2 <= fabsf(nodeCOM.w));
+  if (ds2 <= fabsf(nodeCOM.w)) return true;
+//  if (fabs(ds2 - fabs(nodeCOM.w)) < 10e-04) return true; //Limited precision can result in round of errors. Use this as extra safe guard
+
+  return false;
+
 }
 
 //Minimum distance
@@ -1136,3 +1141,370 @@ __launch_bounds__(NTHREAD)
     }
   }     //end while
 }
+
+
+
+
+
+template<const int SHIFT, const int BLOCKDIM2, const int NI>
+__device__
+#if 0 /* __noinline__ crashes the kernel when compled with ABI */
+__noinline__
+#else
+__forceinline__
+#endif
+void determine_LET(
+    real4 group_pos,
+    uint2 node_begend,
+    real4 *multipole_data,
+    int *shmem,
+    int *lmem,
+    int &apprCount,
+    volatile float4 *boxSizeInfo,
+    float4 groupSize,
+    volatile float4 *boxCenterInfo,
+    uint2 *markedNodes)
+{
+
+
+  /*********** shared memory distribution **********/
+
+  //  begin,    end,   size
+  // -----------------------
+
+  int *directS = shmem;                              //  0*DIM,  1*DIM,  1*DIM
+  int *nodesS  = directS + WARP_SIZE;                //  1*DIM, 10*DIM,  9*DIM
+  int *prefix  = nodesS  + WARP_SIZE*8;              //  9*DIM, 10*DIM,  1*DIM
+
+
+  int * nodesM =  nodesS;
+
+
+  /*********** stack **********/
+
+  int *nstack = lmem;
+
+  /*********** begin tree-walk **********/
+
+
+  for (int root_node = node_begend.x; root_node < node_begend.y; root_node += WARP_SIZE)
+  {
+    int n_nodes0 = min(node_begend.y - root_node, WARP_SIZE);
+    int n_stack0 = 0;
+    int n_stack_pre = 0;
+
+    { nstack[ACCS<SHIFT>(n_stack0)] = root_node + laneId;   n_stack0++; }
+
+    /*********** walk each level **********/
+    while (n_nodes0 > 0) {
+
+
+      int n_nodes1 = 0;
+      int n_offset = 0;
+
+      int n_stack1 = n_stack0;
+      int c_stack0 = n_stack_pre;
+
+      /*********** walk a level **********/
+      while(c_stack0 < n_stack0)
+      {
+
+        /***
+         **** --> fetch the list of nodes rom LMEM
+         ***/
+        bool use_node = laneId <  n_nodes0;
+#if 1
+        { prefix[laneId] = nstack[ACCS<SHIFT>(c_stack0)];   c_stack0++; }
+        const int node  = prefix[min(laneId, n_nodes0 - 1)];
+#else  /* eg: seems to work, but I do not remember if that will *always* work */
+        int node;
+        { node  = nstack[ACCS<SHIFT>(c_stack0)];   c_stack0++; }
+#endif
+
+
+        n_nodes0 -= WARP_SIZE;
+
+        /***
+         **** --> process each of the nodes in the list in parallel
+         ***/
+
+
+        #ifndef TEXTURES
+                float4 nodeSize = boxSizeInfo[node];                   //Fetch the size of the box. Size.w = child info
+                float4 node_pos = boxCenterInfo[node];                 //Fetch the center of the box. center.w = opening info
+        #else
+                float4 nodeSize =  tex1Dfetch(texNodeSize, node);
+                float4 node_pos =  tex1Dfetch(texNodeCenter, node);
+        #endif
+
+        int node_data = __float_as_int(nodeSize.w);
+
+        //Check if a cell has to be opened
+#ifdef  IMPBH
+        //Improved barnes-hut method
+        #ifndef TEXTURES
+                float4 nodeCOM = multipole_data[node*3];
+        #else
+                float4 nodeCOM = tex1Dfetch(texMultipole,node*3);
+        #endif
+        nodeCOM.w      = node_pos.w;
+        bool   split   = split_node_grav_impbh(nodeCOM, group_pos, groupSize);
+#else
+        bool   split   = split_node_grav_md(node_pos, nodeSize, group_pos, groupSize);
+#endif
+
+        bool leaf       = node_pos.w <= 0;  //Small AND equal incase of a 1 particle cell       //Check if it is a leaf
+        //         split = true;
+
+
+        //if split and it is a node add it to stack
+        //if split and it is a leaf add it to use list with value 2
+        //if not split add it to use list with value 1
+#if 1
+        if((split && leaf) && use_node)
+        {
+//          printf("ON DEV, SPLIT & LEAF: %d \n", node);
+          markedNodes[node].x = 2;
+          bool flag            = split && leaf && use_node;                                //flag = split + leaf + use_node
+//          const int jbody = node_data & BODYMASK;                                     //the first body in the leaf
+          const int nbody = (((node_data & INVBMASK) >> LEAFBIT)+1) & BTEST(flag);    //number of bodies in the leaf masked with the flag
+
+          markedNodes[node].y = nbody;
+        }
+        if((split && !leaf) && use_node)
+        {
+//           printf("ON DEV, SPLIT & NODE: %d \n", node);
+//          markedNodes[node].y = 2;
+          markedNodes[node].x = 1;
+
+        }
+        if(!split && use_node)
+        {
+//           printf("ON DEV, NOTE SPLIT: %d \n", node);
+          markedNodes[node].x = 1;
+//          markedNodes[node].y = 3;
+        }
+#endif
+
+
+        bool flag    = (split && !leaf) && use_node;                        //Flag = use_node + split + not_a_leaf;Use only non_leaf nodes that are to be split
+        uint mask    = BTEST(flag);                                       // mask = #FFFFFFFF if use_node+split+not_a_leaf==true, otherwise zero
+        int child    =    node_data & 0x0FFFFFFF;                         //Index to the first child of the node
+        int nchild   = (((node_data & 0xF0000000) >> 28)) & mask;         //The number of children this node has
+
+        /***
+         **** --> calculate prefix
+         ***/
+        int n_total = inclusive_scan_warp(prefix,  nchild);               // inclusive scan to compute memory offset of each child (return total # of children)
+        int offset  = prefix[laneId];
+        offset     += n_offset - nchild;                                  // convert inclusive into exclusive scan for referencing purpose
+
+
+        for (int i = n_offset; i < n_offset + n_total; i += WARP_SIZE)         //nullify part of the array that will be filled with children
+          nodesM[laneId + i] = 0;                                          //but do not touch those parts which has already been filled
+
+
+#if 1
+        //This code does not require reading of nodesM before writing thereby preventing
+        //possible synchronization , not completed writes , problems
+        if(flag)
+        {
+          for(int i=0; i < nchild; i++)
+          {
+            nodesM[offset + i] = child + i;
+          }
+        }
+#endif
+        n_offset += n_total;    //Increase the offset in the array by the number of newly added nodes
+
+
+        /***
+         **** --> save list of nodes to LMEM
+         ***/
+
+        /*** if half of shared memory or more is filled with the the nodes, dump these into slowmem stack ***/
+        while(n_offset >= WARP_SIZE)
+        {
+          n_offset -= WARP_SIZE;
+          const int offs1 = ACCS<SHIFT>(n_stack1);
+          nstack[offs1] = nodesM[n_offset + laneId];   n_stack1++;
+          n_nodes1 += WARP_SIZE;
+
+          if((n_stack1 - c_stack0) >= (LMEM_STACK_SIZE << SHIFT))
+          {
+            //We overwrote our current stack
+            apprCount = -1;
+            return;
+          }
+        }
+
+      } //end lvl
+
+
+      n_nodes1 += n_offset;
+      if (n_offset > 0)
+      {
+        nstack[ACCS<SHIFT>(n_stack1)] = nodesM[laneId];   n_stack1++;
+        if((n_stack1 - c_stack0) >= (LMEM_STACK_SIZE << SHIFT))
+        {
+          //We overwrote our current stack
+          apprCount = -1;
+          return;
+        }
+      }
+
+
+      /***
+       **** --> copy nodes1 to nodes0: done by reassigning the pointers
+       ***/
+      n_nodes0    = n_nodes1;
+
+      n_stack_pre = n_stack0;
+      n_stack0    = n_stack1;
+
+    }//end while   levels
+  }//end for
+}
+
+
+extern "C" __global__ void
+#if 0 /* casues 164 bytes spill to lmem with NTHREAD = 128 */
+__launch_bounds__(NTHREAD)
+#endif
+  dev_determineLET(
+      const int n_active_groups,
+      int    n_bodies,
+      uint2 node_begend,
+      int    *active_groups,
+      real4  *multipole_data,
+      int    *active_inout,
+      float4  *boxSizeInfo,
+      float4  *groupSizeInfo,
+      float4  *boxCenterInfo,
+      float4  *groupCenterInfo,
+      int     *MEM_BUF,
+      uint2   *markedNodes)
+{
+  const int blockDim2 = NTHREAD2;
+  const int shMemSize = 10 * (1 << blockDim2);
+  __shared__ int shmem_pool[shMemSize];
+
+  const int nWarps2 = blockDim2 - WARP_SIZE2;
+  const int sh_offs = (shMemSize >> nWarps2) * warpId;
+  int *shmem = shmem_pool + sh_offs;
+
+  volatile int *bidShare = shmem;
+
+  /*********** check if this block is linked to a leaf **********/
+
+  int *lmem = &MEM_BUF[blockIdx.x*(LMEM_STACK_SIZE*blockDim.x + LMEM_EXTRA_SIZE)];
+  int  bid  = gridDim.x * blockIdx.y + blockIdx.x;
+
+  while(true)
+  {
+
+    if(laneId == 0)
+    {
+      bid         = atomicAdd(&active_inout[n_bodies], 1);
+      bidShare[0]    = bid;
+    }
+
+    bid   = bidShare[0];
+
+    if (bid >= n_active_groups) return;
+
+//    if(bid >= 1) return;
+
+
+    int grpOffset = 0;
+
+//    if(laneId == 0)
+//    printf("On DEV [%d, %d] working on: %d  -> %d  nbodies: %d \n",
+//        blockIdx.x, threadIdx.x, bid, n_bodies);
+
+    /*********** set necessary thread constants **********/
+#ifdef DO_BLOCK_TIMESTEP
+    real4 curGroupSize    = groupSizeInfo[active_groups[bid + grpOffset]];
+#else
+    real4 curGroupSize    = groupSizeInfo[bid + grpOffset];
+#endif
+
+#ifdef DO_BLOCK_TIMESTEP
+    real4 group_pos       = groupCenterInfo[active_groups[bid + grpOffset]];
+#else
+    real4 group_pos       = groupCenterInfo[bid + grpOffset];
+#endif
+
+    const int   groupData       = __float_as_int(curGroupSize.w);
+
+    const int ni = 1;
+
+    int apprCount = 0;
+
+    if (ni == 1)
+      determine_LET<0, blockDim2, 1>(
+         group_pos,
+         node_begend,
+          multipole_data,
+          shmem, lmem,  apprCount, boxSizeInfo, curGroupSize, boxCenterInfo,
+          markedNodes);
+
+#if 1 /* this increase lmem spill count */
+    if(apprCount < 0)
+    {
+
+      //Try to get access to the big stack, only one block per time is allowed
+      if(laneId == 0)
+      {
+        int res = atomicExch(&active_inout[n_bodies+1], 1); //If the old value (res) is 0 we can go otherwise sleep
+        int waitCounter  = 0;
+        while(res != 0)
+        {
+          //Sleep
+          for(int i=0; i < (1024); i++)
+          {
+            waitCounter += 1;
+          }
+          //Test again
+          shmem[0] = waitCounter;
+          res = atomicExch(&active_inout[n_bodies+1], 1);
+        }
+      }
+
+
+      lmem = &MEM_BUF[gridDim.x*(LMEM_STACK_SIZE*blockDim.x + LMEM_EXTRA_SIZE)];    //Use the extra large buffer
+      apprCount= 0;
+      if (ni == 1)
+        determine_LET<8, blockDim2, 1>(
+            group_pos,
+            node_begend,
+             multipole_data,
+             shmem, lmem,  apprCount, boxSizeInfo, curGroupSize, boxCenterInfo,
+             markedNodes);
+
+      lmem = &MEM_BUF[blockIdx.x*(LMEM_STACK_SIZE*blockDim.x + LMEM_EXTRA_SIZE)];
+
+      if(threadIdx.x == 0)
+      {
+        atomicExch(&active_inout[n_bodies+1], 0); //Release the lock
+      }
+    }//end if apprCount < 0
+#endif
+  }     //end while
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

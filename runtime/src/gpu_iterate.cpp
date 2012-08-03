@@ -674,6 +674,9 @@ void octree::predict(tree_structure &tree)
 //   tend is time per particle
 //   tnext is reduce result
 
+  //Reset the active particles
+  tree.activePartlist.zeroMemGPUAsync(gravStream->s());
+
   //First we get the minimum time, which is the next integration time
   #ifdef DO_BLOCK_TIMESTEP
     int blockSize = NBLOCK_REDUCE ;
@@ -783,10 +786,8 @@ void octree::approximate_gravity(tree_structure &tree)
   node_begend.x   = tree.level_list[level_start].x;
   node_begend.y   = tree.level_list[level_start].y;
 
-  LOG("node begend: %d %d iter-> %d\n", node_begend.x, node_begend.y, iter);
 
-  //Reset the active particles
-  tree.activePartlist.zeroMem();
+  LOG("node begend: %d %d iter-> %d\n", node_begend.x, node_begend.y, iter);
 
   //Set the kernel parameters, many!
   approxGrav.set_arg<int>(0,    &tree.n_active_groups);
@@ -820,43 +821,100 @@ void octree::approximate_gravity(tree_structure &tree)
 
 
 #if 0
-  my_dev::dev_mem<real4>  coarseGroupBoxCenterGPU(devContext, this->globalCoarseGrpCount[0]);
-  my_dev::dev_mem<real4>  coarseGroupBoxSizeGPU(devContext, this->globalCoarseGrpCount[0]);
+  //Do the LET Count action on the GPU :-)
 
+  double t00 = get_time();
+  int box = ((procId+1) % nProcs);
 
+  fprintf(stderr, "I am proc: %d  Going to check against box: %d \n", procId, box);
 
+  my_dev::dev_mem<real4>  coarseGroupBoxCenterGPU(devContext, this->globalCoarseGrpCount[box]);
+  my_dev::dev_mem<real4>  coarseGroupBoxSizeGPU(devContext, this->globalCoarseGrpCount[box]);
 
-  int box = procId % nProcs;
-  for(int i=this->globalCoarseGrpOffsets[box] ; i < this->globalCoarseGrpCount[box]; i++)
+  my_dev::dev_mem<uint2>  markedNodes(devContext, tree.n_nodes);
+  markedNodes.zeroMem();
+  tree.activePartlist.zeroMem();
+
+  int writeIdx = 0;
+  for(int i=this->globalCoarseGrpOffsets[box] ; i < this->globalCoarseGrpOffsets[box] + this->globalCoarseGrpCount[box]; i++)
   {
-    coarseGroupBoxCenterGPU[i] = make_float4(coarseGroupBoxCenter[i].x,  coarseGroupBoxCenter[i].y,
+    coarseGroupBoxCenterGPU[writeIdx] = make_float4(coarseGroupBoxCenter[i].x,  coarseGroupBoxCenter[i].y,
         coarseGroupBoxCenter[i].z, coarseGroupBoxCenter[i].w);
-    coarseGroupBoxSizeGPU[i]   = make_float4(coarseGroupBoxSize[i].x,  coarseGroupBoxSize[i].y,
+
+    coarseGroupBoxSizeGPU[writeIdx]   = make_float4(coarseGroupBoxSize[i].x,  coarseGroupBoxSize[i].y,
         coarseGroupBoxSize[i].z, coarseGroupBoxSize[i].w);
+    writeIdx++;
   }
+  int grps = this->globalCoarseGrpCount[box];
+
+  double4 boxCenter = {     0.5*(currentRLow[box].x  + currentRHigh[box].x),
+                            0.5*(currentRLow[box].y  + currentRHigh[box].y),
+                            0.5*(currentRLow[box].z  + currentRHigh[box].z), 0};
+  double4 boxSize   = {fabs(0.5*(currentRHigh[box].x - currentRLow[box].x)),
+                       fabs(0.5*(currentRHigh[box].y - currentRLow[box].y)),
+                       fabs(0.5*(currentRHigh[box].z - currentRLow[box].z)), 0};
+  fprintf(stderr, "Big box: %f %f %f || %f %f %f \n",
+      boxCenter.x, boxCenter.y, boxCenter.z, boxSize.x, boxSize.y, boxSize.z);
+
+
+//  coarseGroupBoxCenterGPU[0] = make_float4(boxCenter.x,  boxCenter.y, boxCenter.z, boxCenter.w);
+//  coarseGroupBoxSizeGPU[0] = make_float4(boxSize.x,  boxSize.y, boxSize.z, boxSize.w);
+//  grps = 1;
+
   coarseGroupBoxSizeGPU.h2d();
   coarseGroupBoxCenterGPU.h2d();
 
-  tree.interactions.zeroMem();
-
-  approxGrav.set_arg<int>(0,    &this->globalCoarseGrpCount[box]);
-  approxGrav.set_arg<cl_mem>(12, coarseGroupBoxSizeGPU.p());
-  approxGrav.set_arg<cl_mem>(13, tree.groupSizeInfo.p());
-  approxGrav.set_arg<cl_mem>(14, coarseGroupBoxCenterGPU.p());
-
-  approxGrav.setWork(-1, NTHREAD, nBlocksForTreeWalk);
-  approxGrav.execute(gravStream->s());  //First half
 
 
-  gravStream->sync();
 
-  fprintf(stderr, "Test run klaar!! coarse groups: %d source: %d\n",this->globalCoarseGrpCount[box],box);
+  tree.interactions.zeroMemGPUAsync(gravStream->s());
+
+  //Set the kernel parameters, many!
+   determineLET.set_arg<int>(0,     &grps);
+   determineLET.set_arg<int>(1,    &tree.n);
+   determineLET.set_arg<uint2>(2,  &node_begend);
+   determineLET.set_arg<cl_mem>(3, tree.active_group_list.p());
+   determineLET.set_arg<cl_mem>(4, tree.multipole.p());
+   determineLET.set_arg<cl_mem>(5, tree.activePartlist.p());
+   determineLET.set_arg<cl_mem>(6, tree.boxSizeInfo.p());
+   determineLET.set_arg<cl_mem>(7, coarseGroupBoxSizeGPU.p());
+   determineLET.set_arg<cl_mem>(8, tree.boxCenterInfo.p());
+   determineLET.set_arg<cl_mem>(9, coarseGroupBoxCenterGPU.p());
+   determineLET.set_arg<cl_mem>(10,  tree.generalBuffer1.p()); //Instead of using Local memory
+   determineLET.set_arg<cl_mem>(11,  markedNodes.p());
 
 
+   determineLET.set_arg<real4>(12, tree.boxSizeInfo, 4, "texNodeSize");
+   determineLET.set_arg<real4>(13, tree.boxCenterInfo, 4, "texNodeCenter");
+   determineLET.set_arg<real4>(14, tree.multipole, 4, "texMultipole");
+   determineLET.set_arg<real4>(15, tree.bodies_Ppos, 4, "texBody");
+
+
+   double t0 = get_time();
+   determineLET.setWork(-1, NTHREAD, nBlocksForTreeWalk);
+   determineLET.execute(gravStream->s());  //First half
+   gravStream->sync();
+
+
+   LOGF(stderr, "Test run klaar!! coarse groups: %d source: %d\t Took: %f Setup: %f\n",
+       this->globalCoarseGrpCount[box],box, get_time()-t0, t0-t00);
+
+  markedNodes.d2h();
+  int useNodes = 0, useParticles=0;
+  for(int i=0; i < tree.n_nodes; i++)
+  {
+    if(markedNodes[i].x > 0)
+    {
+      useNodes++;
+      useParticles += markedNodes[i].y;
+    }
+  }
+  LOGF(stderr, "Number of nodes to use: %d Particles: %d\n", useNodes, useParticles);
 
 #endif
 
-
+//  mpiSync();
+//  exit(0);
 
   //Print interaction statistics
   #if 0
@@ -883,7 +941,7 @@ void octree::approximate_gravity(tree_structure &tree)
       apprSum2     += tree.interactions[i].x*tree.interactions[i].x;
       directSum2   += tree.interactions[i].y*tree.interactions[i].y;   
 
-      if(i < 1000)
+      if(i < 35)
       fprintf(stderr, "%d\t Direct: %d\tApprox: %d\t Group: %d \n",
               i, tree.interactions[i].y, tree.interactions[i].x,
               tree.body2group_list[i]);
@@ -896,8 +954,8 @@ void octree::approximate_gravity(tree_structure &tree)
     cout << "avg dir: " << directSum / tree.n << "\tavg appr: " << apprSum / tree.n << "\tMaxdir: " << maxDir << "\tmaxAppr: " << maxAppr <<  endl;
     cout << "sigma dir: " << sqrt((directSum2  - directSum)/ tree.n) << "\tsigma appr: " << std::sqrt((apprSum2 - apprSum) / tree.n)  <<  endl;    
 //    exit(0);
-    mpiSync();
-    exit(0);
+//    mpiSync();
+//    exit(0);
 
   #endif
   
@@ -1146,6 +1204,8 @@ void octree::correct(tree_structure &tree)
 
   correctParticles.setWork(tree.n, 128);
   correctParticles.execute(execStream->s());
+
+
  
 /* specialParticles.d2h();
 fprintf(stderr, "Sun: %f %f %f %f \n", specialParticles[0].x, 

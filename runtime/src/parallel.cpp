@@ -2028,6 +2028,8 @@ void octree::essential_tree_exchange(vector<real4> &treeStructure, tree_structur
   int myid    = procId;
   int nproc   = nProcs;
   int isource = 0;
+
+  double t0 = get_time();
  
   bool mergeOwntree = false;          //Default do not include our own tree-structre, thats mainly used for testing 
   int step          = nProcs - 1;     //Default merge all remote trees into one structure
@@ -2135,7 +2137,7 @@ void octree::essential_tree_exchange(vector<real4> &treeStructure, tree_structur
       create_local_essential_tree_fill(bodies, velocities, multipole, nodeSizeInfo, nodeCenterInfo,
                                       ibox, (float)currentRLow[ibox].w, node_begend.x, node_begend.y,
                                       particleCount, nodeCount, letDataBuffer);
-      LOG("LET count&fill: %lg\n", get_time()-t1);
+      LOG("LET count&fill: %lg  since start: %lg \n", get_time()-t1, get_time()-t0);
 
                                   
   /*    
@@ -2154,15 +2156,19 @@ void octree::essential_tree_exchange(vector<real4> &treeStructure, tree_structur
       letDataBuffer[0].z = (float)node_begend.x;         //First node on the level that indicates the start of the tree walk
       letDataBuffer[0].w = (float)node_begend.y;         //last node on the level that indicates the start of the tree walk
 
+      double t9 = get_time();
       //Exchange the data of the tree structures  between the processes
       treeBuffers[recvTree] = MP_exchange_bhlist(ibox, isource, bufferSize, letDataBuffer);
+      treeBuffers[recvTree] = MP_exchange_bhlist(ibox, isource, bufferSize, letDataBuffer);
+      LOG("LET exchange trees: %d <-> %d  took: %lg  since start: %lg \n", ibox, isource,get_time()-t9, get_time()-t0);
 
       delete[] letDataBuffer;
 
       //This determines if we interrupt the exchange by starting a gravity kernel on the GPU
       if(gravStream->isFinished())
       {
-        LOGF(stderr,"GRAVFINISHED %d recvTree: %d\n", procId, recvTree);
+        LOGF(stderr,"GRAVFINISHED %d recvTree: %d  Time: %lg Since start: %lg\n",
+                        procId, recvTree, get_time()-t1, get_time()-t0);
         recvTree++;
         break;
       }
@@ -2455,6 +2461,7 @@ void octree::essential_tree_exchange(vector<real4> &treeStructure, tree_structur
   totalLETExTime += thisPartLETExTime;
   
   LOGF(stderr,"LETEX [%d] curStep: %g\t   Total: %g \n", procId, thisPartLETExTime, totalLETExTime);
+  exit(0);
 }
 
 inline double cust_fabs2(double a)
@@ -4929,11 +4936,10 @@ void octree::create_local_essential_tree_count_novector_startend4(real4* bodies,
                                          int &particles, int &nodes)
 {
     //Walk the tree as is done on device, level by level
-    const int stackSize = 128;
+    const int stackSize = 512;
     combNodeCheck3 *curLevel  = new combNodeCheck3[1024*stackSize];
     combNodeCheck3 *nextLevel = new combNodeCheck3[1024*stackSize];
     
-
 
     int curLevelCount  = 0;
     int nextLevelCount = 0;

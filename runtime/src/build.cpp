@@ -35,10 +35,9 @@ void octree::allocateParticleMemory(tree_structure &tree)
   tree.body2group_list.cmalloc(n_bodies, false);
   
   tree.level_list.cmalloc(MAXLEVELS);  
-  tree.node_level_list.cmalloc(MAXLEVELS*2 , false);    
-  
+  tree.node_level_list.cmalloc(MAXLEVELS*2 , false);
 
-  //The generalBuffer is also used during the tree-walk, so the size has to be at least
+    //The generalBuffer is also used during the tree-walk, so the size has to be at least
   //large enough to store the tree-walk stack. Add 4096 for extra memory allignment space
   //Times 2 since first half is used for regular walks, 2nd half for walks that go outside 
   //the memory stack and require another walk with 'unlimited' stack size
@@ -148,6 +147,7 @@ void octree::reallocateParticleMemory(tree_structure &tree)
   
   tree.body2group_list.cresize(n_bodies, reduce);  
 
+
   //Tree properties, tree size is not known at forehand so
   //allocate worst possible outcome  
   n_bodies = n_bodies / 1;
@@ -231,8 +231,8 @@ void octree::build (tree_structure &tree) {
   
 
   int memBufOffset = validList.cmalloc_copy  (tree.generalBuffer1, tree.n*2, 0);
-  int memBufOffsetValidList = memBufOffset;
       memBufOffset = compactList.cmalloc_copy(tree.generalBuffer1, tree.n*2, memBufOffset);
+  int memBufOffsetValidList = memBufOffset;
       memBufOffset = node_key.cmalloc_copy   (tree.generalBuffer1, tree.n,   memBufOffset);
       memBufOffset = levelOffset.cmalloc_copy(tree.generalBuffer1, 256,      memBufOffset);
       memBufOffset = maxLevel.cmalloc_copy   (tree.generalBuffer1, 256,      memBufOffset);

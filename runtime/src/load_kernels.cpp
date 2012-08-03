@@ -270,6 +270,7 @@ void octree::load_kernels() {
 
 
   approxGravLET.setContext(devContext);
+  determineLET.setContext(devContext);
 
 #ifdef USE_CUDA
   getTNext.load_source("./timestep.ptx", pathName.c_str(), "", -1);
@@ -284,6 +285,7 @@ void octree::load_kernels() {
   distanceCheck.load_source("./timestep.ptx", pathName.c_str(), "", -1);  
   
   approxGravLET.load_source("./dev_approximate_gravity.ptx", pathName.c_str(), "", 64);  
+  determineLET.load_source("./dev_approximate_gravity.ptx", pathName.c_str(), "", 64);
   /* create kernels */
 
   getTNext.create("get_Tnext"); 
@@ -299,6 +301,7 @@ void octree::load_kernels() {
   distanceCheck.create("distanceCheck");  
   
   approxGravLET.create("dev_approximate_gravity_let");
+  determineLET.create("dev_determineLET");
 
 #else
   getTNext.load_source("", "");

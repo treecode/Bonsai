@@ -419,6 +419,7 @@ protected:
 
   my_dev::kernel distanceCheck;
   my_dev::kernel approxGravLET;
+  my_dev::kernel determineLET;
   
   //Parallel kernels
   my_dev::kernel domainCheck;
