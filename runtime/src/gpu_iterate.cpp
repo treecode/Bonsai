@@ -1065,7 +1065,7 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
     
   approxGravLET.setWork(-1, NTHREAD, nBlocksForTreeWalk);
  
-  LOG("LET Approx config: "); approxGravLET.printWorkSize();
+//  LOG("LET Approx config: "); approxGravLET.printWorkSize();
     
   if(letRunning)
   {

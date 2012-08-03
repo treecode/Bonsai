@@ -2461,7 +2461,6 @@ void octree::essential_tree_exchange(vector<real4> &treeStructure, tree_structur
   totalLETExTime += thisPartLETExTime;
   
   LOGF(stderr,"LETEX [%d] curStep: %g\t   Total: %g \n", procId, thisPartLETExTime, totalLETExTime);
-  exit(0);
 }
 
 inline double cust_fabs2(double a)
