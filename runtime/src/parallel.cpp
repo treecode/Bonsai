@@ -2047,6 +2047,78 @@ void octree::essential_tree_exchange(vector<real4> &treeStructure, tree_structur
   vector<real4> recv_multipoleData;
   vector<real4> recv_nodeSizeData;
   vector<real4> recv_nodeCenterData;  
+
+
+
+
+
+
+  if(procId == -1)
+  {
+    uint2 node_begend;
+    node_begend.x   = tree.level_list[level_start].x;
+    node_begend.y   = tree.level_list[level_start].y;
+    
+    int remoteId = 1;
+
+    char buffFilename[256];
+    sprintf(buffFilename, "grpAndTreeDump_%d_%d.bin", procId, remoteId);
+
+    ofstream outFile(buffFilename, ios::out|ios::binary);
+    if(outFile.is_open())
+    {
+      //Write the properties
+      outFile.write((char*)&globalCoarseGrpCount[remoteId], sizeof(int));
+      outFile.write((char*)&node_begend.x, sizeof(int));
+      outFile.write((char*)&node_begend.y, sizeof(int));
+      outFile.write((char*)&tree.n_nodes, sizeof(int));
+      outFile.write((char*)&tree.n, sizeof(int));
+
+      //Write the groups
+      for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
+      {
+        int idx = globalCoarseGrpOffsets[remoteId] + i;
+        double4 boxCenter = coarseGroupBoxCenter[idx];
+        double4 boxSize   = coarseGroupBoxSize  [idx];
+        outFile.write((char*)&boxCenter, sizeof(double4));
+        outFile.write((char*)&boxSize, sizeof(double4));
+      }
+
+      //Write the particles
+      for(int i=0; i < tree.n; i++)
+      {
+        outFile.write((char*)&bodies[i], sizeof(real4));
+      }
+
+      //Write the multipole
+      for(int i=0; i < tree.n_nodes; i++)
+      {
+        outFile.write((char*)&multipole[i*3 + 0], sizeof(real4));
+        outFile.write((char*)&multipole[i*3 + 1], sizeof(real4));
+        outFile.write((char*)&multipole[i*3 + 2], sizeof(real4));
+      }
+
+      //Write the nodeSizeInfo
+      for(int i=0; i < tree.n_nodes; i++)
+      {
+        outFile.write((char*)&nodeSizeInfo[i], sizeof(real4));
+      }
+
+      //Write the nodeCenterInfo
+      for(int i=0; i < tree.n_nodes; i++)
+      {
+        outFile.write((char*)&nodeCenterInfo[i], sizeof(real4));
+      }
+
+      outFile.close();
+
+    }
+
+  }
+  
+
+
+
   
   real4 **treeBuffers;
 
@@ -2111,7 +2183,7 @@ void octree::essential_tree_exchange(vector<real4> &treeStructure, tree_structur
                                         ibox, (float)currentRLow[ibox].w, node_begend.x, node_begend.y,
                                         particleCount, nodeCount);
 
-       LOG("LET count: %lg \t Coarse groups %d\n", get_time()-t1,  globalCoarseGrpCount[ibox]);
+       LOG("LET count (ibox: %d): %lg \t Coarse groups %d Since start: %lg\n", ibox, get_time()-t1,  globalCoarseGrpCount[ibox],get_time()-t0);
        LOG("LET count:  Particle count %d Node count: %d\n", particleCount, nodeCount);
       //Buffer that will contain all the data:
       //|real4| 2*particleCount*real4| nodes*real4 | nodes*real4 | nodes*3*real4 |
@@ -2158,17 +2230,16 @@ void octree::essential_tree_exchange(vector<real4> &treeStructure, tree_structur
 
       double t9 = get_time();
       //Exchange the data of the tree structures  between the processes
-      treeBuffers[recvTree] = MP_exchange_bhlist(ibox, isource, bufferSize, letDataBuffer);
-      treeBuffers[recvTree] = MP_exchange_bhlist(ibox, isource, bufferSize, letDataBuffer);
+      treeBuffers[recvTree] = MP_exchange_bhlist(ibox, isource, bufferSize, letDataBuffer); 
       LOG("LET exchange trees: %d <-> %d  took: %lg  since start: %lg \n", ibox, isource,get_time()-t9, get_time()-t0);
-
+      
       delete[] letDataBuffer;
 
       //This determines if we interrupt the exchange by starting a gravity kernel on the GPU
       if(gravStream->isFinished())
       {
-        LOGF(stderr,"GRAVFINISHED %d recvTree: %d  Time: %lg Since start: %lg\n",
-                        procId, recvTree, get_time()-t1, get_time()-t0);
+        LOGF(stderr,"GRAVFINISHED %d recvTree: %d  Time: %lg Since start: %lg\n", 
+			  procId, recvTree, get_time()-t1, get_time()-t0);
         recvTree++;
         break;
       }
@@ -2265,7 +2336,7 @@ void octree::essential_tree_exchange(vector<real4> &treeStructure, tree_structur
     
     //Compute the total size of the buffer
     int bufferSize     = 2*(totalParticles) + 5*(totalNodes+totalTopNodes + nodeTextOffset);
-    
+
     thisPartLETExTime += get_time() - tStart;
     //Allocate memory on host and device to store the merged tree-structure
     if(bufferSize > remote.fullRemoteTree.get_size())
@@ -4938,7 +5009,7 @@ void octree::create_local_essential_tree_count_novector_startend4(real4* bodies,
     const int stackSize = 512;
     combNodeCheck3 *curLevel  = new combNodeCheck3[1024*stackSize];
     combNodeCheck3 *nextLevel = new combNodeCheck3[1024*stackSize];
-    
+
 
     int curLevelCount  = 0;
     int nextLevelCount = 0;
@@ -4981,12 +5052,13 @@ void octree::create_local_essential_tree_count_novector_startend4(real4* bodies,
     //them. Saves another few percent
     for(int i=0; i < globalCoarseGrpCount[remoteId]; i++)
     {
+      double4 boxCenter = coarseGroupBoxCenter[coarseIDs[i]];
+      double4 boxSize   = coarseGroupBoxSize  [coarseIDs[i]];
+
       for(int j=start; j < end; j++)
       {
         real4 nodeCenter  = nodeCenterInfo[j];
         real4 nodeSize    = nodeSizeInfo[j];
-        double4 boxCenter = coarseGroupBoxCenter[coarseIDs[i]];
-        double4 boxSize   = coarseGroupBoxSize  [coarseIDs[i]];
         float4 nodeCOM    = multipole[j*3 + 0];
         nodeCOM.w         = nodeCenter.w;
      
@@ -5195,7 +5267,7 @@ void octree::create_local_essential_tree_fill_novector_startend4(real4* bodies, 
                                               int particleCount, int nodeCount, real4 *dataBuffer)
 {
   //Walk the tree as is done on device, level by level
-  const int stackSize = 128;
+  const int stackSize = 512;
   combNodeCheck3 *curLevel  = new combNodeCheck3[1024*stackSize];
   combNodeCheck3 *nextLevel = new combNodeCheck3[1024*stackSize];
 
@@ -6741,17 +6813,23 @@ real4* octree::MP_exchange_bhlist(int ibox, int isource,
     int nrecvlist;
     int nlist = bufferSize;
     
+    double t0 = get_time();
     //first send&get the number of particles to send&get
     MPI_Sendrecv(&nlist,1,MPI_INT,ibox,procId*10, &nrecvlist,
                  1,MPI_INT,isource,isource*10,MPI_COMM_WORLD, &status);
 
+    double t1= get_time();
     //Resize the buffer so it has the correct size and then exchange the tree 
     real4 *recvDataBuffer = new real4[nrecvlist];
     
+    double t2=get_time();
     //Particles
     MPI_Sendrecv(&letDataBuffer[0], nlist*sizeof(real4), MPI_BYTE, ibox, procId*10+1,
                  &recvDataBuffer[0], nrecvlist*sizeof(real4), MPI_BYTE, isource, isource*10+1,
                  MPI_COMM_WORLD, &status);        
+
+    LOGF(stderr,"MP_exchange: %d <-> %d  size: %f  alloc: %f  data: %f  size (MB) : %f \n",
+		    ibox, isource, t1-t0, t2-t1, get_time()-t2,  (nlist*sizeof(real4)/(double)(1024*1024)));
     
     return recvDataBuffer;             
 #else
@@ -6823,36 +6901,188 @@ struct cmp_ph_key{
 
 
 
+typedef struct
+{
+  int     nHashes;      //Number of hashes that will be send by the process
+  int     nParticles;   //Number of particles the sending process has in total
+  double  execTime;     //The time it took this process to compute gravity in the previous step
+  double  execTime2;    //A second timing number. We dont want execTime and execTime2 to fluctuate too much
+  			//balance on the one with the largest difference.
+} hashInfo;
 
-void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries)
+int balanceLoad(int *nParticlesOriginal, int *nParticlesNew, float *load, 
+                int nProcs, int leftIdx, int nTotal, float loadAvg)
+{
+  //Sum the total load left and right
+  int nProcsLeftSide    = nProcs / 2;  
+  int nProcsRightSide   = nProcs  - nProcsLeftSide;
+  int rightIdx          = leftIdx + nProcsLeftSide;
+
+  if(nProcs == 1) {
+    fprintf(stderr, "Ready by default \n");
+    nParticlesNew[leftIdx] = nTotal;
+    return 0;
+  }
+
+  fprintf(stderr, "Start balance: nProcs: %d, leftIdx: %d, rightIdx: %d nProcLeft: %d  nProcRight: %d nTotal: %d avg: %f\n",
+                   nProcs, leftIdx, rightIdx, nProcsLeftSide,nProcsRightSide, nTotal, loadAvg);
+
+  int nPartLeftOriginal = 0, nPartRightOriginal = 0;
+  for(int i=leftIdx;  i < rightIdx;                   i++) nPartLeftOriginal  += nParticlesOriginal[i];
+  for(int i=rightIdx; i < rightIdx+nProcsRightSide;   i++) nPartRightOriginal += nParticlesOriginal[i];
+
+  //Compute the factor to which to increase by using the received timing numbers
+  float loadLeft = 0, loadRight = 0;
+  for(int i=leftIdx;  i < rightIdx;                 i++) loadLeft  += load[i];
+  for(int i=rightIdx; i < rightIdx+nProcsRightSide; i++) loadRight += load[i];
+
+
+  float leftTarget  = (loadAvg*nProcsLeftSide)  / (loadLeft);
+  float rightTarget = (loadAvg*nProcsRightSide) / (loadRight);
+  //Inverse load, for testing LET
+  //LET float leftTarget  = 1./((loadAvg*nProcsLeftSide)  / (loadLeft));
+  //float rightTarget = 1./((loadAvg*nProcsRightSide) / (loadRight));
+
+  int newLeft = 0, newRight = 0;
+  //Check which target we are trying to match, namely the one with minimal work
+  if(leftTarget < rightTarget)
+//LET  if(leftTarget > rightTarget)
+  {
+    //Optimize left
+    newLeft  = nPartLeftOriginal*leftTarget;
+    newRight = nTotal - newLeft;
+  }
+  else
+  {
+    //Optimize right
+    newRight  = nPartRightOriginal*rightTarget;
+    newLeft   = nTotal - newRight;
+  }
+  
+  fprintf(stderr, "newLeft: %d , newRight: %d nTotal: %d , leftTarget: %f rightTarget: %f , loadLeft: %f loadRight: %f \n",
+                   newLeft, newRight, nTotal, leftTarget, rightTarget, loadLeft, loadRight);
+
+  if(nProcs == 2)
+  {
+     nParticlesNew[leftIdx] = newLeft;
+     nParticlesNew[rightIdx] = newRight;
+     return 0;
+  }
+
+  //Recursive the left and right parts
+  balanceLoad(nParticlesOriginal, nParticlesNew, load, nProcsLeftSide, leftIdx,  newLeft, loadAvg);
+  balanceLoad(nParticlesOriginal, nParticlesNew, load, nProcsRightSide, rightIdx, newRight, loadAvg);
+
+
+}
+
+
+void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries, float lastExecTime, float lastExecTime2)
 {
 #ifdef USE_MPI
   double t0 = get_time();
 
-  int *nReceiveCnts  = new int[nProcs];
-  int *nReceiveDpls  = new int[nProcs];
+  hashInfo hInfo;
+  hInfo.nHashes     = nHashes;
+  hInfo.nParticles  = this->localTree.n;
+  hInfo.execTime  = lastExecTime;
+  hInfo.execTime2 = lastExecTime2;
 
+//  hInfo.execTime    = 0.3; //TODO get this number passed on from ccaller functions
+  //Bogus data for now
+  //if(procId == 0) sleep(1);
+//  srand48(time(0));
+//  drand48();
+//	hInfo.execTime = 0.3*drand48();
+	
+  fprintf(stderr, "Exectime: Proc: %d -> %f \n", procId, hInfo.execTime);
+
+
+  int       *nReceiveCnts  = NULL;
+  int       *nReceiveDpls  = NULL;
+  float     *execTimes     = NULL;
+  float     *execTimes2    = NULL;
+  hashInfo  *recvHashInfo  = new hashInfo[nProcs];
+ 
+  
   //First receive the number of hashes
-  MPI_Gather(&nHashes, 1, MPI_INT, nReceiveCnts, 1, MPI_INT, 0, MPI_COMM_WORLD);
+  //MPI_Gather(&nHashes, 1, MPI_INT, nReceiveCnts, 1, MPI_INT, 0, MPI_COMM_WORLD);
+  MPI_Gather(&hInfo, sizeof(hashInfo), MPI_BYTE, recvHashInfo, sizeof(hashInfo), MPI_BYTE, 0, MPI_COMM_WORLD);
+  
+  int    totalNumberOfHashes = 0;
+  float  timeSum, timeSum2   = 0;	
+  int    nTotal              = 0;
+  uint4  *allHashes          = NULL;
 
-  int totalNumberOfHashes = 0;
-  uint4 *allHashes        = NULL;
-
-  //Compute receive offsets (only proc 0)
+  //Compute receive offsets (only process 0), total number of particles, total execution time.
   if(procId == 0)
   {
+    nReceiveCnts  = new int  [nProcs];
+    nReceiveDpls  = new int  [nProcs];
+    execTimes     = new float[nProcs]; 
+    execTimes2    = new float[nProcs]; 
+
+    nReceiveCnts[0]      = recvHashInfo[0].nHashes;
+    execTimes[0]         = recvHashInfo[0].execTime;
+    execTimes2[0]        = recvHashInfo[0].execTime2;
+
+    //Receive counts and displacements
     totalNumberOfHashes += nReceiveCnts[0];
-    nReceiveCnts[0] = nReceiveCnts[0]*sizeof(uint4);
-    nReceiveDpls[0] = 0;
+    nReceiveCnts[0]      = nReceiveCnts[0]*sizeof(uint4); //Convert to correct data size
+    nReceiveDpls[0]      = 0;
+    nTotal               = recvHashInfo[0].nParticles;
+    timeSum              = recvHashInfo[0].execTime;
+    timeSum2             = recvHashInfo[0].execTime2;
+
 
     for(int i=1; i < nProcs; i++)
     {
+      nReceiveCnts[i]      = recvHashInfo[i].nHashes;
+      execTimes[i]         = recvHashInfo[i].execTime;
+      execTimes2[i]        = recvHashInfo[i].execTime2;
+
       totalNumberOfHashes += nReceiveCnts[i];
       nReceiveCnts[i]      = nReceiveCnts[i]*sizeof(uint4);
       nReceiveDpls[i]      = nReceiveDpls[i-1] + nReceiveCnts[i-1];
+
+      nTotal  += recvHashInfo[i].nParticles;
+      timeSum += recvHashInfo[i].execTime;
+      timeSum2 += recvHashInfo[i].execTime2;
     }
     allHashes = new uint4[totalNumberOfHashes];
-  }
+
+
+
+    //Loop so we can decide on which number to balance
+    float avgLoadTime1 = timeSum  / nProcs;
+    float avgLoadTime2 = timeSum2 / nProcs;
+
+    float maxTime1Diff = 0, maxTime2Diff = 0;
+    for(int i=0; i < nProcs; i++)
+    {
+	    float temp1 = abs((avgLoadTime1/recvHashInfo[i].execTime)-1);
+	    maxTime1Diff = max(temp1, maxTime1Diff);
+	    float temp2 = abs((avgLoadTime2/recvHashInfo[i].execTime2)-1);
+	    maxTime2Diff = max(temp2, maxTime2Diff);
+    }
+
+    if(0){
+    if(maxTime2Diff > maxTime1Diff)
+    {
+	    for(int i=0; i < nProcs; i++)
+	    {
+		    execTimes[i] = execTimes[2];
+	    }
+	    timeSum = timeSum2;
+    }}
+
+    fprintf(stderr, "Max diff  Time1: %f\tTime2: %f Proc0: %f \t %f \n", 
+		    maxTime1Diff, maxTime2Diff, recvHashInfo[0].execTime, recvHashInfo[0].execTime2);
+
+
+
+  } //if procId == 0
+
 
 
   //Collect hashes on process 0
@@ -6864,52 +7094,195 @@ void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries)
 //              &sampleArray[0], nReceiveCnts, nReceiveDpls, MPI_BYTE,
 //              0, MPI_COMM_WORLD);
 
-
   if(procId == 0)
   {
-    //Check if we have received all data
-    int nTotal = 0;
+    delete[] nReceiveCnts;
+    delete[] nReceiveDpls;
 
+    int       *nPartPerProc  = new int[nProcs]; 
+
+    //Sort the keys. Use stable_sort (merge sort) since the seperate blocks are already 
+    //sorted. This is faster than std::sort (quicksort)
     //std::sort(allHashes, allHashes+totalNumberOfHashes, cmp_ph_key());
     std::stable_sort(allHashes, allHashes+totalNumberOfHashes, cmp_ph_key());
-    for(int i=0; i < totalNumberOfHashes; i++)
-    {
-      //TODO this loop information can be extracted from somewhere else...
-      nTotal += allHashes[i].w;
-    }
 
-    //Per process:
-    int nPerProc = nTotal / nProcs;
 
-    LOGF(stderr, "Number of particles per process: %d \t %d \n", nTotal, nPerProc);
+    #define LOAD_BALANCE 1
+    #define LOAD_BALANCE_MEMORY 1
 
-    boundaries[0]       = make_uint4(0x0, 0x0, 0x0, 0x0);
+    #if LOAD_BALANCE
+      //Load balancing version, based on gravity approximation execution times.
 
-    int tempSum = 0;
-    int procIdx = 1;
-    for(int i=0; i < totalNumberOfHashes; i++)
-    {
-    //  LOGF(stderr, "NON-Boundary at: %d\t%d %d %d %d \t %d \n",
-    //                i, allHashes[i].x,allHashes[i].y,allHashes[i].z,allHashes[i].w, tempSum);
-        tempSum += allHashes[i].w;
-        if(tempSum >= nPerProc)
+      fprintf(stderr, "Time sum: %f \n", timeSum);
+
+      //Normalize, fractions : timeSum / gravTime -> gives a relative time number
+      float normSum = 0;
+      for(int i=0; i < nProcs; i++){
+       // execTimes[i] = timeSum / execTimes[i];
+       // normSum     += execTimes[i];
+        fprintf(stderr, "Exec after norm: %d\t %f \tn: %d \n",i, execTimes[i],recvHashInfo[i].nParticles );
+      }
+      fprintf(stderr, "Normalized sum:%f  \n",normSum);
+
+
+      int *npartPerProcOld = new int[nProcs];
+      float *loadPerProc = new float[nProcs];
+      
+      for(int i=0; i < nProcs; i++)
+      { 
+        npartPerProcOld[i] = recvHashInfo[i].nParticles;
+        loadPerProc[i] = recvHashInfo[i].execTime;
+      }
+      float loadAvg = timeSum / nProcs;
+
+      //Adjust the boundary locations 
+      balanceLoad(npartPerProcOld,nPartPerProc, loadPerProc,
+                  nProcs,0,nTotal,loadAvg);
+      
+      //End adjusting	
+
+
+
+      //Compute the number of particles to be assign per process
+       for(int i=0; i < nProcs; i++){
+       // nPartPerProc[i] = (execTimes[i] / normSum) * nTotal;
+        
+        //  nPartPerProc[i] = recvHashInfo[i].nParticles*(2*(execTimes[i] / normSum));
+        //fprintf(stderr, "Npart per proc: %d\t %d \n",i, nPartPerProc[i]);
+      }
+
+      //Average with number of particles of previous step
+      //TODO
+      //float fac = 0.25; //25% old, 75% new
+      float fac = 0.50; //Average      
+      for(int i=0; i < nProcs; i++){
+        fprintf(stderr, "Npart per proc: new %d\told %d (avg final: %d)\n",
+                nPartPerProc[i], recvHashInfo[i].nParticles, 
+                ((int)((recvHashInfo[i].nParticles*fac) + (nPartPerProc[i] *(1-fac)))));
+        nPartPerProc[i] = (int)((recvHashInfo[i].nParticles*fac) + (nPartPerProc[i] *(1-fac)));
+
+      }
+
+
+      delete[] execTimes;
+      //Now try to adjust this with respect to memory load-balance
+
+      bool doPrint          = true;
+      bool doMemLoadBalance = (LOAD_BALANCE_MEMORY) ? true : false;
+      if(doMemLoadBalance)
+      {
+        const int maxTries          = std::max(10,nProcs);
+        const double maxDiff        = 1.9; //Each process has to be within a factor 1.9 of the maximum load
+        const int allowedDifference = 5;
+
+        for(int tries = maxTries; tries > 0; tries--)
         {
-          LOGF(stderr, "Boundary at: %d\t%d %d %d %d \t %d \n",
-              i, allHashes[i+1].x,allHashes[i+1].y,allHashes[i+1].z,allHashes[i+1].w, tempSum);
+          int maxNumber       = 0;
+          int minNumber       = nPartPerProc[0];
+          int countOutsideMin = 0;
+          int sum             = 0;
 
-          tempSum = 0;
-          boundaries[procIdx++] = allHashes[i+1];
-        }
+          if(doPrint){
+            fprintf(stderr,"Before memory load adjustment: \n");
+             for(int i=0; i < nProcs; i++){ 
+	            fprintf(stderr, "%d \t %d \n", i, nPartPerProc[i]);
+	            sum += nPartPerProc[i];
+             }
+            fprintf(stderr, "Sum: %d \n", sum);
+          }
 
-//      LOGF(stderr, "After sort %d\t%d %d %d\t%d\n", i,
-//          allHashes[i].x, allHashes[i].y, allHashes[i].z, allHashes[i].w);
+          //First find the max and min process load and compute the minimum number of 
+          //particles a process should have according to the defined balance
+          maxNumber = countOutsideMin = 0;
+         
+          for(int i=0; i < nProcs; i++){
+	          maxNumber = std::max(maxNumber, nPartPerProc[i]);
+	          minNumber = std::min(minNumber, nPartPerProc[i]);
+          }
 
+          double requiredNumber = maxNumber / maxDiff;
+
+          if(doPrint){
+            fprintf(stderr, "Max: %d  Min: %d , maxDiff factor: %f  required: %f \n",
+	                           maxNumber, minNumber, maxDiff, requiredNumber);
+          }
+
+          if((abs(minNumber-requiredNumber)) <= allowedDifference)
+          {
+	          break; //Difference between required and achieved is within what we allow, accept this
+          }
+
+          //Count the number of procs below the minNumber and compute number within the limits
+          for(int i=0; i < nProcs; i++) if(requiredNumber > nPartPerProc[i]) countOutsideMin++;
+          int countInsideMin = nProcs - countOutsideMin;
+
+          if(countOutsideMin == 0)
+	          break; //Success, all within the range minimum required...maximum assigned
+
+          //Compute particles to be added  to the processes outside the range, we take 
+          //(0.5*(Particles Required - minLoad)) / (# processes outside the min range) .
+          //To evenly add particles , to prevent large jumps when # outside is small we use
+          //the factor 0.5. For the particles to be removed we do the same but now use 
+          //number of processes inside the min range.
+          int addNumberOfParticles = (0.5*(requiredNumber - minNumber)) / countOutsideMin;
+          addNumberOfParticles     = std::max(1, addNumberOfParticles);
+
+          int removeNumberOfParticles = (0.5*(requiredNumber - minNumber)) / countInsideMin;
+          removeNumberOfParticles     = std::max(1, removeNumberOfParticles);
+
+          if(doPrint){
+            fprintf(stderr, "#Outside: %d , #Inside: %d Adding total: %f per proc: %d  Removing total: %f per proc: %d \n",
+                             countOutsideMin, countInsideMin, requiredNumber-minNumber, 
+                             addNumberOfParticles, requiredNumber - minNumber, removeNumberOfParticles);
+          }
+
+          //Finally modify the particle counts :-)
+          for(int i=0; i < nProcs; i++)
+          {
+	          if(nPartPerProc[i] < requiredNumber)
+		          nPartPerProc[i] += addNumberOfParticles;
+	          else if(nPartPerProc[i] > requiredNumber)
+		          nPartPerProc[i] -= removeNumberOfParticles;
+          }//end modify
+
+          if(doPrint){	    
+      	    fprintf(stderr,"After memory load adjustment: \n"); 
+            for(int i=0; i < nProcs; i++) fprintf(stderr, "%d \t %d \n", i, nPartPerProc[i]);
+      	    fprintf(stderr, "Tries left: %d \n\n\n", tries);
+          }
+        }//for tries
+      } //if doMemLoadBalance
+    #else //#if LOAD_BALANCE
+      //Per process, equal number of particles
+      int nPerProc = nTotal / nProcs;
+      for(int i=0; i < nProcs; i++) nPartPerProc[i] = nPerProc;
+      LOGF(stderr, "Number of particles per process: %d \t %d \n", nTotal, nPerProc);
+    #endif
+
+
+    //All set and done, get the boundaries
+    int tempSum   = 0;
+    int procIdx   = 1;
+    boundaries[0] = make_uint4(0x0, 0x0, 0x0, 0x0);
+    for(int i=0; i < totalNumberOfHashes; i++)
+    {
+      tempSum += allHashes[i].w;
+      if(tempSum >= nPartPerProc[procIdx-1])
+      {
+        LOGF(stderr, "Boundary at: %d\t%d %d %d %d \t %d \n",
+                      i, allHashes[i+1].x,allHashes[i+1].y,allHashes[i+1].z,allHashes[i+1].w, tempSum);
+        tempSum = 0;
+        boundaries[procIdx++] = allHashes[i+1];
+      }
     }//for totalNumberOfHashes
+
 
     //Force final boundary to be the highest possible key value
     boundaries[nProcs]  = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
 
+    delete[] nPartPerProc;
     delete[] allHashes;
+    delete[] recvHashInfo;
   }//if procId == 0
 
 
@@ -6926,10 +7299,10 @@ void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries)
   }
 
 
-  delete[] nReceiveCnts;
-  delete[] nReceiveDpls;
 
-#endif
+
+#endif //if USE_MPI
+//exit(0);
 }
 
 

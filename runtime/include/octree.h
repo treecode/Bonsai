@@ -779,9 +779,9 @@ public:
 
   void makeLET();
 
-  void parallelDataSummary(tree_structure &tree);
+  void parallelDataSummary(tree_structure &tree, float lastExecTime, float lastExecTime2);
 
-  void gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries);
+  void gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries, float lastExecTime, float lastExecTime2);
   void gpuRedistributeParticles_SFC(uint4 *boundaries);
 
 
@@ -882,6 +882,11 @@ public:
           LOGF(stderr, "TESTING log on proc: %d val: %s \n", procId, tmp);
       #endif
     }
+
+
+
+
+
 //    LOGF(stderr, "Settings device : %d\t"  << devID << "\t" << device << "\t" << nProcs <<endl;
 
     snapshotIter = snapI;

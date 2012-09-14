@@ -35,9 +35,10 @@ void octree::allocateParticleMemory(tree_structure &tree)
   tree.body2group_list.cmalloc(n_bodies, false);
   
   tree.level_list.cmalloc(MAXLEVELS);  
-  tree.node_level_list.cmalloc(MAXLEVELS*2 , false);
+  tree.node_level_list.cmalloc(MAXLEVELS*2 , false);    
+  
 
-    //The generalBuffer is also used during the tree-walk, so the size has to be at least
+  //The generalBuffer is also used during the tree-walk, so the size has to be at least
   //large enough to store the tree-walk stack. Add 4096 for extra memory allignment space
   //Times 2 since first half is used for regular walks, 2nd half for walks that go outside 
   //the memory stack and require another walk with 'unlimited' stack size
@@ -146,7 +147,6 @@ void octree::reallocateParticleMemory(tree_structure &tree)
   tree.interactions.cresize(n_bodies, reduce);
   
   tree.body2group_list.cresize(n_bodies, reduce);  
-
 
   //Tree properties, tree size is not known at forehand so
   //allocate worst possible outcome  
@@ -431,8 +431,8 @@ void octree::build (tree_structure &tree) {
 
   //In the updated version we use the minimum tree-level, which ensures
   //that groups are based on the tree-structure. The +1
-  tree.courseGroupIdx        = tree.startLevelMin;
-  int minCoarseGroupLevelIdx = tree.startLevelMin;
+  tree.courseGroupIdx        = tree.startLevelMin ;
+  int minCoarseGroupLevelIdx = tree.startLevelMin ;
   
   
   //Now use the previous computed offsets to build all boundaries. The coarse ones and the
@@ -484,7 +484,7 @@ void octree::build (tree_structure &tree) {
 
   tree.group_list.cmalloc(tree.n_groups , false);  
   tree.n_active_groups = tree.n_groups; //Set all groups active in shared-time-step mode
-  
+ 
   store_groups.set_arg<int>(0, &tree.n);  
   store_groups.set_arg<int>(1, &tree.n_groups);  
   store_groups.set_arg<cl_mem>(2, compactList.p());    
@@ -602,7 +602,7 @@ if(procId == 0){
 //This function builds a hash-table for the particle-keys which is required for the
 //domain distribution based on the SFC
 
-void octree::parallelDataSummary(tree_structure &tree) {
+void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float lastExecTime2) {
 
   int level      = 0;
   int validCount = 0;
@@ -768,7 +768,8 @@ void octree::parallelDataSummary(tree_structure &tree) {
   LOGF(stderr, "Compute hashes took: %f \n", get_time()-t0);
 
    //No leak in this call, checked. TODO clean up comment
-  gpu_collect_hashes(validCount, &tree.parallelHashes[0], &tree.parallelBoundaries[0]);
+  gpu_collect_hashes(validCount, &tree.parallelHashes[0], &tree.parallelBoundaries[0], 
+		     lastExecTime, lastExecTime2);
   
 
   LOGF(stderr, "Computing and exchanging and update domain took: %f \n", get_time()-t0);
