@@ -525,6 +525,61 @@ real4 octree::get_pos(uint2 key, real size, tree_structure &tree) {
 /*********************************/
 /*********************************/
 
+//uint4 octree::get_mask(int level) {
+//  int mask_levels = 3*std::max(MAXLEVELS - level, 0);
+//  uint4 mask = {0x3FFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,0xFFFFFFFF};
+//
+//  if (mask_levels > 60)
+//  {
+//    mask.z = 0;
+//    mask.y = 0;
+//    mask.x = (mask.x >> (mask_levels - 60)) << (mask_levels - 60);
+//  }
+//  else if (mask_levels > 30) {
+//    mask.z = 0;
+//    mask.y = (mask.y >> (mask_levels - 30)) << (mask_levels - 30);
+//  } else {
+//    mask.z = (mask.z >> mask_levels) << mask_levels;
+//  }
+//
+//  return mask;
+//}
+
+//int octree::cmp_uint4(uint4 a, uint4 b) {
+//  if      (a.x < b.x) return -1;
+//  else if (a.x > b.x) return +1;
+//  else {
+//    if       (a.y < b.y) return -1;
+//    else  if (a.y > b.y) return +1;
+//    else {
+//      if       (a.z < b.z) return -1;
+//      else  if (a.z > b.z) return +1;
+//      return 0;
+//    } //end z
+//  }  //end y
+//} //end x, function
+//
+////Binary search of the key within certain bounds (cij.x, cij.y)
+//int octree::find_key(uint4 key, uint2 cij, uint4 *keys) {
+//  int l = cij.x;
+//  int r = cij.y - 1;
+//  while (r - l > 1) {
+//    int m = (r + l) >> 1;
+//    int cmp = cmp_uint4(keys[m], key);
+//    if (cmp == -1) {
+//      l = m;
+//    } else {
+//      r = m;
+//    }
+//  }
+//  if (cmp_uint4(keys[l], key) >= 0) return l;
+//
+//  return r;
+//}
+
+
+
+/*
 uint2 octree::get_mask(int level) {
   int mask_levels = 3*max(MAXLEVELS - level, 0);
   uint2 mask = {0x3FFFFFFF, 0xFFFFFFFF};
@@ -542,11 +597,11 @@ uint2 octree::get_mask(int level) {
 uint2 octree::get_imask(uint2 mask) {
   return make_uint2(0x3FFFFFFF ^ mask.x, 0xFFFFFFFF ^ mask.y);
 }
-
+*/
 /*********************************/
 /*********************************/
 /*********************************/
-
+/*
 int octree::find_key(uint2          key, 
 		     vector<uint2> &keys,
 		     int l,
@@ -585,7 +640,7 @@ int octree::find_key(uint2                  key,
   if (cmp_uint2(keys[l].key, key) >= 0) return l;
   
   return r;
-}
+}*/
 
 /*********************************/
 /*********************************/

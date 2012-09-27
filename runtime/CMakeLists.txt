@@ -86,6 +86,7 @@ set (CCFILES
   src/sort_bodies_gpu.cpp
   src/dustFunctions.cpp
   src/log.cpp
+  src/hostConstruction.cpp
   )
 
 set (HFILES
@@ -115,14 +116,14 @@ if (COMPILE_SM30)
     ${CUFILES}
     CUDAkernels/dev_approximate_gravity_warp.cu  
     )
-  set(GENCODE -gencode=arch=compute_30,code=sm_30 -gencode=arch=compute_30,code=compute_30)
+  set(GENCODE -gencode arch=compute_30,code=sm_30 -gencode arch=compute_30,code=compute_30)
 
 else (COMPILE_SM30)
   set (CUFILES
     ${CUFILES}
 	CUDAkernels/dev_approximate_gravity_warp_fermi.cu  
 	)
-  set(GENCODE -gencode=arch=compute_20,code=sm_20 -gencode=arch=compute_20,code=compute_20)
+  set(GENCODE -gencode arch=compute_20,code=sm_20 -gencode arch=compute_20,code=compute_20)
 endif (COMPILE_SM30)
 
 set (CUHFILES

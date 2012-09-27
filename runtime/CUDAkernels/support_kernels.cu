@@ -160,9 +160,9 @@ static __device__ uint2 dilate3(int value) {
   return key;
 } 
 
-#if 0
+//#if 0
 //Morton order
-static __device__ uint2 get_key(int4 crd) {
+static __device__ uint2 get_key_morton(int4 crd) {
   uint2 key, key1;
   key  = dilate3(crd.x);
 
@@ -177,7 +177,7 @@ static __device__ uint2 get_key(int4 crd) {
   return key;
 }
 
-#else
+//#else
 
 static __device__ uint4 get_key(int4 crd)
 {
@@ -250,7 +250,7 @@ static __device__ uint4 get_key(int4 crd)
   return key_new;
 }
 
-#endif
+//#endif
 
 
 static __device__ uint4 get_mask(int level) {

@@ -225,6 +225,8 @@ void octree::load_kernels() {
   propsScalingD.setContext(devContext);
   
   copyNodeDataToGroupData.setContext(devContext);
+  setPHGroupDataGetKey.setContext(devContext);
+  setPHGroupDataGetKey2.setContext(devContext);
  
   /* load kernels */
   
@@ -235,7 +237,8 @@ void octree::load_kernels() {
   propsScalingD.load_source("./compute_propertiesD.ptx", pathName.c_str(), "",-1);
   
   copyNodeDataToGroupData.load_source("./compute_propertiesD.ptx", pathName.c_str());
-
+  setPHGroupDataGetKey.load_source("./compute_propertiesD.ptx", pathName.c_str());
+  setPHGroupDataGetKey2.load_source("./compute_propertiesD.ptx", pathName.c_str());
   /* create kernels */
   
   propsNonLeafD.create("compute_non_leaf"); 
@@ -243,6 +246,9 @@ void octree::load_kernels() {
   propsScalingD.create("compute_scaling");
 
   copyNodeDataToGroupData.create("setPHGroupData");
+  setPHGroupDataGetKey.create("setPHGroupDataGetKey");
+  setPHGroupDataGetKey2.create("setPHGroupDataGetKey2");
+
   
 #else
   propsNonLeaf.load_source("compProps.cl", "");

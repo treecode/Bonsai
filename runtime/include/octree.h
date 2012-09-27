@@ -371,6 +371,7 @@ protected:
   my_dev::dev_stream *gravStream;
   my_dev::dev_stream *execStream;
   my_dev::dev_stream *copyStream;
+  my_dev::dev_stream *LETDataToHostStream;
   
 
   // scan & sort algorithm
@@ -405,6 +406,8 @@ protected:
   my_dev::kernel  propsNonLeafD, propsLeafD, propsScalingD;
 
   my_dev::kernel  copyNodeDataToGroupData;
+  my_dev::kernel  setPHGroupDataGetKey;
+  my_dev::kernel  setPHGroupDataGetKey2;
   my_dev::kernel  setActiveGrps;
 
   //Iteraction kernels
@@ -455,8 +458,12 @@ protected:
   int3   get_crd(uint2);
   real4  get_pos(uint2, real, tree_structure&);
 
-  uint2  get_mask(int);
+  //uint2  get_mask(int);
+//  uint4  get_mask(int);
   uint2  get_imask(uint2);
+
+//  int   cmp_uint4(uint4 a, uint4 b);
+//  int   find_key(uint4 key, uint2 cij, uint4 *keys);
 
   int find_key(uint2, vector<uint2>&,         int, int);
   int find_key(uint2, vector<morton_struct>&, int, int);
@@ -609,6 +616,15 @@ public:
 
   double4 *coarseGroupBoxCenter;//Center of bounding boxes
   double4 *coarseGroupBoxSize;  //size of bounding boxes
+
+  real4 *localGrpTreeCntSize;
+
+  real4 *globalGrpTreeCntSize;
+
+  uint *globalGrpTreeCount;
+  uint *globalGrpTreeOffsets;
+
+  int grpTree_n_nodes;
 
 
 
@@ -784,6 +800,13 @@ public:
   void gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries, float lastExecTime, float lastExecTime2);
   void gpuRedistributeParticles_SFC(uint4 *boundaries);
 
+  void build_GroupTree(int n_bodies, uint4 *keys, uint2 *nodes, uint4 *node_keys, uint  *node_levels,
+                       int &n_levels, int &n_nodes, int &startGrp, int &endGrp);
+
+  void computeProps_GroupTree(real4 *grpCenter, real4 *grpSize, real4 *treeCnt,
+                              real4 *treeSize,  uint2 *nodes,   uint  *node_levels, int    n_levels);
+
+  void sendCurrentInfoGrpTree();
 
   //End functions for parallel code
   
@@ -915,9 +938,14 @@ public:
     execStream = NULL;
     gravStream = NULL;
     copyStream = NULL;
+    LETDataToHostStream = NULL;
     
     coarseGroupBoundMin	= NULL;
     coarseGroupBoundMax	= NULL;
+
+    localGrpTreeCntSize = NULL;
+
+    globalGrpTreeCntSize = NULL;
 
 
     prevDurStep = -1;   //Set it to negative so we know its the first step
@@ -954,6 +982,14 @@ public:
     
     if(coarseGroupBoxCenter) delete[] coarseGroupBoxCenter;
     if(coarseGroupBoxSize)   delete[] coarseGroupBoxSize;
+
+    if(localGrpTreeCntSize) delete[] localGrpTreeCntSize;
+    if(globalGrpTreeCntSize) delete[] globalGrpTreeCntSize;
+    if(globalGrpTreeCount) delete[] globalGrpTreeCount;
+    if(globalGrpTreeOffsets) delete[] globalGrpTreeOffsets;
+
+
+
 
 #if USE_B40C
     delete sorter;

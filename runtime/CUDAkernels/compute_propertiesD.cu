@@ -1,5 +1,5 @@
 #include "bonsai.h"
-// #include "support_kernels.cu"
+#include "support_kernels.cu"
 #include <stdio.h>
 
 #include "../profiling/bonsai_timing.h"
@@ -93,15 +93,15 @@ static __device__ void compute_bounds_node(float3 &r_min, float3 &r_max,
 }
 
 
-KERNEL_DECLARE(compute_leaf)(const int n_leafs,
-                                            uint *leafsIdxs,
-                                            uint2 *node_bodies,
-                                            real4 *body_pos,
-                                            double4 *multipole,
-                                            real4 *nodeLowerBounds,
-                                            real4 *nodeUpperBounds,
-                                            real4  *body_vel,
-                                            uint *body_id) {
+KERNEL_DECLARE(compute_leaf)( const int n_leafs,
+                              uint *leafsIdxs,
+                              uint2 *node_bodies,
+                              real4 *body_pos,
+                              double4 *multipole,
+                              real4 *nodeLowerBounds,
+                              real4 *nodeUpperBounds,
+                              real4  *body_vel,
+                              uint *body_id) {
 
   CUXTIMER("compute_leaf");
   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
@@ -145,8 +145,6 @@ KERNEL_DECLARE(compute_leaf)(const int n_leafs,
   r_min = make_float3(+1e10f, +1e10f, +1e10f);
   r_max = make_float3(-1e10f, -1e10f, -1e10f);
 
-  float darkMatterMass = 0.0f;
-
   //Loop over the children=>particles=>bodys
   //unroll increases register usage #pragma unroll 16
   float maxEps = -100.0f;
@@ -159,9 +157,6 @@ KERNEL_DECLARE(compute_leaf)(const int n_leafs,
     compute_monopole(mass, posx, posy, posz, p);
     compute_quadropole(oct_q11, oct_q22, oct_q33, oct_q12, oct_q13, oct_q23, p);
     compute_bounds(r_min, r_max, p);
-
-    if(body_id[i] >= 200000000)
-      darkMatterMass += p.w;
   }
 
   double4 mon = {posx, posy, posz, mass};
@@ -177,7 +172,7 @@ KERNEL_DECLARE(compute_leaf)(const int n_leafs,
 
   double4 Q0, Q1;
   Q0 = make_double4(oct_q11, oct_q22, oct_q33, maxEps); //Store max softening
-  Q1 = make_double4(oct_q12, oct_q13, oct_q23, darkMatterMass);
+  Q1 = make_double4(oct_q12, oct_q13, oct_q23, 0.0f);
 
   //Store the leaf properties
   multipole[3*nodeID + 0] = mon;       //Monopole
@@ -233,8 +228,7 @@ KERNEL_DECLARE(compute_non_leaf)(const int curLevel,         //Level for which w
   float3 r_min, r_max;
   r_min = make_float3(+1e10f, +1e10f, +1e10f);
   r_max = make_float3(-1e10f, -1e10f, -1e10f);
-  
-  float darkMatterMass = 0.0f;
+
   //Process the children (1 to 8)
   float maxEps = -100.0f;
   for(int i=firstChild; i < firstChild+nChildren; i++)
@@ -243,8 +237,6 @@ KERNEL_DECLARE(compute_non_leaf)(const int curLevel,         //Level for which w
     double4 tmon = multipole[3*i + 0];
 
     maxEps = max(multipole[3*i + 1].w, maxEps);
-
-    darkMatterMass += multipole[3*i + 2].w;
 
     compute_monopole_node(mass, posx, posy, posz, tmon);
     compute_quadropole_node(oct_q11, oct_q22, oct_q33, oct_q12, oct_q13, oct_q23,
@@ -267,7 +259,7 @@ KERNEL_DECLARE(compute_non_leaf)(const int curLevel,         //Level for which w
 
   double4 Q0, Q1;
   Q0 = make_double4(oct_q11, oct_q22, oct_q33, maxEps); //store max Eps
-  Q1 = make_double4(oct_q12, oct_q13, oct_q23, darkMatterMass);
+  Q1 = make_double4(oct_q12, oct_q13, oct_q23, 0.0f);
 
   multipole[3*nodeID + 0] = mon;        //Monopole
   multipole[3*nodeID + 1] = Q0;         //Quadropole1
@@ -283,7 +275,7 @@ KERNEL_DECLARE(compute_scaling)(const int node_count,
                                            real4 *multipoleF,
                                            float theta,
                                            real4 *boxSizeInfo,
-					   real4 *boxCenterInfo,
+                                           real4 *boxCenterInfo,
                                            uint2 *node_bodies){
 
   CUXTIMER("compute_scaling");
@@ -497,4 +489,163 @@ KERNEL_DECLARE(setPHGroupData)(const int n_groups,
 
   } //end tid == 0
 }//end copyNode2grp
+
+//Compute the properties for the groups
+KERNEL_DECLARE(setPHGroupDataGetKey)(const int n_groups,
+                                          const int n_particles,
+                                          real4 *bodies_pos,
+                                          int2  *group_list,
+                                          real4 *groupCenterInfo,
+                                          real4 *groupSizeInfo,
+                                          uint4  *body_key,
+                                          float4 corner){
+  CUXTIMER("setPHGroupDataGetKey");
+  const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
+  const int tid = threadIdx.y * blockDim.x + threadIdx.x;
+
+  if(bid >= n_groups)     return;
+
+  //Do a reduction on the particles assigned to this group
+
+  volatile __shared__ float3 shmem[2*NCRIT];
+  volatile float3 *sh_rmin = (float3*)&shmem [ 0];
+  volatile float3 *sh_rmax = (float3*)&shmem[NCRIT];
+
+  float3 r_min = make_float3(+1e10f, +1e10f, +1e10f);
+  float3 r_max = make_float3(-1e10f, -1e10f, -1e10f);
+
+  int start = group_list[bid].x;
+  int end   = group_list[bid].y;
+
+  int partIdx = start + threadIdx.x;
+
+  //Set the shared memory with the data
+  if (partIdx >= end)
+  {
+    sh_rmin[tid].x = r_min.x; sh_rmin[tid].y = r_min.y; sh_rmin[tid].z = r_min.z;
+    sh_rmax[tid].x = r_max.x; sh_rmax[tid].y = r_max.y; sh_rmax[tid].z = r_max.z;
+  }
+  else
+  {
+    sh_rmin[tid].x = r_min.x = bodies_pos[partIdx].x; sh_rmin[tid].y = r_min.y = bodies_pos[partIdx].y; sh_rmin[tid].z = r_min.z = bodies_pos[partIdx].z;
+    sh_rmax[tid].x = r_max.x = bodies_pos[partIdx].x; sh_rmax[tid].y = r_max.y = bodies_pos[partIdx].y; sh_rmax[tid].z = r_max.z = bodies_pos[partIdx].z;
+  }
+
+
+  __syncthreads();
+  // do reduction in shared mem
+  if(blockDim.x >= 512) if (tid < 256) {sh_MinMax2(tid, tid + 256, &r_min, &r_max, sh_rmin, sh_rmax);} __syncthreads();
+  if(blockDim.x >= 256) if (tid < 128) {sh_MinMax2(tid, tid + 128, &r_min, &r_max, sh_rmin, sh_rmax);} __syncthreads();
+  if(blockDim.x >= 128) if (tid < 64)  {sh_MinMax2(tid, tid + 64,  &r_min, &r_max, sh_rmin, sh_rmax);} __syncthreads();
+
+  if(blockDim.x >= 64) if (tid < 32)  {sh_MinMax2(tid, tid + 32, &r_min, &r_max, sh_rmin, sh_rmax); }
+  if(blockDim.x >= 32) if (tid < 16) { sh_MinMax2(tid, tid + 16, &r_min, &r_max, sh_rmin, sh_rmax); }
+
+  if(tid < 8)
+  {
+    sh_MinMax2(tid, tid +  8, &r_min, &r_max, sh_rmin, sh_rmax);
+    sh_MinMax2(tid, tid +  4, &r_min, &r_max, sh_rmin, sh_rmax);
+    sh_MinMax2(tid, tid +  2, &r_min, &r_max, sh_rmin, sh_rmax);
+    sh_MinMax2(tid, tid +  1, &r_min, &r_max, sh_rmin, sh_rmax);
+  }
+
+  // write result for this block to global mem
+  if (tid == 0)
+  {
+
+    //Compute the group center and size
+    float3 grpCenter;
+    grpCenter.x = 0.5*(r_min.x + r_max.x);
+    grpCenter.y = 0.5*(r_min.y + r_max.y);
+    grpCenter.z = 0.5*(r_min.z + r_max.z);
+
+    float3 grpSize = make_float3(fmaxf(fabs(grpCenter.x-r_min.x), fabs(grpCenter.x-r_max.x)),
+                                 fmaxf(fabs(grpCenter.y-r_min.y), fabs(grpCenter.y-r_max.y)),
+                                 fmaxf(fabs(grpCenter.z-r_min.z), fabs(grpCenter.z-r_max.z)));
+
+    //Store the box size and opening criteria
+    groupSizeInfo[bid].x = grpSize.x;
+    groupSizeInfo[bid].y = grpSize.y;
+    groupSizeInfo[bid].z = grpSize.z;
+
+    real4 pos = bodies_pos[start];
+
+    int nchild             = end-start;
+    start                  = start | (nchild-1) << CRITBIT;
+    groupSizeInfo[bid].w   = __int_as_float(start);
+
+    float l = max(grpSize.x, max(grpSize.y, grpSize.z));
+
+    groupCenterInfo[bid].x = grpCenter.x;
+    groupCenterInfo[bid].y = grpCenter.y;
+    groupCenterInfo[bid].z = grpCenter.z;
+
+    //Test stats for physical group size
+    groupCenterInfo[bid].w = l;
+
+    int4 crd;
+
+    real domain_fac = corner.w;
+
+    #ifndef EXACT_KEY
+       crd.x = (int)roundf(__fdividef((pos.x - corner.x), domain_fac));
+       crd.y = (int)roundf(__fdividef((pos.y - corner.y) , domain_fac));
+       crd.z = (int)roundf(__fdividef((pos.z - corner.z) , domain_fac));
+    #else
+       crd.x = (int)((pos.x - corner.x) / domain_fac);
+       crd.y = (int)((pos.y - corner.y) / domain_fac);
+       crd.z = (int)((pos.z - corner.z) / domain_fac);
+    #endif
+
+    body_key[bid] = get_key(crd);
+
+  } //end tid == 0
+}//end copyNode2grp
+
+//Compute the key for the groups
+KERNEL_DECLARE(setPHGroupDataGetKey2)(const int n_groups,
+                                      real4 *bodies_pos,
+                                      int2  *group_list,
+                                      uint4  *body_key,
+                                      float4 corner){
+  CUXTIMER("setPHGroupDataGetKey2");
+  const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
+  const int tid = threadIdx.y * blockDim.x + threadIdx.x;
+  const int idx = bid * (blockDim.x * blockDim.y) + tid;
+
+  if(idx >= n_groups)     return;
+
+
+  int start = group_list[idx].x;
+  real4 pos = bodies_pos[start];
+
+//  int end   = group_list[idx].y-1;
+//  real4 pos = bodies_pos[end];
+
+//  int end   = group_list[idx].y-1;
+//  int start = group_list[idx].x;
+//  start     = (end+start) / 2;
+//  real4 pos = bodies_pos[start];
+
+
+  int4 crd;
+
+  real domain_fac = corner.w;
+
+  #ifndef EXACT_KEY
+     crd.x = (int)roundf(__fdividef((pos.x - corner.x), domain_fac));
+     crd.y = (int)roundf(__fdividef((pos.y - corner.y) , domain_fac));
+     crd.z = (int)roundf(__fdividef((pos.z - corner.z) , domain_fac));
+  #else
+     crd.x = (int)((pos.x - corner.x) / domain_fac);
+     crd.y = (int)((pos.y - corner.y) / domain_fac);
+     crd.z = (int)((pos.z - corner.z) / domain_fac);
+  #endif
+    // uint2 key =  get_key_morton(crd);
+    // body_key[idx] = make_uint4(key.x, key.y, 0,0);
+    body_key[idx] = get_key(crd); //has to be PH key in order to prevent the need for sorting
+
+}//end copyNode2grp
+
+
 

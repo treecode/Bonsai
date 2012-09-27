@@ -1,5 +1,5 @@
 #include "bonsai.h"
-// //#include "/home/jbedorf/papers/GBPZ2010/codes/jb/build_tree/CUDA/support_kernels.cu"
+
 #include "support_kernels.cu"
 #include <stdio.h>
 

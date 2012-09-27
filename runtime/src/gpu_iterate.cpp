@@ -27,27 +27,24 @@ void octree::makeLET()
    //LET code test
   double tTest = get_time();
 
-  my_dev::dev_stream memCpyStream;
+//  my_dev::dev_stream memCpyStream;
   
-  localTree.bodies_Ppos.d2h(false, memCpyStream.s());
+  //Start copies, while grpTree info is exchanged
+//  localTree.bodies_Ppos.d2h(false, memCpyStream.s());
 //  localTree.bodies_Pvel.d2h(false, memCpyStream.s());
-  localTree.multipole.d2h(false, memCpyStream.s());   
-  localTree.boxSizeInfo.d2h(false, memCpyStream.s());
-  localTree.boxCenterInfo.d2h(false, memCpyStream.s());
+  localTree.multipole.d2h(false,     LETDataToHostStream->s());
+  localTree.boxSizeInfo.d2h(false,   LETDataToHostStream->s());
+  localTree.boxCenterInfo.d2h(false, LETDataToHostStream->s());
   
-  //Exchange domain boundaries, while memory copies take place
-  
-//  TODO, move the sync of vel, multipole, boxsize and center
-//  to somewhere in the parallel.cpp after the count, since the
-//  data is not needed before that
-  //We need both the boxsizes , multipole (for com)
-  //in the count so we have to sync
+  //Exchange domain grpTrees, while memory copies take place
+  double t1 = get_time();
+  this->sendCurrentInfoGrpTree();
+  fprintf(stderr, "Exchanging Group tree information took: %lg \n", get_time()-t1);
 
-  rMinLocalTreeGroups.w = this->maxLocalEps;
-  sendCurrentRadiusInfo(rMinLocalTreeGroups,rMaxLocalTreeGroups);  
-
-  memCpyStream.sync();  //Sync otherwise we are not certain the required data is on the host
+//  memCpyStream.sync();  //Sync otherwise we are not certain the required data is on the host
     
+  return;
+
   //Exchange particles and start LET kernels
   vector<real4> LETParticles;
   essential_tree_exchange(LETParticles, localTree, remoteTree);
@@ -428,7 +425,8 @@ bool octree::iterate_once(IterationData &idata) {
 
       runningLETTimeSum = 0;
 
-      if(nProcs > 1)  makeLET();
+//      if(nProcs > 1)
+        makeLET();
 
       #ifdef USE_DUST
             devContext.startTiming(gravStream->s());
@@ -447,13 +445,17 @@ bool octree::iterate_once(IterationData &idata) {
     
 //    LOGF(stderr, "APPTIME [%d]: Iter: %d\t%g \tn: %d\n", procId, iter, idata.lastGravTime, this->localTree.n);
     
+
     float ms=0, msLET=0;
+#if 0 //enable again when load-balancing
     CU_SAFE_CALL(cudaEventElapsedTime(&ms, startLocalGrav, endLocalGrav));
     if(nProcs > 1)  CU_SAFE_CALL(cudaEventElapsedTime(&msLET,startRemoteGrav, endRemoteGrav));
 
     msLET += runningLETTimeSum;
     LOGF(stderr, "APPTIME [%d]: Iter: %d\t%g \tn: %d EventTime: %f  and %f\tSum: %f\n", 
 		procId, iter, idata.lastGravTime, this->localTree.n, ms, msLET, ms+msLET);
+#endif
+
     //CU_SAFE_CALL(cudaEventElapsedTime(&msLET, startRemoteGrav, endRemoteGrav));
     //CU_SAFE_CALL(cudaEventSynchronize(endRemoteGrav));
     //CU_SAFE_CALL(cudaEventSynchronize(startRemoteGrav));
@@ -540,6 +542,7 @@ bool octree::iterate_once(IterationData &idata) {
    
     iter++; 
 
+//    exit(0);
     return false;
 }
 
@@ -555,6 +558,10 @@ void octree::iterate_setup(IterationData &idata) {
   if(copyStream == NULL)
     copyStream = new my_dev::dev_stream(0);
   
+  if(LETDataToHostStream == NULL)
+    LETDataToHostStream = new my_dev::dev_stream(0);
+
+
   CU_SAFE_CALL(cudaEventCreate(&startLocalGrav));
   CU_SAFE_CALL(cudaEventCreate(&endLocalGrav));
 
@@ -584,6 +591,7 @@ void octree::iterate_setup(IterationData &idata) {
 
   //Start construction of the tree
   sort_bodies(localTree, true);
+
   build(localTree);
   allocateTreePropMemory(localTree);
   compute_properties(localTree);
@@ -799,9 +807,6 @@ void octree::predict(tree_structure &tree)
 
 void octree::setActiveGrpsFunc(tree_structure &tree)
 {
-  tree.activeGrpList.zeroMem();      //Reset the active grps
-  this->resetCompact();              //Make sure compact has been reset
-  
   //Set valid list to zero
   setActiveGrps.set_arg<int>(0,    &tree.n);
   setActiveGrps.set_arg<float>(1,  &t_current);
@@ -811,6 +816,7 @@ void octree::setActiveGrpsFunc(tree_structure &tree)
 
   setActiveGrps.setWork(tree.n, 128);
   setActiveGrps.execute(execStream->s());
+  this->resetCompact();              //Make sure compact has been reset
 
   //Compact the valid list to get a list of valid groups
   gpuCompact(devContext, tree.activeGrpList, tree.active_group_list,

@@ -71,6 +71,9 @@ void octree::mpiInit(int argc,char *argv[], int &procId, int &nProcs)
 
     nSampleAndSizeValues    = new int2[nProcs];  
     curSysState             = new sampleRadInfo[nProcs];
+
+    globalGrpTreeCount   = new uint[nProcs];
+    globalGrpTreeOffsets = new uint[nProcs];
 }
 
 
@@ -177,6 +180,56 @@ void octree::determine_sample_freq(int numberOfParticles)
     prevSampFreq = sampleFreq;
     
 }
+
+void octree::sendCurrentInfoGrpTree()
+{
+  #ifdef USE_MPI
+    int *treeGrpCountBytes   = new int[nProcs];
+    int *receiveOffsetsBytes = new int[nProcs];
+
+    //Send the number of group-tree-nodes that belongs to this process, and gather
+    //that information from the other processors
+    int temp = 2*grpTree_n_nodes; //Times two since we send size and center in one array
+    MPI_Allgather(&temp,                    sizeof(int),  MPI_BYTE,
+                  this->globalGrpTreeCount, sizeof(uint), MPI_BYTE, MPI_COMM_WORLD);
+
+
+    //Compute offsets using prefix sum and total number of groups we will receive
+    this->globalGrpTreeOffsets[0]   = 0;
+    treeGrpCountBytes[0]          = this->globalGrpTreeCount[0]*sizeof(real4);
+    receiveOffsetsBytes[0]          = 0;
+    for(int i=1; i < nProcs; i++)
+    {
+      this->globalGrpTreeOffsets[i]  = this->globalGrpTreeOffsets[i-1] + this->globalGrpTreeCount[i-1];
+
+      treeGrpCountBytes[i]   = this->globalGrpTreeCount[i]  *sizeof(real4);
+      receiveOffsetsBytes[i] = this->globalGrpTreeOffsets[i]*sizeof(real4);
+
+      LOGF(stderr,"Proc: %d Received on idx: %d\t%d prefix: %d \n",
+             procId, i, globalGrpTreeCount[i], globalGrpTreeOffsets[i]);
+    }
+
+    int totalNumberOfGroups = this->globalGrpTreeOffsets[nProcs-1]+this->globalGrpTreeCount[nProcs-1];
+
+    //Allocate memory
+    if(globalGrpTreeCntSize) delete[] globalGrpTreeCntSize;
+    globalGrpTreeCntSize = new real4[totalNumberOfGroups];
+
+
+    //Exchange the coarse group boundaries
+    MPI_Allgatherv(localGrpTreeCntSize,  temp*sizeof(real4), MPI_BYTE,
+                   globalGrpTreeCntSize, treeGrpCountBytes,
+                   receiveOffsetsBytes,  MPI_BYTE, MPI_COMM_WORLD);
+
+
+    delete[] treeGrpCountBytes;
+    delete[] receiveOffsetsBytes;
+  #else
+    //TODO check if we need something here
+    //  curSysState[0] = curProcState;
+  #endif
+}
+
 
 
 void octree::sendCurrentRadiusInfoCoarse(real4 *rmin, real4 *rmax, int n_coarseGroups)
