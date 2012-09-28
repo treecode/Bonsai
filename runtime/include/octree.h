@@ -64,6 +64,12 @@ typedef struct setupParams {
 
 } setupParams;
 
+typedef struct nInfoStruct
+{
+  float x,y;
+  int z;
+} nInfoStruct;
+
 
 typedef struct bodyStruct
 {

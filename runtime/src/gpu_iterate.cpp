@@ -30,18 +30,29 @@ void octree::makeLET()
 //  my_dev::dev_stream memCpyStream;
   
   //Start copies, while grpTree info is exchanged
-//  localTree.bodies_Ppos.d2h(false, memCpyStream.s());
-//  localTree.bodies_Pvel.d2h(false, memCpyStream.s());
-  localTree.multipole.d2h(3*localTree.n_nodes, false,     LETDataToHostStream->s());
-  localTree.boxSizeInfo.d2h(localTree.n_nodes,false,   LETDataToHostStream->s());
-  localTree.boxCenterInfo.d2h(localTree.n_nodes,false, LETDataToHostStream->s());
+  localTree.boxSizeInfo.d2h  (localTree.n_nodes,   false, LETDataToHostStream->s());
+  localTree.boxCenterInfo.d2h(localTree.n_nodes,   false, LETDataToHostStream->s());
+  localTree.multipole.d2h    (3*localTree.n_nodes, false, copyStream->s());
   
   //Exchange domain grpTrees, while memory copies take place
   double t1 = get_time();
   this->sendCurrentInfoGrpTree();
   fprintf(stderr, "Exchanging Group tree information took: %lg \n", get_time()-t1);
+  localTree.boxSizeInfo.waitForCopyEvent();
+  localTree.boxCenterInfo.waitForCopyEvent();
 
-//  memCpyStream.sync();  //Sync otherwise we are not certain the required data is on the host
+  //Build the pre-processed array, while multipole-memory copy is (possibly) still going on
+  nInfoStruct *nodeInfo = new nInfoStruct[localTree.n_nodes];
+  nInfoStruct nInfo;
+  for(int i=0; i < localTree.n_nodes; i++)
+  {
+    nInfo.y     = localTree.boxSizeInfo  [i].w;
+    nInfo.x     = localTree.boxCenterInfo[i].w;
+    nInfo.z     = 0;
+    nodeInfo[i] = nInfo;
+  }
+  localTree.multipole.waitForCopyEvent();
+
     
   return;
 
@@ -50,8 +61,11 @@ void octree::makeLET()
   essential_tree_exchange(LETParticles, localTree, remoteTree);
   LOGF(stderr, "LET Exchange took (%d): %g \n", mpiGetRank(), get_time() - tTest);
   
+  delete[] nodeInfo;
   letRunning = false;
   gravStream->sync();  //Sync LET execution
+
+
 
 }
 
