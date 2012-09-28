@@ -32,9 +32,9 @@ void octree::makeLET()
   //Start copies, while grpTree info is exchanged
 //  localTree.bodies_Ppos.d2h(false, memCpyStream.s());
 //  localTree.bodies_Pvel.d2h(false, memCpyStream.s());
-  localTree.multipole.d2h(false,     LETDataToHostStream->s());
-  localTree.boxSizeInfo.d2h(false,   LETDataToHostStream->s());
-  localTree.boxCenterInfo.d2h(false, LETDataToHostStream->s());
+  localTree.multipole.d2h(3*localTree.n_nodes, false,     LETDataToHostStream->s());
+  localTree.boxSizeInfo.d2h(localTree.n_nodes,false,   LETDataToHostStream->s());
+  localTree.boxCenterInfo.d2h(localTree.n_nodes,false, LETDataToHostStream->s());
   
   //Exchange domain grpTrees, while memory copies take place
   double t1 = get_time();
@@ -807,24 +807,24 @@ void octree::predict(tree_structure &tree)
 
 void octree::setActiveGrpsFunc(tree_structure &tree)
 {
-  //Set valid list to zero
-  setActiveGrps.set_arg<int>(0,    &tree.n);
-  setActiveGrps.set_arg<float>(1,  &t_current);
-  setActiveGrps.set_arg<cl_mem>(2, tree.bodies_time.p());
-  setActiveGrps.set_arg<cl_mem>(3, tree.body2group_list.p());
-  setActiveGrps.set_arg<cl_mem>(4, tree.activeGrpList.p());
-
-  setActiveGrps.setWork(tree.n, 128);
-  setActiveGrps.execute(execStream->s());
-  this->resetCompact();              //Make sure compact has been reset
-
-  //Compact the valid list to get a list of valid groups
-  gpuCompact(devContext, tree.activeGrpList, tree.active_group_list,
-             tree.n_groups, &tree.n_active_groups);
-
-  this->resetCompact();   
-  LOG("t_previous: %lg t_current: %lg dt: %lg Active groups: %d (Total: %d)\n",
-         t_previous, t_current, t_current-t_previous, tree.n_active_groups, tree.n_groups);
+//  //Set valid list to zero
+//  setActiveGrps.set_arg<int>(0,    &tree.n);
+//  setActiveGrps.set_arg<float>(1,  &t_current);
+//  setActiveGrps.set_arg<cl_mem>(2, tree.bodies_time.p());
+//  setActiveGrps.set_arg<cl_mem>(3, tree.body2group_list.p());
+//  setActiveGrps.set_arg<cl_mem>(4, tree.activeGrpList.p());
+//
+//  setActiveGrps.setWork(tree.n, 128);
+//  setActiveGrps.execute(execStream->s());
+//  this->resetCompact();              //Make sure compact has been reset
+//
+//  //Compact the valid list to get a list of valid groups
+//  gpuCompact(devContext, tree.activeGrpList, tree.active_group_list,
+//             tree.n_groups, &tree.n_active_groups);
+//
+//  this->resetCompact();
+//  LOG("t_previous: %lg t_current: %lg dt: %lg Active groups: %d (Total: %d)\n",
+//         t_previous, t_current, t_current-t_previous, tree.n_active_groups, tree.n_groups);
   
 
 }

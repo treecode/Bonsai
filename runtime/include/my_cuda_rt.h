@@ -793,22 +793,24 @@ namespace my_dev {
     //////////////
 
     void d2h(bool OCL_BLOCKING = true, cudaStream_t stream = 0)   {      
-      assert(context_flag);
-      assert(hDeviceMem_flag);
-      assert(size > 0);
-      
-      if(OCL_BLOCKING)
-      {
-        CU_SAFE_CALL(cudaMemcpy(&host_ptr[0], hDeviceMem, size*sizeof(T), cudaMemcpyDeviceToHost));
-      }
-      else
-      {
-        //Async copy, ONLY works for page-locked memory therefore default parameter
-        //is blocking.
-        assert(pinned_mem);
-        CU_SAFE_CALL(cudaMemcpyAsync(&host_ptr[0], hDeviceMem, size*sizeof(T),cudaMemcpyDeviceToHost, stream));          
-        CU_SAFE_CALL(cudaEventRecord(asyncCopyEvent, stream));
-      }
+
+      d2h(size, OCL_BLOCKING, stream);
+//      assert(context_flag);
+//      assert(hDeviceMem_flag);
+//      assert(size > 0);
+//
+//      if(OCL_BLOCKING)
+//      {
+//        CU_SAFE_CALL(cudaMemcpy(&host_ptr[0], hDeviceMem, size*sizeof(T), cudaMemcpyDeviceToHost));
+//      }
+//      else
+//      {
+//        //Async copy, ONLY works for page-locked memory therefore default parameter
+//        //is blocking.
+//        assert(pinned_mem);
+//        CU_SAFE_CALL(cudaMemcpyAsync(&host_ptr[0], hDeviceMem, size*sizeof(T),cudaMemcpyDeviceToHost, stream));
+//        CU_SAFE_CALL(cudaEventRecord(asyncCopyEvent, stream));
+//      }
     }
 
     //D2h that only copies a certain number of items to the host

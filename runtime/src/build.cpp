@@ -186,6 +186,7 @@ void octree::allocateTreePropMemory(tree_structure &tree)
   //Allocate memory
   if(tree.groupCenterInfo.get_size() > 0)
   {
+    n_nodes = (int)(n_nodes * 1.1f);
     //Resize, so we dont alloc if we already have mem alloced
     tree.multipole.cresize_nocpy(3*n_nodes,     false);
     

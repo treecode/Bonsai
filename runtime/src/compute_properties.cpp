@@ -42,6 +42,7 @@ void octree::compute_properties(tree_structure &tree) {
   
   double t0 = get_time();
 
+  this->resetCompact(); //Make sure compact has been reset, for setActiveGrp later on
 
 //  //TODO ONLY REQUIRED IF nProc > 1
 //  //Get the keys of the groups. This is the key of the first body in the group. This is used over
@@ -59,6 +60,8 @@ void octree::compute_properties(tree_structure &tree) {
     setPHGroupDataGetKey2.set_arg<float4>(4, &tree.corner);
     setPHGroupDataGetKey2.setWork(tree.n_groups, 128);
     setPHGroupDataGetKey2.execute(LETDataToHostStream->s());
+    //Copy the data back to the host when their compute-streams are complete
+    grpKeys.d2h(false, LETDataToHostStream->s());
   }
 
   //Set the group properties, note that it is not based on the nodes anymore
@@ -72,16 +75,31 @@ void octree::compute_properties(tree_structure &tree) {
   copyNodeDataToGroupData.setWork(-1, NCRIT, tree.n_groups);
   copyNodeDataToGroupData.execute(copyStream->s());
 
+  //Set valid list to zero
+  setActiveGrps.set_arg<int>(0,    &tree.n);
+  setActiveGrps.set_arg<float>(1,  &t_current);
+  setActiveGrps.set_arg<cl_mem>(2, tree.bodies_time.p());
+  setActiveGrps.set_arg<cl_mem>(3, tree.body2group_list.p());
+  setActiveGrps.set_arg<cl_mem>(4, tree.activeGrpList.p());
+  setActiveGrps.setWork(tree.n, 128);
+  setActiveGrps.execute(execStream->s());
+
+
+  //Compact the valid list to get a list of valid groups
+  gpuCompact(devContext, tree.activeGrpList, tree.active_group_list,
+             tree.n_groups, &tree.n_active_groups);
+
+//  this->resetCompact();
+  LOG("t_previous: %lg t_current: %lg dt: %lg Active groups: %d (Total: %d)\n",
+         t_previous, t_current, t_current-t_previous, tree.n_active_groups, tree.n_groups);
+
 
   //This overlaps with copyNodeDataToGroupData and is async, we can safely use the same memory
   //as the multipoleD buffer because of the sync afterwards.
   //  if(nProcs > 1) TODO uncomment
   {
-    //Copy the data back to the host when their compute-streams are complete
-    grpKeys.d2h(false, LETDataToHostStream->s());
-
     tree.groupCenterInfo.d2h(false, copyStream->s());
-    tree.groupSizeInfo.d2h(false, copyStream->s());
+    tree.groupSizeInfo.d2h  (false, copyStream->s());
 
     //have to wait till this copy is complete until props can be computed
     grpKeys.waitForCopyEvent();
@@ -185,7 +203,7 @@ void octree::compute_properties(tree_structure &tree) {
   tree.groupSizeInfo.waitForCopyEvent(); //Make sure data is on the host
 
   //Start copying the particle positions to the host, will overlap with compute properties
-  localTree.bodies_Ppos.d2h(false, LETDataToHostStream->s());
+  localTree.bodies_Ppos.d2h(tree.n, false, LETDataToHostStream->s());
 
 
   if(localGrpTreeCntSize)
