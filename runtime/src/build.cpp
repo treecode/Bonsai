@@ -187,13 +187,13 @@ void octree::allocateTreePropMemory(tree_structure &tree)
   if(tree.groupCenterInfo.get_size() > 0)
   {
     //Resize, so we dont alloc if we already have mem alloced
-    tree.multipole.cresize(3*n_nodes,     false);
+    tree.multipole.cresize_nocpy(3*n_nodes,     false);
     
-    tree.boxSizeInfo.cresize(n_nodes,     false);  //host alloced
-    tree.groupSizeInfo.cresize(n_nodes,   false);     
+    tree.boxSizeInfo.cresize_nocpy(n_nodes,     false);  //host alloced
+    tree.groupSizeInfo.cresize_nocpy(tree.n_groups,   false);
 
-    tree.boxCenterInfo.cresize(n_nodes,   false); //host alloced
-    tree.groupCenterInfo.cresize(n_nodes, false);    
+    tree.boxCenterInfo.cresize_nocpy(n_nodes,   false); //host alloced
+    tree.groupCenterInfo.cresize_nocpy(tree.n_groups, false);
   }
   else
   {    
@@ -202,10 +202,10 @@ void octree::allocateTreePropMemory(tree_structure &tree)
     tree.multipole.cmalloc(3*n_nodes, true); //host alloced
         
     tree.boxSizeInfo.cmalloc(n_nodes, true);     //host alloced
-    tree.groupSizeInfo.cmalloc(n_nodes, true);
+    tree.groupSizeInfo.cmalloc(tree.n_groups, true);
 
     tree.boxCenterInfo.cmalloc(n_nodes, true); //host alloced
-    tree.groupCenterInfo.cmalloc(n_nodes,true);
+    tree.groupCenterInfo.cmalloc(tree.n_groups,true);
   }
 }
 
@@ -580,12 +580,11 @@ if(procId == 0){
 //  exit(0);
 #endif
 
-  
   //Memory allocation for the valid group lists
   if(tree.active_group_list.get_size() > 0)
   {
-    tree.active_group_list.cresize(tree.n_groups, false);
-    tree.activeGrpList.cresize(tree.n_groups, false);     
+    tree.active_group_list.cresize_nocpy(tree.n_groups, false);
+    tree.activeGrpList.cresize_nocpy(tree.n_groups, false);
     
   }
   else

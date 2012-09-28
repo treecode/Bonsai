@@ -187,11 +187,14 @@ void octree::sendCurrentInfoGrpTree()
     int *treeGrpCountBytes   = new int[nProcs];
     int *receiveOffsetsBytes = new int[nProcs];
 
+    double t0 = get_time();
     //Send the number of group-tree-nodes that belongs to this process, and gather
     //that information from the other processors
     int temp = 2*grpTree_n_nodes; //Times two since we send size and center in one array
     MPI_Allgather(&temp,                    sizeof(int),  MPI_BYTE,
                   this->globalGrpTreeCount, sizeof(uint), MPI_BYTE, MPI_COMM_WORLD);
+
+    LOGF(stderr, "Gathering size took: %lg \n", get_time()-t0);
 
 
     //Compute offsets using prefix sum and total number of groups we will receive
@@ -215,12 +218,13 @@ void octree::sendCurrentInfoGrpTree()
     if(globalGrpTreeCntSize) delete[] globalGrpTreeCntSize;
     globalGrpTreeCntSize = new real4[totalNumberOfGroups];
 
-
+    double t2 = get_time();
     //Exchange the coarse group boundaries
     MPI_Allgatherv(localGrpTreeCntSize,  temp*sizeof(real4), MPI_BYTE,
                    globalGrpTreeCntSize, treeGrpCountBytes,
                    receiveOffsetsBytes,  MPI_BYTE, MPI_COMM_WORLD);
 
+    LOGF(stderr, "Gathering data took: %lg Total: %lg\n", get_time()-t2, get_time()-t0);
 
     delete[] treeGrpCountBytes;
     delete[] receiveOffsetsBytes;

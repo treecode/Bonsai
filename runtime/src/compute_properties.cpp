@@ -160,7 +160,7 @@ void octree::compute_properties(tree_structure &tree) {
 
 
     //TODO only if nProcs > 1
-    fprintf(stderr, "Starting all kernels took; %lg  start: %lg \n", get_time()-tA, get_time()-t0);
+    LOGF(stderr, "Starting all kernels took; %lg  start: %lg \n", get_time()-tA, get_time()-t0);
 //    double t1 = get_time();
 //    execStream->sync();
 //    LOGF(stderr, "Compute properties took: %lg  wait: %lg \n", get_time()-t0, get_time()-t1);
@@ -213,7 +213,7 @@ void octree::compute_properties(tree_structure &tree) {
   itof.i                = grpTree_n_nodes;
   localGrpTreeCntSize[0].z = itof.f;
 
-  fprintf(stderr, "Build local tree; %lg \n", get_time()-tlocal);
+  LOGF(stderr, "Build local tree; %lg \n", get_time()-tlocal);
 
   //Now if the GPU is not done yet with computing properties we could start sending around
   //the grpTree properties. However we can't use async communication for now. So postpone

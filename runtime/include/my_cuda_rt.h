@@ -712,6 +712,63 @@ namespace my_dev {
       }      
     }
     
+    //Set reduce to false to not reduce the size, to speed up pinned memory buffers
+    //This one does not copy/preserve memory, its just a free and realloc no memory cpy
+   void cresize_nocpy(int n, bool reduce = true)
+   {
+     if(size == n)     //No need if we are already at the correct size
+       return;
+
+     if(size > n && reduce == false) //Do not make the memory size smaller
+     {
+       return;
+     }
+
+     if(pinned_mem)
+     {
+       //No realloc function so do it by hand
+       CU_SAFE_CALL(cudaFreeHost((void*)host_ptr));
+       CU_SAFE_CALL(cudaMallocHost((T**)&host_ptr, n*sizeof(T)));
+     }
+     else
+     {
+       //Resizes the current array
+       free(host_ptr);
+       host_ptr = (T*)malloc(n*sizeof(T));
+       //New size is smaller, don't do anything with the allocated memory
+       //host_ptr = (T*)realloc(host_ptr, n*sizeof(T));
+     }
+
+     CU_SAFE_CALL(cudaFree(hDeviceMem));
+     decreaseMemUsage(size*sizeof(T));
+     CU_SAFE_CALL(cudaMalloc((T**)&hDeviceMem, n*sizeof(T)));
+     increaseMemUsage(n*sizeof(T));
+
+     DeviceMemPtr = (void*)(size_t)hDeviceMem;
+     size = n;
+
+     //Rebind the textures
+     for(unsigned int i = 0; i < textures.size(); i++)
+     {
+       //Sometimes textures are only bound to a part of the total memory
+       //So check this
+
+       cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<T>();
+       if(textures[i].texOffset < 0)
+       {
+         CU_SAFE_CALL(cudaBindTexture (0, textures[i].texture, hDeviceMem,
+                         &channelDesc,   n*sizeof(T)));
+       }
+       else
+       {
+         void * tempPtr =  a(textures[i].texOffset);
+         CU_SAFE_CALL(cudaBindTexture (0, textures[i].texture, tempPtr,
+                         &channelDesc, sizeof(T)*textures[i].texSize));
+       }
+
+     }
+   }
+
 
     //Set the memory to zero
     void zeroMem()
