@@ -44,21 +44,21 @@ void octree::makeLET()
   //Build the pre-processed array, while multipole-memory copy is (possibly) still going on
   nInfoStruct *nodeInfo = new nInfoStruct[localTree.n_nodes];
   nInfoStruct nInfo;
+  union{float f; int i;} u; //__float_as_int
   for(int i=0; i < localTree.n_nodes; i++)
   {
-    nInfo.y     = localTree.boxSizeInfo  [i].w;
     nInfo.x     = localTree.boxCenterInfo[i].w;
+    u.f         = localTree.boxSizeInfo  [i].w;
+    nInfo.y     = u.i;
+
     nInfo.z     = 0;
     nodeInfo[i] = nInfo;
   }
   localTree.multipole.waitForCopyEvent();
 
-    
-  return;
+  //Start LET kernels
+  essential_tree_exchangeV2(localTree, remoteTree, nodeInfo);
 
-  //Exchange particles and start LET kernels
-  vector<real4> LETParticles;
-  essential_tree_exchange(LETParticles, localTree, remoteTree);
   LOGF(stderr, "LET Exchange took (%d): %g \n", mpiGetRank(), get_time() - tTest);
   
   delete[] nodeInfo;
@@ -1101,6 +1101,8 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
   LOG("LET node begend [%d]: %d %d iter-> %d\n", procId, node_begend.x, node_begend.y, iter);
   fflush(stderr);
   fflush(stdout);
+  
+//  tree.n_active_groups = 2000;
 
   //Set the kernel parameters, many!
   approxGravLET.set_arg<int>(0,    &tree.n_active_groups);
@@ -1110,7 +1112,7 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
   approxGravLET.set_arg<cl_mem>(4, tree.active_group_list.p());
   approxGravLET.set_arg<cl_mem>(5, remoteTree.fullRemoteTree.p());
 
-  void *multiLoc = remoteTree.fullRemoteTree.a(2*(remoteP) + 2*(remoteN+nodeTexOffset));
+  void *multiLoc = remoteTree.fullRemoteTree.a(1*(remoteP) + 2*(remoteN+nodeTexOffset));
   approxGravLET.set_arg<cl_mem>(6, &multiLoc);  
 
   approxGravLET.set_arg<cl_mem>(7, tree.bodies_acc1.p());
@@ -1119,12 +1121,12 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
   approxGravLET.set_arg<cl_mem>(10, tree.activePartlist.p());
   approxGravLET.set_arg<cl_mem>(11, tree.interactions.p());
   
-  void *boxSILoc = remoteTree.fullRemoteTree.a(2*(remoteP));
+  void *boxSILoc = remoteTree.fullRemoteTree.a(1*(remoteP));
   approxGravLET.set_arg<cl_mem>(12, &boxSILoc);  
 
   approxGravLET.set_arg<cl_mem>(13, tree.groupSizeInfo.p());
 
-  void *boxCILoc = remoteTree.fullRemoteTree.a(2*(remoteP) + remoteN + nodeTexOffset);
+  void *boxCILoc = remoteTree.fullRemoteTree.a(1*(remoteP) + remoteN + nodeTexOffset);
   approxGravLET.set_arg<cl_mem>(14, &boxCILoc);  
 
   approxGravLET.set_arg<cl_mem>(15, tree.groupCenterInfo.p());  
@@ -1136,12 +1138,12 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
   approxGravLET.set_arg<cl_mem>(17, tree.generalBuffer1.p()); //<- Predicted local body velocity
   
   approxGravLET.set_arg<real4>(18, remoteTree.fullRemoteTree, 4, "texNodeSize",
-                               2*(remoteP), remoteN );
+                               1*(remoteP), remoteN );
   approxGravLET.set_arg<real4>(19, remoteTree.fullRemoteTree, 4, "texNodeCenter",
-                               2*(remoteP) + (remoteN + nodeTexOffset),
+                               1*(remoteP) + (remoteN + nodeTexOffset),
                                remoteN);
   approxGravLET.set_arg<real4>(20, remoteTree.fullRemoteTree, 4, "texMultipole",
-                               2*(remoteP) + 2*(remoteN + nodeTexOffset), 
+                               1*(remoteP) + 2*(remoteN + nodeTexOffset),
                                3*remoteN);
   approxGravLET.set_arg<real4>(21, remoteTree.fullRemoteTree, 4, "texBody", 0, remoteP);  
     
@@ -1170,6 +1172,14 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
   approxGravLET.execute(gravStream->s());
   CU_SAFE_CALL(cudaEventRecord(endRemoteGrav, gravStream->s()));
   letRunning = true;
+
+  fprintf(stderr, "Waiting! \n");
+  gravStream->s();
+  fprintf(stderr, "Done! Wooo \n");
+  
+//  mpiSync();
+//  MPI_Finalize();
+//  exit(0);
 
  //Print interaction statistics
   #if 0
@@ -1519,6 +1529,8 @@ double octree::compute_energies(tree_structure &tree)
   LOGF(stderr, "iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n", 
 		  iter, this->t_current, Etot, Ekin, Epot, de, de_max, dde, dde_max, get_time() - tinit);          
   }
+
+  mpiSync(); exit(0);
 
   return de;
 }

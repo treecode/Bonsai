@@ -239,6 +239,12 @@ if (USE_OPENGL)
 
 endif (USE_OPENGL)
 
+#The SSE support for the local tree walks
+if(WIN32)
+  add_definitions( "/arch:SSE4")
+ else (WIN32)
+  add_definitions( "-msse4")
+endif (WIN32)
 
 cuda_add_executable(${BINARY_NAME}
   ${CCFILES} 

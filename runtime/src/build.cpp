@@ -55,9 +55,10 @@ void octree::allocateParticleMemory(tree_structure &tree)
   
   //General buffer is used at multiple locations and reused in different functions
   // MJH for some reason this is crashing if pinned, when running on Fermi)
-  if (this->getDevContext()->getComputeCapability() < 300)
-    tree.generalBuffer1.cmalloc(tempSize, false);  
-  else
+ // if (this->getDevContext()->getComputeCapability() < 300)
+ //   tree.generalBuffer1.cmalloc(tempSize, false);
+ // else
+  //TODO JB look into the above
     tree.generalBuffer1.cmalloc(tempSize, true);  
   
   

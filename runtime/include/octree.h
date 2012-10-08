@@ -66,8 +66,8 @@ typedef struct setupParams {
 
 typedef struct nInfoStruct
 {
-  float x,y;
-  int z;
+  float x;
+  int y,z;
 } nInfoStruct;
 
 
@@ -813,6 +813,24 @@ public:
                               real4 *treeSize,  uint2 *nodes,   uint  *node_levels, int    n_levels);
 
   void sendCurrentInfoGrpTree();
+
+  void essential_tree_exchangeV2(tree_structure &tree,
+                                 tree_structure &remote,
+                                 nInfoStruct *nodeInfo);
+
+  void tree_walking_tree_stack_versionC13(
+     real4 *multipoleS, nInfoStruct* nodeInfoS, //Local Tree
+     real4* grpNodeSizeInfoS, real4* grpNodeCenterInfoS, //remote Tree
+     int start, int end, int startGrp, int endGrp,
+     int &nAcceptedNodes, int &nParticles,
+     uint2 *curLevel, uint2 *nextLevel);
+
+  void stackFill(real4 *LETBuffer, real4 *nodeCenter, real4* nodeSize,
+      real4* bodies, real4 *multipole,
+      nInfoStruct *nodeInfo,
+      int nParticles, int nNodes,
+      int start, int end,
+      uint *curLevelStack, uint* nextLevelStack);
 
   //End functions for parallel code
   
