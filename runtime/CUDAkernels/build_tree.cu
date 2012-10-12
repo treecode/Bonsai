@@ -668,7 +668,10 @@ KERNEL_DECLARE(build_group_list2)(const int n_particles,
   //Note that we do NOT include the last groups since it only sets
   //the final particle to invalid, which we will do by default anyway
   //this way we save a check on particle boundary
-  if ((idx >= n_coarseGroupLevelNodes.x) && (idx < (n_coarseGroupLevelNodes.y-1))) //THe -1 to prevent last node
+
+
+  //TODO why did I change this BUG ?  if ((idx >= n_coarseGroupLevelNodes.x) && (idx < (n_coarseGroupLevelNodes.y-1))) //THe -1 to prevent last node
+  if (idx < n_coarseGroupLevelNodes.y-1) //THe -1 to prevent last node
   {
     const uint2 bij          =  node_bodies[idx];
 //     const uint firstChild    =  bij.x & ILEVELMASK;

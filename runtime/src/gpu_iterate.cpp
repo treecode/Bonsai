@@ -876,7 +876,7 @@ void octree::approximate_gravity(tree_structure &tree)
   node_begend.x   = tree.level_list[level_start].x;
   node_begend.y   = tree.level_list[level_start].y;
 
-
+  tree.activePartlist.zeroMemGPUAsync(gravStream->s());
   LOG("node begend: %d %d iter-> %d\n", node_begend.x, node_begend.y, iter);
 
   //Set the kernel parameters, many!
@@ -1008,7 +1008,7 @@ void octree::approximate_gravity(tree_structure &tree)
 //  exit(0);
 
   //Print interaction statistics
-  #if 0
+  #if 1
   
   tree.body2group_list.d2h();
   tree.interactions.d2h();
@@ -1032,10 +1032,10 @@ void octree::approximate_gravity(tree_structure &tree)
       apprSum2     += tree.interactions[i].x*tree.interactions[i].x;
       directSum2   += tree.interactions[i].y*tree.interactions[i].y;   
       
-      if(i < 35)
-      fprintf(stderr, "%d\t Direct: %d\tApprox: %d\t Group: %d \n",
-              i, tree.interactions[i].y, tree.interactions[i].x,
-              tree.body2group_list[i]);
+//      if(i < 35)
+//      fprintf(stderr, "%d\t Direct: %d\tApprox: %d\t Group: %d \n",
+//              i, tree.interactions[i].y, tree.interactions[i].x,
+//              tree.body2group_list[i]);
     }
   
     //cerr << "Interaction at iter: " << iter << "\tdirect: " << directSum << "\tappr: " << apprSum << "\t";

@@ -427,22 +427,23 @@ void octree::build (tree_structure &tree) {
   //will be used for getting the multi-box/group group boundaries. Also it serves as a 
   //boundary mechanism independent of the max-distance trick between particles that we used 
   //before. So first find the min level from where we can take the boundaries
-//  const int minCoarseGroups = 50;
-//  int minCoarseGroupLevelIdx = 0;
-//  for(int i=0; i < level; i++){
-//    if( (tree.level_list[i].y - tree.level_list[i].x) >  minCoarseGroups)
-//    {
-//      minCoarseGroupLevelIdx = i;
-//      break;
-//    }
-//  }
-//  tree.courseGroupIdx = minCoarseGroupLevelIdx;
-
+#if 0
+  const int minCoarseGroups = 50;
+  int minCoarseGroupLevelIdx = 0;
+  for(int i=0; i < level; i++){
+    if( (tree.level_list[i].y - tree.level_list[i].x) >  minCoarseGroups)
+    {
+      minCoarseGroupLevelIdx = i;
+      break;
+    }
+  }
+  tree.courseGroupIdx = minCoarseGroupLevelIdx;
+#else
   //In the updated version we use the minimum tree-level, which ensures
   //that groups are based on the tree-structure. The +1
   tree.courseGroupIdx        = tree.startLevelMin ;
   int minCoarseGroupLevelIdx = tree.startLevelMin ;
-  
+#endif
   
   //Now use the previous computed offsets to build all boundaries. The coarse ones and the
   //group ones (eg every number of particles)
@@ -646,8 +647,7 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
   // startBoundaryIndex = 10*n_bodies - 11*n_bodies+1 (int) Remianing: n_bodies-1
 
 
-  real4 r_min = {+1e10, +1e10, +1e10, +1e10};
-  real4 r_max = {-1e10, -1e10, -1e10, -1e10};
+
 
   /******** set kernels parameters **********/
 
@@ -667,18 +667,45 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
 
 
   /********** build  list of keys ********/
-
+#if 0
+  real4 r_min = {+1e10, +1e10, +1e10, +1e10};
+  real4 r_max = {-1e10, -1e10, -1e10, -1e10};
   getBoundaries(tree, r_min, r_max); //Used for predicted position keys further down
   LOGF(stderr, "BVfore hashes took: %f \n", get_time()-t0);
+#else
 
+
+  real4 r_min = {+1e10, +1e10, +1e10, +1e10};
+  real4 r_max = {-1e10, -1e10, -1e10, -1e10};
+
+  if(1)
+  {
+    getBoundaries(tree, r_min, r_max); //Used for predicted position keys further down
+
+    if(this->mpiGetNProcs() > 1)
+    {
+      this->sendCurrentRadiusInfo(r_min, r_max);
+    }
+  }
+
+  //Compute the boundarys of the tree
+  real size     = 1.001f*std::max(r_max.z - r_min.z,
+                         std::max(r_max.y - r_min.y, r_max.x - r_min.x));
+
+  tree.corner   = make_real4(0.5f*(r_min.x + r_max.x) - 0.5f*size,
+                             0.5f*(r_min.y + r_max.y) - 0.5f*size,
+                             0.5f*(r_min.z + r_max.z) - 0.5f*size, size);
+  tree.corner.w = size/(1 << MAXLEVELS);
+
+#endif
 
   //Compute keys based on the non-predicted positions to make sure
   //particles are sorted. Improves efficiency of hash creation (less hashes required)
   //and sorting (less items to sort and hashes are already in sorted order).
 
   build_key_list.set_arg<cl_mem>(0,   tree.bodies_key.p());
-//  build_key_list.set_arg<cl_mem>(1,   tree.bodies_Ppos.p());
-  build_key_list.set_arg<cl_mem>(1,   tree.bodies_pos.p());
+  build_key_list.set_arg<cl_mem>(1,   tree.bodies_Ppos.p());
+  //More efficient, gives problems or something TODO build_key_list.set_arg<cl_mem>(1,   tree.bodies_pos.p());
   build_key_list.set_arg<int>(2,      &tree.n);
   build_key_list.set_arg<real4>(3,    &tree.corner);
   build_key_list.setWork(tree.n, 128); //128 threads per block
@@ -754,8 +781,13 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
   }
 
   //Compute the boundarys of the tree
+#if 0
   real size     = 1.001f*std::max(r_max.z - r_min.z,
                          std::max(r_max.y - r_min.y, r_max.x - r_min.x));
+#else
+  size     = 1.001f*std::max(r_max.z - r_min.z,
+                           std::max(r_max.y - r_min.y, r_max.x - r_min.x));
+#endif
 
   tree.corner   = make_real4(0.5f*(r_min.x + r_max.x) - 0.5f*size,
                              0.5f*(r_min.y + r_max.y) - 0.5f*size,
