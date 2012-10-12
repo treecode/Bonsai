@@ -244,7 +244,9 @@ void octree::build (tree_structure &tree) {
   //Set the default values to zero
   validList.zeroMemGPUAsync(execStream->s());
   levelOffset.zeroMemGPUAsync(execStream->s());
-//  maxLevel.zeroMemGPUAsync(execStream->s());
+  maxLevel.zeroMemGPUAsync(execStream->s());
+  //maxLevel.zeroMem is required to let the tree-construction work properly.
+  //It assumes maxLevel is zero for determining the start-level / min-level value.
 
   
   /******** set kernels parameters **********/

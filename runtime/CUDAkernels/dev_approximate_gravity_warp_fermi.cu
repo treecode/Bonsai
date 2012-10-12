@@ -286,7 +286,7 @@ __device__ bool split_node_grav_impbh(
   //Distance squared, no need to do sqrt since opening criteria has been squared
   const float ds2    = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
 
-//  return (ds2 <= fabsf(nodeCOM.w));
+  //  return (ds2 <= fabsf(nodeCOM.w));
   if (ds2 <= fabsf(nodeCOM.w)) return true;
 //  if (fabs(ds2 - fabs(nodeCOM.w)) < 10e-04) return true; //Limited precision can result in round of errors. Use this as extra safe guard
 
@@ -462,6 +462,9 @@ void approximate_gravity(
         bool leaf       = node_pos.w <= 0;  //Small AND equal incase of a 1 particle cell       //Check if it is a leaf
         //         split = true;
 
+//If node_data = 0xF it means the remote process decided split was not required
+//        if(node_data == 0xFFFFFFFF)
+//          split = false;
 
 
 

@@ -461,14 +461,19 @@ bool octree::iterate_once(IterationData &idata) {
     
 
     float ms=0, msLET=0;
-#if 0 //enable again when load-balancing
+#if 1 //enable again when load-balancing
     CU_SAFE_CALL(cudaEventElapsedTime(&ms, startLocalGrav, endLocalGrav));
     if(nProcs > 1)  CU_SAFE_CALL(cudaEventElapsedTime(&msLET,startRemoteGrav, endRemoteGrav));
 
     msLET += runningLETTimeSum;
     LOGF(stderr, "APPTIME [%d]: Iter: %d\t%g \tn: %d EventTime: %f  and %f\tSum: %f\n", 
 		procId, iter, idata.lastGravTime, this->localTree.n, ms, msLET, ms+msLET);
+#else
+    ms = 1;
+    msLET = 1;
 #endif
+
+
 
     //CU_SAFE_CALL(cudaEventElapsedTime(&msLET, startRemoteGrav, endRemoteGrav));
     //CU_SAFE_CALL(cudaEventSynchronize(endRemoteGrav));
@@ -484,8 +489,8 @@ bool octree::iterate_once(IterationData &idata) {
     lastLocal = ms;
     lastTotal = ms + msLET;    
 
-    lastTotal = ms + 300./msLET;
-    lastTotal = ms + msLET;
+//    lastTotal = ms + 300./msLET;
+//    lastTotal = ms + msLET;
 
     //lastTotal =  get_time() - t1;
 
@@ -662,6 +667,10 @@ void octree::iterate_setup(IterationData &idata) {
 
   lastLocal = get_time() - t1;
   lastTotal = get_time() - t1;
+
+  //TODO remove this, its to disable load balance
+  lastLocal = 1;
+  lastTotal = 1;
 
 
   
@@ -1173,16 +1182,36 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
   CU_SAFE_CALL(cudaEventRecord(endRemoteGrav, gravStream->s()));
   letRunning = true;
 
-  fprintf(stderr, "Waiting! \n");
-  gravStream->s();
-  fprintf(stderr, "Done! Wooo \n");
   
 //  mpiSync();
 //  MPI_Finalize();
 //  exit(0);
 
+
+#if 0
+  real4 *temp2 = &remoteTree.fullRemoteTree[1*(remoteP)];
+  real4 *part = &remoteTree.fullRemoteTree[0];
+  real4 *temp = &remoteTree.fullRemoteTree[1*(remoteP) + remoteN + nodeTexOffset];
+
+  if(procId == 1)
+  for(int i=0; i < 35; i++)
+  {
+    LOGF(stderr,"%d Size: %f %f %f  %f ||", i, temp2[i].x,temp2[i].y,temp2[i].z,temp2[i].w);
+    LOGF(stderr," Cent: %f %f %f %f  \n", temp[i].x,temp[i].y,temp[i].z,temp[i].w);
+
+//    LOGF(stderr,"%d\t%f %f %f \t %f \n", i, part[i].x,part[i].y,part[i].z,part[i].w);
+  }
+
+//  Hiergebleven, checken of het ook na meerdere tijdstappen
+//  allemaal nog goed loopt
+
+
+
+#endif
+
+
  //Print interaction statistics
-  #if 0
+  #if 1
     tree.interactions.d2h();
 //     tree.body2group_list.d2h();
     
@@ -1529,8 +1558,6 @@ double octree::compute_energies(tree_structure &tree)
   LOGF(stderr, "iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n", 
 		  iter, this->t_current, Etot, Ekin, Epot, de, de_max, dde, dde_max, get_time() - tinit);          
   }
-
-  mpiSync(); exit(0);
 
   return de;
 }

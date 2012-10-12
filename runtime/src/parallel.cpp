@@ -2124,14 +2124,13 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
   //LET buffer, allocate max possible size
  // const int LETCreateStackSize = 512*1024; //TODO make this dynamic in some sense
-  const int LETCreateStackSize = 10*512*1024; //TODO make this dynamic in some sense
+  const int LETCreateStackSize = 2*512*1024; //TODO make this dynamic in some sense
   uint2 *curLevelStack         = new uint2[LETCreateStackSize];
   uint2 *nextLevelStack        = new uint2[LETCreateStackSize];
   //Maximum possible required size (full tree), + a few percent sinze texture offsets increase size slightly
   int letBuffSize              = (int) (1.05*(tree.n + 5* tree.n_nodes));
   real4 *LETDataBuffer         = new real4[letBuffSize];
 
-  LOGF(stderr, "Size of stacks: %d \n", LETCreateStackSize);
 
 //   for(int z=nproc-1; z > 0; z-=step)
   for(int z=nproc-1; z > 0; )
@@ -2179,14 +2178,15 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
        tree_walking_tree_stack_versionC13(
            &localTree.multipole[0], &nodeInfo[0], //Local Tree
            grpSize, grpCenter, //remote Tree
-           //node_begend.x, node_begend.y, startGrp, endGrp,
-           node_begend.x, node_begend.y, startGrp+1, startGrp+2,
+           node_begend.x, node_begend.y, startGrp, endGrp-1,
+//           node_begend.x, node_begend.y, startGrp+1, startGrp+2,
            countNodes, countParticles,
            curLevelStack, nextLevelStack);
 
        LOG("LET count (ibox: %d): %lg \t Since start: %lg\n",
            ibox, get_time()-tz, get_time()-t0);
        LOG("LET count:  Particle count %d Node count: %d\n", countParticles, countNodes);
+
       //Buffer that will contain all the data:
       //|real4| 2*particleCount*real4| nodes*real4 | nodes*real4 | nodes*3*real4 |
       //1 + 2*particleCount + nodeCount + nodeCount + 3*nodeCount
@@ -2232,8 +2232,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       treeBuffers[recvTree] = MP_exchange_bhlist(ibox, isource, bufferSize, LETDataBuffer);
       LOG("LET exchange trees: %d <-> %d  took: %lg  since start: %lg \n", ibox, isource,get_time()-t9, get_time()-t0);
 
-
-
       //This determines if we interrupt the exchange by starting a gravity kernel on the GPU
       if(gravStream->isFinished())
       {
@@ -2244,6 +2242,9 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       }
     }//end for each process
 
+//
+//    Op gpu-3 gechecked of offsets goed zijn en daar klopt wat er instaat
+//    met wat ik schrijf. Dit nu ook checken in deze versie
 
 
     z-=recvTree;
@@ -7336,7 +7337,6 @@ real4* octree::MP_exchange_bhlist(int ibox, int isource,
     //Resize the buffer so it has the correct size and then exchange the tree 
     real4 *recvDataBuffer = new real4[nrecvlist];
     
-    LOGF(stderr, "Sending: %d  Receving: %d \n", nlist, nrecvlist);
     
     double t2=get_time();
     //Particles
@@ -7661,7 +7661,7 @@ void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries, f
 
       //Compute the number of particles to be assign per process
        for(int i=0; i < nProcs; i++){
-       // nPartPerProc[i] = (execTimes[i] / normSum) * nTotal;
+//        nPartPerProc[i] = (execTimes[i] / normSum) * nTotal;
         
         //  nPartPerProc[i] = recvHashInfo[i].nParticles*(2*(execTimes[i] / normSum));
         //fprintf(stderr, "Npart per proc: %d\t %d \n",i, nPartPerProc[i]);
@@ -7851,7 +7851,9 @@ inline int split_node_grav_impbh_sse(
         )
       );
 
+  //return 1;
   return res;
+
 }
 
 void octree::tree_walking_tree_stack_versionC13(
@@ -7916,7 +7918,7 @@ void octree::tree_walking_tree_stack_versionC13(
 
       int begin, end;
 
-      //I need this since I cant guarentee that I can encode the start-grp info
+      //I need this since I can't guarantee that I can encode the start-grp info
       //in the available bytes.
       if(overRuleBegin)
       {
@@ -7928,14 +7930,16 @@ void octree::tree_walking_tree_stack_versionC13(
         end   = begin +  ((stackItem.y & 0xF0000000) >> 28) ;
       }
 
-      for(int grpId=begin; grpId < end; grpId++)
+      for(int grpId=begin; grpId <= end; grpId++)
       {
         //Group information
         const _v4sf grpCenter = grpNodeCenterInfoV[grpId];
         const _v4sf grpSize   = grpNodeSizeInfoV[grpId];
 
-        //const int split = split_node_grav_impbh_sse(nodeCOM, grpCenter, grpSize);
-        const int split = 1;
+
+        const int split = split_node_grav_impbh_sse(nodeCOM, grpCenter, grpSize);
+//        const int split = 1;
+
 
         if(split)
         {
@@ -7944,27 +7948,33 @@ void octree::tree_walking_tree_stack_versionC13(
           if(!leaf)
           {
             //nodeInfoS[nodeID].z = nodeInfoS[nodeID].z |  3; //Mark this node as being split, usefull for
-            nodeInfoS[nodeID].z = 3; //Mark this node as being split, usefull for
-                                                          //when creating LET tree, we can mark end-points
-                                                          //Sets the split, and visit bits
+            nodeInfoS[nodeID].z = 3; //Mark this node as being split, useful for
+                                     //when creating LET tree, we can mark end-points
+                                     //Sets the split, and visit bits
 
             //const int childinfo = __builtin_ia32_vec_ext_v4si((_v4si)nodeInfoX, 1); //float_as_int(nodeInfoX.y);
             const int child    =    nodeInfoX.y & 0x0FFFFFFF;            //Index to the first child of the node
             const int nchild   = (((nodeInfoX.y & 0xF0000000) >> 28)) ;  //The number of children this node has
-
+#if 0
             int childinfoGrp;
             if( __builtin_ia32_vec_ext_v4sf(grpCenter, 3) <= 0)
             { //Its a leaf so we stay with this group
-              childinfoGrp = grpId | (1) << 28;
+//              childinfoGrp = grpId | (1) << 28;
+                childinfoGrp = grpId;
             }
             else
               childinfoGrp    = __builtin_ia32_vec_ext_v4si((_v4si)grpSize,3);
+#else
+            int childinfoGrp = grpId;
+            //If its not a leaf so we continue down the group-tree
+            if( __builtin_ia32_vec_ext_v4sf(grpCenter, 3) > 0)
+              childinfoGrp    = __builtin_ia32_vec_ext_v4si((_v4si)grpSize,3);
+#endif
 
 
             //Go check the child nodes and child grps
             for(int i=child; i < child+nchild; i++)
-            {
-              //Add the nodes to the stack
+            { //Add the nodes to the stack
               nextLevel[nextLevelCount++] = make_uint2(i, childinfoGrp);
             }
           }//if !leaf
@@ -8012,13 +8022,14 @@ void octree::stackFill(real4 *LETBuffer, real4 *nodeCenter, real4* nodeSize,
 
   nParticles = 0;
 
+
   int multiStoreIdx = nStoreIdx+2*nNodes;
 
   //Copy top nodes, directly after the bodies
   for(int node=0; node < start; node++)
   {
-    LETBuffer[nStoreIdx]            = nodeCenter[node];
-    LETBuffer[nStoreIdx+nNodes]     = nodeSize[node];
+    LETBuffer[nStoreIdx]              = nodeSize[node];
+    LETBuffer[nStoreIdx+nNodes]       = nodeCenter[node];
     memcpy(&LETBuffer[multiStoreIdx], &multipole[3*node], sizeof(float4)*(3));
     multiStoreIdx += 3;
     nStoreIdx++;
@@ -8028,10 +8039,6 @@ void octree::stackFill(real4 *LETBuffer, real4 *nodeCenter, real4* nodeSize,
 
   for(int node=start; node < end; node++)
     curLevelStack[curLeveCount++] = node;
-
-  LOGF(stderr, "Start: %d  End: %d CurLevelCount: %d \n",
-      start,end, curLeveCount);
-  int level = 0;
 
   while(curLeveCount > 0)
   {
@@ -8075,10 +8082,11 @@ void octree::stackFill(real4 *LETBuffer, real4 *nodeCenter, real4* nodeSize,
         }//if leaf
       }//if split
 
+
       //Copy this node info
-      LETBuffer[nStoreIdx]            = nodeCenter[node];
-      LETBuffer[nStoreIdx+nNodes]     = nodeSize[node];
-      LETBuffer[nStoreIdx+nNodes].w   = host_int_as_float(newChildInfo | (nchild << LEAFBIT));
+      LETBuffer[nStoreIdx]            = nodeSize[node];
+      LETBuffer[nStoreIdx].w          = host_int_as_float(newChildInfo | (nchild << LEAFBIT));
+      LETBuffer[nStoreIdx+nNodes]     = nodeCenter[node];
       memcpy(&LETBuffer[multiStoreIdx], &multipole[3*node], sizeof(float4)*(3));
       multiStoreIdx += 3;
       nStoreIdx++;
@@ -8090,9 +8098,8 @@ void octree::stackFill(real4 *LETBuffer, real4 *nodeCenter, real4* nodeSize,
     nextLevelStack      = temp;
     curLeveCount        = nextLevelCount;
     nextLevelCount      = 0;
-
-    level++;
   }
+
 #endif //if USE_MPI
 }//stackFill
 

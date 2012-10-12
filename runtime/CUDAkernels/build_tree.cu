@@ -476,7 +476,7 @@ KERNEL_DECLARE(cl_link_tree)(int n_nodes,
   uint valid =  id | (uint)(0 << 31); 
 
   
-  if ((int)level >= (int)(levelMin))
+  if ((int)level > (int)(levelMin))
     if ((bj - bi) <= NLEAF)    
       valid = id | (uint)(1 << 31);   //Distinguish leaves and nodes
 

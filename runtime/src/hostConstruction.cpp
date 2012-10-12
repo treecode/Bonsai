@@ -88,6 +88,10 @@ void inline mergeBoxesForGrpTree(float4 cntA, float4 sizeA, float4 cntB, float4 
   tempSize.x = fmax(fabs(tempCnt.x-newMinx), fabs(tempCnt.x-newMaxx));
   tempSize.y = fmax(fabs(tempCnt.y-newMiny), fabs(tempCnt.y-newMaxy));
   tempSize.z = fmax(fabs(tempCnt.z-newMinz), fabs(tempCnt.z-newMaxz));
+
+//  tempSize.x *= 1.10;
+//  tempSize.y *= 1.10;
+//  tempSize.z *= 1.10;
 }
 
 
@@ -297,7 +301,7 @@ void octree::computeProps_GroupTree(real4 *grpCenter,
         newCent = treeCnt [child];
         newSize = treeSize[child];
 
-        for(int k= child; k < child+nchild+1; k++)
+        for(int k= child; k < child+nchild+1; k++) //Note the +1
         {
           mergeBoxesForGrpTree(newCent, newSize, treeCnt[k], treeSize[k], newCent, newSize);
         }
