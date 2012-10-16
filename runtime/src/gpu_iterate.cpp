@@ -1008,7 +1008,7 @@ void octree::approximate_gravity(tree_structure &tree)
 //  exit(0);
 
   //Print interaction statistics
-  #if 1
+  #if 0
   
   tree.body2group_list.d2h();
   tree.interactions.d2h();
