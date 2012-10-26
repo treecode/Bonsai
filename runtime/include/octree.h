@@ -557,10 +557,12 @@ public:
           totalGravTime(0), lastGravTime(0), totalBuildTime(0),
           lastBuildTime(0), totalDomTime(0), lastDomTime(0),
           totalWaitTime(0), lastWaitTime(0), startTime(0),
-          realGravTime(0) {}
+          totalGPUGravTimeLocal(0), totalGPUGravTimeLET(0),
+          lastGPUGravTimeLocal(0), lastGPUGravTimeLET(0),
+          lastLETCommTime(0), totalLETCommTime(0){}
 
       int    Nact_since_last_tree_rebuild;
-      double totalGravTime;
+      double totalGravTime; //CPU timers, includes any non-hidden communication cost
       double lastGravTime;
       double totalBuildTime;
       double lastBuildTime;
@@ -569,7 +571,12 @@ public:
       double totalWaitTime;
       double lastWaitTime;
       double startTime;
-      double realGravTime;
+      double totalGPUGravTimeLocal; //GPU timers, gravity only
+      double totalGPUGravTimeLET;
+      double lastGPUGravTimeLocal;
+      double lastGPUGravTimeLET;
+      double lastLETCommTime; //Time it takes to communicate/build LET structures
+      double totalLETCommTime;
   };
 
   void iterate_setup(IterationData &idata); 

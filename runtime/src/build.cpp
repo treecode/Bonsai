@@ -807,7 +807,9 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
 
   LOGF(stderr, "Compute hashes took: %f \n", get_time()-t0);
 
-   //No leak in this call, checked. TODO clean up comment
+
+  if(1)
+  {
   gpu_collect_hashes(validCount, &tree.parallelHashes[0], &tree.parallelBoundaries[0], 
 		     lastExecTime, lastExecTime2);
   
@@ -815,43 +817,11 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
   LOGF(stderr, "Computing and exchanging and update domain took: %f \n", get_time()-t0);
   t0 = get_time();
 
-  //TODO IMPORTANT, make sure we get the corret particle
-  //info wwhen we get the info since we do not sort all data
-  //after predict, never mind we have not clled sort at this point
-  //in execution
-
-//  fflush(stderr);
-//  fflush(stdout);
-//  mpiSync();
-//  tree.bodies_key.d2h();
-//  for(int i=0; i < tree.n; i++)
-//  {
-//    if(procId == 0)
-//    LOGF(stderr, "Particle at: %d\t%d %d %d %d \n",
-//        i, tree.bodies_key[i].x,tree.bodies_key[i].y,
-//           tree.bodies_key[i].z,tree.bodies_key[i].w);
-//
-//  }
-
-
    gpuRedistributeParticles_SFC(&tree.parallelBoundaries[0]);
+  }
 
-   LOGF(stderr, "Redistribute domain took: %f \n", get_time()-t0);
-//  tree.bodies_key.d2h();
-//  for(int i=0; i < tree.n; i++)
-//  {
-//    if(procId == 1)
-//    LOGF(stderr, "Particle at: %d\t%d %d %d %d \n",
-//        i, tree.bodies_key[i].x,tree.bodies_key[i].y,
-//           tree.bodies_key[i].z,tree.bodies_key[i].w);
-//
-//  }
-//
-//
-//  mpiSync();
-//
-//fprintf(stderr,"TEST TEST TEST\n");
-//exit(0);
+  LOGF(stderr, "Redistribute domain took: %f\n", get_time()-t0);
+
   /*************************/
 
 }

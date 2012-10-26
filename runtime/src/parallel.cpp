@@ -203,7 +203,7 @@ void octree::sendCurrentInfoGrpTree()
     MPI_Allgather(&temp,                    sizeof(int),  MPI_BYTE,
                   this->globalGrpTreeCount, sizeof(uint), MPI_BYTE, MPI_COMM_WORLD);
 
-    LOGF(stderr, "Gathering size took: %lg \n", get_time()-t0);
+    double tSize = get_time()-t0;
 
 
     //Compute offsets using prefix sum and total number of groups we will receive
@@ -233,7 +233,7 @@ void octree::sendCurrentInfoGrpTree()
                    globalGrpTreeCntSize, treeGrpCountBytes,
                    receiveOffsetsBytes,  MPI_BYTE, MPI_COMM_WORLD);
 
-    LOGF(stderr, "Gathering data took: %lg Total: %lg\n", get_time()-t2, get_time()-t0);
+    LOGF(stderr, "Gathering Grp-Tree times, size: %lg \tdata: %lg Total: %lg\n", tSize, get_time()-t2, get_time()-t0);
 
     delete[] treeGrpCountBytes;
     delete[] receiveOffsetsBytes;
@@ -2183,9 +2183,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
            countNodes, countParticles,
            curLevelStack, nextLevelStack);
 
-       LOG("LET count (ibox: %d): %lg \t Since start: %lg\n",
-           ibox, get_time()-tz, get_time()-t0);
-       LOG("LET count:  Particle count %d Node count: %d\n", countParticles, countNodes);
+       double tCount = get_time()-tz;
 
       //Buffer that will contain all the data:
       //|real4| 2*particleCount*real4| nodes*real4 | nodes*real4 | nodes*3*real4 |
@@ -2217,9 +2215,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                  node_begend.x, node_begend.y,
                  (uint*)curLevelStack, (uint*)nextLevelStack);
 
-      LOG("LET count&fill: Fill; %lg, Total : %lg  since start: %lg \n",
-          get_time() - ty, get_time()-t1, get_time()-t0);
-
+      LOG("LET count&fill: Count: %lg Fill; %lg, Total : %lg (#P: %d \t#N: %d) \tsince start: %lg \n",
+          tCount, get_time() - ty, get_time()-t1, countParticles, countNodes, get_time()-t0);
 
       //Set the tree properties, before we exchange the data
       LETDataBuffer[0].x = (float)countParticles;    //Number of particles in the LET
@@ -2227,25 +2224,18 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       LETDataBuffer[0].z = (float)node_begend.x;     //First node on the level that indicates the start of the tree walk
       LETDataBuffer[0].w = (float)node_begend.y;     //last node on the level that indicates the start of the tree walk
 
-      double t9 = get_time();
       //Exchange the data of the tree structures  between the processes
       treeBuffers[recvTree] = MP_exchange_bhlist(ibox, isource, bufferSize, LETDataBuffer);
-      LOG("LET exchange trees: %d <-> %d  took: %lg  since start: %lg \n", ibox, isource,get_time()-t9, get_time()-t0);
 
       //This determines if we interrupt the exchange by starting a gravity kernel on the GPU
       if(gravStream->isFinished())
       {
         LOGF(stderr,"GRAVFINISHED %d recvTree: %d  Time: %lg Since start: %lg\n",
-        procId, recvTree, get_time()-t1, get_time()-t0);
+                     procId, recvTree, get_time()-t1, get_time()-t0);
         recvTree++;
         break;
       }
     }//end for each process
-
-//
-//    Op gpu-3 gechecked of offsets goed zijn en daar klopt wat er instaat
-//    met wat ik schrijf. Dit nu ook checken in deze versie
-
 
     z-=recvTree;
 
@@ -2496,7 +2486,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
     topNodeMultT1, topNodeMultT2,..., topNodeMultT2 | nodeMultT1, nodeMultT2, ...nodeMultT3
 
     NOTE that the Multipole data consists of 3 float4 values per node
-
     */
 
     //Store the tree properties (number of particles, number of nodes, start and end topnode)
@@ -7344,8 +7333,8 @@ real4* octree::MP_exchange_bhlist(int ibox, int isource,
                  &recvDataBuffer[0], nrecvlist*sizeof(real4), MPI_BYTE, isource, isource*10+1,
                  MPI_COMM_WORLD, &status);        
 
-    LOGF(stderr,"MP_exchange: %d <-> %d  size: %f  alloc: %f  data: %f  size (MB) : %f \n",
-		    ibox, isource, t1-t0, t2-t1, get_time()-t2,  (nlist*sizeof(real4)/(double)(1024*1024)));
+    LOG("LET Data Exchange: %d <-> %d  sync-size: %f  alloc: %f  data: %f Total: %lg MB : %f \n",
+		    ibox, isource, t1-t0, t2-t1, get_time()-t2, get_time()-t0, (nlist*sizeof(real4)/(double)(1024*1024)));
     
     return recvDataBuffer;             
 #else
@@ -7821,6 +7810,7 @@ void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries, f
 //exit(0);
 }
 
+//SSE optimized MAC check
 inline int split_node_grav_impbh_sse(
     const _v4sf nodeCOM1,
     const _v4sf boxCenter1,
@@ -7936,10 +7926,8 @@ void octree::tree_walking_tree_stack_versionC13(
         const _v4sf grpCenter = grpNodeCenterInfoV[grpId];
         const _v4sf grpSize   = grpNodeSizeInfoV[grpId];
 
-
         const int split = split_node_grav_impbh_sse(nodeCOM, grpCenter, grpSize);
 //        const int split = 1;
-
 
         if(split)
         {
@@ -7952,7 +7940,6 @@ void octree::tree_walking_tree_stack_versionC13(
                                      //when creating LET tree, we can mark end-points
                                      //Sets the split, and visit bits
 
-            //const int childinfo = __builtin_ia32_vec_ext_v4si((_v4si)nodeInfoX, 1); //float_as_int(nodeInfoX.y);
             const int child    =    nodeInfoX.y & 0x0FFFFFFF;            //Index to the first child of the node
             const int nchild   = (((nodeInfoX.y & 0xF0000000) >> 28)) ;  //The number of children this node has
 #if 0
@@ -7970,7 +7957,6 @@ void octree::tree_walking_tree_stack_versionC13(
             if( __builtin_ia32_vec_ext_v4sf(grpCenter, 3) > 0)
               childinfoGrp    = __builtin_ia32_vec_ext_v4si((_v4si)grpSize,3);
 #endif
-
 
             //Go check the child nodes and child grps
             for(int i=child; i < child+nchild; i++)
@@ -8018,12 +8004,9 @@ void octree::stackFill(real4 *LETBuffer, real4 *nodeCenter, real4* nodeSize,
 
   int nStoreIdx = nParticles;
 
-  int temp = nParticles;
-
   nParticles = 0;
 
-
-  int multiStoreIdx = nStoreIdx+2*nNodes;
+  int multiStoreIdx = nStoreIdx+2*nNodes; //multipole starts after particles and nodeSize, nodeCenter
 
   //Copy top nodes, directly after the bodies
   for(int node=0; node < start; node++)

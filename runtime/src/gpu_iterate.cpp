@@ -35,9 +35,8 @@ void octree::makeLET()
   localTree.multipole.d2h    (3*localTree.n_nodes, false, copyStream->s());
   
   //Exchange domain grpTrees, while memory copies take place
-  double t1 = get_time();
   this->sendCurrentInfoGrpTree();
-  fprintf(stderr, "Exchanging Group tree information took: %lg \n", get_time()-t1);
+
   localTree.boxSizeInfo.waitForCopyEvent();
   localTree.boxCenterInfo.waitForCopyEvent();
 
@@ -296,14 +295,12 @@ bool octree::iterate_once(IterationData &idata) {
     {
       double tZ = get_time();
       devContext.startTiming(execStream->s());
-      //parallelDataSummary(localTree, idata.lastGravTime);
-      //parallelDataSummary(localTree, lastLocal, lastTotal);
       parallelDataSummary(localTree, lastTotal, lastLocal);
       devContext.stopTiming("UpdateDomain", 6, execStream->s());
-      LOGF(stderr,"DomainUpdate: %f \n", get_time()-tZ);
+      idata.lastDomTime   = get_time()-tZ;
+      idata.totalDomTime += idata.lastDomTime;
     }
 
-    
 
 
     #ifdef USE_DUST
@@ -439,7 +436,7 @@ bool octree::iterate_once(IterationData &idata) {
 
       runningLETTimeSum = 0;
 
-//      if(nProcs > 1)
+      if(nProcs > 1)
         makeLET();
 
       #ifdef USE_DUST
@@ -451,17 +448,15 @@ bool octree::iterate_once(IterationData &idata) {
 
     gravStream->sync();
     
-    idata.lastGravTime   = get_time() - t1;
-//     totalGravTime += lastGravTime;
-    idata.totalGravTime += idata.lastGravTime - thisPartLETExTime;
-    idata.realGravTime  += idata.lastGravTime;    
-//     lastGravTime -= thisPartLETExTime;
-    
-//    LOGF(stderr, "APPTIME [%d]: Iter: %d\t%g \tn: %d\n", procId, iter, idata.lastGravTime, this->localTree.n);
-    
+    idata.lastGravTime      = get_time() - t1;
+    idata.totalGravTime    += idata.lastGravTime;
+    idata.lastLETCommTime   = thisPartLETExTime;
+    idata.totalLETCommTime += thisPartLETExTime;
+
+
 
     float ms=0, msLET=0;
-#if 1 //enable again when load-balancing
+#if 1 //enable again when load-balancing, gets the accurate GPU time from events
     CU_SAFE_CALL(cudaEventElapsedTime(&ms, startLocalGrav, endLocalGrav));
     if(nProcs > 1)  CU_SAFE_CALL(cudaEventElapsedTime(&msLET,startRemoteGrav, endRemoteGrav));
 
@@ -469,32 +464,25 @@ bool octree::iterate_once(IterationData &idata) {
     LOGF(stderr, "APPTIME [%d]: Iter: %d\t%g \tn: %d EventTime: %f  and %f\tSum: %f\n", 
 		procId, iter, idata.lastGravTime, this->localTree.n, ms, msLET, ms+msLET);
 #else
-    ms = 1;
+    ms    = 1;
     msLET = 1;
 #endif
 
+    idata.lastGPUGravTimeLocal   = ms;
+    idata.lastGPUGravTimeLET     = msLET;
+    idata.totalGPUGravTimeLocal += ms;
+    idata.totalGPUGravTimeLET   += msLET;
 
+//    LOGF(stderr, "APPTIME [%d]: Iter: %d\t%g \tn: %d\n", procId, iter, idata.lastGravTime, this->localTree.n);
 
-    //CU_SAFE_CALL(cudaEventElapsedTime(&msLET, startRemoteGrav, endRemoteGrav));
-    //CU_SAFE_CALL(cudaEventSynchronize(endRemoteGrav));
-    //CU_SAFE_CALL(cudaEventSynchronize(startRemoteGrav));
-    //CU_SAFE_CALL(cudaEventElapsedTime(&msLET,startRemoteGrav, endRemoteGrav));
-    //LOGF(stderr, "APPTIME [%d]: Iter: %d\t EventTime: %f  and %f\n", procId, iter, ms, msLET);
-
-    //idata.lastGravTime -= thisPartLETExTime;  
-    idata.lastGravTime = ms + msLET;
-    idata.lastGravTime = ms;
-
-
+    //Different options for basing the load balance on
     lastLocal = ms;
     lastTotal = ms + msLET;    
 
 //    lastTotal = ms + 300./msLET;
 //    lastTotal = ms + msLET;
+//    lastTotal =  get_time() - t1;
 
-    //lastTotal =  get_time() - t1;
-
-    
     //Corrector
     devContext.startTiming(execStream->s());
     correct(this->localTree);
@@ -507,7 +495,7 @@ bool octree::iterate_once(IterationData &idata) {
     #endif     
     
     if(nProcs > 1)
-    {
+    { //Wait on all processes and time how long the waiting took
       t1 = get_time();
       devContext.startTiming(execStream->s());
       mpiSync();
@@ -561,7 +549,6 @@ bool octree::iterate_once(IterationData &idata) {
    
     iter++; 
 
-//    exit(0);
     return false;
 }
 
@@ -634,10 +621,8 @@ void octree::iterate_setup(IterationData &idata) {
   devContext.startTiming(gravStream->s());
   approximate_gravity(this->localTree);
   devContext.stopTiming("Approximation", 4, gravStream->s());
-  LOGF(stderr, "APP TEST: %g \n", get_time() - t1);
+  LOGF(stderr, "APP Time during first step: %g \n", get_time() - t1);
   
-
-
   #ifdef USE_DUST
       //Sort the dust
       sort_dust(localTree);
@@ -660,23 +645,13 @@ void octree::iterate_setup(IterationData &idata) {
 
   if(nProcs > 1)  makeLET();
 
-
-
   gravStream->sync();  
 
 
-  lastLocal = get_time() - t1;
-  lastTotal = get_time() - t1;
-
-  //TODO remove this, its to disable load balance
-  lastLocal = 1;
-  lastTotal = 1;
-
-
-  
-  idata.lastGravTime   = get_time() - t1;
-  idata.totalGravTime += idata.lastGravTime;
-  idata.realGravTime  += idata.lastGravTime;
+  lastLocal            = get_time() - t1;
+  lastTotal            = lastLocal;
+  idata.lastGravTime   = lastLocal;
+  idata.totalGravTime += lastLocal;
 
 
   correct(this->localTree);
@@ -721,8 +696,10 @@ void octree::iterate_setup(IterationData &idata) {
 
 void octree::iterate_teardown(IterationData &idata) {
   double totalTime = get_time() - idata.startTime;
-  LOGF(stderr,"TIME [%02d] TOTAL: %g\t GRAV: %g (%g)\tBUILD: %g\tCOMM: %g\t WAIT: %g\n",
-                  procId, totalTime, idata.totalGravTime, idata.realGravTime,
+  LOGF(stderr,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\n",
+                  procId, totalTime, idata.totalGravTime,
+                  (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
+                  idata.totalLETCommTime,
                   idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime);     
   
   if(execStream != NULL)
@@ -1004,9 +981,6 @@ void octree::approximate_gravity(tree_structure &tree)
 
 #endif
 
-//  mpiSync();
-//  exit(0);
-
   //Print interaction statistics
   #if 0
   
@@ -1044,14 +1018,9 @@ void octree::approximate_gravity(tree_structure &tree)
     cout << "Interaction at (rank= " << mpiGetRank() << " ) iter: " << iter << "\tdirect: " << directSum << "\tappr: " << apprSum << "\t";
     cout << "avg dir: " << directSum / tree.n << "\tavg appr: " << apprSum / tree.n << "\tMaxdir: " << maxDir << "\tmaxAppr: " << maxAppr <<  endl;
     cout << "sigma dir: " << sqrt((directSum2  - directSum)/ tree.n) << "\tsigma appr: " << std::sqrt((apprSum2 - apprSum) / tree.n)  <<  endl;    
-//    exit(0);
-//    mpiSync();
-//    exit(0);
 
   #endif
   
-  //CU_SAFE_CALL(clFinish(0));
-
   
   if(mpiGetNProcs() == 1) //Only do it here if there is only one process
   {
@@ -1090,7 +1059,6 @@ void octree::approximate_gravity(tree_structure &tree)
 
 void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remoteTree, int bufferSize, bool doActiveParticles)
 {
-
   //Start and end node of the remote tree structure
   uint2 node_begend;  
   node_begend.x =  0;
@@ -1108,10 +1076,6 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
   int remoteN = remoteTree.remoteTreeStruct.y;
 
   LOG("LET node begend [%d]: %d %d iter-> %d\n", procId, node_begend.x, node_begend.y, iter);
-  fflush(stderr);
-  fflush(stdout);
-  
-//  tree.n_active_groups = 2000;
 
   //Set the kernel parameters, many!
   approxGravLET.set_arg<int>(0,    &tree.n_active_groups);
@@ -1158,7 +1122,6 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
     
   approxGravLET.setWork(-1, NTHREAD, nBlocksForTreeWalk);
  
-//  LOG("LET Approx config: "); approxGravLET.printWorkSize();
     
   if(letRunning)
   {
@@ -1172,20 +1135,12 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
   }
   
   remoteTree.fullRemoteTree.h2d(bufferSize); //Only copy required data
-  tree.activePartlist.zeroMem();
-  //devContext.startTiming(gravStream->s());  
-  //approxGravLET.execute(gravStream->s());
-//  devContext.stopTiming("Approximation_let", 5, gravStream->s());   
+  tree.activePartlist.zeroMemGPUAsync(gravStream->s());
 
   CU_SAFE_CALL(cudaEventRecord(startRemoteGrav, gravStream->s()));
   approxGravLET.execute(gravStream->s());
   CU_SAFE_CALL(cudaEventRecord(endRemoteGrav, gravStream->s()));
   letRunning = true;
-
-  
-//  mpiSync();
-//  MPI_Finalize();
-//  exit(0);
 
 
 #if 0
@@ -1198,20 +1153,13 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
   {
     LOGF(stderr,"%d Size: %f %f %f  %f ||", i, temp2[i].x,temp2[i].y,temp2[i].z,temp2[i].w);
     LOGF(stderr," Cent: %f %f %f %f  \n", temp[i].x,temp[i].y,temp[i].z,temp[i].w);
-
 //    LOGF(stderr,"%d\t%f %f %f \t %f \n", i, part[i].x,part[i].y,part[i].z,part[i].w);
   }
-
-//  Hiergebleven, checken of het ook na meerdere tijdstappen
-//  allemaal nog goed loopt
-
-
-
 #endif
 
 
  //Print interaction statistics
-  #if 1
+  #if 0
     tree.interactions.d2h();
 //     tree.body2group_list.d2h();
     

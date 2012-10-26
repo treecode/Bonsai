@@ -231,7 +231,8 @@ void octree::compute_properties(tree_structure &tree) {
   itof.i                = grpTree_n_nodes;
   localGrpTreeCntSize[0].z = itof.f;
 
-  LOGF(stderr, "Build local tree; %lg \n", get_time()-tlocal);
+  double t1 = get_time();
+  LOGF(stderr, "Build local tree; %lg Since start compProps: %lg\n", t1-tlocal, t1-t0);
 
   //Now if the GPU is not done yet with computing properties we could start sending around
   //the grpTree properties. However we can't use async communication for now. So postpone
@@ -239,7 +240,7 @@ void octree::compute_properties(tree_structure &tree) {
 
   //Keep this sync for now since otherwise we run the risk that memory objects are destroyed
   //while still being in use (like multipoleD).
-  double t1 = get_time();
+
   execStream->sync();
   LOGF(stderr, "Compute properties took: %lg  wait: %lg \n", get_time()-t0, get_time()-t1);
 

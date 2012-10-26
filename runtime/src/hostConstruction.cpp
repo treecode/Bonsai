@@ -230,24 +230,22 @@ void octree::build_GroupTree(int n_bodies,
     }
   }
 
-  fprintf(stderr, "Building nodes: %lg Linking: %lg Total; %lg\n", tlink-t0, get_time()-tlink, get_time()-t0);
+  LOGF(stderr, "Building nodes: %lg Linking: %lg Total; %lg \t   n_levels= %d  n_nodes= %d [%d]\n",
+                tlink-t0, get_time()-tlink, get_time()-t0,  n_levels, n_nodes, node_levels[n_levels]);
 
   /***
   ****  --> collecting tree leaves
   ***/
 
 
-
+// #ifdef PRINTERR
+#if 0
   //Not required just for stats
   int n_leaves0 = 0;
   for (int i = 0; i < n_nodes; i++)
     if (nodes[i].y) n_leaves0++;
 
-
-
-// #ifdef PRINTERR
-#if 1
-  fprintf(stderr, "  n_levels= %d  n_nodes= %d [%d] n_leaves= %d\n",
+  LOGF(stderr, "  n_levels= %d  n_nodes= %d [%d] n_leaves= %d\n",
           n_levels, n_nodes, node_levels[n_levels], n_leaves0);
 #endif
 
@@ -315,7 +313,7 @@ void octree::computeProps_GroupTree(real4 *grpCenter,
     }//for all nodes on this level
   } //for each level
 
-  fprintf(stderr, "Grp-tree Properties took: %lg \n", get_time()-t0);
+  LOGF(stderr, "Grp-tree Properties took: %lg \n", get_time()-t0);
 
 }
 

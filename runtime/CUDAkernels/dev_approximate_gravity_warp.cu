@@ -24,7 +24,7 @@ PROF_MODULE(dev_approximate_gravity);
 
 #define BTEST(x) (-(int)(x))
 
-#if 0
+#if 1
 #define _QUADRUPOLE_
 #endif
 
