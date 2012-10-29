@@ -6,12 +6,7 @@
 #include "../profiling/bonsai_timing.h"
 PROF_MODULE(build_tree);
 
-//////////////////////////////
-//////////////////////////////
-//////////////////////////////
-//#define LEVEL_MIN 3
 
-#if 1
 KERNEL_DECLARE(boundaryReduction)(const int n_particles,
                                             real4      *positions,
                                             float3     *output_min,
@@ -95,8 +90,6 @@ KERNEL_DECLARE(boundaryReduction)(const int n_particles,
   }
 
 }
-
-#endif
 
 //Get the domain size, by taking into account the group size
 KERNEL_DECLARE(boundaryReductionGroups)(const int n_groups,
@@ -217,19 +210,13 @@ KERNEL_DECLARE(cl_build_key_list)(uint4  *body_key,
     crd.z = (int)((pos.z - corner.z) / domain_fac);
   #endif
 
-   uint4 key = get_key(crd);
+  uint4 key = get_key(crd);
 
-
-//   if (id == n_bodies) key = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0, 0);
   if (id == n_bodies) key = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0, 0);
 
-  key.w = id;
-
+  key.w        = id;
   body_key[id] = key;
-
 }
-
-    
   
 
 KERNEL_DECLARE(cl_build_valid_list)(int n_bodies,
@@ -378,8 +365,6 @@ KERNEL_DECLARE(cl_build_nodes)(uint level,
       if ((level > 0) && (n <= 0) && (level_list[level - 1].x > 0))
         *last_level = level;
 
-
-
       // reset retirement count so that next run succeeds
       retirementCountBuildNodes = 0; 
     }
@@ -397,7 +382,7 @@ KERNEL_DECLARE(cl_link_tree)(int n_nodes,
                             uint2 *node_bodies,
                             real4 *bodies_pos,
                             real4 corner,
-                            uint2 *level_list,           //TODO could make this constant if it proves usefull
+                            uint2 *level_list,
                             uint* valid_list,
                             uint4 *node_keys,
                             uint4 *bodies_key,
@@ -445,7 +430,7 @@ KERNEL_DECLARE(cl_link_tree)(int n_nodes,
     cij = level_list[level-1];
 
   int ci;
-  //Jeroen, modified this since we dont use textures in find_key,
+  //JB, modified this since we don't use textures in find_key,
   //the function will fail because out of bound memory access when id==0
   if(id > 0)
     ci = find_key(key, cij, node_keys);
@@ -484,11 +469,11 @@ KERNEL_DECLARE(cl_link_tree)(int n_nodes,
 }
 
 //Determines which level of node starts at which offset
-KERNEL_DECLARE(build_level_list)(const int n_nodes,
-                                            const int n_leafs,
-                                            uint *leafsIdxs,
-                                            uint2 *node_bodies,                                      
-                                            uint* valid_list)
+KERNEL_DECLARE(build_level_list)(const int    n_nodes,
+                                 const int    n_leafs,
+                                       uint  *leafsIdxs,
+                                       uint2 *node_bodies,
+                                       uint  *valid_list)
 {
   CUXTIMER("build_level_list");
   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
@@ -505,7 +490,7 @@ KERNEL_DECLARE(build_level_list)(const int n_nodes,
   uint2 bij   = node_bodies[leafsIdxs[id+n_leafs]];    //current non-leaf
   level_c     = (bij.x &  LEVELMASK) >> BITLEVELS;
 
-  if((id+1) < (n_nodes-n_leafs))        //The last node gets a default lvl
+  if((id+1) < (n_nodes-n_leafs))        //The last node gets a default level
   {
     bij         = node_bodies[leafsIdxs[id+1+n_leafs]]; //next non-leaf
     level_p     = (bij.x &  LEVELMASK) >> BITLEVELS;
@@ -622,16 +607,14 @@ KERNEL_DECLARE(build_group_list2)(int    n_particles,
 }
 
 #else
-//New version based on coarse distribution
-//Finds nodes/leafs that will become groups
-//After executions valid_list contains the 
-//valid nodes/leafs that form groups
-KERNEL_DECLARE(build_group_list2)(const int n_particles,
-                                  uint      *validList,
-                                  const uint2 n_coarseGroupLevelNodes,
-                                  uint2     *node_bodies,                                    
-                                  int       *node_level_list,
-                                  int       treeDepth)
+//New version based on top levels of the tree, uses top nodes/leafs which boundaries
+//will become groups. After executions valid_list contains the valid nodes/leafs that form groups
+KERNEL_DECLARE(build_group_list2)(const int   n_particles,
+                                  uint       *validList,
+                                  const uint2 startLevelBeginEnd,
+                                  uint2      *node_bodies,
+                                  int        *node_level_list,
+                                  int         treeDepth)
 {
   CUXTIMER("build_group_list2");
   uint bid = blockIdx.y * gridDim.x + blockIdx.x;
@@ -640,7 +623,7 @@ KERNEL_DECLARE(build_group_list2)(const int n_particles,
 
   __shared__ int shmem[128];
 
-  //Compact the node_level_list
+  //Compact the node_level_list. From begin-end positions to just begin positions
   if(bid == 0)
   {
     if(threadIdx.x < (MAXLEVELS*2))
@@ -648,7 +631,7 @@ KERNEL_DECLARE(build_group_list2)(const int n_particles,
       shmem[threadIdx.x] = node_level_list[threadIdx.x];
     }
 
-    __syncthreads(); //Can most likely do without since its one warp
+    __syncthreads(); //Can most likely do without since its one warp if MAXLEVELS < 32
 
     //Only selection writes
     if(threadIdx.x < MAXLEVELS)
@@ -660,21 +643,18 @@ KERNEL_DECLARE(build_group_list2)(const int n_particles,
   }//if bid == 0
   //end compact node level list
 
-  //Note that we do not include the final particle
-  //Since there is no reason to check it
+  //We do not include the final particle, since there is no reason to check it
   if (idx >= n_particles) return;
 
-  //Now we get some info from tree-structure for coarse groups
+  //Now we get some info from tree-structure for the groups
   //Note that we do NOT include the last groups since it only sets
   //the final particle to invalid, which we will do by default anyway
   //this way we save a check on particle boundary
 
-
-  //TODO why did I change this BUG ?  if ((idx >= n_coarseGroupLevelNodes.x) && (idx < (n_coarseGroupLevelNodes.y-1))) //THe -1 to prevent last node
-  if (idx < n_coarseGroupLevelNodes.y-1) //THe -1 to prevent last node
+  //Use the end-indices of all tree-nodes above our minimum level
+  if (idx < startLevelBeginEnd.y-1) //THe -1 to prevent last node
   {
     const uint2 bij          =  node_bodies[idx];
-//     const uint firstChild    =  bij.x & ILEVELMASK;
     const uint lastChild     =  bij.y;   
 
     //Set the boundaries, start and end 
@@ -682,13 +662,11 @@ KERNEL_DECLARE(build_group_list2)(const int n_particles,
     validList[2*lastChild]      = (lastChild)   | (uint)(1 << 31);
   }
 
-
   //Multiples of the preferred group size are _always_ valid
   int validStart = ((idx     % NCRIT) == 0);
   int validEnd   = (((idx+1) % NCRIT) == 0);
-
   
-  //Last particle is always the end, n_particles dont have 
+  //Last particle is always the end, n_particles don't have
   //to be a multiple of NCRIT so this is required
   if(idx+1 == n_particles) validEnd = 1;
 
@@ -697,7 +675,6 @@ KERNEL_DECLARE(build_group_list2)(const int n_particles,
   if(validStart) validList[2*idx + 0] = (idx)   | (uint)(validStart << 31);
   if(validEnd)   validList[2*idx + 1] = (idx+1) | (uint)(validEnd   << 31);    
 }
-
 #endif
  
 //Store per particle the group id it belongs to
@@ -706,14 +683,11 @@ KERNEL_DECLARE(store_group_list)(int    n_particles,
                                  int n_groups,
                                  uint  *validList,
                                  uint  *body2group_list,
-                                 uint2 *group_list,
-                                 uint  *validListCoarseGrpPart,
-                                 uint  *validListCoarseGrp)
-{
+                                 uint2 *group_list){
   CUXTIMER("store_group_list");
   uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   uint tid = threadIdx.x;
-//   uint idx = bid * blockDim.x + tid;
+  //uint idx = bid * blockDim.x + tid;
   
   if(bid >= n_groups) return;
 
@@ -723,44 +697,11 @@ KERNEL_DECLARE(store_group_list)(int    n_particles,
   if((start + tid) < end)
   {
     body2group_list[start + tid] = bid;
-
-    //Check if we need to mark this group as a coarse-group-boundary
-    //This could be combined with mark_coarse_group_boundaries to save a kernel launch
-    if(validListCoarseGrpPart[start + tid] == 1)
-    {
-      validListCoarseGrp[bid] = (bid) | (uint)(1 << 31);
-    }
   }
 
   if(tid == 0)
   {
      group_list[bid] = make_uint2(start,end);
-  }
-}
-
-//Mark the particle boundaries that form the coarse groups. Used in the
-//store_group_list kernel
-KERNEL_DECLARE(mark_coarse_group_boundaries)(const uint2 n_coarseGroupLevelNodes,
-                                            uint  *validList,
-                                            uint2 *node_bodies,                                    
-                                            int   *node_level_list)
-{
-  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
-  uint tid = threadIdx.x;
-  uint idx = bid * blockDim.x + tid;
-  //Now we get some info from tree-structure for coarse groups
-  //Note that we do NOT include the last groups since it only sets
-  //the final particle to invalid, which we will do by default anyway
-  //this way we save a check on particle boundary
-  if ((idx >= n_coarseGroupLevelNodes.x) && (idx < (n_coarseGroupLevelNodes.y-1))) //THe -1 to prevent last node
-  {
-    const uint2 bij          =  node_bodies[idx];
-    const uint firstChild    =  bij.x & ILEVELMASK;
-    const uint lastChild     =  bij.y;   
-
-    //Set the boundaries, start and end 
-    validList[firstChild]  = 1;
-    validList[lastChild]   = 1;
   }
 }
 
@@ -901,8 +842,6 @@ KERNEL_DECLARE(predict_dust_particles)(const int n_bodies,
   valid_list[grpID] = grpID; 
 }
 
-
-
 KERNEL_DECLARE(correct_dust_particles)(const int n_bodies,
                                                   float dt_cb,
                                                   uint   *active_list,
@@ -931,20 +870,19 @@ KERNEL_DECLARE(correct_dust_particles)(const int n_bodies,
   v.y += (a1.y - a0.y)*dt_cb;
   v.z += (a1.z - a0.z)*dt_cb;
 
-  //Store the corrected velocity, accelaration and the new time step info
+  //Store the corrected velocity, acceleration and the new time step info
   vel     [idx] = v;
   acc0    [idx] = a1;
 }
 
-
-
+/// End Dust Functions /////
 
 //This is a simple place holder, example function
 //depending on the data to be summarized
 //it can be extended/modified
 //Using atomics to prevent launch overhead when there
 //are only few particles. Could be modified into 
-//non atomic with Dynamic Parallism
+//non atomic with Dynamic Parallelism
 KERNEL_DECLARE(segmentedCoarseGroupBoundary)(
                                     const int n_coarse_groups, //Number of groups that have to be summarized
                                     const int n_groups,
@@ -1206,7 +1144,7 @@ extern "C" __global__ void build_parallel_grps(
 } //end cl_build_parallel_reduce
 #endif
 
-static __device__ uint retirementCountSegmentedSummaryBasic = 0;
+//static __device__ uint retirementCountSegmentedSummaryBasic = 0;
 //This is a simple place holder, example function
 //depending on the data to be summarized
 //it can be extended/modified

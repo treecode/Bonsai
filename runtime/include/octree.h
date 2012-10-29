@@ -106,8 +106,6 @@ class tree_structure
     int n_groups;                         //Number of groups
     int n_levels;                         //Depth of the tree
     
-    int courseGroupIdx;                   //Node idx that signifies end of coarse groups
-    int n_coarse_groups;
     uint startLevelMin;                   //The level from which we start the tree-walk
                                           //this is decided by the tree-structure creation
 
@@ -403,15 +401,12 @@ protected:
   my_dev::kernel  boundaryReductionGroups;
   my_dev::kernel  build_body2group_list;
   my_dev::kernel  segmentedCoarseGroupBoundary;
-  my_dev::kernel  mark_coarse_group_boundaries;
-
-
 
 
   // tree properties kernels
   my_dev::kernel  propsNonLeafD, propsLeafD, propsScalingD;
 
-  my_dev::kernel  copyNodeDataToGroupData;
+  my_dev::kernel  setPHGroupData;
   my_dev::kernel  setPHGroupDataGetKey;
   my_dev::kernel  setPHGroupDataGetKey2;
   my_dev::kernel  setActiveGrps;

@@ -164,7 +164,7 @@ KERNEL_DECLARE(predict_particles)(const int n_bodies,
 }
 
 
-extern "C"  __global__ void setActiveGroups(const int n_bodies,                                                                                             
+KERNEL_DECLARE(setActiveGroups)(const int n_bodies,
                                             float tc,                                                                                                       
                                             float2 *time,                                                                                                   
                                             uint  *body2grouplist,                                                                                          
@@ -182,12 +182,12 @@ extern "C"  __global__ void setActiveGroups(const int n_bodies,
   //same location but the net result is the same                                                                                                            
   int grpID = body2grouplist[idx];        
 
-  valid_list[grpID] = grpID | ((tc == te) << 31);
+  //valid_list[grpID] = grpID | ((tc == te) << 31);
                                                                                                                                                                                                                                 
-//  if(tc == te)
-//  {
-//    valid_list[grpID] = grpID | (1 << 31);
-//  }
+  if(tc == te)
+  {
+    valid_list[grpID] = grpID | (1 << 31);
+  }
 }     
 
 

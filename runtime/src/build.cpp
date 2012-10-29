@@ -350,7 +350,7 @@ void octree::build (tree_structure &tree) {
   }
   
   link_tree.setWork(n_nodes, 128);
-  LOG("Link_tree: "); link_tree.printWorkSize();
+  link_tree.printWorkSize("Link_tree: ");
   
   tree.n_levels = level-1;
 
@@ -365,7 +365,7 @@ void octree::build (tree_structure &tree) {
       tree.startLevelMin = i;
     }
   }
-  LOG("Start at: Level: %d  begend: %d %d \n", tree.startLevelMin,
+  LOG("Start at: Level: %d  begin-end: %d %d \n", tree.startLevelMin,
       tree.level_list[tree.startLevelMin].x, tree.level_list[tree.startLevelMin].y);
  
 
@@ -373,17 +373,18 @@ void octree::build (tree_structure &tree) {
   link_tree.set_arg<int>(0, &offset);   //Offset=number of nodes
   link_tree.set_arg<int>(9, &tree.startLevelMin);
   link_tree.execute(execStream->s());
-  
-
 
   //After executing link_tree, the id_list contains for each node the ID of its parent.
   //Valid_list contains for each node if its a leaf (valid) or a normal node -> non_valid
   //Execute a split on the validList to get separate id lists
-  //for the leafs and nodes. Used when computing multipoles
+  //for the leafs and nodes. Used when computing multipole expansions
     
-  tree.leafNodeIdx.cmalloc(tree.n_nodes , false);
-  
-  //Split the leaf ids and non-leaf node ids
+  if(tree.leafNodeIdx.get_size() > 0)
+    tree.leafNodeIdx.cresize_nocpy(tree.n_nodes, false);
+  else
+    tree.leafNodeIdx.cmalloc(tree.n_nodes , false);
+
+  //Split the leaf nodes and non-leaf nodes
   gpuSplit(devContext, validList, tree.leafNodeIdx, tree.n_nodes, &tree.n_leafs);     
                  
   LOG("Total nodes: %d N_leafs: %d  non-leafs: %d \n", tree.n_nodes, tree.n_leafs, tree.n_nodes - tree.n_leafs);
@@ -398,68 +399,33 @@ void octree::build (tree_structure &tree) {
   
   validList.zeroMemGPUAsync(execStream->s());
 
-  //Build the level list based on the leafIdx list
-  //required for easy access in the compute node properties
+  //Build the level list based on the leafIdx list, required for easy
+  //access during the compute node properties / multipole computation
   build_level_list.execute(execStream->s());  
 
-  int levelThing;  
-//  gpuCompact(devContext, validList, tree.node_level_list,
-//             2*(tree.n_nodes-tree.n_leafs), &levelThing);
+  //Compact the node-level boundaries into the node_level_list
   gpuCompact(devContext, validList, tree.node_level_list, 
              2*(tree.n_nodes-tree.n_leafs), 0);
   
-  ///******   Start building the particle groups *******///////
+  /************   Start building the particle groups   *************/
 
-  //Compute the box size, the max length of one of the sides of the rectangle
-  real size     = std::max(fabs(rMaxLocalTree.z - rMinLocalTree.z), 
-                           std::max(fabs(rMaxLocalTree.y - rMinLocalTree.y),
-                                    fabs(rMaxLocalTree.x - rMinLocalTree.x)));
-  real dist     = ((rMaxLocalTree.z - rMinLocalTree.z) * (rMaxLocalTree.z - rMinLocalTree.z) + 
-                   (rMaxLocalTree.y - rMinLocalTree.y) * (rMaxLocalTree.y - rMinLocalTree.y) +
-                   (rMaxLocalTree.x - rMinLocalTree.x) * (rMaxLocalTree.x - rMinLocalTree.x));      
-                   
-//  float maxDist = sqrt(dist) / 10;
-//  maxDist *= maxDist; //Square since we dont do sqrt on device
-//
-//  LOG("Box max size: %f en max dist: %f \t %f en %f  \n", size, dist, sqrt(dist), maxDist);
+  //We use the minimum tree-level to set extra boundaries, which ensures
+  //that groups are based on the tree-structure and will not be very big
   
-  //The coarse group boundaries are based on the tree-structure. These coarse boundaries
-  //will be used for getting the multi-box/group group boundaries. Also it serves as a 
-  //boundary mechanism independent of the max-distance trick between particles that we used 
-  //before. So first find the min level from where we can take the boundaries
-#if 0
-  const int minCoarseGroups = 50;
-  int minCoarseGroupLevelIdx = 0;
-  for(int i=0; i < level; i++){
-    if( (tree.level_list[i].y - tree.level_list[i].x) >  minCoarseGroups)
-    {
-      minCoarseGroupLevelIdx = i;
-      break;
-    }
-  }
-  tree.courseGroupIdx = minCoarseGroupLevelIdx;
-#else
-  //In the updated version we use the minimum tree-level, which ensures
-  //that groups are based on the tree-structure. The +1
-  tree.courseGroupIdx        = tree.startLevelMin ;
-  int minCoarseGroupLevelIdx = tree.startLevelMin ;
-#endif
-  
-  //Now use the previous computed offsets to build all boundaries. The coarse ones and the
-  //group ones (eg every number of particles)
+  //Now use the previous computed offsets to build all boundaries.
+  //The ones based on top level boundaries and the group ones (every NCRIT particles)
   validList.zeroMemGPUAsync(execStream->s());
-  //The newest group creation method!
+
   define_groups.set_arg<int>    (0, &tree.n);  
   define_groups.set_arg<cl_mem> (1, validList.p());    
-  define_groups.set_arg<uint2>  (2, &tree.level_list[minCoarseGroupLevelIdx]);
+  define_groups.set_arg<uint2>  (2, &tree.level_list[tree.startLevelMin]);
   define_groups.set_arg<cl_mem> (3, tree.node_bodies.p());
   define_groups.set_arg<cl_mem> (4, tree.node_level_list.p());
   define_groups.set_arg<int>    (5, &level);
   define_groups.setWork(tree.n, 128);  
   define_groups.execute(execStream->s());
-  
-   
-  //Have to copy it back to host since we need it in compute props
+
+  //Have to copy the node_level_list back to host since we need it in compute properties
   LOG("Finished level list \n");
   tree.node_level_list.d2h();
   for(int i=0; i < (level); i++)
@@ -472,125 +438,27 @@ void octree::build (tree_structure &tree) {
   this->resetCompact();
   tree.n_groups = validCount/2;
   LOG("Found number of groups: %d \n", tree.n_groups);
- 
 
-  //Mark the boundaries of the coarse groups. We have to do this again since it was combined
-  //with all other groups in the previous step
-  validList.zeroMemGPUAsync(execStream->s());
-  mark_coarse_group_boundaries.set_arg<uint2> (0, &tree.level_list[minCoarseGroupLevelIdx]);
-  mark_coarse_group_boundaries.set_arg<cl_mem>(1, validList.p());
-  mark_coarse_group_boundaries.set_arg<cl_mem>(2, tree.node_bodies.p());
-  mark_coarse_group_boundaries.set_arg<cl_mem>(3, tree.node_level_list.p());
-  mark_coarse_group_boundaries.setWork(tree.level_list[minCoarseGroupLevelIdx].y, 128);  
-  mark_coarse_group_boundaries.execute(execStream->s());
+  if(tree.group_list.get_size() > 0)
+    tree.group_list.cresize_nocpy(tree.n_groups, false);
+  else
+    tree.group_list.cmalloc(tree.n_groups , false);
 
-  //Store the group list but also compact the coarse group boundaries
-  my_dev::dev_mem<uint>  coarseGroupValidList(devContext);
-
-  memBufOffset = coarseGroupValidList. cmalloc_copy(tree.generalBuffer1, 
-                                                    tree.n_groups, memBufOffsetValidList);
-
-  tree.coarseGroupCompact.cmalloc(tree.level_list[minCoarseGroupLevelIdx].y, false);
-
-  tree.group_list.cmalloc(tree.n_groups , false);  
-  tree.n_active_groups = tree.n_groups; //Set all groups active in shared-time-step mode
  
   store_groups.set_arg<int>(0, &tree.n);  
   store_groups.set_arg<int>(1, &tree.n_groups);  
   store_groups.set_arg<cl_mem>(2, compactList.p());    
   store_groups.set_arg<cl_mem>(3, tree.body2group_list.p());     
   store_groups.set_arg<cl_mem>(4, tree.group_list.p());     
-  store_groups.set_arg<cl_mem>(5, validList.p());  
-  store_groups.set_arg<cl_mem>(6, coarseGroupValidList.p());
   store_groups.setWork(-1, NCRIT, tree.n_groups);  
   store_groups.execute(execStream->s());  
 
-  //Now compact validList to get the list of group ids
-
-  int n_course = 0;
-  gpuCompact(devContext, coarseGroupValidList, tree.coarseGroupCompact, tree.n_groups, &n_course);
-  this->resetCompact();
-  LOGF(stderr, "Coarse groups %d \n", n_course);
-  tree.n_coarse_groups = n_course;
-
-#if 0
-  tree.coarseGroupCompact.d2h();
-  tree.group_list.d2h();
-
-
-mpiSync();
-if(procId == 0){
-  for(int i=0; i < n_course; i++)
-  {
-	    int start = tree.group_list[tree.coarseGroupCompact[i]].x;
-	    int end   = tree.group_list[tree.coarseGroupCompact[i]].y;
-
-	    if(i == n_course-1){
-	    	   LOGF(stderr,"Compactgrps Final %d \t %d \t %d\t%d\t Part: %d \t %d \n",
-	    			   i,tree.coarseGroupCompact[i], tree.n_groups,
-	    			   tree.n_groups - tree.coarseGroupCompact[i],
-	    			   start, end);
-	    }
-	    else
-	    {
-	    int end2 = tree.group_list[tree.coarseGroupCompact[i+1]].x;
-
-
-	    LOGF(stderr,"Compactgrps %d \t %d \t %d\t%d\t Part: %d \t %d \n",
-				  i, tree.coarseGroupCompact[i],  tree.coarseGroupCompact[i+1],
-				  tree.coarseGroupCompact[i+1] -  tree.coarseGroupCompact[i],
-				  start, end2);
-	    }
-  }
-
-  //Print tree level information
-  tree.n_children.d2h();
-  tree.node_bodies.d2h();
-//  for(int i=0; i < 4; i++)
-  {
-    int i = tree.startLevelMin;
-    for(int j=tree.level_list[i].x; j < tree.level_list[i].y; j++)
-    {
-
-      int childinfo = tree.n_children[j];
-      uint2 bij     = tree.node_bodies[j];
-      uint level = (bij.x &  LEVELMASK) >> BITLEVELS;
-      uint bi    =  bij.x & ILEVELMASK;
-      uint bj    =  bij.y;
-      bool leaf = 0;
-      const int LEVEL_MIN = 3;
-      if ((int)level > (int)(LEVEL_MIN - 1))
-        leaf = ((bj - bi) <= NLEAF);
-      int child, nchild;
-      if(!leaf)
-      {
-        //Node
-        child    =    childinfo & 0x0FFFFFFF;                         //Index to the first child of the node
-        nchild   = (((childinfo & 0xF0000000) >> 28)) ;         //The number of children this node has
-      }
-      else
-      {
-        //Leaf
-        child   =   childinfo & BODYMASK;                                     //thre first body in the leaf
-        nchild  = (((childinfo & INVBMASK) >> LEAFBIT)+1);     //number of bodies in the leaf masked with the flag
-      }
-
-      LOGF(stderr,"Tree node: %d @ level: %d From Particle; %d to %d  Child info: %d %d leaf: %d\n",
-          j, i, bi, bj, child, nchild, leaf);
-    }
-  }
-
-}
-
-//  exit(0);
-#endif
 
   //Memory allocation for the valid group lists
   if(tree.active_group_list.get_size() > 0)
   {
     tree.active_group_list.cresize_nocpy(tree.n_groups, false);
     tree.activeGrpList.cresize_nocpy(tree.n_groups, false);
-    
   }
   else
   {
@@ -602,10 +470,7 @@ if(procId == 0){
   LOG("Tree built complete!\n");
   
   /*************************/
-
 }
-
-
 
 
 //This function builds a hash-table for the particle-keys which is required for the
@@ -647,8 +512,6 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
   // startBoundaryIndex = 10*n_bodies - 11*n_bodies+1 (int) Remianing: n_bodies-1
 
 
-
-
   /******** set kernels parameters **********/
 
   build_valid_list.set_arg<int>(0,     &tree.n);
@@ -671,7 +534,7 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
   real4 r_min = {+1e10, +1e10, +1e10, +1e10};
   real4 r_max = {-1e10, -1e10, -1e10, -1e10};
   getBoundaries(tree, r_min, r_max); //Used for predicted position keys further down
-  LOGF(stderr, "BVfore hashes took: %f \n", get_time()-t0);
+  LOGF(stderr, "Before hashes took: %f \n", get_time()-t0);
 #else
 
 
@@ -810,14 +673,14 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
 
   if(1)
   {
-  gpu_collect_hashes(validCount, &tree.parallelHashes[0], &tree.parallelBoundaries[0], 
-		     lastExecTime, lastExecTime2);
+    gpu_collect_hashes(validCount, &tree.parallelHashes[0], &tree.parallelBoundaries[0],
+           lastExecTime, lastExecTime2);
+
   
+    LOGF(stderr, "Computing and exchanging and update domain took: %f \n", get_time()-t0);
+    t0 = get_time();
 
-  LOGF(stderr, "Computing and exchanging and update domain took: %f \n", get_time()-t0);
-  t0 = get_time();
-
-   gpuRedistributeParticles_SFC(&tree.parallelBoundaries[0]);
+    gpuRedistributeParticles_SFC(&tree.parallelBoundaries[0]);
   }
 
   LOGF(stderr, "Redistribute domain took: %f\n", get_time()-t0);

@@ -217,8 +217,7 @@ void octree::sendCurrentInfoGrpTree()
       treeGrpCountBytes[i]   = this->globalGrpTreeCount[i]  *sizeof(real4);
       receiveOffsetsBytes[i] = this->globalGrpTreeOffsets[i]*sizeof(real4);
 
-      LOGF(stderr,"Proc: %d Received on idx: %d\t%d prefix: %d \n",
-             procId, i, globalGrpTreeCount[i], globalGrpTreeOffsets[i]);
+//      LOGF(stderr,"Proc: %d Received on idx: %d\t%d prefix: %d \n", procId, i, globalGrpTreeCount[i], globalGrpTreeOffsets[i]);
     }
 
     int totalNumberOfGroups = this->globalGrpTreeOffsets[nProcs-1]+this->globalGrpTreeCount[nProcs-1];
@@ -233,7 +232,8 @@ void octree::sendCurrentInfoGrpTree()
                    globalGrpTreeCntSize, treeGrpCountBytes,
                    receiveOffsetsBytes,  MPI_BYTE, MPI_COMM_WORLD);
 
-    LOGF(stderr, "Gathering Grp-Tree times, size: %lg \tdata: %lg Total: %lg\n", tSize, get_time()-t2, get_time()-t0);
+    LOGF(stderr, "Gathering Grp-Tree timings, size: %lg data: %lg Total: %lg NGroups: %d\n",
+                tSize, get_time()-t2, get_time()-t0, totalNumberOfGroups);
 
     delete[] treeGrpCountBytes;
     delete[] receiveOffsetsBytes;
@@ -2522,7 +2522,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
   totalLETExTime += thisPartLETExTime;
 
-  LOGF(stderr,"LETEX [%d] curStep: %g\t   Total: %g \n", procId, thisPartLETExTime, totalLETExTime);
+  LOGF(stderr,"LET Creation and Exchanging time [%d] curStep: %g\t   Total: %g \n", procId, thisPartLETExTime, totalLETExTime);
 }
 
 

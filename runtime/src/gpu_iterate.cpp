@@ -25,10 +25,9 @@ float lastLocal;
 void octree::makeLET()
 {
    //LET code test
-  double tTest = get_time();
+//  double tTest = get_time();
 
-//  my_dev::dev_stream memCpyStream;
-  
+
   //Start copies, while grpTree info is exchanged
   localTree.boxSizeInfo.d2h  (localTree.n_nodes,   false, LETDataToHostStream->s());
   localTree.boxCenterInfo.d2h(localTree.n_nodes,   false, LETDataToHostStream->s());
@@ -58,14 +57,11 @@ void octree::makeLET()
   //Start LET kernels
   essential_tree_exchangeV2(localTree, remoteTree, nodeInfo);
 
-  LOGF(stderr, "LET Exchange took (%d): %g \n", mpiGetRank(), get_time() - tTest);
+//  LOGF(stderr, "LET Exchange took (%d): %g \n", mpiGetRank(), get_time() - tTest);
   
   delete[] nodeInfo;
   letRunning = false;
   gravStream->sync();  //Sync LET execution
-
-
-
 }
 
 #if 1
@@ -742,9 +738,6 @@ void octree::predict(tree_structure &tree)
 
 //   tend is time per particle
 //   tnext is reduce result
-
-  //Reset the active particles
-  tree.activePartlist.zeroMemGPUAsync(gravStream->s());
 
   //First we get the minimum time, which is the next integration time
   #ifdef DO_BLOCK_TIMESTEP

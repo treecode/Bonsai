@@ -1381,13 +1381,17 @@ namespace my_dev {
       
     }
     
+    void printWorkSize(const char *s)
+    {
+      LOG("%sBlocks: (%ld, %ld, %ld) Threads: (%ld, %ld, %ld) \n", s,
+              hGlobalWork[0], hGlobalWork[1], hGlobalWork[2],
+              hLocalWork[0], hLocalWork[1], hLocalWork[2]);
+    }
+
     void printWorkSize()
     {
-      LOG("Blocks: (%ld, %ld, %ld) Threads: (%ld, %ld, %ld) \n", 
-              hGlobalWork[0], hGlobalWork[1], hGlobalWork[2],
-              hLocalWork[0], hLocalWork[1], hLocalWork[2]);             
+      printWorkSize("");
     }
-    
     void execute(cudaStream_t hStream = 0, int* event = NULL) {
       assert(kernel_flag);
       assert(work_flag);
