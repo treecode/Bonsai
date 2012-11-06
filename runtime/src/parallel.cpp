@@ -1756,21 +1756,22 @@ int octree::gpu_exchange_particles_with_overflow_check(tree_structure &tree,
   //Have to resize the bodies vector to keep the numbering correct 
   //but do not reduce the size since we need to preserve the particles
   //in the oversized memory
-  tree.bodies_pos.cresize (newN + 1, false);  
-  tree.bodies_acc0.cresize(newN,     false);
-  tree.bodies_acc1.cresize(newN,     false);
-  tree.bodies_vel.cresize (newN,     false);
-  tree.bodies_time.cresize(newN,     false);
-  tree.bodies_ids.cresize (newN + 1, false);
-  tree.bodies_Ppos.cresize(newN + 1, false);  
-  tree.bodies_Pvel.cresize(newN + 1, false);  
+  int memSize = newN*1.05; //5% extra
+  tree.bodies_pos.cresize (memSize + 1, false);
+  tree.bodies_acc0.cresize(memSize,     false);
+  tree.bodies_acc1.cresize(memSize,     false);
+  tree.bodies_vel.cresize (memSize,     false);
+  tree.bodies_time.cresize(memSize,     false);
+  tree.bodies_ids.cresize (memSize + 1, false);
+  tree.bodies_Ppos.cresize(memSize + 1, false);
+  tree.bodies_Pvel.cresize(memSize + 1, false);
   
   //This one has to be at least the same size as the number of particles inorder to
   //have enough space to store the other buffers 
   //Can only be resized after we are done since we still have
   //parts of memory pointing to that buffer (extractList)
   //Note that we allocate some extra memory to make everything texture/memory alligned
-  tree.generalBuffer1.cresize(3*(newN)*4 + 4096, false);  
+  tree.generalBuffer1.cresize(3*(memSize)*4 + 4096, false);
 
   //Now we have to copy the data in batches incase the generalBuffer1 is not large enough
   //Amount we can store:
@@ -1822,7 +1823,7 @@ int octree::gpu_exchange_particles_with_overflow_check(tree_structure &tree,
     insertOffset += items;    
   }
 
-//   printf("Benodigde gpu malloc tijd stap 1: %lg \t Size: %d \tRank: %d \t Size: %d \n", 
+//   printf("Required gpu malloc time step1: %lg \t Size: %d \tRank: %d \t Size: %d \n",
 //          get_time()-t1, newN, mpiGetRank(), tree.bodies_Ppos.get_size()); 
 //   t1 = get_time();
   
@@ -1832,8 +1833,8 @@ int octree::gpu_exchange_particles_with_overflow_check(tree_structure &tree,
   //Resize the arrays of the tree    
   reallocateParticleMemory(tree);   
      
-//   printf("Benodigde gpu malloc tijd stap 2: %lg \n", get_time()-t1);
-//   printf("Totale GPU interactie tijd: %lg \n", get_time()-t2);
+//   printf("Required gpu malloc tijd step 2: %lg \n", get_time()-t1);
+//   printf("Total GPU interaction time: %lg \n", get_time()-t2);
 
   int retValue = 0;
 

@@ -452,7 +452,7 @@ bool octree::iterate_once(IterationData &idata) {
 
 
     float ms=0, msLET=0;
-#if 1 //enable again when load-balancing, gets the accurate GPU time from events
+#if 1 //enable when load-balancing, gets the accurate GPU time from events
     CU_SAFE_CALL(cudaEventElapsedTime(&ms, startLocalGrav, endLocalGrav));
     if(nProcs > 1)  CU_SAFE_CALL(cudaEventElapsedTime(&msLET,startRemoteGrav, endRemoteGrav));
 
@@ -648,7 +648,6 @@ void octree::iterate_setup(IterationData &idata) {
   lastTotal            = lastLocal;
   idata.lastGravTime   = lastLocal;
   idata.totalGravTime += lastLocal;
-
 
   correct(this->localTree);
   compute_energies(this->localTree);
@@ -875,8 +874,8 @@ void octree::approximate_gravity(tree_structure &tree)
   approxGrav.set_arg<real4>(20, tree.multipole, 4, "texMultipole");
   approxGrav.set_arg<real4>(21, tree.bodies_Ppos, 4, "texBody");
     
- 
   approxGrav.setWork(-1, NTHREAD, nBlocksForTreeWalk);
+
   cudaEventRecord(startLocalGrav, gravStream->s());
   approxGrav.execute(gravStream->s());  //First half
   cudaEventRecord(endLocalGrav, gravStream->s());
@@ -1112,9 +1111,9 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
                                1*(remoteP) + 2*(remoteN + nodeTexOffset),
                                3*remoteN);
   approxGravLET.set_arg<real4>(21, remoteTree.fullRemoteTree, 4, "texBody", 0, remoteP);  
-    
+
   approxGravLET.setWork(-1, NTHREAD, nBlocksForTreeWalk);
- 
+
     
   if(letRunning)
   {
@@ -1128,7 +1127,7 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
   }
   
   remoteTree.fullRemoteTree.h2d(bufferSize); //Only copy required data
-  tree.activePartlist.zeroMemGPUAsync(gravStream->s());
+  tree.activePartlist.zeroMemGPUAsync(gravStream->s()); //Resets atomics
 
   CU_SAFE_CALL(cudaEventRecord(startRemoteGrav, gravStream->s()));
   approxGravLET.execute(gravStream->s());

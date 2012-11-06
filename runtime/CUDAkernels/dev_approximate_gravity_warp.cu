@@ -903,9 +903,9 @@ KERNEL_DECLARE(dev_approximate_gravity)(
     float4 acc_i[2];
 
     pos_i[0] = group_body_pos[body_i[0]];
-    pos_i[1] = group_body_pos[body_i[1]];
-//     pos_i[0] = body_pos[body_i[0]];
-//     pos_i[1] = body_pos[body_i[1]];
+    if(ni > 1) //Only read if we actually have ni == 2
+      pos_i[1] = group_body_pos[body_i[1]];
+
     acc_i[0] = acc_i[1] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
 
     int ngb_i;
@@ -1080,9 +1080,9 @@ KERNEL_DECLARE(dev_approximate_gravity_let)(
     float4 acc_i[2];
 
     pos_i[0] = group_body_pos[body_i[0]];
-    pos_i[1] = group_body_pos[body_i[1]];
-//     pos_i[0] = body_pos[body_i[0]];
-//     pos_i[1] = body_pos[body_i[1]];
+    if(ni > 1) //Only read if we actually have ni == 2
+      pos_i[1] = group_body_pos[body_i[1]];
+
     acc_i[0] = acc_i[1] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
 
     int ngb_i;

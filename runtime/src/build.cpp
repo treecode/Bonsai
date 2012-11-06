@@ -306,7 +306,6 @@ void octree::build (tree_structure &tree) {
 #else
   //int nodeSum = 0;
 
-
   for (level = 0; level < MAXLEVELS; level++) {
     // mark bodies to be combined into nodes
     build_valid_list.set_arg<int>(1, &level);
@@ -528,9 +527,10 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
   build_parallel_grps.set_arg<cl_mem>(5,  parGrpBlockInfo.p());
   build_parallel_grps.set_arg<cl_mem>(6,  startBoundaryIndex.p());
 
+#define EFFICIENT 1
 
   /********** build  list of keys ********/
-#if 0
+#if EFFICIENT
   real4 r_min = {+1e10, +1e10, +1e10, +1e10};
   real4 r_max = {-1e10, -1e10, -1e10, -1e10};
   getBoundaries(tree, r_min, r_max); //Used for predicted position keys further down
@@ -567,8 +567,12 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
   //and sorting (less items to sort and hashes are already in sorted order).
 
   build_key_list.set_arg<cl_mem>(0,   tree.bodies_key.p());
+#if EFFICIENT
+  build_key_list.set_arg<cl_mem>(1,   tree.bodies_pos.p());
+#else
   build_key_list.set_arg<cl_mem>(1,   tree.bodies_Ppos.p());
-  //More efficient, gives problems or something TODO build_key_list.set_arg<cl_mem>(1,   tree.bodies_pos.p());
+#endif
+
   build_key_list.set_arg<int>(2,      &tree.n);
   build_key_list.set_arg<real4>(3,    &tree.corner);
   build_key_list.setWork(tree.n, 128); //128 threads per block
@@ -644,7 +648,7 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
   }
 
   //Compute the boundarys of the tree
-#if 0
+#if EFFICIENT
   real size     = 1.001f*std::max(r_max.z - r_min.z,
                          std::max(r_max.y - r_min.y, r_max.x - r_min.x));
 #else
