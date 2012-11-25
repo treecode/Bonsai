@@ -42,7 +42,7 @@ void octree::compute_properties(tree_structure &tree) {
     //the particles on one process are in the correct order
     //TODO test overall performance (build and tree-walk) when using center+sort instead of first + nosort
 
-//  if(nProcs > 1)
+  if(nProcs > 1)
   {
     //Quickly compute the keys of the groups. Done in a separate kernel since it was (much)
     //faster than combining it with the summary function
@@ -89,7 +89,7 @@ void octree::compute_properties(tree_structure &tree) {
 
   //This overlaps with setPHGroupData and is async, we can safely use the same memory
   //as the multipoleD buffer because of the sync afterwards.
-  //  if(nProcs > 1) TODO uncomment
+  if(nProcs > 1)
   {
     tree.groupCenterInfo.d2h(false, copyStream->s());
     tree.groupSizeInfo.d2h  (false, copyStream->s());
@@ -168,7 +168,7 @@ void octree::compute_properties(tree_structure &tree) {
   #endif
 
 
-  //TODO only if nProcs > 1
+    if(nProcs > 1)
     {
       LOGF(stderr, "Starting all compute-properties kernels took; %lg  start: %lg \n", get_time()-tA, get_time()-t0);
 
