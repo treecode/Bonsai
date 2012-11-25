@@ -1,4 +1,6 @@
 #include "octree.h"
+#include "devFunctionDefinitions.h"
+
 
 #if defined(USE_B40C)
 #include "sort.h"
@@ -96,51 +98,52 @@ void octree::load_kernels() {
   dataReorderF2.setContext(devContext);
   dataReorderI1.setContext(devContext);
   dataReorderCombined.setContext(devContext);
-  
+
 #ifdef USE_CUDA
   compactCount.load_source("./scanKernels.ptx", pathName.c_str());
-  compactCount.create("compact_count");
+  compactCount.create("compact_count", (const void*)&compact_count);
   
+
   exScanBlock.load_source("./scanKernels.ptx", pathName.c_str());
-  exScanBlock.create("exclusive_scan_block");
+  exScanBlock.create("exclusive_scan_block", (const void*)&exclusive_scan_block);
   
   compactMove.load_source("./scanKernels.ptx", pathName.c_str());
-  compactMove.create("compact_move");
+  compactMove.create("compact_move", (const void*)&compact_move);
   
   splitMove.load_source("./scanKernels.ptx", pathName.c_str());
-  splitMove.create("split_move");
+  splitMove.create("split_move", (const void*)split_move);
   
   sortCount.load_source("./sortKernels.ptx", pathName.c_str());
-  sortCount.create("sort_count");
+  sortCount.create("sort_count", (const void*)sort_count);
 
   sortMove.load_source("./sortKernels.ptx", pathName.c_str());
-  sortMove.create("sort_move_stage_key_value");  
+  sortMove.create("sort_move_stage_key_value", (const void*)sort_move_stage_key_value);
 
   extractInt.load_source("./sortKernels.ptx", pathName.c_str());
-  extractInt.create("extractInt");  
+  extractInt.create("extractInt", (const void*)extractInt_kernel);
   
   reOrderKeysValues.load_source("./sortKernels.ptx", pathName.c_str());
-  reOrderKeysValues.create("reOrderKeysValues");    
+  reOrderKeysValues.create("reOrderKeysValues", (const void*)&reOrderKeysValues_kernel);
   
   extractKeyAndPerm.load_source("./sortKernels.ptx", pathName.c_str());
-  extractKeyAndPerm.create("extractKeyAndPerm");  
+  extractKeyAndPerm.create("extractKeyAndPerm", (const void*)&gpu_extractKeyAndPerm);
   
   convertKey64to96.load_source("./sortKernels.ptx", pathName.c_str());
-  convertKey64to96.create("convertKey64to96");
+  convertKey64to96.create("convertKey64to96", (const void*)&gpu_convertKey64to96);
   
   dataReorderR4.load_source("./sortKernels.ptx", pathName.c_str());
 //  dataReorderR4.create("dataReorderR4");  
-  dataReorderR4.create("dataReorderCombined4");
+  dataReorderR4.create("dataReorderCombined4", (const void*)&dataReorderCombined4);
   
   dataReorderF2.load_source("./sortKernels.ptx", pathName.c_str());
-  dataReorderF2.create("dataReorderF2");  
+  dataReorderF2.create("dataReorderF2", (const void*)&gpu_dataReorderF2);
 
   dataReorderI1.load_source("./sortKernels.ptx", pathName.c_str());
-  dataReorderI1.create("dataReorderI1");        
+  dataReorderI1.create("dataReorderI1", (const void*)&gpu_dataReorderI1);
   
   dataReorderCombined.load_source("./sortKernels.ptx", pathName.c_str());
-  dataReorderCombined.create("dataReorderCombined");
-//  dataReorderCombined.create("dataReorderCombined4");
+  dataReorderCombined.create("dataReorderCombined", (const void*)&gpu_dataReorderCombined);
+
   
   
 #else
@@ -190,17 +193,17 @@ void octree::load_kernels() {
   
   /* create kernels */
 
-  build_key_list.create("cl_build_key_list");  
-  build_valid_list.create("cl_build_valid_list");
-  build_nodes.create("cl_build_nodes");
-  link_tree.create("cl_link_tree");
-  define_groups.create("build_group_list2");
-  build_level_list.create("build_level_list");
-  boundaryReduction.create("boundaryReduction");
-  boundaryReductionGroups.create("boundaryReductionGroups");
-  build_body2group_list.create("build_body2group_list");
-  store_groups.create("store_group_list");  
-  segmentedCoarseGroupBoundary.create("segmentedCoarseGroupBoundary");
+  build_key_list.create("cl_build_key_list", (const void*)&cl_build_key_list);
+  build_valid_list.create("cl_build_valid_list", (const void*)&cl_build_valid_list);
+  build_nodes.create("cl_build_nodes", (const void*)&cl_build_nodes);
+  link_tree.create("cl_link_tree", (const void*)&cl_link_tree);
+  define_groups.create("build_group_list2", (const void*)&build_group_list2);
+  build_level_list.create("build_level_list", (const void*)&gpu_build_level_list);
+  boundaryReduction.create("boundaryReduction", (const void*)&gpu_boundaryReduction);
+  boundaryReductionGroups.create("boundaryReductionGroups", (const void*)&gpu_boundaryReductionGroups);
+//  build_body2group_list.create("build_body2group_list", (const void*)&gpu_build_body2group_list);
+  store_groups.create("store_group_list", (const void*)&store_group_list);
+  segmentedCoarseGroupBoundary.create("segmentedCoarseGroupBoundary", (const void*)&gpu_segmentedCoarseGroupBoundary);
 
 
 #else
@@ -239,13 +242,13 @@ void octree::load_kernels() {
   setPHGroupDataGetKey2.load_source("./compute_propertiesD.ptx", pathName.c_str());
   /* create kernels */
   
-  propsNonLeafD.create("compute_non_leaf"); 
-  propsLeafD.create("compute_leaf");
-  propsScalingD.create("compute_scaling");
+  propsNonLeafD.create("compute_non_leaf", (const void*)&compute_non_leaf);
+  propsLeafD.create("compute_leaf", (const void*)&compute_leaf);
+  propsScalingD.create("compute_scaling", (const void*)&compute_scaling);
 
-  setPHGroupData.create("setPHGroupData");
-  setPHGroupDataGetKey.create("setPHGroupDataGetKey");
-  setPHGroupDataGetKey2.create("setPHGroupDataGetKey2");
+  setPHGroupData.create("setPHGroupData", (const void*)&gpu_setPHGroupData);
+  setPHGroupDataGetKey.create("setPHGroupDataGetKey", (const void*)&gpu_setPHGroupDataGetKey);
+  setPHGroupDataGetKey2.create("setPHGroupDataGetKey2", (const void*)&gpu_setPHGroupDataGetKey2);
 
   
 #else
@@ -292,20 +295,20 @@ void octree::load_kernels() {
   determineLET.load_source("./dev_approximate_gravity.ptx", pathName.c_str(), "", 64);
   /* create kernels */
 
-  getTNext.create("get_Tnext"); 
-  predictParticles.create("predict_particles");   
-  getNActive.create("get_nactive");
-  approxGrav.create("dev_approximate_gravity");
-  directGrav.create("dev_direct_gravity");
-  correctParticles.create("correct_particles");
-  computeDt.create("compute_dt");  
-  setActiveGrps.create("setActiveGroups");
+  getTNext.create("get_Tnext", (const void*)&get_Tnext);
+  predictParticles.create("predict_particles", (const void*)&predict_particles);
+  getNActive.create("get_nactive", (const void*)&get_nactive);
+  approxGrav.create("dev_approximate_gravity", (const void*)&dev_approximate_gravity);
+  directGrav.create("dev_direct_gravity", (const void*)&dev_direct_gravity);
+  correctParticles.create("correct_particles", (const void*)&correct_particles);
+  computeDt.create("compute_dt", (const void*)&compute_dt);
+  setActiveGrps.create("setActiveGroups", (const void*)&setActiveGroups);
 
-  computeEnergy.create("compute_energy_double");  
-  distanceCheck.create("distanceCheck");  
+  computeEnergy.create("compute_energy_double", (const void*)&compute_energy_double);
+  distanceCheck.create("distanceCheck", (const void*)&distanceCheck);
   
-  approxGravLET.create("dev_approximate_gravity_let");
-  determineLET.create("dev_determineLET");
+  approxGravLET.create("dev_approximate_gravity_let", (const void*)&dev_approximate_gravity_let);
+  determineLET.create("dev_determineLET", (const void*)&dev_determineLET);
 
 #else
   getTNext.load_source("", "");
@@ -346,19 +349,19 @@ void octree::load_kernels() {
   extractOutOfDomainParticlesAdvancedSFC.load_source("./parallel.ptx", pathName.c_str());
   insertNewParticlesSFC.load_source("./parallel.ptx", pathName.c_str());
 
-  domainCheck.create("doDomainCheck");
-  extractSampleParticles.create("extractSampleParticles");
-  extractOutOfDomainR4.create("extractOutOfDomainParticlesR4");
-  extractOutOfDomainBody.create("extractOutOfDomainParticlesAdvanced");
-  insertNewParticles.create("insertNewParticles");
-  internalMove.create("internalMove");
+  domainCheck.create("doDomainCheck", (const void*)&doDomainCheck);
+  extractSampleParticles.create("extractSampleParticles", (const void*)&gpu_extractSampleParticles);
+  extractOutOfDomainR4.create("extractOutOfDomainParticlesR4", (const void*)&extractOutOfDomainParticlesR4);
+  extractOutOfDomainBody.create("extractOutOfDomainParticlesAdvanced", (const void*)&extractOutOfDomainParticlesAdvanced);
+  insertNewParticles.create("insertNewParticles", (const void*)&gpu_insertNewParticles);
+  internalMove.create("internalMove", (const void*)&gpu_internalMove);
 
-  build_parallel_grps.create("build_parallel_grps");
-  segmentedSummaryBasic.create("segmentedSummaryBasic");
-  domainCheckSFC.create("domainCheckSFC");
-  internalMoveSFC.create("internalMoveSFC");
-  extractOutOfDomainParticlesAdvancedSFC.create("extractOutOfDomainParticlesAdvancedSFC");
-  insertNewParticlesSFC.create("insertNewParticlesSFC");
+  build_parallel_grps.create("build_parallel_grps", (const void*)&gpu_build_parallel_grps);
+  segmentedSummaryBasic.create("segmentedSummaryBasic", (const void*)&gpu_segmentedSummaryBasic);
+  domainCheckSFC.create("domainCheckSFC", (const void*)&gpu_domainCheckSFC);
+  internalMoveSFC.create("internalMoveSFC", (const void*)&gpu_internalMoveSFC);
+  extractOutOfDomainParticlesAdvancedSFC.create("extractOutOfDomainParticlesAdvancedSFC", (const void*)&gpu_extractOutOfDomainParticlesAdvancedSFC);
+  insertNewParticlesSFC.create("insertNewParticlesSFC", (const void*)&gpu_insertNewParticlesSFC);
 
 #else
 
@@ -385,8 +388,7 @@ void octree::load_kernels() {
    
    
 #endif  
-  
-  
+
 
 }
 

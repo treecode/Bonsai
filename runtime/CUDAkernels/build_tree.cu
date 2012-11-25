@@ -7,7 +7,7 @@
 PROF_MODULE(build_tree);
 
 
-KERNEL_DECLARE(boundaryReduction)(const int n_particles,
+KERNEL_DECLARE(gpu_boundaryReduction)(const int n_particles,
                                             real4      *positions,
                                             float3     *output_min,
                                             float3     *output_max)
@@ -92,7 +92,7 @@ KERNEL_DECLARE(boundaryReduction)(const int n_particles,
 }
 
 //Get the domain size, by taking into account the group size
-KERNEL_DECLARE(boundaryReductionGroups)(const int n_groups,
+KERNEL_DECLARE(gpu_boundaryReductionGroups)(const int n_groups,
                                                    real4      *positions,
                                                    real4      *sizes,
                                                    float3     *output_min,
@@ -469,7 +469,7 @@ KERNEL_DECLARE(cl_link_tree)(int n_nodes,
 }
 
 //Determines which level of node starts at which offset
-KERNEL_DECLARE(build_level_list)(const int    n_nodes,
+KERNEL_DECLARE(gpu_build_level_list)(const int    n_nodes,
                                  const int    n_leafs,
                                        uint  *leafsIdxs,
                                        uint2 *node_bodies,
@@ -883,7 +883,7 @@ KERNEL_DECLARE(correct_dust_particles)(const int n_bodies,
 //Using atomics to prevent launch overhead when there
 //are only few particles. Could be modified into 
 //non atomic with Dynamic Parallelism
-KERNEL_DECLARE(segmentedCoarseGroupBoundary)(
+KERNEL_DECLARE(gpu_segmentedCoarseGroupBoundary)(
                                     const int n_coarse_groups, //Number of groups that have to be summarized
                                     const int n_groups,
                                     uint     *atomicValues,
@@ -1000,7 +1000,7 @@ KERNEL_DECLARE(segmentedCoarseGroupBoundary)(
 
 #if 0
 //Function to mark the particles that are already assigned to a hash
-extern "C" __global__ void build_parallel_grps(
+KERNEL_DECLARE(build_parallel_grps)(
                              uint   compact_list_len,
                              uint   offset,
                              uint  *compact_list,
@@ -1073,7 +1073,7 @@ extern "C" __global__ void build_parallel_grps(
 #else
 
 //Function to mark the particles that are already assigned to a hash
-extern "C" __global__ void build_parallel_grps(
+KERNEL_DECLARE(gpu_build_parallel_grps)(
                              uint   compact_list_len,
                              uint   offset,
                              uint  *compact_list,
@@ -1151,7 +1151,7 @@ extern "C" __global__ void build_parallel_grps(
 //Using atomics to prevent launch overhead when there
 //are only few particles. Could be modified into
 //non atomic with Dynamic Parallism
-extern "C" __global__ void segmentedSummaryBasic (
+KERNEL_DECLARE(gpu_segmentedSummaryBasic) (
                                             const int n_groups, //Number of groups that have to be summarized
                                             uint     *validGroups,
                                             uint     *atomicValues,

@@ -159,14 +159,16 @@ void octree::build_GroupTree(int n_bodies,
 
           uint2 node; // node.nb = n_node; node.b  = i_body;
 
-          if (n_node <= NLEAF && n_levels > level_min)
+//          if (n_node <= NLEAF && n_levels > level_min)
+          if (n_node <= 16 && n_levels > level_min)
           { //Leaf node
             for (int k = i_body; k < i1; k++)
               keys[k] = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
 
             nMasked += n_node;
 
-            node.x    = i_body | ((uint)(n_node-1) << LEAFBIT);
+//            node.x    = i_body | ((uint)(n_node-1) << LEAFBIT);
+            node.x    = i_body | ((uint)(n_node-1) << 28);
             node.y = 1;
           }
           else

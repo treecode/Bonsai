@@ -172,7 +172,7 @@ PROF_MODULE(sortKernels);
 #endif
 
 
-KERNEL_DECLARE(dataReorderR4)(const int n_particles,
+KERNEL_DECLARE(gpu_dataReorderR4)(const int n_particles,
                                          real4 *source,
                                          real4 *destination,
                                          uint  *permutation) {
@@ -202,7 +202,7 @@ KERNEL_DECLARE(dataReorderR4)(const int n_particles,
 //   destination[idx] = source[newIndex];  
 // }
 
-KERNEL_DECLARE(dataReorderI1)(const int n_particles,
+KERNEL_DECLARE(gpu_dataReorderI1)(const int n_particles,
                                          int *source,
                                          int *destination,
                                          uint  *permutation) {
@@ -219,7 +219,7 @@ KERNEL_DECLARE(dataReorderI1)(const int n_particles,
 
 
 //Convert a 64bit key uint2 key into a 96key with a permutation value build in
-KERNEL_DECLARE(convertKey64to96)(uint4 *keys,  uint4 *newKeys, const int N)
+KERNEL_DECLARE(gpu_convertKey64to96)(uint4 *keys,  uint4 *newKeys, const int N)
 {
   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
   const int tid = threadIdx.y * blockDim.x + threadIdx.x;
@@ -233,7 +233,7 @@ KERNEL_DECLARE(convertKey64to96)(uint4 *keys,  uint4 *newKeys, const int N)
   newKeys[idx] = make_uint4(temp.x, temp.y, temp.z, idx);
 }
 
-KERNEL_DECLARE(extractKeyAndPerm)(uint4 *newKeys, uint4 *keys, uint *permutation, const int N)
+KERNEL_DECLARE(gpu_extractKeyAndPerm)(uint4 *newKeys, uint4 *keys, uint *permutation, const int N)
 {
   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
   const int tid = threadIdx.y * blockDim.x + threadIdx.x;
@@ -249,7 +249,7 @@ KERNEL_DECLARE(extractKeyAndPerm)(uint4 *newKeys, uint4 *keys, uint *permutation
   permutation[idx] = temp.w;
 }
 
-KERNEL_DECLARE(dataReorderCombined)(const int N, uint4 *keyAndPerm,
+KERNEL_DECLARE(gpu_dataReorderCombined)(const int N, uint4 *keyAndPerm,
                                       real4 *source1, real4* destination1,
                                       real4 *source2, real4* destination2,
                                       real4 *source3, real4* destination3) {
@@ -345,7 +345,7 @@ KERNEL_DECLARE(dataReorderCombined3)(const int N, uint4 *keyAndPerm,
 }
 
 
-KERNEL_DECLARE(dataReorderF2)(const int N, uint4 *keyAndPerm,
+KERNEL_DECLARE(gpu_dataReorderF2)(const int N, uint4 *keyAndPerm,
                                          float2 *source1, float2 *destination1,
                                          int    *source2, int *destination2) {
   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
@@ -387,7 +387,7 @@ KERNEL_DECLARE(extractInt2)(uint4 *keys,  uint *simpleKeys, const int N, int key
   simpleKeys[idx] = simpleTemp;
 }
 
-KERNEL_DECLARE(extractInt)(uint4 *keys,  uint *simpleKeys, 
+KERNEL_DECLARE(extractInt_kernel)(uint4 *keys,  uint *simpleKeys,
                                       uint *sequence,
                                       const int N, int keyIdx)
 {
@@ -430,7 +430,7 @@ KERNEL_DECLARE(fillSequence)(uint *sequence, const int N)
 }
 
 //Reorder the data in the arrays according to a given permutation
-KERNEL_DECLARE(reOrderKeysValues)(uint4 *keysSrc, uint4 *keysDest, uint *permutation, const int N)
+KERNEL_DECLARE(reOrderKeysValues_kernel)(uint4 *keysSrc, uint4 *keysDest, uint *permutation, const int N)
 {
   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
   const int tid = threadIdx.y * blockDim.x + threadIdx.x;

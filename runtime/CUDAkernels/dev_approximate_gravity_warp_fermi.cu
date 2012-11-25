@@ -151,6 +151,24 @@ texture<float4, 1, cudaReadModeElementType> texNodeCenter;
 texture<float4, 1, cudaReadModeElementType> texMultipole;
 texture<float4, 1, cudaReadModeElementType> texBody;
 
+//This function is called from the my_cuda_rt file. I could not get the
+// references extern since g++ did not accept the texture objects
+const void* getTexturePointer(const char* name)
+{
+  if(strcmp(name, "texNodeSize") == 0)
+    return &texNodeSize;
+  if(strcmp(name, "texNodeCenter") == 0)
+    return &texNodeCenter;
+  if(strcmp(name, "texMultipole") == 0)
+    return &texMultipole;
+  if(strcmp(name, "texBody") == 0)
+    return &texBody;
+  return NULL;
+}
+
+
+
+
 /*********** Forces *************/
 
 __device__ __forceinline__ float4 add_acc(

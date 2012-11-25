@@ -399,7 +399,7 @@ KERNEL_DECLARE(compute_scaling)(const int node_count,
 }
 
 //Compute the properties for the groups
-KERNEL_DECLARE(setPHGroupData)(const int n_groups,
+KERNEL_DECLARE(gpu_setPHGroupData)(const int n_groups,
                                           const int n_particles,   
                                           real4 *bodies_pos,
                                           int2  *group_list,                                                
@@ -491,7 +491,7 @@ KERNEL_DECLARE(setPHGroupData)(const int n_groups,
 }//end copyNode2grp
 
 //Compute the properties for the groups
-KERNEL_DECLARE(setPHGroupDataGetKey)(const int n_groups,
+KERNEL_DECLARE(gpu_setPHGroupDataGetKey)(const int n_groups,
                                           const int n_particles,
                                           real4 *bodies_pos,
                                           int2  *group_list,
@@ -603,7 +603,7 @@ KERNEL_DECLARE(setPHGroupDataGetKey)(const int n_groups,
 }//end copyNode2grp
 
 //Compute the key for the groups
-KERNEL_DECLARE(setPHGroupDataGetKey2)(const int n_groups,
+KERNEL_DECLARE(gpu_setPHGroupDataGetKey2)(const int n_groups,
                                       real4 *bodies_pos,
                                       int2  *group_list,
                                       uint4  *body_key,

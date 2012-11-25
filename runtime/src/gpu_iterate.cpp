@@ -378,6 +378,11 @@ bool octree::iterate_once(IterationData &idata) {
         this->build(this->localTree);
         devContext.stopTiming("Tree-construction", 2, execStream->s());
 
+        double tTemp = get_time();
+
+        LOGF(stderr, " done in %g sec : %g Mptcl/sec\n",
+            tTemp-t1, this->localTree.n/1e6/(tTemp-t1));
+
         devContext.startTiming(execStream->s());
         this->allocateTreePropMemory(this->localTree);
         devContext.stopTiming("Memory", 11, execStream->s());      

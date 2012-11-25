@@ -300,6 +300,10 @@ void octree::build (tree_structure &tree) {
   // make sure previous resetCompact() has finished.
   this->devMemCountsx.waitForCopyEvent();
 
+//  devContext.startTiming(execStream->s());
+
+
+//  double tBuild0 = get_time();
 
 #if 0
   build_tree_node_levels(*this, validList, compactList, levelOffset, maxLevel, execStream->s());
@@ -323,8 +327,14 @@ void octree::build (tree_structure &tree) {
   // reset counts to 1 so next compact proceeds...
   this->resetCompact();
 #endif
-  
 
+//  execStream->sync();
+//  const double dt = get_time() - tBuild0;
+//
+//  fprintf(stderr, " done in %g sec : %g Mptcl/sec\n",
+//      dt, tree.n/1e6/dt);
+
+//  devContext.stopTiming("Create-nodes", 10, execStream->s());
 
   maxLevel.d2h(1);
   level = maxLevel[0];

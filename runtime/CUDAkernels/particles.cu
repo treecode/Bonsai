@@ -79,7 +79,7 @@ KERNEL_DECLARE(doDomainCheckAdvanced)(int    n_bodies,
 }
   
 
-KERNEL_DECLARE(extractSampleParticles)(int    n_bodies,
+KERNEL_DECLARE(gpu_extractSampleParticles)(int    n_bodies,
                                                   int    sample_freq,
                                                   real4  *body_pos,
                                                   real4  *samplePosition
@@ -161,7 +161,7 @@ KERNEL_DECLARE(extractOutOfDomainParticlesAdvanced)(int n_extract,
 }
 
 
-KERNEL_DECLARE(internalMove)(int       n_extract,                                       
+KERNEL_DECLARE(gpu_internalMove)(int       n_extract,
                                         int       n_bodies,
                                         double4  xlow,
                                         double4  xhigh,
@@ -204,7 +204,7 @@ KERNEL_DECLARE(internalMove)(int       n_extract,
 
 }
 
-KERNEL_DECLARE(insertNewParticles)(int       n_extract,
+KERNEL_DECLARE(gpu_insertNewParticles)(int       n_extract,
                                               int       n_insert,
                                               int       n_oldbodies,
                                               int       offset,
@@ -240,7 +240,7 @@ KERNEL_DECLARE(insertNewParticles)(int       n_extract,
 }
 
 //Check if a particles key is within the min and max boundaries
-KERNEL_DECLARE(domainCheckSFC)(int    n_bodies,
+KERNEL_DECLARE(gpu_domainCheckSFC)(int    n_bodies,
                                uint4  lowBoundary,
                                uint4  highBoundary,
                                uint4  *body_key,
@@ -273,7 +273,7 @@ KERNEL_DECLARE(domainCheckSFC)(int    n_bodies,
 
 
 
-KERNEL_DECLARE(internalMoveSFC) (int       n_extract,
+KERNEL_DECLARE(gpu_internalMoveSFC) (int       n_extract,
                                   int       n_bodies,
                                   uint4  lowBoundary,
                                   uint4  highBoundary,
@@ -323,7 +323,7 @@ KERNEL_DECLARE(internalMoveSFC) (int       n_extract,
 
 }
 
-KERNEL_DECLARE(extractOutOfDomainParticlesAdvancedSFC)(int n_extract,
+KERNEL_DECLARE(gpu_extractOutOfDomainParticlesAdvancedSFC)(int n_extract,
                                                        int *extractList,
                                                        real4 *Ppos,
                                                        real4 *Pvel,
@@ -356,7 +356,7 @@ KERNEL_DECLARE(extractOutOfDomainParticlesAdvancedSFC)(int n_extract,
 
 }
 
-KERNEL_DECLARE(insertNewParticlesSFC)(int       n_extract,
+KERNEL_DECLARE(gpu_insertNewParticlesSFC)(int       n_extract,
                                               int       n_insert,
                                               int       n_oldbodies,
                                               int       offset,

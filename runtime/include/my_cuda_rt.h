@@ -33,7 +33,7 @@ typedef unsigned int uint;
 
 using namespace std;
 
-
+extern const void * getTexturePointer(const char*);
 
 
 #define cl_mem void*
@@ -951,8 +951,9 @@ namespace my_dev {
 
   class kernel {
   protected:    
-    char *hKernelFilename;    
-    char *hKernelName;
+    char       *hKernelFilename;
+    char       *hKernelName;
+    const void *hKernelPointer;
 
     vector<size_t> hGlobalWork;
     vector<size_t> hLocalWork;
@@ -1080,14 +1081,18 @@ namespace my_dev {
       program_flag = true;
     }
 
-    void create(const char *kernel_name) {
+    void create(const char *kernel_name, const void *funcPointer) {
       //In runtime kept for compatability
       assert(program_flag);
       assert(!kernel_flag);
       sprintf(hKernelName, kernel_name,"");
       
       LOG("%s \n", kernel_name);
+
+      hKernelPointer = funcPointer;
+
       kernel_flag = true;
+
     }
     
     void computeSharedMemorySize()
@@ -1214,7 +1219,8 @@ namespace my_dev {
       if(kernelArguments[arg].size != -2)
       { 
         const struct textureReference *texref;
-        CU_SAFE_CALL(cudaGetTextureReference(&texref, textureName));
+        //CU_SAFE_CALL(cudaGetTextureReference(&texref, textureName));
+	CU_SAFE_CALL(cudaGetTextureReference(&texref, getTexturePointer(textureName)));
         
         
     
@@ -1414,7 +1420,13 @@ namespace my_dev {
       completeArguments();
 
 //      LOGF(stderr,"Waiting on kernel: %s to finish... ", hKernelName );
-      CU_SAFE_CALL(cudaLaunch(hKernelName));  
+//      CU_SAFE_CALL(cudaLaunch(hKernelName));
+#if CUDART_VERSION < 5000
+      CU_SAFE_CALL(cudaLaunch((const char*)hKernelPointer));
+#else
+      //CU_SAFE_CALL(cudaLaunch(hKernelPointer));
+      CU_SAFE_CALL(cudaLaunch((const char*)hKernelPointer));
+#endif
 //      CU_SAFE_CALL(cudaDeviceSynchronize());
 //      LOGF(stderr,"finished \n");
       
