@@ -9,7 +9,6 @@
 #include <stdarg.h>
 #include <log.h>
 #include <stdio.h>
-#include <mpi.h>
 #include <string.h>
 
 // ******************************************** //
@@ -20,6 +19,8 @@
 
 #if ENABLE_LOG
   #ifdef USE_MPI
+    #include <mpi.h>
+
     extern bool ENABLE_RUNTIME_LOG;
     extern bool PREPEND_RANK;
     extern int PREPEND_RANK_PROCID;
