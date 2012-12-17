@@ -1,5 +1,78 @@
 #include "octree.h"
 
+
+static uint4 host_get_key(int4 crd)
+{
+  const int bits = 30;  //20 to make it same number as morton order
+  int i,xi, yi, zi;
+  int mask;
+  int key;
+
+  //0= 000, 1=001, 2=011, 3=010, 4=110, 5=111, 6=101, 7=100
+  //000=0=0, 001=1=1, 011=3=2, 010=2=3, 110=6=4, 111=7=5, 101=5=6, 100=4=7
+  const int C[8] = {0, 1, 7, 6, 3, 2, 4, 5};
+
+  int temp;
+
+  mask = 1 << (bits - 1);
+  key  = 0;
+
+  uint4 key_new;
+
+  for(i = 0; i < bits; i++, mask >>= 1)
+  {
+    xi = (crd.x & mask) ? 1 : 0;
+    yi = (crd.y & mask) ? 1 : 0;
+    zi = (crd.z & mask) ? 1 : 0;
+
+    int index = (xi << 2) + (yi << 1) + zi;
+
+    if(index == 0)
+    {
+      temp = crd.z; crd.z = crd.y; crd.y = temp;
+    }
+    else  if(index == 1 || index == 5)
+    {
+      temp = crd.x; crd.x = crd.y; crd.y = temp;
+    }
+    else  if(index == 4 || index == 6)
+    {
+      crd.x = (crd.x) ^ (-1);
+      crd.z = (crd.z) ^ (-1);
+    }
+    else  if(index == 7 || index == 3)
+    {
+      temp = (crd.x) ^ (-1);
+      crd.x = (crd.y) ^ (-1);
+      crd.y = temp;
+    }
+    else
+    {
+      temp = (crd.z) ^ (-1);
+      crd.z = (crd.y) ^ (-1);
+      crd.y = temp;
+    }
+
+    key = (key << 3) + C[index];
+
+    if(i == 19)
+    {
+      key_new.y = key;
+      key = 0;
+    }
+    if(i == 9)
+    {
+      key_new.x = key;
+      key = 0;
+    }
+  } //end for
+
+   key_new.z = key;
+
+  return key_new;
+}
+
+
 void octree::compute_properties(tree_structure &tree) {
 
   /*****************************************************          
@@ -234,7 +307,313 @@ void octree::compute_properties(tree_structure &tree) {
   double t1 = get_time();
   execStream->sync();
   LOGF(stderr, "Compute properties took: %lg  wait: %lg \n", get_time()-t0, get_time()-t1);
+
+
+
+#if 1
+  //Test code to merge top nodes into a new tree-structure
+  {
+    uint2 node_begend;
+    int level_start = tree.startLevelMin;
+    node_begend.x   = tree.level_list[level_start].x;
+    node_begend.y   = tree.level_list[level_start].y;
+
+    int nTopNodes = node_begend.y-node_begend.x;
+
+    //Retrieve properties
+    tree.multipole.d2h();
+    tree.boxSizeInfo.d2h();
+    tree.boxCenterInfo.d2h();
+
+    float4 *topTreeCenters    = new float4[nTopNodes];
+    float4 *topTreeSizes      = new float4[nTopNodes];
+    float4 *topTreeMultipole  = new float4[3*nTopNodes];
+
+    double4 *tempMultipoleRes = new double4[3*nTopNodes];
+
+
+
+    uint4 *keys = new uint4[nTopNodes];
+
+    //Compute the keys based on the center of the node
+    for(int i=node_begend.x; i< node_begend.y; i++)
+    {
+      int4 crd;
+      crd.x = (int)((tree.boxCenterInfo[i].x - tree.corner.x) / tree.corner.w);
+      crd.y = (int)((tree.boxCenterInfo[i].y - tree.corner.y) / tree.corner.w);
+      crd.z = (int)((tree.boxCenterInfo[i].z - tree.corner.z) / tree.corner.w);
+
+      keys[i-node_begend.x]   = host_get_key(crd);
+      keys[i-node_begend.x].w = i-node_begend.x;
+
+//      fprintf(stderr, "%d\t%d Key:\t %d \t %d \t %d \n", i-node_begend.x,i, keys[i-node_begend.x].x,keys[i-node_begend.x].y,keys[i-node_begend.x].z);
+    }
+
+    std::sort(keys, keys+nTopNodes, cmp_ph_key());
+
+//    for(int i=0; i < nTopNodes; i++)
+//      fprintf(stderr, "Sorted\t\t %d\t%d Key:\t %d \t %d \t %d \t %d\n", i,i, keys[i].x,keys[i].y,keys[i].z,keys[i].w);
+
+
+    uint2 *nodes    = (uint2*)&tree.generalBuffer1[0];
+    //2* since generalBuffer is uint, assuming we wont create more new nodes than
+    //we have top-nodes. TODO verify if this is actually true
+    uint4 *nodeKeys = (uint4*)&tree.generalBuffer1[0+2*nTopNodes];
+
+    uint node_levels[MAXLEVELS];
+    int topTree_n_levels;
+    int topTree_startGrp;
+    int topTree_endGrp;
+    int topTree_n_nodes;
+    build_NewTopLevels(nTopNodes, &keys[0], nodes,
+                    nodeKeys, node_levels, topTree_n_levels,
+                    topTree_n_nodes, topTree_startGrp, topTree_endGrp);
+
+    //Now we have to compute the properties, do this from bottom up, as in the GPU case
+    for(int i=topTree_n_levels;i > 0; i--)
+    {
+      int startNode = node_levels[i-1];
+      int endNode   = node_levels[i];
+      fprintf(stderr, "Working on level: %d Start: %d  End: %d \n", i, startNode, endNode);
+
+      for(int j=startNode; j < endNode; j++)
+      {
+        //Extract child information
+        int child    =    nodes[j].x & 0x0FFFFFFF;//Index to the first child of the node
+        int nchild   = (((nodes[j].x & 0xF0000000) >> 28)) + 1;
+
+        fprintf(stderr, "Level info: %d  \t %d : Bottom: %d Child: %d  nChild: %d\n", j, nodes[j].y, (nodes[j].y == 1), child, nchild);
+
+        float4 *sourceCenter = NULL;
+        float4 *sourceSize   = NULL;
+        float4 *multipole    = NULL;
+
+        if(nodes[j].y == 1)
+        {
+          //This is an end-node, read from original received data-array
+          sourceCenter = &tree.boxCenterInfo[node_begend.x];
+          sourceSize   = &tree.boxSizeInfo  [node_begend.x];
+        }
+        else
+        {
+          //This is a newly created node, read from new array
+          sourceCenter = &topTreeCenters[0];
+          sourceSize   = &topTreeSizes[0];
+        }
+
+        double3 r_min = {+1e10f, +1e10f, +1e10f};
+        double3 r_max = {-1e10f, -1e10f, -1e10f};
+
+        double mass, posx, posy, posz;
+        mass = posx = posy = posz = 0.0;
+
+        double oct_q11, oct_q22, oct_q33;
+        double oct_q12, oct_q13, oct_q23;
+
+        oct_q11 = oct_q22 = oct_q33 = 0.0;
+        oct_q12 = oct_q13 = oct_q23 = 0.0;
+
+        for(int k=child; k < child+nchild; k++) //NOTE <= otherwise we miss the last child
+        {
+          double4 pos;
+          double4 Q0, Q1;
+          //Process/merge the children into this node
+
+          //The center, compute the center+size back to a min/max
+          double3 curRmin = {sourceCenter[k].x - sourceSize[k].x,
+                             sourceCenter[k].y - sourceSize[k].y,
+                             sourceCenter[k].z - sourceSize[k].z};
+          double3 curRmax = {sourceCenter[k].x + sourceSize[k].x,
+                             sourceCenter[k].y + sourceSize[k].y,
+                             sourceCenter[k].z + sourceSize[k].z};
+
+          //Compute the new min/max
+          r_min.x = min(curRmin.x, r_min.x);
+          r_min.y = min(curRmin.y, r_min.y);
+          r_min.z = min(curRmin.z, r_min.z);
+          r_max.x = max(curRmax.x, r_max.x);
+          r_max.y = max(curRmax.y, r_max.y);
+          r_max.z = max(curRmax.z, r_max.z);
+
+          //Compute monopole and quadrupole
+          if(nodes[j].y == 1)
+          {
+            pos = make_double4(tree.multipole[3*(node_begend.x+k)+0].x,
+                               tree.multipole[3*(node_begend.x+k)+0].y,
+                               tree.multipole[3*(node_begend.x+k)+0].z,
+                               tree.multipole[3*(node_begend.x+k)+0].w);
+            Q0  = make_double4(tree.multipole[3*(node_begend.x+k)+1].x,
+                               tree.multipole[3*(node_begend.x+k)+1].y,
+                               tree.multipole[3*(node_begend.x+k)+1].z,
+                               tree.multipole[3*(node_begend.x+k)+1].w);
+            Q1  = make_double4(tree.multipole[3*(node_begend.x+k)+2].x,
+                               tree.multipole[3*(node_begend.x+k)+2].y,
+                               tree.multipole[3*(node_begend.x+k)+2].z,
+                               tree.multipole[3*(node_begend.x+k)+2].w);
+            double temp = Q1.y;
+            Q1.y = Q1.z; Q1.z = temp;
+            //Scale back to original order
+            double im = 1.0 / pos.w;
+            Q0.x = Q0.x + pos.x*pos.x; Q0.x = Q0.x / im;
+            Q0.y = Q0.y + pos.y*pos.y; Q0.y = Q0.y / im;
+            Q0.z = Q0.z + pos.z*pos.z; Q0.z = Q0.z / im;
+            Q1.x = Q1.x + pos.x*pos.y; Q1.x = Q1.x / im;
+            Q1.y = Q1.y + pos.y*pos.z; Q1.y = Q1.y / im;
+            Q1.z = Q1.z + pos.x*pos.z; Q1.z = Q1.z / im;
+          }
+          else
+          {
+            pos = tempMultipoleRes[3*k+0];
+            Q0  = tempMultipoleRes[3*k+1];
+            Q1  = tempMultipoleRes[3*k+2];
+          }
+
+          mass += pos.w;
+          posx += pos.w*pos.x;
+          posy += pos.w*pos.y;
+          posz += pos.w*pos.z;
+
+          //Quadrupole
+          oct_q11 += Q0.x;
+          oct_q22 += Q0.y;
+          oct_q33 += Q0.z;
+          oct_q12 += Q1.x;
+          oct_q13 += Q1.y;
+          oct_q23 += Q1.z;
+        }
+
+        double4 mon = {posx, posy, posz, mass};
+        double im = 1.0/mon.w;
+        if(mon.w == 0) im = 0; //Allow tracer/mass-less particles
+
+        mon.x *= im;
+        mon.y *= im;
+        mon.z *= im;
+
+        tempMultipoleRes[j*3+0] = mon;
+        tempMultipoleRes[j*3+1] = make_double4(oct_q11,oct_q22,oct_q33,0);
+        tempMultipoleRes[j*3+2] = make_double4(oct_q12,oct_q13,oct_q23,0);
+        //Store float4 results right away, so we do not have to do an extra loop
+        //Scale the quadropole
+        double4 Q0, Q1;
+        Q0.x = oct_q11*im - mon.x*mon.x;
+        Q0.y = oct_q22*im - mon.y*mon.y;
+        Q0.z = oct_q33*im - mon.z*mon.z;
+        Q1.x = oct_q12*im - mon.x*mon.y;
+        Q1.y = oct_q13*im - mon.y*mon.z;
+        Q1.z = oct_q23*im - mon.x*mon.z;
+
+        //Switch the y and z parameter
+        double temp = Q1.y;
+        Q1.y = Q1.z; Q1.z = temp;
+
+
+        topTreeMultipole[j*3+0] = make_float4(mon.x,mon.y,mon.z,mon.w);
+        topTreeMultipole[j*3+1] = make_float4(Q0.x,Q0.y,Q0.z,0);
+        topTreeMultipole[j*3+2] = make_float4(Q1.x,Q1.y,Q1.z,0);
+
+        //All intermediate steps are done in full-double precision to prevent round-off
+        //errors. Note that there is still a chance of round-off errors, because we start
+        //with float data, while on the GPU we start/keep full precision data
+        double4 boxCenterD;
+        boxCenterD.x = 0.5*((double)r_min.x + (double)r_max.x);
+        boxCenterD.y = 0.5*((double)r_min.y + (double)r_max.y);
+        boxCenterD.z = 0.5*((double)r_min.z + (double)r_max.z);
+
+        double4 boxSizeD = make_double4(std::max(abs(boxCenterD.x-r_min.x), abs(boxCenterD.x-r_max.x)),
+                                        std::max(abs(boxCenterD.y-r_min.y), abs(boxCenterD.y-r_max.y)),
+                                        std::max(abs(boxCenterD.z-r_min.z), abs(boxCenterD.z-r_max.z)), 0);
+
+        //Compute distance between center box and center of mass
+        double3 s3     = make_double3((boxCenterD.x - mon.x), (boxCenterD.y - mon.y), (boxCenterD.z -     mon.z));
+
+        double s      = sqrt((s3.x*s3.x) + (s3.y*s3.y) + (s3.z*s3.z));
+        //If mass-less particles form a node, the s would be huge in opening angle, make it 0
+        if(fabs(mon.w) < 1e-10) s = 0;
+
+        //Length of the box, note times 2 since we only computed half the distance before
+        double l = 2*fmax(boxSizeD.x, fmax(boxSizeD.y, boxSizeD.z));
+
+        //Extra check, shouldn't be necessary, probably it is otherwise the test for leaf can fail
+        //This actually IS important Otherwise 0.0 < 0 can fail, now it will be: -1e-12 < 0
+        if(l < 0.000001)
+          l = 0.000001;
+
+        #ifdef IMPBH
+          double cellOp = (l/theta) + s;
+        #else
+          //Minimum distance method
+          float cellOp = (l/theta);
+        #endif
+
+        boxCenterD.w       = cellOp*cellOp;
+        float4 boxCenter   = make_float4(boxCenterD.x,boxCenterD.y, boxCenterD.z, boxCenterD.w);
+        topTreeCenters[j]  = boxCenter;
+
+        //Encode the child information, the leaf offsets are changed
+        //such that they point to the correct starting offsets
+        //in the final array, which starts after the 'topTree_n_nodes'
+        //items.
+        if(nodes[j].y == 1)
+        { //Leaf
+          child += topTree_n_nodes;
+        }
+        
+        int childInfo = child | (nchild << 28);
+        
+        union{float f; int i;} u; //__float_as_int
+        u.i           = childInfo;
+
+        float4 boxSize   = make_float4(boxSizeD.x, boxSizeD.y, boxSizeD.z, 0);
+        boxSize.w        = u.f; //int_as_float
+
+        topTreeSizes[j] = boxSize;
+      }//for startNode < endNode
+    }//for each topTree level
+
+    //Compare the results
+    for(int i=0; i < node_begend.x; i++)
+    {
+      fprintf(stderr, "Node: %d \tSource size: %f %f %f %f Source center: %f %f %f %f \n",i,
+          tree.boxSizeInfo[i].x,tree.boxSizeInfo[i].y,tree.boxSizeInfo[i].z,tree.boxSizeInfo[i].w,
+          tree.boxCenterInfo[i].x,tree.boxCenterInfo[i].y,tree.boxCenterInfo[i].z, 
+          tree.boxCenterInfo[i].w);
+
+      fprintf(stderr, "Node: %d \tNew    Size: %f %f %f %f  New    center: %f %f %f %f\n",i,
+          topTreeSizes[i].x,  topTreeSizes[i].y,  topTreeSizes[i].z,   topTreeSizes[i].w,
+          topTreeCenters[i].x,topTreeCenters[i].y,topTreeCenters[i].z, topTreeCenters[i].w);
+
+
+      fprintf(stderr, "Ori-Node: %d \tMono: %f %f %f %f \tQ0: %f %f %f \tQ1: %f %f %f\n",i,
+          tree.multipole[3*i+0].x,tree.multipole[3*i+0].y,tree.multipole[3*i+0].z,tree.multipole[3*i+0].w,
+          tree.multipole[3*i+1].x,tree.multipole[3*i+1].y,tree.multipole[3*i+1].z,
+          tree.multipole[3*i+2].x,tree.multipole[3*i+2].y,tree.multipole[3*i+2].z);
+
+      fprintf(stderr, "New-Node: %d \tMono: %f %f %f %f \tQ0: %f %f %f \tQ1: %f %f %f\n\n\n",i,
+          topTreeMultipole[3*i+0].x,topTreeMultipole[3*i+0].y,topTreeMultipole[3*i+0].z,topTreeMultipole[3*i+0].w,
+          topTreeMultipole[3*i+1].x,topTreeMultipole[3*i+1].y,topTreeMultipole[3*i+1].z,
+          topTreeMultipole[3*i+2].x,topTreeMultipole[3*i+2].y,topTreeMultipole[3*i+2].z);
+    }
+
+
+  }//end function/section
+#endif
+
+
+
+
+
+
+
+
 }
+
+
+
+
+
+
+
 
 
 

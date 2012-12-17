@@ -5,8 +5,6 @@
 #include "mpi.h"
 #endif
 
-#define __SSE__
-#define __SSE2__
 //SSE stuff for local tree-walk
 typedef float  _v4sf  __attribute__((vector_size(16)));
 typedef int    _v4si  __attribute__((vector_size(16)));
@@ -31,19 +29,26 @@ inline float host_int_as_float(int val)
   return itof.f;
 }
 
-inline int cmp_uint4(uint4 a, uint4 b) {
-  if      (a.x < b.x) return -1;
-  else if (a.x > b.x) return +1;
-  else {
-    if       (a.y < b.y) return -1;
-    else  if (a.y > b.y) return +1;
-    else {
-      if       (a.z < b.z) return -1;
-      else  if (a.z > b.z) return +1;
-      return 0;
-    } //end z
-  }  //end y
-} //end x, function
+//inline int cmp_uint4(uint4 a, uint4 b) {
+//  if      (a.x < b.x) return -1;
+//  else if (a.x > b.x) return +1;
+//  else {
+//    if       (a.y < b.y) return -1;
+//    else  if (a.y > b.y) return +1;
+//    else {
+//      if       (a.z < b.z) return -1;
+//      else  if (a.z > b.z) return +1;
+//      return 0;
+//    } //end z
+//  }  //end y
+//} //end x, function
+//
+//
+//struct cmp_ph_key{
+//  bool operator () (const uint4 &a, const uint4 &b){
+//    return ( cmp_uint4( a, b) < 1);
+//  }
+//};
 
 
 void octree::mpiInit(int argc,char *argv[], int &procId, int &nProcs)
@@ -145,12 +150,6 @@ int octree::SumOnRootRank(int &value)
 
 
 //Functions related to domain decomposition
-
-struct cmp_ph_key{
-  bool operator () (const uint4 &a, const uint4 &b){
-    return ( cmp_uint4( a, b) < 1);
-  }
-};
 
 
 typedef struct hashInfo
@@ -956,6 +955,11 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
 
 //Functions related to the LET Creation and Exchange
 
+//Broadcast the group-tree structure (used during the LET creation)
+//First we gather the size, so we can create/allocate memory
+//and then we broad-cast the final structure
+//This basically is a sync-operation and therefore can be quite costly
+//Maybe we want to do this in a separate thread
 void octree::sendCurrentInfoGrpTree()
 {
   #ifdef USE_MPI
@@ -1043,8 +1047,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
   //Timers for the LET Exchange
   static double totalLETExTime    = 0;
-  thisPartLETExTime = 0;
-  double tStart = 0;
+  thisPartLETExTime               = 0;
+  double tStart                   = 0;
 
   //Buffers
 
@@ -1105,7 +1109,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
            &localTree.multipole[0], &nodeInfo[0], //Local Tree
            grpSize, grpCenter, //remote Tree
            node_begend.x, node_begend.y, startGrp, endGrp-1,
-//           node_begend.x, node_begend.y, startGrp+1, startGrp+2,
            countNodes, countParticles,
            curLevelStack, nextLevelStack);
 
@@ -1113,10 +1116,10 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
       //Buffer that will contain all the data:
       //|real4| 2*particleCount*real4| nodes*real4 | nodes*real4 | nodes*3*real4 |
-      //1 + 2*particleCount + nodeCount + nodeCount + 3*nodeCount
+      //1 + 1*particleCount + nodeCount + nodeCount + 3*nodeCount
 
-      //Increase the number of particles and the number of nodes by the texture-offset such that these are correctly
-      //aligned in memory
+      //Increase the number of particles and the number of nodes by the texture-offset
+       //such that these are correctly aligned in memory
       countParticles += getTextureAllignmentOffset(countParticles, sizeof(real4));
       countNodes     += getTextureAllignmentOffset(countNodes    , sizeof(real4));
 
@@ -1165,7 +1168,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
     z-=recvTree;
 
-    //Now we have to merge the separate tree-structures into one process
+    //Now we have to merge the separate tree-structures into one big-tree
 
 //     double t1 = get_time();
 
@@ -1405,13 +1408,13 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
     }
 
     /*
-    The final tree structure looks as follows:
-    particlesT1, particlesT2,...mparticlesTn |,
-    topNodeSizeT1, topNodeSizeT2,..., topNodeSizeT2 | nodeSizeT1, nodeSizeT2, ...nodeSizeT3 |,
-    topNodeCentT1, topNodeCentT2,..., topNodeCentT2 | nodeCentT1, nodeCentT2, ...nodeCentT3 |,
-    topNodeMultT1, topNodeMultT2,..., topNodeMultT2 | nodeMultT1, nodeMultT2, ...nodeMultT3
+      The final tree structure looks as follows:
+      particlesT1, particlesT2,...mparticlesTn |,
+      topNodeSizeT1, topNodeSizeT2,..., topNodeSizeT2 | nodeSizeT1, nodeSizeT2, ...nodeSizeT3 |,
+      topNodeCentT1, topNodeCentT2,..., topNodeCentT2 | nodeCentT1, nodeCentT2, ...nodeCentT3 |,
+      topNodeMultT1, topNodeMultT2,..., topNodeMultT2 | nodeMultT1, nodeMultT2, ...nodeMultT3
 
-    NOTE that the Multipole data consists of 3 float4 values per node
+      NOTE that the Multipole data consists of 3 float4 values per node
     */
 
     //Store the tree properties (number of particles, number of nodes, start and end topnode)
@@ -1733,7 +1736,7 @@ void octree::stackFill(real4 *LETBuffer, real4 *nodeCenter, real4* nodeSize,
 }//stackFill
 
 
-//Exchange the LET structure
+//Exchange the LET structure, this is a point to point communication operation
 real4* octree::MP_exchange_bhlist(int ibox, int isource,
                                 int bufferSize, real4 *letDataBuffer)
 {

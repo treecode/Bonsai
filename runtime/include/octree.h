@@ -93,6 +93,30 @@ typedef struct sampleRadInfo
 }sampleRadInfo;
 
 
+
+
+inline int cmp_uint4(uint4 a, uint4 b) {
+  if      (a.x < b.x) return -1;
+  else if (a.x > b.x) return +1;
+  else {
+    if       (a.y < b.y) return -1;
+    else  if (a.y > b.y) return +1;
+    else {
+      if       (a.z < b.z) return -1;
+      else  if (a.z > b.z) return +1;
+      return 0;
+    } //end z
+  }  //end y
+} //end x, function
+
+
+struct cmp_ph_key{
+  bool operator () (const uint4 &a, const uint4 &b){
+    return ( cmp_uint4( a, b) < 1);
+  }
+};
+
+
 //Structure and properties of a tree
 class tree_structure
 {
@@ -800,6 +824,16 @@ public:
 
   void ICRecv(int procId, vector<real4> &bodyPositions, vector<real4> &bodyVelocities,  vector<int> &bodiesIDs);
   void ICSend(int destination, real4 *bodyPositions, real4 *bodyVelocities,  int *bodiesIDs, int size);
+
+  void build_NewTopLevels(int n_bodies,
+                       uint4 *keys,
+                       uint2 *nodes,
+                       uint4 *node_keys,
+                       uint  *node_levels,
+                       int &n_levels,
+                       int &n_nodes,
+                       int &startGrp,
+                       int &endGrp);
 
   void makeLET();
 
