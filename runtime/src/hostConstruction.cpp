@@ -326,10 +326,11 @@ void octree::build_NewTopLevels(int n_bodies,
                      uint  *node_levels,
                      int &n_levels,
                      int &n_nodes,
-                     int &startGrp,
-                     int &endGrp) {
+                     int &startNode,
+                     int &endNode) {
 
-  const int level_min = 0; //If we set this to 0 we should recover our original structure
+  const int level_min = 0; //We just want a tree on top of our  trees, so no need for minimum
+
 
   double t0 = get_time();
 
@@ -409,10 +410,11 @@ void octree::build_NewTopLevels(int n_bodies,
       i++;
     } //for bodies
   } //for levels
+
   node_levels[n_levels] = n_nodes;
 
-  startGrp = node_levels[level_min];
-  endGrp   = node_levels[level_min+1];
+  startNode = node_levels[level_min];
+  endNode   = node_levels[level_min+1];
 
 
   double tlink = get_time();
@@ -471,7 +473,6 @@ void octree::build_NewTopLevels(int n_bodies,
   LOGF(stderr, "  n_levels= %d  n_nodes= %d [%d] n_leaves= %d\n",
           n_levels, n_nodes, node_levels[n_levels], n_leaves0);
 #endif
-
 }
 
 

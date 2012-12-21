@@ -362,12 +362,12 @@ void octree::compute_properties(tree_structure &tree) {
 
     uint node_levels[MAXLEVELS];
     int topTree_n_levels;
-    int topTree_startGrp;
-    int topTree_endGrp;
+    int topTree_startNode;
+    int topTree_endNode;
     int topTree_n_nodes;
     build_NewTopLevels(nTopNodes, &keys[0], nodes,
                     nodeKeys, node_levels, topTree_n_levels,
-                    topTree_n_nodes, topTree_startGrp, topTree_endGrp);
+                    topTree_n_nodes, topTree_startNode, topTree_endNode);
 
     //Now we have to compute the properties, do this from bottom up, as in the GPU case
     for(int i=topTree_n_levels;i > 0; i--)
