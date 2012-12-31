@@ -835,6 +835,19 @@ public:
                        int &startGrp,
                        int &endGrp);
 
+  void computeProps_TopLevelTree(
+      int topTree_n_nodes,
+      int topTree_n_levels,
+      uint* node_levels,
+      uint2 *nodes,
+      real4* topTreeCenters,
+      real4* topTreeSizes,
+      real4* topTreeMultipole,
+      real4* nodeCenters,
+      real4* nodeSizes,
+      real4* multiPoles,
+      double4* tempMultipoleRes);
+
   void makeLET();
 
   void parallelDataSummary(tree_structure &tree, float lastExecTime, float lastExecTime2);

@@ -419,7 +419,7 @@ void octree::build_NewTopLevels(int n_bodies,
 
   double tlink = get_time();
   for(int i=0; i < n_levels; i++)
-    fprintf(stderr, "On level: %d : %d --> %d  \n", i, node_levels[i],node_levels[i+1]);
+    LOGF(stderr, "On level: %d : %d --> %d  \n", i, node_levels[i],node_levels[i+1]);
 
 
   /***
@@ -475,6 +475,249 @@ void octree::build_NewTopLevels(int n_bodies,
 #endif
 }
 
+//Compute the properties of the newly build tree-nodes
+void octree::computeProps_TopLevelTree(
+                                      int topTree_n_nodes,
+                                      int topTree_n_levels,
+                                      uint* node_levels,
+                                      uint2 *nodes,
+                                      real4* topTreeCenters,
+                                      real4* topTreeSizes,
+                                      real4* topTreeMultipole,
+                                      real4* nodeCenters,
+                                      real4* nodeSizes,
+                                      real4* multiPoles,
+                                      double4* tempMultipoleRes)
+  {
+    //Now we have to compute the properties, do this from bottom up, as in the GPU case
+    for(int i=topTree_n_levels;i > 0; i--)
+    {
+      int startNode = node_levels[i-1];
+      int endNode   = node_levels[i];
+      fprintf(stderr, "Working on level: %d Start: %d  End: %d \n", i, startNode, endNode);
+
+      for(int j=startNode; j < endNode; j++)
+      {
+        //Extract child information
+        int child    =    nodes[j].x & 0x0FFFFFFF;//Index to the first child of the node
+        int nchild   = (((nodes[j].x & 0xF0000000) >> 28)) + 1;
+
+        fprintf(stderr, "Level info: %d  \t %d : Bottom: %d Child: %d  nChild: %d\n", j, nodes[j].y, (nodes[j].y == 1), child, nchild);
+
+        float4 *sourceCenter = NULL;
+        float4 *sourceSize   = NULL;
+        float4 *multipole    = NULL;
+
+        if(nodes[j].y == 1)
+        {
+          //This is an end-node, read from original received data-array
+          sourceCenter = &nodeCenters[0];
+          sourceSize   = &nodeSizes  [0];
+        }
+        else
+        {
+          //This is a newly created node, read from new array
+          sourceCenter = &topTreeCenters[0];
+          sourceSize   = &topTreeSizes[0];
+        }
+
+        double3 r_min = {+1e10f, +1e10f, +1e10f};
+        double3 r_max = {-1e10f, -1e10f, -1e10f};
+
+        double mass, posx, posy, posz;
+        mass = posx = posy = posz = 0.0;
+
+        double oct_q11, oct_q22, oct_q33;
+        double oct_q12, oct_q13, oct_q23;
+
+        oct_q11 = oct_q22 = oct_q33 = 0.0;
+        oct_q12 = oct_q13 = oct_q23 = 0.0;
+
+        for(int k=child; k < child+nchild; k++) //NOTE <= otherwise we miss the last child
+        {
+          double4 pos;
+          double4 Q0, Q1;
+          //Process/merge the children into this node
+
+          //The center, compute the center+size back to a min/max
+          double3 curRmin = {sourceCenter[k].x - sourceSize[k].x,
+                             sourceCenter[k].y - sourceSize[k].y,
+                             sourceCenter[k].z - sourceSize[k].z};
+          double3 curRmax = {sourceCenter[k].x + sourceSize[k].x,
+                             sourceCenter[k].y + sourceSize[k].y,
+                             sourceCenter[k].z + sourceSize[k].z};
+
+          //Compute the new min/max
+          r_min.x = min(curRmin.x, r_min.x);
+          r_min.y = min(curRmin.y, r_min.y);
+          r_min.z = min(curRmin.z, r_min.z);
+          r_max.x = max(curRmax.x, r_max.x);
+          r_max.y = max(curRmax.y, r_max.y);
+          r_max.z = max(curRmax.z, r_max.z);
+
+          //Compute monopole and quadrupole
+          if(nodes[j].y == 1)
+          {
+            pos = make_double4(multiPoles[3*k+0].x,
+                               multiPoles[3*k+0].y,
+                               multiPoles[3*k+0].z,
+                               multiPoles[3*k+0].w);
+            Q0  = make_double4(multiPoles[3*k+1].x,
+                               multiPoles[3*k+1].y,
+                               multiPoles[3*k+1].z,
+                               multiPoles[3*k+1].w);
+            Q1  = make_double4(multiPoles[3*k+2].x,
+                               multiPoles[3*k+2].y,
+                               multiPoles[3*k+2].z,
+                               multiPoles[3*k+2].w);
+            double temp = Q1.y;
+            Q1.y = Q1.z; Q1.z = temp;
+            //Scale back to original order
+            double im = 1.0 / pos.w;
+            Q0.x = Q0.x + pos.x*pos.x; Q0.x = Q0.x / im;
+            Q0.y = Q0.y + pos.y*pos.y; Q0.y = Q0.y / im;
+            Q0.z = Q0.z + pos.z*pos.z; Q0.z = Q0.z / im;
+            Q1.x = Q1.x + pos.x*pos.y; Q1.x = Q1.x / im;
+            Q1.y = Q1.y + pos.y*pos.z; Q1.y = Q1.y / im;
+            Q1.z = Q1.z + pos.x*pos.z; Q1.z = Q1.z / im;
+          }
+          else
+          {
+            pos = tempMultipoleRes[3*k+0];
+            Q0  = tempMultipoleRes[3*k+1];
+            Q1  = tempMultipoleRes[3*k+2];
+          }
+
+          mass += pos.w;
+          posx += pos.w*pos.x;
+          posy += pos.w*pos.y;
+          posz += pos.w*pos.z;
+
+          //Quadrupole
+          oct_q11 += Q0.x;
+          oct_q22 += Q0.y;
+          oct_q33 += Q0.z;
+          oct_q12 += Q1.x;
+          oct_q13 += Q1.y;
+          oct_q23 += Q1.z;
+        }
+
+        double4 mon = {posx, posy, posz, mass};
+        double im = 1.0/mon.w;
+        if(mon.w == 0) im = 0; //Allow tracer/mass-less particles
+
+        mon.x *= im;
+        mon.y *= im;
+        mon.z *= im;
+
+        tempMultipoleRes[j*3+0] = mon;
+        tempMultipoleRes[j*3+1] = make_double4(oct_q11,oct_q22,oct_q33,0);
+        tempMultipoleRes[j*3+2] = make_double4(oct_q12,oct_q13,oct_q23,0);
+        //Store float4 results right away, so we do not have to do an extra loop
+        //Scale the quadropole
+        double4 Q0, Q1;
+        Q0.x = oct_q11*im - mon.x*mon.x;
+        Q0.y = oct_q22*im - mon.y*mon.y;
+        Q0.z = oct_q33*im - mon.z*mon.z;
+        Q1.x = oct_q12*im - mon.x*mon.y;
+        Q1.y = oct_q13*im - mon.y*mon.z;
+        Q1.z = oct_q23*im - mon.x*mon.z;
+
+        //Switch the y and z parameter
+        double temp = Q1.y;
+        Q1.y = Q1.z; Q1.z = temp;
+
+
+        topTreeMultipole[j*3+0] = make_float4(mon.x,mon.y,mon.z,mon.w);
+        topTreeMultipole[j*3+1] = make_float4(Q0.x,Q0.y,Q0.z,0);
+        topTreeMultipole[j*3+2] = make_float4(Q1.x,Q1.y,Q1.z,0);
+
+        //All intermediate steps are done in full-double precision to prevent round-off
+        //errors. Note that there is still a chance of round-off errors, because we start
+        //with float data, while on the GPU we start/keep full precision data
+        double4 boxCenterD;
+        boxCenterD.x = 0.5*((double)r_min.x + (double)r_max.x);
+        boxCenterD.y = 0.5*((double)r_min.y + (double)r_max.y);
+        boxCenterD.z = 0.5*((double)r_min.z + (double)r_max.z);
+
+        double4 boxSizeD = make_double4(std::max(abs(boxCenterD.x-r_min.x), abs(boxCenterD.x-r_max.x)),
+                                        std::max(abs(boxCenterD.y-r_min.y), abs(boxCenterD.y-r_max.y)),
+                                        std::max(abs(boxCenterD.z-r_min.z), abs(boxCenterD.z-r_max.z)), 0);
+
+        //Compute distance between center box and center of mass
+        double3 s3     = make_double3((boxCenterD.x - mon.x), (boxCenterD.y - mon.y), (boxCenterD.z -     mon.z));
+
+        double s      = sqrt((s3.x*s3.x) + (s3.y*s3.y) + (s3.z*s3.z));
+        //If mass-less particles form a node, the s would be huge in opening angle, make it 0
+        if(fabs(mon.w) < 1e-10) s = 0;
+
+        //Length of the box, note times 2 since we only computed half the distance before
+        double l = 2*fmax(boxSizeD.x, fmax(boxSizeD.y, boxSizeD.z));
+
+        //Extra check, shouldn't be necessary, probably it is otherwise the test for leaf can fail
+        //This actually IS important Otherwise 0.0 < 0 can fail, now it will be: -1e-12 < 0
+        if(l < 0.000001)
+          l = 0.000001;
+
+        #ifdef IMPBH
+          double cellOp = (l/theta) + s;
+        #else
+          //Minimum distance method
+          float cellOp = (l/theta);
+        #endif
+
+        boxCenterD.w       = cellOp*cellOp;
+        float4 boxCenter   = make_float4(boxCenterD.x,boxCenterD.y, boxCenterD.z, boxCenterD.w);
+        topTreeCenters[j]  = boxCenter;
+
+        //Encode the child information, the leaf offsets are changed
+        //such that they point to the correct starting offsets
+        //in the final array, which starts after the 'topTree_n_nodes'
+        //items.
+        if(nodes[j].y == 1)
+        { //Leaf
+          child += topTree_n_nodes;
+        }
+
+        int childInfo = child | (nchild << 28);
+
+        union{float f; int i;} u; //__float_as_int
+        u.i           = childInfo;
+
+        float4 boxSize   = make_float4(boxSizeD.x, boxSizeD.y, boxSizeD.z, 0);
+        boxSize.w        = u.f; //int_as_float
+
+        topTreeSizes[j] = boxSize;
+      }//for startNode < endNode
+    }//for each topTree level
+
+#if 1
+    //Compare the results
+    for(int i=0; i < topTree_n_nodes; i++)
+    {
+      fprintf(stderr, "Node: %d \tSource size: %f %f %f %f Source center: %f %f %f %f \n",i,
+          nodeSizes[i].x,nodeSizes[i].y,nodeSizes[i].z,nodeSizes[i].w,
+          nodeCenters[i].x,nodeCenters[i].y,nodeCenters[i].z,
+          nodeCenters[i].w);
+
+      fprintf(stderr, "Node: %d \tNew    Size: %f %f %f %f  New    center: %f %f %f %f\n",i,
+          topTreeSizes[i].x,  topTreeSizes[i].y,  topTreeSizes[i].z,   topTreeSizes[i].w,
+          topTreeCenters[i].x,topTreeCenters[i].y,topTreeCenters[i].z, topTreeCenters[i].w);
+
+
+      fprintf(stderr, "Ori-Node: %d \tMono: %f %f %f %f \tQ0: %f %f %f \tQ1: %f %f %f\n",i,
+          multiPoles[3*i+0].x,multiPoles[3*i+0].y,multiPoles[3*i+0].z,multiPoles[3*i+0].w,
+          multiPoles[3*i+1].x,multiPoles[3*i+1].y,multiPoles[3*i+1].z,
+          multiPoles[3*i+2].x,multiPoles[3*i+2].y,multiPoles[3*i+2].z);
+
+      fprintf(stderr, "New-Node: %d \tMono: %f %f %f %f \tQ0: %f %f %f \tQ1: %f %f %f\n\n\n",i,
+          topTreeMultipole[3*i+0].x,topTreeMultipole[3*i+0].y,topTreeMultipole[3*i+0].z,topTreeMultipole[3*i+0].w,
+          topTreeMultipole[3*i+1].x,topTreeMultipole[3*i+1].y,topTreeMultipole[3*i+1].z,
+          topTreeMultipole[3*i+2].x,topTreeMultipole[3*i+2].y,topTreeMultipole[3*i+2].z);
+    }
+#endif
+
+  }//end function/section
 
 
 

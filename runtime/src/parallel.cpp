@@ -953,6 +953,7 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
 }
 
 
+
 //Functions related to the LET Creation and Exchange
 
 //Broadcast the group-tree structure (used during the LET creation)
@@ -1018,6 +1019,80 @@ void octree::sendCurrentInfoGrpTree()
 //////////////////////////////////////////////////////
 // ***** Local essential tree functions ************//
 //////////////////////////////////////////////////////
+
+
+//Compute PH key, same function as on device
+static uint4 host_get_key(int4 crd)
+{
+  const int bits = 30;  //20 to make it same number as morton order
+  int i,xi, yi, zi;
+  int mask;
+  int key;
+
+  //0= 000, 1=001, 2=011, 3=010, 4=110, 5=111, 6=101, 7=100
+  //000=0=0, 001=1=1, 011=3=2, 010=2=3, 110=6=4, 111=7=5, 101=5=6, 100=4=7
+  const int C[8] = {0, 1, 7, 6, 3, 2, 4, 5};
+
+  int temp;
+
+  mask = 1 << (bits - 1);
+  key  = 0;
+
+  uint4 key_new;
+
+  for(i = 0; i < bits; i++, mask >>= 1)
+  {
+    xi = (crd.x & mask) ? 1 : 0;
+    yi = (crd.y & mask) ? 1 : 0;
+    zi = (crd.z & mask) ? 1 : 0;
+
+    int index = (xi << 2) + (yi << 1) + zi;
+
+    if(index == 0)
+    {
+      temp = crd.z; crd.z = crd.y; crd.y = temp;
+    }
+    else  if(index == 1 || index == 5)
+    {
+      temp = crd.x; crd.x = crd.y; crd.y = temp;
+    }
+    else  if(index == 4 || index == 6)
+    {
+      crd.x = (crd.x) ^ (-1);
+      crd.z = (crd.z) ^ (-1);
+    }
+    else  if(index == 7 || index == 3)
+    {
+      temp = (crd.x) ^ (-1);
+      crd.x = (crd.y) ^ (-1);
+      crd.y = temp;
+    }
+    else
+    {
+      temp = (crd.z) ^ (-1);
+      crd.z = (crd.y) ^ (-1);
+      crd.y = temp;
+    }
+
+    key = (key << 3) + C[index];
+
+    if(i == 19)
+    {
+      key_new.y = key;
+      key = 0;
+    }
+    if(i == 9)
+    {
+      key_new.x = key;
+      key = 0;
+    }
+  } //end for
+
+   key_new.z = key;
+
+  return key_new;
+}
+
 void octree::essential_tree_exchangeV2(tree_structure &tree,
                                        tree_structure &remote,
                                        nInfoStruct *nodeInfo)
@@ -1061,6 +1136,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
   int letBuffSize              = (int) (1.05*(tree.n + 5* tree.n_nodes));
   real4 *LETDataBuffer         = new real4[letBuffSize];
 
+  int topNodeOnTheFlyCount = 0;
 
 //   for(int z=nproc-1; z > 0; z-=step)
   for(int z=nproc-1; z > 0; )
@@ -1156,6 +1232,12 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       //Exchange the data of the tree structures  between the processes
       treeBuffers[recvTree] = MP_exchange_bhlist(ibox, isource, bufferSize, LETDataBuffer);
 
+      //Increase the top-node count
+      int topStart = (int)treeBuffers[recvTree][0].z;
+      int topEnd   = (int)treeBuffers[recvTree][0].w;
+
+      topNodeOnTheFlyCount += (topEnd-topStart);
+
       //This determines if we interrupt the exchange by starting a gravity kernel on the GPU
       if(gravStream->isFinished())
       {
@@ -1208,6 +1290,9 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       treeBuffers[PROCS][0].y = (float)nodeCount;
       treeBuffers[PROCS][0].z = (float)tree.level_list[level_start].x;
       treeBuffers[PROCS][0].w = (float)tree.level_list[level_start].y;
+
+      topNodeOnTheFlyCount += (tree.level_list[level_start].y-tree.level_list[level_start].x);
+
       PROCS                   = PROCS + 1; //Signal that we added one more tree-structure
       mergeOwntree            = false;     //Set it to false in case we do not merge all trees at once, we only include our own once
     }
@@ -1225,6 +1310,11 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
     nodesBegEnd[mpiGetNProcs()].x   = nodesBegEnd[mpiGetNProcs()].y = 0; //Make valgrind happy
     int totalTopNodes               = 0;
 
+    vector<real4> topBoxCenters(1*topNodeOnTheFlyCount);
+    vector<real4> topBoxSizes  (1*topNodeOnTheFlyCount);
+    vector<real4> topMultiPoles(3*topNodeOnTheFlyCount);
+    vector<real4> topTempBuffer(3*topNodeOnTheFlyCount);
+    vector<int  > topSourceProc(1*topNodeOnTheFlyCount);
 
     //Calculate the offsets
     for(int i=0; i < PROCS ; i++)
@@ -1235,12 +1325,174 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       nodesBegEnd[i].x = (int)treeBuffers[i][0].z;
       nodesBegEnd[i].y = (int)treeBuffers[i][0].w;
 
-      totalTopNodes += nodesBegEnd[i].y-nodesBegEnd[i].x;
+
 
       particleSumOffsets[i+1]     = particleSumOffsets[i]  + particles;
       nodeSumOffsets[i+1]         = nodeSumOffsets[i]      + nodes - nodesBegEnd[i].y;    //Without the top-nodes
       startNodeSumOffsets[i+1]    = startNodeSumOffsets[i] + nodesBegEnd[i].y-nodesBegEnd[i].x;
+
+
+      //Copy the properties for the top-nodes
+#if 1
+      int nTop = nodesBegEnd[i].y-nodesBegEnd[i].x;
+      memcpy(&topBoxSizes[totalTopNodes],
+             &treeBuffers[i][1+1*particles+nodesBegEnd[i].x], sizeof(real4)*nTop);
+      memcpy(&topBoxCenters[totalTopNodes],
+             &treeBuffers[i][1+1*particles+nodes+ nodesBegEnd[i].x], sizeof(real4)*nTop);
+      memcpy(&topMultiPoles[3*totalTopNodes],
+             &treeBuffers[i][1+1*particles+2*nodes+3*nodesBegEnd[i].x], 3*sizeof(real4)*nTop);
+      topSourceProc.insert(topSourceProc.end(), nTop, i ); //Assign source proc
+#endif
+      totalTopNodes += nodesBegEnd[i].y-nodesBegEnd[i].x;
     }
+
+#if 0
+    Ik moet niet copy gebruiken
+    maar de orginele en ook de orginele
+    reshufflen
+    of beter gezegd
+    de orginele vervangen bij het kopieeeren
+    van de nodes verderop
+
+    Bijhouden per item van welk process het vandaan kwam
+#endif
+
+#if 1
+    uint4 *keys          = new uint4[topNodeOnTheFlyCount];
+    //Compute the keys for the top nodes based on their centers
+    for(int i=0; i < topNodeOnTheFlyCount; i++)
+    {
+      real4 nodeCenter = topBoxCenters[i];
+      int4 crd;
+      crd.x = (int)((nodeCenter.x - tree.corner.x) / tree.corner.w);
+      crd.y = (int)((nodeCenter.y - tree.corner.y) / tree.corner.w);
+      crd.z = (int)((nodeCenter.z - tree.corner.z) / tree.corner.w);
+
+      keys[i]   = host_get_key(crd);
+      keys[i].w = i;
+    }//for i,
+
+    //Sort the cells by their keys
+    std::sort(keys, keys+topNodeOnTheFlyCount, cmp_ph_key());
+
+    int *topSourceTempBuffer = (int*)&topTempBuffer[2*topNodeOnTheFlyCount];
+    //TODO don't forget to reshuffle the properties and think about
+    //how to order the underlying data
+    for(int i=0; i < topNodeOnTheFlyCount; i++)
+    {
+      topTempBuffer[i]                      = topBoxSizes[i];
+      topTempBuffer[i+topNodeOnTheFlyCount] = topBoxCenters[i];
+      topSourceTempBuffer[i]                = topSourceProc[i];
+    }
+    for(int i=0; i < topNodeOnTheFlyCount; i++)
+    {
+      topBoxSizes[i]   = topTempBuffer[                       keys[i].w];
+      topBoxCenters[i] = topTempBuffer[topNodeOnTheFlyCount + keys[i].w];
+      topSourceProc[i] = topSourceTempBuffer[                 keys[i].w];
+    }
+    for(int i=0; i < topNodeOnTheFlyCount; i++)
+    {
+      topTempBuffer[3*i+0]                  = topMultiPoles[3*i+0];
+      topTempBuffer[3*i+1]                  = topMultiPoles[3*i+1];
+      topTempBuffer[3*i+2]                  = topMultiPoles[3*i+2];
+    }
+    for(int i=0; i < topNodeOnTheFlyCount; i++)
+    {
+      topMultiPoles[3*i+0]                  = topMultiPoles[3*keys[i].w+0];
+      topMultiPoles[3*i+1]                  = topMultiPoles[3*keys[i].w+1];
+      topMultiPoles[3*i+2]                  = topMultiPoles[3*keys[i].w+2];
+    }
+
+    //Build the tree
+    //Assume we do not need more than 4 times number of top nodes. TODO verify this is true
+    uint2 *nodes    = new uint2[4*topNodeOnTheFlyCount];
+    uint4 *nodeKeys = new uint4[4*topNodeOnTheFlyCount];
+
+    //Build the tree
+    uint node_levels[MAXLEVELS];
+    int topTree_n_levels;
+    int topTree_startNode;
+    int topTree_endNode;
+    int topTree_n_nodes;
+    build_NewTopLevels(topNodeOnTheFlyCount,   &keys[0],          nodes,
+                       nodeKeys,        node_levels,       topTree_n_levels,
+                       topTree_n_nodes, topTree_startNode, topTree_endNode);
+
+    //Next compute the properties
+    float4 *topTreeCenters    = new float4[topTree_n_nodes];
+    float4 *topTreeSizes      = new float4[topTree_n_nodes];
+    float4 *topTreeMultipole  = new float4[3*topTree_n_nodes];
+
+    double4 *tempMultipoleRes = new double4[3*topTree_n_nodes];
+
+    computeProps_TopLevelTree(topTree_n_nodes,
+                              topTree_n_levels,
+                              node_levels,
+                              nodes,
+                              topTreeCenters,
+                              topTreeSizes,
+                              topTreeMultipole,
+                              &topBoxCenters[0],
+                              &topBoxSizes[0],
+                              &topMultiPoles[0],
+                              tempMultipoleRes);
+
+    //Tree properties computed, now do some magic to put everything
+    //into one array
+
+    //Modify the offsets of the children to fix the pointers
+    for(int i=0; i < topNodeOnTheFlyCount; i++)
+    {
+      real4 center  = topBoxCenters[i];
+      real4 size    = topBoxSizes  [i];
+      int   srcProc = topSourceProc[i];
+
+      bool leaf        = center.w <= 0;
+
+      int childinfo = host_float_as_int(size.w);
+      int child, nchild;
+
+      if(!leaf)
+      {
+        //Node
+        child    =    childinfo & 0x0FFFFFFF;                  //Index to the first child of the node
+        nchild   = (((childinfo & 0xF0000000) >> 28)) ;        //The number of children this node has
+
+        child = child - nodesBegEnd[srcProc].y + topTree_n_nodes + totalTopNodes + nodeSumOffsets[srcProc]; //Calculate the new start (non-leaf)
+        child = child | (nchild << 28);                                       //Merging back in one int
+
+        if(nchild == 0) child = 0;                             //To prevent incorrect negative values
+      }
+      else
+      { //Leaf
+        child   =   childinfo & BODYMASK;                      //the first body in the leaf
+        nchild  = (((childinfo & INVBMASK) >> LEAFBIT)+1);     //number of bodies in the leaf masked with the flag
+
+        child   =  child + particleSumOffsets[srcProc];               //Increasing offset
+        child   = child | ((nchild-1) << LEAFBIT);              //Merging back to one int
+      }//end !leaf
+
+      topBoxSizes[i].w =  host_int_as_float(child);      //store the modified offset
+    }
+
+#if 0
+    Hier gebleven, dit werkt allemaal goed
+    nu dit toevoegen aan het nieuw te maken tree-structure
+    en ook de gereshufflede box en centers en sizes
+    en pas de topnode offsets aan
+
+    delete[] keys;
+    delete[] nodes;
+    delete[] nodeKeys;
+    delete[] topTreeCenters;
+    delete[] topTreeSizes;
+    delete[] topTreeMultipole;
+    delete[] tempMultipoleRes;
+    exit(0);
+    //End tree-build
+#endif
+#endif
+
 
     //Compute total particles and total nodes, totalNodes is WITHOUT topNodes
     int totalParticles    = particleSumOffsets[PROCS];
@@ -1322,20 +1574,20 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             &treeBuffers[i][1+1*remoteP+remoteE*3 + 2*remoteN], //From the last start node onwards
             sizeof(real4)*(remoteN-remoteE)*3);
       /*
-      |real4| 1*particleCount*real4| nodes*real4 | nodes*real4 | nodes*3*real4 |
-      1 + 1*particleCount + nodeCount + nodeCount + 3*nodeCount
+        |real4| 1*particleCount*real4| nodes*real4 | nodes*real4 | nodes*3*real4 |
+        1 + 1*particleCount + nodeCount + nodeCount + 3*nodeCount
 
-      Info about #particles, #nodes, start and end of tree-walk
-      The particle positions
-      The nodeSizeData
-      The nodeCenterData
-      The multipole data, is 3x number of nodes (mono and quadrupole data)
+        Info about #particles, #nodes, start and end of tree-walk
+        The particle positions
+        The nodeSizeData
+        The nodeCenterData
+        The multipole data, is 3x number of nodes (mono and quadrupole data)
 
-      Now that the data is copied, modify the offsets of the tree so that everything works
-      with the new correct locations and references. This takes place in two steps:
-      First  the top nodes
-      Second the normal nodes
-      Has to be done in two steps since they are not continuous in memory if NPROCS > 2
+        Now that the data is copied, modify the offsets of the tree so that everything works
+        with the new correct locations and references. This takes place in two steps:
+        First  the top nodes
+        Second the normal nodes
+        Has to be done in two steps since they are not continuous in memory if NPROCS > 2
       */
 
       //Modify the top nodes
@@ -1369,6 +1621,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
           child   = child | ((nchild-1) << LEAFBIT);              //Merging back to one int
         }//end !leaf
         combinedRemoteTree[j].w =  host_int_as_float(child);      //store the modified offset
+
+        LOGF(stderr,"New sizeB: %d  -> %d \n", j-modStart, child);
       }
 
       //Now the non-top nodes for this process
@@ -1402,10 +1656,14 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
           child = child | ((nchild-1) << LEAFBIT);                //Merging the data back into one int
         }//end !leaf
         combinedRemoteTree[j].w =  host_int_as_float(child);      //Store the modified value
-      }
+
+
+      }//for non-top nodes
+
+      exit(0);
 
       delete[] treeBuffers[i];    //Free the memory of this part of the LET
-    }
+    } //for PROCS
 
     /*
       The final tree structure looks as follows:
@@ -1427,6 +1685,87 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 //     fprintf(stderr,"Modifying the LET took: %g \n", get_time()-t1);
     LOGF(stderr,"Number of local bodies: %d number LET bodies: %d number LET nodes: %d top nodes: %d Processed trees: %d (%d) \n",
                     tree.n, totalParticles, totalNodes, totalTopNodes, PROCS, procTrees);
+
+
+    //First experimental step, merge the top nodes
+#if 0
+      real4 *tempTopBuffer = new real4[totalTopNodes];
+      uint4 *keys          = new uint4[totalTopNodes];
+
+      real4 *nodeCenters = &combinedRemoteTree[1*(totalParticles)+   totalTopNodes+totalNodes+nodeTextOffset];
+      real4 *multiPoles  = &combinedRemoteTree[1*(totalParticles)+2*(totalTopNodes+totalNodes+nodeTextOffset)];
+      real4 *nodeSizes   = &combinedRemoteTree[1*(totalParticles)];
+
+      //Compute the keys for the top nodes
+      for(int i=0; i < totalTopNodes; i++)
+      {
+        real4 nodeCenter = nodeCenters[i];
+        real4 nodeSize   = nodeSizes  [i];
+        //Compute the keys
+        int4 crd;
+        //Based on the center of the node
+        crd.x = (int)((nodeCenter.x - tree.corner.x) / tree.corner.w);
+        crd.y = (int)((nodeCenter.y - tree.corner.y) / tree.corner.w);
+        crd.z = (int)((nodeCenter.z - tree.corner.z) / tree.corner.w);
+
+        keys[i]   = host_get_key(crd);
+        keys[i].w = i;
+
+      }//for i
+
+      std::sort(keys, keys+totalTopNodes, cmp_ph_key());
+
+      //Assume we do not need more than 4 times n-topnodes. verify this is true
+      uint2 *nodes    = new uint2[4*totalTopNodes];
+      uint4 *nodeKeys = new uint4[4*totalTopNodes];
+
+      //Build the tree
+      uint node_levels[MAXLEVELS];
+      int topTree_n_levels;
+      int topTree_startNode;
+      int topTree_endNode;
+      int topTree_n_nodes;
+      build_NewTopLevels(totalTopNodes,   &keys[0],          nodes,
+                         nodeKeys,        node_levels,       topTree_n_levels,
+                         topTree_n_nodes, topTree_startNode, topTree_endNode);
+
+      //Next compute the properties
+      float4 *topTreeCenters    = new float4[topTree_n_nodes];
+      float4 *topTreeSizes      = new float4[topTree_n_nodes];
+      float4 *topTreeMultipole  = new float4[3*topTree_n_nodes];
+
+      double4 *tempMultipoleRes = new double4[3*topTree_n_nodes];
+
+      computeProps_TopLevelTree(topTree_n_nodes,
+                                topTree_n_levels,
+                                node_levels,
+                                nodes,
+                                topTreeCenters,
+                                topTreeSizes,
+                                topTreeMultipole,
+                                nodeCenters,
+                                nodeSizes,
+                                multiPoles,
+                                tempMultipoleRes);
+
+      //Tree properties computed, now do some magic to put everything
+      //into one array
+
+
+      //
+      delete[] tempTopBuffer;
+      delete[] keys;
+      delete[] nodes;
+      delete[] nodeKeys;
+      delete[] topTreeCenters;
+      delete[] topTreeSizes;
+      delete[] topTreeMultipole;
+      delete[] tempMultipoleRes;
+
+      exit(0);
+#endif
+
+
 
     delete[] particleSumOffsets;
     delete[] nodeSumOffsets;

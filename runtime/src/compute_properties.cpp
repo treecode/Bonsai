@@ -369,6 +369,7 @@ void octree::compute_properties(tree_structure &tree) {
                     nodeKeys, node_levels, topTree_n_levels,
                     topTree_n_nodes, topTree_startNode, topTree_endNode);
 
+
     //Now we have to compute the properties, do this from bottom up, as in the GPU case
     for(int i=topTree_n_levels;i > 0; i--)
     {
@@ -574,22 +575,22 @@ void octree::compute_properties(tree_structure &tree) {
     //Compare the results
     for(int i=0; i < node_begend.x; i++)
     {
-      fprintf(stderr, "Node: %d \tSource size: %f %f %f %f Source center: %f %f %f %f \n",i,
+      fprintf(stderr, "XNode: %d \tSource size: %f %f %f %f Source center: %f %f %f %f \n",i,
           tree.boxSizeInfo[i].x,tree.boxSizeInfo[i].y,tree.boxSizeInfo[i].z,tree.boxSizeInfo[i].w,
           tree.boxCenterInfo[i].x,tree.boxCenterInfo[i].y,tree.boxCenterInfo[i].z, 
           tree.boxCenterInfo[i].w);
 
-      fprintf(stderr, "Node: %d \tNew    Size: %f %f %f %f  New    center: %f %f %f %f\n",i,
+      fprintf(stderr, "XNode: %d \tNew    Size: %f %f %f %f  New    center: %f %f %f %f\n",i,
           topTreeSizes[i].x,  topTreeSizes[i].y,  topTreeSizes[i].z,   topTreeSizes[i].w,
           topTreeCenters[i].x,topTreeCenters[i].y,topTreeCenters[i].z, topTreeCenters[i].w);
 
 
-      fprintf(stderr, "Ori-Node: %d \tMono: %f %f %f %f \tQ0: %f %f %f \tQ1: %f %f %f\n",i,
+      fprintf(stderr, "XOri-Node: %d \tMono: %f %f %f %f \tQ0: %f %f %f \tQ1: %f %f %f\n",i,
           tree.multipole[3*i+0].x,tree.multipole[3*i+0].y,tree.multipole[3*i+0].z,tree.multipole[3*i+0].w,
           tree.multipole[3*i+1].x,tree.multipole[3*i+1].y,tree.multipole[3*i+1].z,
           tree.multipole[3*i+2].x,tree.multipole[3*i+2].y,tree.multipole[3*i+2].z);
 
-      fprintf(stderr, "New-Node: %d \tMono: %f %f %f %f \tQ0: %f %f %f \tQ1: %f %f %f\n\n\n",i,
+      fprintf(stderr, "XNew-Node: %d \tMono: %f %f %f %f \tQ0: %f %f %f \tQ1: %f %f %f\n\n\n",i,
           topTreeMultipole[3*i+0].x,topTreeMultipole[3*i+0].y,topTreeMultipole[3*i+0].z,topTreeMultipole[3*i+0].w,
           topTreeMultipole[3*i+1].x,topTreeMultipole[3*i+1].y,topTreeMultipole[3*i+1].z,
           topTreeMultipole[3*i+2].x,topTreeMultipole[3*i+2].y,topTreeMultipole[3*i+2].z);
