@@ -481,7 +481,7 @@ void approximate_gravity(
         //         split = true;
 
 //If node_data = 0xF it means the remote process decided split was not required
-//        if(node_data == 0xFFFFFFFF)
+        //if(node_data == 0xFFFFFFFF)
 //          split = false;
 
 
@@ -632,7 +632,7 @@ void approximate_gravity(
         offset = prefix[laneId];
 
         // step 2
-        if (flag) prefix[warp_exclusive_scan(flag)] = laneId;   //with tidś whose leaves have to be opened
+        if (flag) prefix[warp_exclusive_scan(flag)] = laneId;   //with tid whose leaves have to be opened
 
         directM[laneId]  = offset;                                       //Store a copy of inclusive scan in direct
         offset       -= nbody;                                              //convert inclusive int oexclusive scan
@@ -675,7 +675,6 @@ void approximate_gravity(
           while(n_direct >= WARP_SIZE) 
           {
             n_direct -= WARP_SIZE;
-
 
             const float4 posj  = body_pos[body_list[n_direct + laneId]];
 #if 0
@@ -1023,7 +1022,6 @@ __launch_bounds__(NTHREAD)
     bid   = shmem[0];
 
     if (bid >= n_active_groups) return;
-
 
     int grpOffset = 0;
 

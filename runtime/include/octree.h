@@ -1020,6 +1020,10 @@ public:
 
     globalGrpTreeCntSize = NULL;
 
+    coarseGroupBoxCenter = NULL;
+    coarseGroupBoxSize   = NULL;
+
+
 
     prevDurStep = -1;   //Set it to negative so we know its the first step
 
@@ -1056,7 +1060,7 @@ public:
     if(coarseGroupBoxCenter) delete[] coarseGroupBoxCenter;
     if(coarseGroupBoxSize)   delete[] coarseGroupBoxSize;
 
-    if(localGrpTreeCntSize) delete[] localGrpTreeCntSize;
+    if(localGrpTreeCntSize) free(localGrpTreeCntSize);
     if(globalGrpTreeCntSize) delete[] globalGrpTreeCntSize;
     if(globalGrpTreeCount) delete[] globalGrpTreeCount;
     if(globalGrpTreeOffsets) delete[] globalGrpTreeOffsets;

@@ -480,6 +480,9 @@ bool octree::iterate_once(IterationData &idata) {
     lastLocal = ms;
     lastTotal = ms + msLET;    
 
+    lastLocal = 1;//JB1 REMOVE TODO NOTE
+    lastTotal = 1;//JB1 REMOVE TODO NOTE
+
 //    lastTotal = ms + 300./msLET;
 //    lastTotal = ms + msLET;
 //    lastTotal =  get_time() - t1;
@@ -650,6 +653,7 @@ void octree::iterate_setup(IterationData &idata) {
 
 
   lastLocal            = get_time() - t1;
+  lastLocal = 1;//JB1 REMOVE TODO NOTE
   lastTotal            = lastLocal;
   idata.lastGravTime   = lastLocal;
   idata.totalGravTime += lastLocal;
@@ -718,6 +722,11 @@ void octree::iterate_teardown(IterationData &idata) {
   {
     delete copyStream;
     copyStream = NULL;
+  }
+  if(LETDataToHostStream != NULL)
+  {
+    delete LETDataToHostStream;
+    LETDataToHostStream = NULL;
   }
 }
 
@@ -1118,7 +1127,6 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
   approxGravLET.set_arg<real4>(21, remoteTree.fullRemoteTree, 4, "texBody", 0, remoteP);  
 
   approxGravLET.setWork(-1, NTHREAD, nBlocksForTreeWalk);
-
     
   if(letRunning)
   {

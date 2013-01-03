@@ -329,7 +329,7 @@ void octree::build_NewTopLevels(int n_bodies,
                      int &startNode,
                      int &endNode) {
 
-  const int level_min = 0; //We just want a tree on top of our  trees, so no need for minimum
+  const int level_min = 1; //We just want a tree on top of our  trees, so no need for minimum
 
 
   double t0 = get_time();
@@ -413,6 +413,8 @@ void octree::build_NewTopLevels(int n_bodies,
 
   node_levels[n_levels] = n_nodes;
 
+
+
   startNode = node_levels[level_min];
   endNode   = node_levels[level_min+1];
 
@@ -494,7 +496,7 @@ void octree::computeProps_TopLevelTree(
     {
       int startNode = node_levels[i-1];
       int endNode   = node_levels[i];
-      fprintf(stderr, "Working on level: %d Start: %d  End: %d \n", i, startNode, endNode);
+      LOGF(stderr, "Working on level: %d Start: %d  End: %d \n", i, startNode, endNode);
 
       for(int j=startNode; j < endNode; j++)
       {
@@ -502,7 +504,8 @@ void octree::computeProps_TopLevelTree(
         int child    =    nodes[j].x & 0x0FFFFFFF;//Index to the first child of the node
         int nchild   = (((nodes[j].x & 0xF0000000) >> 28)) + 1;
 
-        fprintf(stderr, "Level info: %d  \t %d : Bottom: %d Child: %d  nChild: %d\n", j, nodes[j].y, (nodes[j].y == 1), child, nchild);
+        LOGF(stderr, "Level info node: %d  \tLeaf %d : Child: %d  nChild: %d\n",
+            j, nodes[j].y,  child, nchild);
 
         float4 *sourceCenter = NULL;
         float4 *sourceSize   = NULL;
@@ -691,7 +694,7 @@ void octree::computeProps_TopLevelTree(
       }//for startNode < endNode
     }//for each topTree level
 
-#if 1
+#if 0
     //Compare the results
     for(int i=0; i < topTree_n_nodes; i++)
     {

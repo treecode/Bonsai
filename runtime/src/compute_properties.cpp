@@ -310,7 +310,7 @@ void octree::compute_properties(tree_structure &tree) {
 
 
 
-#if 1
+#if 0
   //Test code to merge top nodes into a new tree-structure
   {
     uint2 node_begend;

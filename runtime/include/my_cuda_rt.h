@@ -1419,16 +1419,14 @@ namespace my_dev {
                                      hStream));      
       completeArguments();
 
-//      LOGF(stderr,"Waiting on kernel: %s to finish... ", hKernelName );
-//      CU_SAFE_CALL(cudaLaunch(hKernelName));
+//     LOGF(stderr,"Waiting on kernel: %s to finish... ", hKernelName );
 #if CUDART_VERSION < 5000
       CU_SAFE_CALL(cudaLaunch((const char*)hKernelPointer));
 #else
-      //CU_SAFE_CALL(cudaLaunch(hKernelPointer));
-      CU_SAFE_CALL(cudaLaunch((const char*)hKernelPointer));
+      CU_SAFE_CALL(cudaLaunch(hKernelPointer));
+      //CU_SAFE_CALL(cudaLaunch((const char*)hKernelPointer));
 #endif
-//      CU_SAFE_CALL(cudaDeviceSynchronize());
-//      LOGF(stderr,"finished \n");
+//      CU_SAFE_CALL(cudaDeviceSynchronize());       LOGF(stderr,"finished \n");
       
     }
     ////
