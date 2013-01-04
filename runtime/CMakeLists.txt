@@ -176,6 +176,7 @@ if (USE_OPENGL)
   renderer/framebufferObject.cpp
   renderer/loadPPM.cpp
   renderer/Cubemap.cpp  
+  src/tr.c
   )
 
   set (HFILES ${HFILES} 
@@ -187,6 +188,7 @@ if (USE_OPENGL)
   renderer/framebufferObject.h
   renderer/loadPPM.h
   renderer/Cubemap.h
+  include/tr.h
   )
 
   add_definitions(-DUSE_OPENGL)

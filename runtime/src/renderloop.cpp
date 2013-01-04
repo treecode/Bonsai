@@ -30,6 +30,8 @@
 #include "paramgl.h"
 #include "depthSort.h"
 
+#include "tr.h"
+
 float TstartGlow;
 float dTstartGlow;
 
@@ -1038,6 +1040,7 @@ public:
     float3 boxMax = make_float3(m_tree->rMaxLocalTree);
 
     glLineWidth(0.8f);
+    //glLineWidth(3.2f);
     //glColor3f(0.0, 1.0, 0.0);
     glEnable(GL_LINE_SMOOTH);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE);
@@ -1300,6 +1303,172 @@ void display()
   }
 }
 
+void storeImage()
+{
+  #define FILENAME "tileimg.ppm"
+
+
+  //The trick is to make sure that there are only full sizes tiles to be 
+  //rendered, the 512,512,192 gives full sized tiles. But requires many
+  //many many renders
+  // imageW should be dividable by (tileW-border*2)
+  // imageH should be dividable by (tileH-border*2)
+
+  //imageW = 2000, border = 256, 2000 / (x-512) = int
+  //with x > 512  -> 1012 would work
+
+  //int finalSizeW = 1920;
+  //int finalSizeH = 1080;
+
+  int finalSizeW = 4096;
+  int finalSizeH = 3072;
+  
+  
+  
+  const int border = 256;
+
+  //Tile size is going to start at window dimensions 
+  //and then decreased till its multiple
+  int tileW = theDemo->m_windowDims.x;
+  int tileH = theDemo->m_windowDims.y;
+
+  while((finalSizeW % (tileW - 2*border)) != 0)
+  {
+    tileW--;
+  }
+
+  while((finalSizeH % (tileH - 2*border)) != 0)
+  {
+    tileH--;
+  }
+
+  int TILE_WIDTH  = tileW;
+  int TILE_HEIGHT = tileH;
+  int TILE_BORDER = border;
+
+  int IMAGE_WIDTH  = finalSizeW;
+  int IMAGE_HEIGHT = finalSizeH;
+
+  //We have to increase the sprite size to make the image look
+  //the same as the display
+  double curSize  = theDemo->m_renderer.getParticleRadius();
+  float  increase = IMAGE_HEIGHT / (float)theDemo->m_windowDims.y;
+  increase = std::max(increase, IMAGE_WIDTH / (float)theDemo->m_windowDims.x);
+  theDemo->m_renderer.setParticleRadius(curSize*increase);
+
+
+  TRcontext *tr;
+  GLubyte *buffer;
+  GLubyte *tile;
+  
+  tile   = (GLubyte *)malloc(TILE_WIDTH  * TILE_HEIGHT  * 3 * sizeof(GLubyte));
+  buffer = (GLubyte *)malloc(IMAGE_WIDTH * IMAGE_HEIGHT * 3 * sizeof(GLubyte));
+
+  tr = trNew();
+
+  trTileSize(tr, TILE_WIDTH, TILE_HEIGHT, TILE_BORDER);
+  trTileBuffer(tr, GL_RGB, GL_UNSIGNED_BYTE, tile);
+  trImageSize(tr, IMAGE_WIDTH, IMAGE_HEIGHT);
+  trRowOrder(tr, TR_TOP_TO_BOTTOM);
+
+  //Get the values that went into glPerspective
+  float3 boxMin = make_float3(theDemo->m_tree->rMinLocalTree);
+  float3 boxMax = make_float3(theDemo->m_tree->rMaxLocalTree);
+
+  const float pi      = 3.1415926f;
+  float3 center       = 0.5f * (boxMin + boxMax);
+  float radius        = std::max(length(boxMax), length(boxMin));
+  const float fovRads = (theDemo->m_windowDims.x / (float)theDemo->m_windowDims.y) * pi / 3.0f ; // 60 degrees
+
+  float distanceToCenter = radius / sinf(0.5f * fovRads);  
+  trPerspective(tr, theDemo->m_fov,  
+                (float) theDemo->m_windowDims.x / (float) theDemo->m_windowDims.y, 
+                0.0001 * distanceToCenter, 4 * (radius + distanceToCenter));
+  
+  /* Prepare ppm output file */
+  FILE *f = fopen(FILENAME, "wb");
+  if (!f) {
+    printf("Couldn't open image file: %s\n", FILENAME);
+    return;
+  }
+  fprintf(f,"P6\n");
+  fprintf(f,"# ppm-file created by %s\n", "Bonsai");
+  fprintf(f,"%i %i\n", IMAGE_WIDTH, IMAGE_HEIGHT);
+  fprintf(f,"255\n");
+  //fclose(f);
+  //f = fopen(FILENAME, "ab");  /* now append binary data */
+
+  int count = 0;
+  int more  = 1;
+  while (more) 
+  {
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    fprintf(stderr, "Count: %d || Current w: %d  Current h: %d \n", 
+        count++, trGet(tr, TR_CURRENT_TILE_WIDTH), trGet(tr, TR_CURRENT_TILE_HEIGHT));
+
+    trBeginTile(tr);
+    int curColumn = trGet(tr, TR_CURRENT_COLUMN);
+
+    //Important, set the correct 'windowSize' otherwise aspects
+    //of the tiles are messed up
+    theDemo->m_renderer.setWindowSize(TILE_WIDTH,TILE_HEIGHT);
+    theDemo->m_renderer.render();
+
+    if (theDemo->m_displayBoxes) {
+        glEnable(GL_DEPTH_TEST);
+        theDemo->displayOctree();  
+    }
+
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    more = trEndTile(tr);
+
+    /* save tile into tile row buffer*/
+    {
+       int curTileWidth = trGet(tr, TR_CURRENT_TILE_WIDTH);
+       int bytesPerImageRow = IMAGE_WIDTH*3*sizeof(GLubyte);
+       int bytesPerTileRow = (TILE_WIDTH-2*TILE_BORDER) * 3*sizeof(GLubyte);
+       int xOffset = curColumn * bytesPerTileRow;
+       int bytesPerCurrentTileRow = (curTileWidth-2*TILE_BORDER)*3*sizeof(GLubyte);
+       int i;
+       int curTileHeight = trGet(tr, TR_CURRENT_TILE_HEIGHT);
+       for (i=0;i<curTileHeight;i++) {
+          memcpy(buffer + i*bytesPerImageRow + xOffset, /* Dest */
+                 tile + i*bytesPerTileRow,              /* Src */
+                 bytesPerCurrentTileRow);               /* Byte count*/
+       }
+    }
+    
+    if (curColumn == trGet(tr, TR_COLUMNS)-1) {
+       /* write this buffered row of tiles to the file */
+       int curTileHeight = trGet(tr, TR_CURRENT_TILE_HEIGHT);
+       int bytesPerImageRow = IMAGE_WIDTH*3*sizeof(GLubyte);
+       int i;
+       GLubyte *rowPtr;
+       /* The arithmetic is a bit tricky here because of borders and
+        * the up/down flip.  Thanks to Marcel Lancelle for fixing it.
+        */
+       for (i=2*TILE_BORDER;i<curTileHeight;i++) {
+          /* Remember, OpenGL images are bottom to top.  Have to reverse. */
+          rowPtr = buffer + (curTileHeight-1-i) * bytesPerImageRow;
+          fwrite(rowPtr, 1, IMAGE_WIDTH*3, f);
+       }
+      }
+    }//end while
+
+  //Restore our window settings :)
+  theDemo->m_renderer.setWindowSize( theDemo->m_windowDims.x , theDemo->m_windowDims.y);
+  theDemo->m_renderer.setParticleRadius(curSize);
+
+  trDelete(tr);
+  free(tile);
+  free(buffer);
+  fclose(f);
+
+
+  fprintf(stderr, "Writing done! \n");
+}   
+
 void reshape(int w, int h)
 {
   theDemo->reshape(w, h);
@@ -1326,6 +1495,9 @@ void key(unsigned char key, int /*x*/, int /*y*/)
   switch (key) {
   case '0':
     displayFps = !displayFps;
+    break;
+  case '5':
+    storeImage();
     break;
   default:
     break;

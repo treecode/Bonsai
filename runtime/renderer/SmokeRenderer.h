@@ -61,6 +61,7 @@ public:
 
     // params
     void setParticleRadius(float x) { mParticleRadius = x; }
+    float getParticleRadius() { return mParticleRadius;}
 
     void setNumSlices(int x) { m_numSlices = x; }
     int getNumSlices() { return m_numSlices; }
