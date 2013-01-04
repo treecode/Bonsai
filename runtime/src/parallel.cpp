@@ -1247,8 +1247,9 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       {
         LOGF(stderr,"GRAVFINISHED %d recvTree: %d  Time: %lg Since start: %lg\n",
                      procId, recvTree, get_time()-t1, get_time()-t0);
-        recvTree++;
-        break;
+        //JB TODO enable these two lines
+        //recvTree++;
+        //break;
       }
     }//end for each process
 
@@ -1314,12 +1315,12 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
     nodesBegEnd[mpiGetNProcs()].x   = nodesBegEnd[mpiGetNProcs()].y = 0; //Make valgrind happy
     int totalTopNodes               = 0;
 
-//    #define DO_NOT_USE_TOP_TREE //If this is defined there is no tree-build on top of the start nodes
+    #define DO_NOT_USE_TOP_TREE //If this is defined there is no tree-build on top of the start nodes
     vector<real4> topBoxCenters(1*topNodeOnTheFlyCount);
     vector<real4> topBoxSizes  (1*topNodeOnTheFlyCount);
     vector<real4> topMultiPoles(3*topNodeOnTheFlyCount);
     vector<real4> topTempBuffer(3*topNodeOnTheFlyCount);
-    vector<int  > topSourceProc(1*topNodeOnTheFlyCount);
+    vector<int  > topSourceProc; //Do not assign size since we use 'insert'
 
     //Calculate the offsets
     for(int i=0; i < PROCS ; i++)
@@ -1336,16 +1337,15 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
 
       //Copy the properties for the top-nodes
-      //#ifndef DO_NOT_USE_TOP_TREE
-        int nTop = nodesBegEnd[i].y-nodesBegEnd[i].x;
-        memcpy(&topBoxSizes[totalTopNodes],
-               &treeBuffers[i][1+1*particles+nodesBegEnd[i].x],             sizeof(real4)*nTop);
-        memcpy(&topBoxCenters[totalTopNodes],
-               &treeBuffers[i][1+1*particles+nodes+nodesBegEnd[i].x],       sizeof(real4)*nTop);
-        memcpy(&topMultiPoles[3*totalTopNodes],
-               &treeBuffers[i][1+1*particles+2*nodes+3*nodesBegEnd[i].x], 3*sizeof(real4)*nTop);
-        topSourceProc.insert(topSourceProc.end(), nTop, i ); //Assign source process id
-      //#endif
+      int nTop = nodesBegEnd[i].y-nodesBegEnd[i].x;
+      memcpy(&topBoxSizes[totalTopNodes],
+             &treeBuffers[i][1+1*particles+nodesBegEnd[i].x],             sizeof(real4)*nTop);
+      memcpy(&topBoxCenters[totalTopNodes],
+             &treeBuffers[i][1+1*particles+nodes+nodesBegEnd[i].x],       sizeof(real4)*nTop);
+      memcpy(&topMultiPoles[3*totalTopNodes],
+             &treeBuffers[i][1+1*particles+2*nodes+3*nodesBegEnd[i].x], 3*sizeof(real4)*nTop);
+      topSourceProc.insert(topSourceProc.end(), nTop, i ); //Assign source process id
+
       totalTopNodes += nodesBegEnd[i].y-nodesBegEnd[i].x;
 
     }
@@ -1412,6 +1412,9 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                        topTree_n_nodes, topTree_startNode, topTree_endNode);
 
     LOGF(stderr, "Start %d end: %d Number of Original nodes: %d \n", topTree_startNode, topTree_endNode, topNodeOnTheFlyCount);
+
+//    mpiSync();
+//    exit(0);
 
     //Next compute the properties
     float4  *topTreeCenters    = new float4 [  topTree_n_nodes];
@@ -1728,6 +1731,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 //     fprintf(stderr,"Modifying the LET took: %g \n", get_time()-t1);
     LOGF(stderr,"Number of local bodies: %d number LET bodies: %d number LET nodes: %d top nodes: %d Processed trees: %d (%d) \n",
                     tree.n, totalParticles, totalNodes, totalTopNodes, PROCS, procTrees);
+
+    topNodeOnTheFlyCount = 0; //Reset counters
 
 //    if(procId < 0)
 //    {
