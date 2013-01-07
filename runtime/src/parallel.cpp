@@ -675,7 +675,7 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
   my_dev::dev_mem<bodyStruct>  bodyBuffer(devContext);
 
   memOffset1 = bodyBuffer.cmalloc_copy(localTree.generalBuffer1,
-                              localTree.n, memOffset1);
+                              validCount, memOffset1);
 
   extractOutOfDomainParticlesAdvancedSFC.set_arg<int>(0,    &validCount);
   extractOutOfDomainParticlesAdvancedSFC.set_arg<cl_mem>(1, compactList.p());
@@ -748,7 +748,7 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
   // away are stored after each other in the array
   double t1 = get_time();
 
-  //Array reserve some memory at forehand , 1%
+  //Array reserve some memory beforhand , 1%
   vector<bodyStruct> array2Send;
   array2Send.reserve((int)(nToSend*1.5));
 

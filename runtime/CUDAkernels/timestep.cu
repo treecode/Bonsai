@@ -34,7 +34,7 @@ static __device__ void get_TnextD(const int n_bodies,
 
     i += gridSize;
   }
-  
+
   sdata[tid] = tmin;
   __syncthreads();
 
@@ -45,7 +45,7 @@ static __device__ void get_TnextD(const int n_bodies,
 #ifndef __DEVICE_EMULATION__
   if (tid < 32)
 #endif
-    {    
+    {
       if (blockSize >=  64) { sdata[tid] = tmin = fminf(tmin, sdata[tid + 32]); EMUSYNC; }
       if (blockSize >=  32) { sdata[tid] = tmin = fminf(tmin, sdata[tid + 16]); EMUSYNC; }
       if (blockSize >=  16) { sdata[tid] = tmin = fminf(tmin, sdata[tid +  8]); EMUSYNC; }
@@ -100,7 +100,7 @@ static __device__ void get_nactiveD(const int n_bodies,
 #ifndef __DEVICE_EMULATION__
   if (tid < 32)
 #endif
-    {    
+    {
       if (blockSize >=  64) { sdataInt[tid] = sum = sum + sdataInt[tid + 32]; EMUSYNC; }
       if (blockSize >=  32) { sdataInt[tid] = sum = sum + sdataInt[tid + 16]; EMUSYNC; }
       if (blockSize >=  16) { sdataInt[tid] = sum = sum + sdataInt[tid +  8]; EMUSYNC; }
@@ -129,7 +129,7 @@ KERNEL_DECLARE(predict_particles)(const int n_bodies,
                                              real4 *acc,
                                              float2 *time,
                                              real4 *pPos,
-                                             real4 *pVel){                                          
+                                             real4 *pVel){
   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   const uint tid = threadIdx.x;
   const uint idx = bid * blockDim.x + tid;
@@ -154,7 +154,7 @@ KERNEL_DECLARE(predict_particles)(const int n_bodies,
   p.x += v.x*dt_cb + a.x*dt_cb*dt_cb*0.5f;
   p.y += v.y*dt_cb + a.y*dt_cb*dt_cb*0.5f;
   p.z += v.z*dt_cb + a.z*dt_cb*dt_cb*0.5f;
-  
+
   v.x += a.x*dt_cb;
   v.y += a.y*dt_cb;
   v.z += a.z*dt_cb;
@@ -165,35 +165,35 @@ KERNEL_DECLARE(predict_particles)(const int n_bodies,
 
 
 KERNEL_DECLARE(setActiveGroups)(const int n_bodies,
-                                            float tc,                                                                                                       
-                                            float2 *time,                                                                                                   
-                                            uint  *body2grouplist,                                                                                          
-                                            uint  *valid_list){                                                                                             
-  const uint bid = blockIdx.y * gridDim.x + blockIdx.x;                                                                                                     
-  const uint tid = threadIdx.x;                                                                                                                             
-  const uint idx = bid * blockDim.x + tid;                                                                                                                  
-                                                                                                                                                            
-  if (idx >= n_bodies) return;                                                                                                                              
-                                                                                                                                                            
-  float te = time[idx].y;                                                                                                                                   
-                                                                                                                                                            
-  //Set the group to active if the time current = time end of                                                                                               
-  //this particle. Can be that multiple particles write to the                                                                                              
-  //same location but the net result is the same                                                                                                            
-  int grpID = body2grouplist[idx];        
+                                            float tc,
+                                            float2 *time,
+                                            uint  *body2grouplist,
+                                            uint  *valid_list){
+  const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
+  const uint tid = threadIdx.x;
+  const uint idx = bid * blockDim.x + tid;
+
+  if (idx >= n_bodies) return;
+
+  float te = time[idx].y;
+
+  //Set the group to active if the time current = time end of
+  //this particle. Can be that multiple particles write to the
+  //same location but the net result is the same
+  int grpID = body2grouplist[idx];
 
   //valid_list[grpID] = grpID | ((tc == te) << 31);
-                                                                                                                                                                                                                                
+
   if(tc == te)
   {
     valid_list[grpID] = grpID | (1 << 31);
   }
-}     
+}
 
 
 KERNEL_DECLARE(correct_particles)(const int n_bodies,
                                              float tc,
-                                             float2 *time,                                                                              
+                                             float2 *time,
                                              uint   *active_list,
                                              real4 *vel,
                                              real4 *acc0,
@@ -203,14 +203,14 @@ KERNEL_DECLARE(correct_particles)(const int n_bodies,
                                              real4 *pVel,
                                              uint  *unsorted,
                                              real4 *acc0_new,
-#if 1		
+#if 1
 					     float2 *time_new,
 					     int *pIDS,
 					     real4 *specialParticles){
-					     
+
 #else
 					     float2 *time_new){
-#endif 
+#endif
   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
   const int tid =  threadIdx.y * blockDim.x + threadIdx.x;
   const int dim =  blockDim.x * blockDim.y;
@@ -256,17 +256,17 @@ KERNEL_DECLARE(correct_particles)(const int n_bodies,
 
   #if 1
    int pid = pIDS[idx];
-   
-   if(pid == 30000000 - 1) 
+
+   if(pid == 30000000 - 1)
      specialParticles[0] = pPos[idx];
-   if (pid == 30000000 - 2) 
+   if (pid == 30000000 - 2)
      specialParticles[1] = pPos[idx];
    #endif
 
 
   //Store the corrected velocity, accelaration and the new time step info
   vel     [idx] = v;
-  acc0_new[idx] = a1; 
+  acc0_new[idx] = a1;
   time_new[idx] = time[unsortedIdx];
   unsorted[idx] = idx;  //Have to reset it in case we do not resort the particles
 
@@ -280,11 +280,11 @@ extern "C"  __global__ void compute_dt(const int n_bodies,
                                        float    eta,
                                        int      dt_limit,
                                        float    eps2,
-                                       float2   *time,                                                                            
+                                       float2   *time,
                                        real4    *vel,
                                        int      *ngb,
                                        real4    *bodies_pos,
-                                       real4    *bodies_acc,                                                                   
+                                       real4    *bodies_acc,
                                        uint     *active_list,
                                        float    timeStep){
   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
@@ -370,7 +370,7 @@ extern "C"  __global__ void compute_dt(const int n_bodies,
   dt = timeStep;
   time[idx].x = tc;
   //time[idx].y = tc + dt;
-  time[idx].y = tc + dt;    
+  time[idx].y = tc + dt;
 }
 
 
@@ -381,7 +381,7 @@ static __device__ void compute_energy_doubleD(const int n_bodies,
                                             real4 *vel,
                                             real4 *acc,
                                             double2 *energy, volatile double *shDDataKin) {
-    
+
   // perform first level of reduction,
   // reading from global memory, writing to shared memory
   const int blockSize   = blockDim.x;
@@ -389,7 +389,7 @@ static __device__ void compute_energy_doubleD(const int n_bodies,
   unsigned int i        = blockIdx.x*(blockSize*2) + threadIdx.x;
   unsigned int gridSize = blockSize*2*gridDim.x;
 
-  volatile double *shDDataPot = (double*)&shDDataKin [blockSize];   
+  volatile double *shDDataPot = (double*)&shDDataKin [blockSize];
   double eKin, ePot;
   shDDataKin[tid] = eKin = 0;   //Stores Ekin
   shDDataPot[tid] = ePot = 0;   //Stores Epot
@@ -399,10 +399,10 @@ static __device__ void compute_energy_doubleD(const int n_bodies,
   // number of active thread blocks (via gridSize).  More blocks will result
   // in a larger gridSize and therefore fewer elements per thread
   while (i < n_bodies) {
-    if (i             < n_bodies) 
+    if (i             < n_bodies)
     {
       //Ekin
-      temp  = vel[i];       
+      temp  = vel[i];
       eKin += pos[i].w*0.5*(temp.x*temp.x + temp.y*temp.y + temp.z*temp.z);
 
       //Epot
@@ -411,7 +411,7 @@ static __device__ void compute_energy_doubleD(const int n_bodies,
 
     if (i + blockSize < n_bodies)
     {
-      temp = vel[i + blockSize];       
+      temp = vel[i + blockSize];
       eKin += pos[i + blockSize].w*0.5*(temp.x*temp.x + temp.y*temp.y + temp.z*temp.z);
 
       //Epot
@@ -427,20 +427,20 @@ static __device__ void compute_energy_doubleD(const int n_bodies,
 
   // do reduction in shared mem
   if (blockSize >= 512) { if (tid < 256) {
-    shDDataPot[tid] = ePot = ePot + shDDataPot[tid + 256]; 
+    shDDataPot[tid] = ePot = ePot + shDDataPot[tid + 256];
     shDDataKin[tid] = eKin = eKin + shDDataKin[tid + 256];   } __syncthreads(); }
   if (blockSize >= 256) { if (tid < 128) {
-    shDDataPot[tid] = ePot = ePot + shDDataPot[tid + 128]; 
+    shDDataPot[tid] = ePot = ePot + shDDataPot[tid + 128];
     shDDataKin[tid] = eKin = eKin + shDDataKin[tid + 128];   } __syncthreads(); }
   if (blockSize >= 128) { if (tid <  64) {
-    shDDataPot[tid] = ePot = ePot + shDDataPot[tid + 64]; 
+    shDDataPot[tid] = ePot = ePot + shDDataPot[tid + 64];
     shDDataKin[tid] = eKin = eKin + shDDataKin[tid + 64];   } __syncthreads(); }
 
 
 #ifndef __DEVICE_EMULATION__
   if (tid < 32)
 #endif
-    {    
+    {
       if (blockSize >=  64) {shDDataKin[tid] = eKin = eKin + shDDataKin[tid + 32]; shDDataPot[tid] = ePot = ePot + shDDataPot[tid + 32];  EMUSYNC; }
       if (blockSize >=  32) {shDDataKin[tid] = eKin = eKin + shDDataKin[tid + 16]; shDDataPot[tid] = ePot = ePot + shDDataPot[tid + 16];  EMUSYNC; }
       if (blockSize >=  16) {shDDataKin[tid] = eKin = eKin + shDDataKin[tid +  8]; shDDataPot[tid] = ePot = ePot + shDDataPot[tid +  8];  EMUSYNC; }

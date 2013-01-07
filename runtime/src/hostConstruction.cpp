@@ -496,7 +496,7 @@ void octree::computeProps_TopLevelTree(
     {
       int startNode = node_levels[i-1];
       int endNode   = node_levels[i];
-      LOGF(stderr, "Working on level: %d Start: %d  End: %d \n", i, startNode, endNode);
+//      LOGF(stderr, "Working on level: %d Start: %d  End: %d \n", i, startNode, endNode);
 
       for(int j=startNode; j < endNode; j++)
       {
@@ -504,8 +504,8 @@ void octree::computeProps_TopLevelTree(
         int child    =    nodes[j].x & 0x0FFFFFFF;//Index to the first child of the node
         int nchild   = (((nodes[j].x & 0xF0000000) >> 28)) + 1;
 
-        LOGF(stderr, "Level info node: %d  \tLeaf %d : Child: %d  nChild: %d\n",
-            j, nodes[j].y,  child, nchild);
+//        LOGF(stderr, "Level info node: %d  \tLeaf %d : Child: %d  nChild: %d\n",
+//            j, nodes[j].y,  child, nchild);
 
         float4 *sourceCenter = NULL;
         float4 *sourceSize   = NULL;
