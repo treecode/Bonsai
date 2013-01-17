@@ -170,12 +170,12 @@ int balanceLoad(int *nParticlesOriginal, int *nParticlesNew, float *load,
   int rightIdx          = leftIdx + nProcsLeftSide;
 
   if(nProcs == 1) {
-    fprintf(stderr, "Ready by default \n");
+    LOGF(stderr, "Ready by default \n");
     nParticlesNew[leftIdx] = nTotal;
     return 0;
   }
 
-  fprintf(stderr, "Start balance: nProcs: %d, leftIdx: %d, rightIdx: %d nProcLeft: %d  nProcRight: %d nTotal: %d avg: %f\n",
+  LOGF(stderr, "Start balance: nProcs: %d, leftIdx: %d, rightIdx: %d nProcLeft: %d  nProcRight: %d nTotal: %d avg: %f\n",
                    nProcs, leftIdx, rightIdx, nProcsLeftSide,nProcsRightSide, nTotal, loadAvg);
 
   int nPartLeftOriginal = 0, nPartRightOriginal = 0;
@@ -210,7 +210,7 @@ int balanceLoad(int *nParticlesOriginal, int *nParticlesNew, float *load,
     newLeft   = nTotal - newRight;
   }
 
-  fprintf(stderr, "newLeft: %d , newRight: %d nTotal: %d , leftTarget: %f rightTarget: %f , loadLeft: %f loadRight: %f \n",
+  LOGF(stderr, "newLeft: %d , newRight: %d nTotal: %d , leftTarget: %f rightTarget: %f , loadLeft: %f loadRight: %f \n",
                    newLeft, newRight, nTotal, leftTarget, rightTarget, loadLeft, loadRight);
 
   if(nProcs == 2)
@@ -247,7 +247,7 @@ void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries, f
 //  drand48();
 //  hInfo.execTime = 0.3*drand48();
 
-  fprintf(stderr, "Exectime: Proc: %d -> %f \n", procId, hInfo.execTime);
+  LOGF(stderr, "Exectime: Proc: %d -> %f \n", procId, hInfo.execTime);
 
 
   int       *nReceiveCnts  = NULL;
@@ -330,7 +330,7 @@ void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries, f
       timeSum = timeSum2;
     }}
 
-    fprintf(stderr, "Max diff  Time1: %f\tTime2: %f Proc0: %f \t %f \n",
+    LOGF(stderr, "Max diff  Time1: %f\tTime2: %f Proc0: %f \t %f \n",
         maxTime1Diff, maxTime2Diff, recvHashInfo[0].execTime, recvHashInfo[0].execTime2);
   } //if procId == 0
 
@@ -362,16 +362,16 @@ void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries, f
     #if LOAD_BALANCE
       //Load balancing version, based on gravity approximation execution times.
 
-      fprintf(stderr, "Time sum: %f \n", timeSum);
+      LOGF(stderr, "Time sum: %f \n", timeSum);
 
       //Normalize, fractions : timeSum / gravTime -> gives a relative time number
       float normSum = 0;
       for(int i=0; i < nProcs; i++){
        // execTimes[i] = timeSum / execTimes[i];
        // normSum     += execTimes[i];
-        fprintf(stderr, "Exec after norm: %d\t %f \tn: %d \n",i, execTimes[i],recvHashInfo[i].nParticles );
+        LOGF(stderr, "Exec after norm: %d\t %f \tn: %d \n",i, execTimes[i],recvHashInfo[i].nParticles );
       }
-      fprintf(stderr, "Normalized sum:%f  \n",normSum);
+      LOGF(stderr, "Normalized sum:%f  \n",normSum);
 
 
       int *npartPerProcOld = new int[nProcs];
@@ -407,7 +407,7 @@ void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries, f
       //float fac = 0.25; //25% old, 75% new
       float fac = 0.50; //Average
       for(int i=0; i < nProcs; i++){
-        fprintf(stderr, "Npart per proc: new %d\told %d (avg final: %d)\n",
+        LOGF(stderr, "Npart per proc: new %d\told %d (avg final: %d)\n",
                 nPartPerProc[i], recvHashInfo[i].nParticles,
                 ((int)((recvHashInfo[i].nParticles*fac) + (nPartPerProc[i] *(1-fac)))));
         nPartPerProc[i] = (int)((recvHashInfo[i].nParticles*fac) + (nPartPerProc[i] *(1-fac)));
@@ -435,12 +435,12 @@ void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries, f
           int sum             = 0;
 
           if(doPrint){
-            fprintf(stderr,"Before memory load adjustment: \n");
+            LOGF(stderr,"Before memory load adjustment: \n");
              for(int i=0; i < nProcs; i++){
-              fprintf(stderr, "%d \t %d \n", i, nPartPerProc[i]);
+              LOGF(stderr, "%d \t %d \n", i, nPartPerProc[i]);
               sum += nPartPerProc[i];
              }
-            fprintf(stderr, "Sum: %d \n", sum);
+             LOGF(stderr, "Sum: %d \n", sum);
           }
 
           //First find the max and min process load and compute the minimum number of
@@ -455,7 +455,7 @@ void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries, f
           double requiredNumber = maxNumber / maxDiff;
 
           if(doPrint){
-            fprintf(stderr, "Max: %d  Min: %d , maxDiff factor: %f  required: %f \n",
+            LOGF(stderr, "Max: %d  Min: %d , maxDiff factor: %f  required: %f \n",
                              maxNumber, minNumber, maxDiff, requiredNumber);
           }
 
@@ -483,7 +483,7 @@ void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries, f
           removeNumberOfParticles     = std::max(1, removeNumberOfParticles);
 
           if(doPrint){
-            fprintf(stderr, "#Outside: %d , #Inside: %d Adding total: %f per proc: %d  Removing total: %f per proc: %d \n",
+            LOGF(stderr, "#Outside: %d , #Inside: %d Adding total: %f per proc: %d  Removing total: %f per proc: %d \n",
                              countOutsideMin, countInsideMin, requiredNumber-minNumber,
                              addNumberOfParticles, requiredNumber - minNumber, removeNumberOfParticles);
           }
@@ -498,9 +498,9 @@ void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries, f
           }//end modify
 
           if(doPrint){
-            fprintf(stderr,"After memory load adjustment: \n");
+            LOGF(stderr,"After memory load adjustment: \n");
             for(int i=0; i < nProcs; i++) fprintf(stderr, "%d \t %d \n", i, nPartPerProc[i]);
-            fprintf(stderr, "Tries left: %d \n\n\n", tries);
+            LOGF(stderr, "Tries left: %d \n\n\n", tries);
           }
         }//for tries
       } //if doMemLoadBalance
@@ -971,6 +971,7 @@ void octree::sendCurrentInfoGrpTree()
     //Send the number of group-tree-nodes that belongs to this process, and gather
     //that information from the other processors
     int temp = 2*grpTree_n_nodes; //Times two since we send size and center in one array
+    if(grpTree_n_nodes == 0) temp = 1;
     MPI_Allgather(&temp,                    sizeof(int),  MPI_BYTE,
                   this->globalGrpTreeCount, sizeof(uint), MPI_BYTE, MPI_COMM_WORLD);
 
@@ -979,7 +980,7 @@ void octree::sendCurrentInfoGrpTree()
 
     //Compute offsets using prefix sum and total number of groups we will receive
     this->globalGrpTreeOffsets[0]   = 0;
-    treeGrpCountBytes[0]          = this->globalGrpTreeCount[0]*sizeof(real4);
+    treeGrpCountBytes[0]            = this->globalGrpTreeCount[0]*sizeof(real4);
     receiveOffsetsBytes[0]          = 0;
     for(int i=1; i < nProcs; i++)
     {
@@ -1133,8 +1134,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
   uint2 *curLevelStack         = new uint2[LETCreateStackSize];
   uint2 *nextLevelStack        = new uint2[LETCreateStackSize];
   //Maximum possible required size (full tree), + a few percent sinze texture offsets increase size slightly
-  int letBuffSize              = (int) (1.05*(tree.n + 5* tree.n_nodes));
-  real4 *LETDataBuffer         = new real4[letBuffSize];
+  int letBuffSize              = (int) (1.05*(tree.n + 5* tree.n_nodes))+1024; //+1024 to have small buffer
+  real4 *LETDataBuffer         = (real4*)malloc(sizeof(real4)*letBuffSize);
 
   int topNodeOnTheFlyCount = 0;
 
@@ -1181,13 +1182,15 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       int countNodes = 0, countParticles = 0;
 
       double tz = get_time();
+      if(tree.n > 0)
+      {
        tree_walking_tree_stack_versionC13(
            &localTree.multipole[0], &nodeInfo[0], //Local Tree
            grpSize, grpCenter, //remote Tree
            node_begend.x, node_begend.y, startGrp, endGrp-1,
            countNodes, countParticles,
            curLevelStack, nextLevelStack);
-
+      }
        double tCount = get_time()-tz;
 
       //Buffer that will contain all the data:
@@ -1224,21 +1227,18 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
           tCount, get_time() - ty, get_time()-t1, countParticles, countNodes, get_time()-t0);
 
       //Set the tree properties, before we exchange the data
-      LETDataBuffer[0].x = (float)countParticles;    //Number of particles in the LET
-      LETDataBuffer[0].y = (float)countNodes;        //Number of nodes     in the LET
-      LETDataBuffer[0].z = (float)node_begend.x;     //First node on the level that indicates the start of the tree walk
-      LETDataBuffer[0].w = (float)node_begend.y;     //last node on the level that indicates the start of the tree walk
+      LETDataBuffer[0].x = host_int_as_float(countParticles);    //Number of particles in the LET
+      LETDataBuffer[0].y = host_int_as_float(countNodes);        //Number of nodes     in the LET
+      LETDataBuffer[0].z = host_int_as_float(node_begend.x);     //First node on the level that indicates the start of the tree walk
+      LETDataBuffer[0].w = host_int_as_float(node_begend.y);     //last node on the level that indicates the start of the tree walk
 
-      LOGF(stderr,"Sending top nodes: %d \t %d \n", node_begend.x, node_begend.y);
 
       //Exchange the data of the tree structures  between the processes
       treeBuffers[recvTree] = MP_exchange_bhlist(ibox, isource, bufferSize, LETDataBuffer);
 
       //Increase the top-node count
-      int topStart = (int)treeBuffers[recvTree][0].z;
-      int topEnd   = (int)treeBuffers[recvTree][0].w;
-
-      LOGF(stderr,"Receiving top nodes: %d \t %d \n", topStart, topEnd);
+      int topStart = host_float_as_int(treeBuffers[recvTree][0].z);
+      int topEnd   = host_float_as_int(treeBuffers[recvTree][0].w);
 
       topNodeOnTheFlyCount += (topEnd-topStart);
 
@@ -1247,9 +1247,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       {
         LOGF(stderr,"GRAVFINISHED %d recvTree: %d  Time: %lg Since start: %lg\n",
                      procId, recvTree, get_time()-t1, get_time()-t0);
-        //JB TODO enable these two lines
-        //recvTree++;
-        //break;
+        recvTree++;
+        break;
       }
     }//end for each process
 
@@ -1291,10 +1290,10 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       idx += nodeCount;
       memcpy(&treeBuffers[PROCS][idx], &multipole[0],      sizeof(real4)*realNodeCount*3);
 
-      treeBuffers[PROCS][0].x = (float)particleCount;
-      treeBuffers[PROCS][0].y = (float)nodeCount;
-      treeBuffers[PROCS][0].z = (float)tree.level_list[level_start].x;
-      treeBuffers[PROCS][0].w = (float)tree.level_list[level_start].y;
+      treeBuffers[PROCS][0].x = host_int_as_float(particleCount);
+      treeBuffers[PROCS][0].y = host_int_as_float(nodeCount);
+      treeBuffers[PROCS][0].z = host_int_as_float(tree.level_list[level_start].x);
+      treeBuffers[PROCS][0].w = host_int_as_float(tree.level_list[level_start].y);
 
       topNodeOnTheFlyCount += (tree.level_list[level_start].y-tree.level_list[level_start].x);
 
@@ -1315,7 +1314,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
     nodesBegEnd[mpiGetNProcs()].x   = nodesBegEnd[mpiGetNProcs()].y = 0; //Make valgrind happy
     int totalTopNodes               = 0;
 
-    #define DO_NOT_USE_TOP_TREE //If this is defined there is no tree-build on top of the start nodes
+    //#define DO_NOT_USE_TOP_TREE //If this is defined there is no tree-build on top of the start nodes
     vector<real4> topBoxCenters(1*topNodeOnTheFlyCount);
     vector<real4> topBoxSizes  (1*topNodeOnTheFlyCount);
     vector<real4> topMultiPoles(3*topNodeOnTheFlyCount);
@@ -1325,11 +1324,11 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
     //Calculate the offsets
     for(int i=0; i < PROCS ; i++)
     {
-      int particles = (int)treeBuffers[i][0].x;
-      int nodes     = (int)treeBuffers[i][0].y;
+      int particles = host_float_as_int(treeBuffers[i][0].x);
+      int nodes     = host_float_as_int(treeBuffers[i][0].y);
 
-      nodesBegEnd[i].x = (int)treeBuffers[i][0].z;
-      nodesBegEnd[i].y = (int)treeBuffers[i][0].w;
+      nodesBegEnd[i].x = host_float_as_int(treeBuffers[i][0].z);
+      nodesBegEnd[i].y = host_float_as_int(treeBuffers[i][0].w);
 
       particleSumOffsets[i+1]     = particleSumOffsets[i]  + particles;
       nodeSumOffsets[i+1]         = nodeSumOffsets[i]      + nodes - nodesBegEnd[i].y;    //Without the top-nodes
@@ -1710,6 +1709,10 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
       NOTE that the Multi-pole data consists of 3 float4 values per node
     */
+    //     fprintf(stderr,"Modifying the LET took: %g \n", get_time()-t1);
+
+    LOGF(stderr,"Number of local bodies: %d number LET bodies: %d number LET nodes: %d top nodes: %d Processed trees: %d (%d) \n",
+                        tree.n, totalParticles, totalNodes, totalTopNodes, PROCS, procTrees);
 
     //Store the tree properties (number of particles, number of nodes, start and end topnode)
     remote.remoteTreeStruct.x = totalParticles;
@@ -1728,9 +1731,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
     remote.remoteTreeStruct.w = totalTopNodes;
 
-//     fprintf(stderr,"Modifying the LET took: %g \n", get_time()-t1);
-    LOGF(stderr,"Number of local bodies: %d number LET bodies: %d number LET nodes: %d top nodes: %d Processed trees: %d (%d) \n",
-                    tree.n, totalParticles, totalNodes, totalTopNodes, PROCS, procTrees);
+
 
     topNodeOnTheFlyCount = 0; //Reset counters
 
@@ -1769,7 +1770,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
   } //end z
   delete[] treeBuffers;
-  delete[] LETDataBuffer;
+  free(LETDataBuffer);
   delete[] curLevelStack;
   delete[] nextLevelStack;
 
@@ -1825,6 +1826,7 @@ void octree::tree_walking_tree_stack_versionC13(
     uint2 *curLevel, uint2 *nextLevel)
 {
 #ifdef USE_MPI
+
   //nodeInfo.z bit values:
   //  bit 0 : Node has been visit (1)
   //  bit 1 : Node is split  (2)
@@ -3922,7 +3924,7 @@ void octree::essential_tree_exchange(vector<real4> &treeStructure, tree_structur
 
 //     fprintf(stderr,"Modifying the LET took: %g \n", get_time()-t1);
     LOGF(stderr,"Number of local bodies: %d number LET bodies: %d number LET nodes: %d top nodes: %d Processed trees: %d (%d) \n",
-                    tree.n, totalParticles, totalNodes, totalTopNodes, PROCS, procTrees);
+                    tree.n, totalParticles, totalNodes, remote.remoteTreeStruct.y-totalNodes, PROCS, procTrees);
 
     delete[] particleSumOffsets;
     delete[] nodeSumOffsets;

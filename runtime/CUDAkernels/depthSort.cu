@@ -4,8 +4,10 @@
 #include "vector_math.h"
 #include <cassert>
 
-#include <GL/glew.h>
-#include <cuda_gl_interop.h>
+#ifdef USE_OPENGL
+  #include <GL/glew.h>
+  #include <cuda_gl_interop.h>
+#endif
 
 // calculate eye-space depth for each particle
 KERNEL_DECLARE(calcDepthKernel)(float4 *pos, float *depth, int *indices, float4 modelViewZ, int numParticles)
@@ -30,7 +32,9 @@ void thrustSort(float* keys, int* values, int count)
 extern "C"
 void initCUDA()
 {
+  #ifdef USE_OPENGL
     cudaGLSetGLDevice(0);
+  #endif
 }
 
 extern "C"

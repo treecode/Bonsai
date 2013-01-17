@@ -158,8 +158,9 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
   build_key_list.execute(execStream->s());  
   
   // If srcValues and buffer are different, then the original values
-  // are preserved, if they are the same srcValues will be overwritten  
-  gpuSort(devContext, srcValues, tree.bodies_key,srcValues, tree.n, 32, 3, tree);
+  // are preserved, if they are the same srcValues will be overwritten
+  if(tree.n > 0)
+    gpuSort(devContext, srcValues, tree.bodies_key,srcValues, tree.n, 32, 3, tree);
 
   devContext.stopTiming("Sorting", 0, execStream->s());  
 

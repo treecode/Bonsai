@@ -11,7 +11,7 @@ PROF_MODULE(timestep);
 
 
 //Reduce function to get the minimum timestep
-static __device__ void get_TnextD(const int n_bodies,
+static __device__ __forceinline__ void get_TnextD(const int n_bodies,
                                      float2 *time,
                                      float *tnext, volatile float *sdata) {
   //float2 time : x is time begin, y is time end

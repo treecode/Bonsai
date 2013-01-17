@@ -481,8 +481,9 @@ namespace my_dev {
 
     //////// Destructor
     
-    ~dev_mem() {      
-      cudaEventDestroy(asyncCopyEvent);
+    ~dev_mem() {
+      if(eventSet)
+        cudaEventDestroy(asyncCopyEvent);
       cuda_free();
     }
     
@@ -1219,8 +1220,13 @@ namespace my_dev {
       if(kernelArguments[arg].size != -2)
       { 
         const struct textureReference *texref;
-        //CU_SAFE_CALL(cudaGetTextureReference(&texref, textureName));
-	CU_SAFE_CALL(cudaGetTextureReference(&texref, getTexturePointer(textureName)));
+        #if CUDART_VERSION < 5000
+          CU_SAFE_CALL(cudaGetTextureReference(&texref, textureName));
+        #else
+          CU_SAFE_CALL(cudaGetTextureReference(&texref, getTexturePointer(textureName)));
+        #endif
+
+
         
         
     
@@ -1409,6 +1415,9 @@ namespace my_dev {
       gridDim.x = (uint)hGlobalWork[0]; gridDim.y = (uint)hGlobalWork[1]; gridDim.z = 1;
       blockDim.x = (uint)hLocalWork[0]; blockDim.y = (uint)hLocalWork[1]; blockDim.z = (uint)hLocalWork[2];
       
+      if(blockDim.x == 0 || gridDim.x == 0)
+        return;
+
       
 //       printWorkSize();
       

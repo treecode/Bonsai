@@ -7,7 +7,7 @@ PROF_MODULE(compute_propertiesD);
 
 #include "node_specs.h"
 
-static __device__ void sh_MinMax2(int i, int j, float3 *r_min, float3 *r_max, volatile float3 *sh_rmin, volatile  float3 *sh_rmax)
+static __device__ __forceinline__ void sh_MinMax2(int i, int j, float3 *r_min, float3 *r_max, volatile float3 *sh_rmin, volatile  float3 *sh_rmax)
 {
   sh_rmin[i].x  = (*r_min).x = fminf((*r_min).x, sh_rmin[j].x);
   sh_rmin[i].y  = (*r_min).y = fminf((*r_min).y, sh_rmin[j].y);

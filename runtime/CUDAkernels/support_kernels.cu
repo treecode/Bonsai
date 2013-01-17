@@ -349,7 +349,7 @@ static __device__ float2 ds_regularise(float2 a){
 }
 
 
-static __device__ void sh_MinMax(int i, int j, float3 *r_min, float3 *r_max, 
+static __device__ __forceinline__ void sh_MinMax(int i, int j, float3 *r_min, float3 *r_max,
                           volatile float3 *sh_rmin, volatile  float3 *sh_rmax)
 {
   sh_rmin[i].x  = (*r_min).x = fminf((*r_min).x, sh_rmin[j].x);

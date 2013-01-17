@@ -69,10 +69,13 @@ void octree::allocateParticleMemory(tree_structure &tree)
   #endif  
 
   //Tree properties, tree size is not known at forehand so
-  //allocate worst possible outcome  
-  n_bodies = n_bodies / 1;
-  tree.n_children.cmalloc(n_bodies, false);
-  tree.node_bodies.cmalloc(n_bodies, false);  
+  //allocate worst possible outcome
+  int tempmem = n_bodies ; //Some default size in case tree.n is small
+  if(tree.n < 1024)
+    tempmem = 2048;
+
+  tree.n_children.cmalloc (tempmem, false);
+  tree.node_bodies.cmalloc(tempmem, false);
   
   //General memory buffers
     
@@ -103,12 +106,20 @@ void octree::allocateParticleMemory(tree_structure &tree)
   {
 //    int remoteSize = (n_bodies*0.1) +  (n_bodies*0.1); //TODO some more realistic number
     int remoteSize = (int)(n_bodies*0.5); //TODO some more realistic number
+
+    if(remoteSize < 1024)
+      remoteSize = 2048;
+
+
     this->remoteTree.fullRemoteTree.cmalloc(remoteSize, true);    
 
     tree.parallelBoundaries.cmalloc(mpiGetNProcs()+1, true);
     //Some default value for number of hashes, will be increased if required
     //should be ' n_bodies / NPARALLEL' for now just alloc 10%
-    tree.parallelHashes.cmalloc(n_bodies*0.1, true);
+    int tempmem = n_bodies*0.1;
+    if(tempmem < 2048)
+      tempmem = 2048;
+    tree.parallelHashes.cmalloc(tempmem, true);
   }
   
 }
@@ -151,9 +162,11 @@ void octree::reallocateParticleMemory(tree_structure &tree)
 
   //Tree properties, tree size is not known at forehand so
   //allocate worst possible outcome  
-  n_bodies = n_bodies / 1;
-  tree.n_children.cresize(n_bodies, reduce);
-  tree.node_bodies.cresize(n_bodies, reduce);  
+  int tempmem = n_bodies ; //Some default size in case tree.n is small
+  if(tree.n < 1024)
+    tempmem = 2048;
+  tree.n_children.cresize(tempmem, reduce);
+  tree.node_bodies.cresize(tempmem, reduce);
   
   
   //Dont forget to resize the generalBuffer....
@@ -233,7 +246,12 @@ void octree::build (tree_structure &tree) {
   int memBufOffset = validList.cmalloc_copy  (tree.generalBuffer1, tree.n*2, 0);
       memBufOffset = compactList.cmalloc_copy(tree.generalBuffer1, tree.n*2, memBufOffset);
   int memBufOffsetValidList = memBufOffset;
-      memBufOffset = node_key.cmalloc_copy   (tree.generalBuffer1, tree.n,   memBufOffset);
+
+  int tempmem = tree.n; //Some default size in case tree.n is small
+  if(tree.n < 1024)
+    tempmem = 2048;
+
+      memBufOffset = node_key.cmalloc_copy   (tree.generalBuffer1, tempmem,   memBufOffset);
       memBufOffset = levelOffset.cmalloc_copy(tree.generalBuffer1, 256,      memBufOffset);
       memBufOffset = maxLevel.cmalloc_copy   (tree.generalBuffer1, 256,      memBufOffset);
 
@@ -460,7 +478,8 @@ void octree::build (tree_structure &tree) {
   store_groups.set_arg<cl_mem>(3, tree.body2group_list.p());     
   store_groups.set_arg<cl_mem>(4, tree.group_list.p());     
   store_groups.setWork(-1, NCRIT, tree.n_groups);  
-  store_groups.execute(execStream->s());  
+  if(tree.n_groups > 0)
+    store_groups.execute(execStream->s());
 
 
   //Memory allocation for the valid group lists
@@ -490,6 +509,7 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
   int level      = 0;
   int validCount = 0;
   int offset     = 0;
+  int n_parallel = 1024;
 
   double t0 = get_time();
   /******** create memory buffers and reserve memory using the shared buffer **********/
@@ -531,11 +551,12 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
 
   build_parallel_grps.set_arg<int>(0,     &validCount);
   build_parallel_grps.set_arg<int>(1,     &offset);
-  build_parallel_grps.set_arg<cl_mem>(2,  compactList.p());
-  build_parallel_grps.set_arg<cl_mem>(3,  tree.bodies_key.p());
-  build_parallel_grps.set_arg<cl_mem>(4,  parGrpBlockKey.p());
-  build_parallel_grps.set_arg<cl_mem>(5,  parGrpBlockInfo.p());
-  build_parallel_grps.set_arg<cl_mem>(6,  startBoundaryIndex.p());
+  build_parallel_grps.set_arg<int>(2,     &n_parallel);
+  build_parallel_grps.set_arg<cl_mem>(3,  compactList.p());
+  build_parallel_grps.set_arg<cl_mem>(4,  tree.bodies_key.p());
+  build_parallel_grps.set_arg<cl_mem>(5,  parGrpBlockKey.p());
+  build_parallel_grps.set_arg<cl_mem>(6,  parGrpBlockInfo.p());
+  build_parallel_grps.set_arg<cl_mem>(7,  startBoundaryIndex.p());
 
 #define EFFICIENT 1
 
@@ -595,6 +616,11 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
   this->resetCompact();
   this->devMemCountsx.waitForCopyEvent();
   copyStream->sync();
+
+  n_parallel = tree.n / 1024;
+  n_parallel = max(16, n_parallel);
+
+  build_parallel_grps.set_arg<int>(2, &n_parallel);
 
 
   //TODO rewrite this in similar way as build_tree loop, to remove copy

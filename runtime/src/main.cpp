@@ -611,6 +611,9 @@ long long my_dev::base_mem::maxMemUsage;
 
 int main(int argc, char** argv)
 {
+  my_dev::base_mem::currentMemUsage = 0;
+  my_dev::base_mem::maxMemUsage     = 0;
+
   vector<real4> bodyPositions;
   vector<real4> bodyVelocities;
   vector<int>   bodyIDs;
@@ -619,6 +622,7 @@ int main(int argc, char** argv)
   vector<real4> dustVelocities;
   vector<int>   dustIDs;  
   
+
   float eps      = 0.05f;
   float theta    = 0.75f;
   float timeStep = 1.0f / 16.0f;
@@ -956,7 +960,7 @@ int main(int argc, char** argv)
   
   if(procId == 0)   LOGF(stderr, "Combined Mass: %f \tNTotal: %d \n", totalMass, NTotal);
 
-  //Domain setup
+ /* //Domain setup
   tree->createORB();
   
   //First distribute the initial particle distribution
@@ -979,7 +983,7 @@ int main(int argc, char** argv)
       }
   }
 
-  tree->mpiSync();    
+  tree->mpiSync();  */
   
 
   LOG("Starting! \n");

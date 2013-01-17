@@ -1076,6 +1076,7 @@ KERNEL_DECLARE(build_parallel_grps)(
 KERNEL_DECLARE(gpu_build_parallel_grps)(
                              uint   compact_list_len,
                              uint   offset,
+                             const uint NPARALLEL,
                              uint  *compact_list,
                              uint4 *bodies_key,
                              uint4 *parGrpBlockKey,
@@ -1092,7 +1093,7 @@ KERNEL_DECLARE(gpu_build_parallel_grps)(
   uint  bi   = compact_list[bid*2];
   uint  bj   = compact_list[bid*2+1] + 1;
 
-  #define NPARALLEL 1024
+//  #define NPARALLEL 1024
 
   if((bj - bi) > NPARALLEL)
   {

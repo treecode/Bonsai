@@ -4,7 +4,7 @@ typedef unsigned int uint;
 #include "stdio.h"
 
 //Warp based summation
-static __device__ int inexclusive_scan_warp(volatile int *ptr,bool inclusive, const unsigned int idx, int value) {
+static __device__ __forceinline__ int inexclusive_scan_warp(volatile int *ptr,bool inclusive, const unsigned int idx, int value) {
   const unsigned int lane = idx & 31;
   
   if (lane >=  1) ptr[idx] = value = ptr[idx -  1]   + value;
@@ -22,7 +22,7 @@ static __device__ int inexclusive_scan_warp(volatile int *ptr,bool inclusive, co
 
 
 //N is number of previous blocks in the count call
-static __device__ void exclusive_scan_blockD(int *ptr, const int N, int *count, volatile int *shmemESB) 
+static __device__ __forceinline__ void exclusive_scan_blockD(int *ptr, const int N, int *count, volatile int *shmemESB)
 {
   const unsigned int idx = threadIdx.x;
   const unsigned int lane   = idx & 31;
@@ -240,7 +240,7 @@ KERNEL_DECLARE(compact_count)(volatile uint2 *values,
 
 
 //The kernel that actually moves the data
-static __device__ void compact_moveD( uint2 *values,
+static __device__ __forceinline__ void compact_moveD( uint2 *values,
                              uint *output, 
                              uint *counts,  
                              const int N,
@@ -337,7 +337,7 @@ KERNEL_DECLARE(compact_move)( uint2 *values,
 
 
 //The kernel that actually moves/splits the data
-static __device__ void split_moveD( uint2 *valid,
+static __device__ __forceinline__ void split_moveD( uint2 *valid,
                                         uint *output, 
                                         uint *counts,  
                                         const int N,                        

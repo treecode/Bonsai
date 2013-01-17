@@ -272,6 +272,7 @@ bool octree::iterate_once(IterationData &idata) {
     double t1 = 0;
 
     LOG("At the start of iterate:\n");
+    LOGF(stderr,"At the start of iterate:\n");
     
     bool forceTreeRebuild = false;
     
@@ -550,7 +551,6 @@ bool octree::iterate_once(IterationData &idata) {
 
       return true;
     }
-   
     iter++; 
 
     return false;
@@ -762,13 +762,23 @@ void octree::predict(tree_structure &tree)
     getTNext.setWork(-1, 128, blockSize);
     getTNext.execute(execStream->s());
 
-    //Reduce the last parts on the host
-    tnext.d2h();
-    t_previous = t_current;
-    t_current  = tnext[0];
-    for (int i = 1; i < blockSize ; i++)
+    //This will not work in block-step! Only shared- time step
+     //in block step we need syncs and global communication
+    if(tree.n == 0)
     {
-        t_current = std::min(t_current, tnext[i]);
+      t_previous =  t_current;
+      t_current  += timeStep;
+    }
+    else
+    {
+      //Reduce the last parts on the host
+      tnext.d2h();
+      t_previous = t_current;
+      t_current  = tnext[0];
+      for (int i = 1; i < blockSize ; i++)
+      {
+          t_current = std::min(t_current, tnext[i]);
+      }
     }
     tree.activeGrpList.zeroMem();      //Reset the active grps
   #else
@@ -779,6 +789,7 @@ void octree::predict(tree_structure &tree)
     else
        temp = 1;
   #endif
+
 
     
   //Set valid list to zero

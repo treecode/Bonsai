@@ -139,7 +139,6 @@ void octree::compute_properties(tree_structure &tree) {
   setPHGroupData.set_arg<cl_mem>(5, tree.groupSizeInfo.p());
   setPHGroupData.setWork(-1, NCRIT, tree.n_groups);
   setPHGroupData.execute(copyStream->s());
-
   //Set valid list to zero
   //Reset the active particles
   tree.activeGrpList.zeroMemGPUAsync(execStream->s());
@@ -267,14 +266,23 @@ void octree::compute_properties(tree_structure &tree) {
       //Start copying the particle positions to the host, will overlap with compute properties
       localTree.bodies_Ppos.d2h(tree.n, false, LETDataToHostStream->s());
 
-
-      if(localGrpTreeCntSize)
+      if(grpTree_n_nodes == 0)
       {
-        localGrpTreeCntSize  = (real4*)realloc(localGrpTreeCntSize,  2*grpTree_n_nodes*sizeof(real4));
+        localGrpTreeCntSize =  (real4*) malloc(1*sizeof(real4));
+        grpTree_startGrp = 0;
+        grpTree_endGrp   = 0;
+
       }
       else
       {
-        localGrpTreeCntSize =  (real4*) malloc(2*grpTree_n_nodes*sizeof(real4));
+        if(localGrpTreeCntSize)
+        {
+          localGrpTreeCntSize  = (real4*)realloc(localGrpTreeCntSize,  2*grpTree_n_nodes*sizeof(real4));
+        }
+        else
+        {
+          localGrpTreeCntSize =  (real4*) malloc(2*grpTree_n_nodes*sizeof(real4));
+        }
       }
 
       //Compute groupTree properties
