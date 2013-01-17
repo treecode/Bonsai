@@ -265,6 +265,15 @@ namespace my_dev {
       }
     }
     
+    void writeLogEvent(const char *text)
+    {
+      if(disable_timing) return;
+      if(logfile_flag)
+      {
+        (*logFile) << text;
+      }
+    }
+
     /////////////
     //Kept for compatability
     int              get_command_queue() {return 0;}

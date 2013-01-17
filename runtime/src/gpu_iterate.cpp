@@ -465,6 +465,13 @@ bool octree::iterate_once(IterationData &idata) {
     msLET += runningLETTimeSum;
     LOGF(stderr, "APPTIME [%d]: Iter: %d\t%g \tn: %d EventTime: %f  and %f\tSum: %f\n", 
 		procId, iter, idata.lastGravTime, this->localTree.n, ms, msLET, ms+msLET);
+
+    char buff[512];
+    sprintf(buff,  "APPTIME [%d]: Iter: %d\t%g \tn: %d EventTime: %f  and %f\tSum: %f\n",
+        procId, iter, idata.lastGravTime, this->localTree.n, ms, msLET, ms+msLET);
+    devContext.writeLogEvent(buff);
+
+
 #else
     ms    = 1;
     msLET = 1;
