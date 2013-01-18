@@ -1080,6 +1080,18 @@ int main(int argc, char** argv)
   MPI_Finalize();
 #endif
 
+  if(tree->procId == 0)
+  {
+	  LOGF(stderr, "TOTAL:   Time spent between the start of 'iterate' and the final time-step (very first step is not accounted)\n");
+	  LOGF(stderr, "Grav:    Time spent to compute gravity, including communication (wall-clock time)\n");
+	  LOGF(stderr, "GPUgrav: Time spent ON the GPU to compute local and LET gravity\n");
+	  LOGF(stderr, "LET Com: Time spent in exchanging and building LET data\n");
+	  LOGF(stderr, "Build:   Time spent in constructing the tree (incl sorting, making groups, etc.)\n");
+	  LOGF(stderr, "Domain:  Time spent in computing new domain decomposition and exchanging particles between nodes.\n");
+	  LOGF(stderr, "Wait:    Time spent in waiting on other processes after the gravity part.\n");
+  }
+
+
   delete tree;
   tree = NULL;
 #endif

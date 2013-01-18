@@ -1314,7 +1314,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
     nodesBegEnd[mpiGetNProcs()].x   = nodesBegEnd[mpiGetNProcs()].y = 0; //Make valgrind happy
     int totalTopNodes               = 0;
 
-    //#define DO_NOT_USE_TOP_TREE //If this is defined there is no tree-build on top of the start nodes
+//    #define DO_NOT_USE_TOP_TREE //If this is defined there is no tree-build on top of the start nodes
     vector<real4> topBoxCenters(1*topNodeOnTheFlyCount);
     vector<real4> topBoxSizes  (1*topNodeOnTheFlyCount);
     vector<real4> topMultiPoles(3*topNodeOnTheFlyCount);
@@ -1598,10 +1598,10 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
     for(int i=0; i < PROCS; i++)
     {
       //Get the properties of the LET, TODO this should be changed in int_as_float instead of casts
-      int remoteP      = (int) treeBuffers[i][0].x;    //Number of particles
-      int remoteN      = (int) treeBuffers[i][0].y;    //Number of nodes
-      int remoteB      = (int) treeBuffers[i][0].z;    //Begin id of top nodes
-      int remoteE      = (int) treeBuffers[i][0].w;    //End   id of top nodes
+      int remoteP      = host_float_as_int(treeBuffers[i][0].x);    //Number of particles
+      int remoteN      = host_float_as_int(treeBuffers[i][0].y);    //Number of nodes
+      int remoteB      = host_float_as_int(treeBuffers[i][0].z);    //Begin id of top nodes
+      int remoteE      = host_float_as_int(treeBuffers[i][0].w);    //End   id of top nodes
       int remoteNstart = remoteE-remoteB;
 
       //Particles

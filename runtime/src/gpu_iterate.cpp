@@ -57,11 +57,9 @@ void octree::makeLET()
   //Start LET kernels
   essential_tree_exchangeV2(localTree, remoteTree, nodeInfo);
 
-//  LOGF(stderr, "LET Exchange took (%d): %g \n", mpiGetRank(), get_time() - tTest);
   
   delete[] nodeInfo;
   letRunning = false;
-  gravStream->sync();  //Sync LET execution
 }
 
 #if 1
@@ -272,15 +270,8 @@ bool octree::iterate_once(IterationData &idata) {
     double t1 = 0;
 
     LOG("At the start of iterate:\n");
-    LOGF(stderr,"At the start of iterate:\n");
     
     bool forceTreeRebuild = false;
-    
-    if((iter % 5) == 0)
-    {
-  //    addGalaxy(0);
-   //   forceTreeRebuild = true;
-    }
 
     //predict localtree
     devContext.startTiming(execStream->s());
@@ -323,7 +314,7 @@ bool octree::iterate_once(IterationData &idata) {
 
       //Redistribute the particles
 
-      if(1)
+      if(0)
       {      
         if(nProcs > 1)
         { 
@@ -449,7 +440,7 @@ bool octree::iterate_once(IterationData &idata) {
     }
 
     gravStream->sync();
-    
+
     idata.lastGravTime      = get_time() - t1;
     idata.totalGravTime    += idata.lastGravTime;
     idata.lastLETCommTime   = thisPartLETExTime;
