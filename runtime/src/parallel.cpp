@@ -2,8 +2,11 @@
 #include <xmmintrin.h>
 
 #ifdef USE_MPI
-#include "mpi.h"
+  #include "mpi.h"
+  #include <omp.h>
 #endif
+
+#include "mpi.h"
 
 //SSE stuff for local tree-walk
 typedef float  _v4sf  __attribute__((vector_size(16)));
@@ -61,7 +64,15 @@ void octree::mpiInit(int argc,char *argv[], int &procId, int &nProcs)
     MPI_Initialized(&mpiInitialized);
     
     if(!mpiInitialized)
+    {
       MPI_Init(&argc,&argv);
+      int provided;
+      //MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
+      //assert(provided == MPI_THREAD_MULTIPLE);
+
+//      MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &provided);
+//      assert(provided == MPI_THREAD_FUNNELED);
+    }
 
     MPI_Comm_size(MPI_COMM_WORLD, &nProcs);
     MPI_Comm_rank(MPI_COMM_WORLD, &procId);
@@ -1094,21 +1105,24 @@ static uint4 host_get_key(int4 crd)
   return key_new;
 }
 
+typedef struct letObject
+{
+  real4       *buffer;
+  int          size;
+  int          destination;
+  MPI_Request  req;
+} letObject;
+
 void octree::essential_tree_exchangeV2(tree_structure &tree,
                                        tree_structure &remote,
                                        nInfoStruct *nodeInfo)
 {
-  int myid    = procId;
-  int nproc   = nProcs;
-  int isource = 0;
+  double t0         = get_time();
 
-  double t0 = get_time();
-
-  bool mergeOwntree = false;          //Default do not include our own tree-structre, thats mainly used for testing
-  int step          = nProcs - 1;     //Default merge all remote trees into one structure
-//   step              = 1;
+  int isource       = 0;
+  bool mergeOwntree = false;              //Default do not include our own tree-structure, thats mainly used for testing
   int level_start   = tree.startLevelMin; //Depth of where to start the tree-walk
-  int procTrees     = 0;              //Number of trees that we've received and processed
+  int procTrees     = 0;                  //Number of trees that we've received and processed
 
   real4  *bodies              = &tree.bodies_Ppos[0];
   real4  *velocities          = &tree.bodies_Pvel[0];
@@ -1124,336 +1138,704 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
   //Timers for the LET Exchange
   static double totalLETExTime    = 0;
   thisPartLETExTime               = 0;
-  double tStart                   = 0;
+  double tStart                   = get_time();
 
-  //Buffers
-
-  //LET buffer, allocate max possible size
- // const int LETCreateStackSize = 512*1024; //TODO make this dynamic in some sense
-  const int LETCreateStackSize = 2*512*1024; //TODO make this dynamic in some sense
-  uint2 *curLevelStack         = new uint2[LETCreateStackSize];
-  uint2 *nextLevelStack        = new uint2[LETCreateStackSize];
-  //Maximum possible required size (full tree), + a few percent sinze texture offsets increase size slightly
-  int letBuffSize              = (int) (1.05*(tree.n + 5* tree.n_nodes))+1024; //+1024 to have small buffer
-  real4 *LETDataBuffer         = (real4*)malloc(sizeof(real4)*letBuffSize);
 
   int topNodeOnTheFlyCount = 0;
 
-//   for(int z=nproc-1; z > 0; z-=step)
-  for(int z=nproc-1; z > 0; )
+  uint2 node_begend;
+  node_begend.x   = tree.level_list[level_start].x;
+  node_begend.y   = tree.level_list[level_start].y;
+
+
+  omp_set_num_threads(4);
+
+  letObject *computedLETs = new letObject[nProcs-1];
+
+  int omp_ticket      = 0;
+  int nComputedLETs   = 0;
+  int nReceived       = 0;
+  int nSendOut        = 0;
+
+  //Use multiple OpenMP threads in parallel to build and exchange LETs
+  #pragma omp parallel
   {
-    tStart = get_time();
+    int tid      = omp_get_thread_num();
+    int nthreads = omp_get_num_threads();
 
-    step = min(step, z);
-
-    int recvTree = 0;
-    //For each process
-    for(int ib = z; recvTree < step; recvTree++, ib--)
+    if(tid != 1) //Tid 0, does LET creation and GPU control, tid == 1 does MPI communication, all others do LET creation
     {
-      int ibox = (ib+myid)%nproc; //index to send...
-      if (ib == nproc-1){
-          isource= (myid+1)%nproc;
-      }else{
-          isource = (isource+1)%nproc;
-          if (isource == myid)isource = (isource+1)%nproc;
-      }
-
-      uint2 node_begend;
-      node_begend.x   = tree.level_list[level_start].x;
-      node_begend.y   = tree.level_list[level_start].y;
-
-      double t1 = get_time();
+      nInfoStruct  *nodeInfo_private;
+      uint2        *curLevelStack;
+      uint2        *nextLevelStack;
 
 
-      //Group info for this process
-      int idx = globalGrpTreeOffsets[ibox];
-      real4 *grpCenter =  &globalGrpTreeCntSize[idx];
-      idx += this->globalGrpTreeCount[ibox] / 2; //Divide by two to get halfway
-      real4 *grpSize   =  &globalGrpTreeCntSize[idx];
+      const int LETCreateStackSize = 2*512*1024; //TODO make this dynamic in some sense
 
-      //Retrieve required for the tree-walk from the top node
-      union{int i; float f;} itof; //float as int
-
-      itof.f = grpCenter[0].x;
-      int startGrp = itof.i;
-      itof.f = grpCenter[0].y;
-      int endGrp = itof.i;
-
-      int countNodes = 0, countParticles = 0;
-
-      double tz = get_time();
-      if(tree.n > 0)
+      #pragma omp critical
       {
-       tree_walking_tree_stack_versionC13(
-           &localTree.multipole[0], &nodeInfo[0], //Local Tree
-           grpSize, grpCenter, //remote Tree
-           node_begend.x, node_begend.y, startGrp, endGrp-1,
-           countNodes, countParticles,
-           curLevelStack, nextLevelStack);
+        nodeInfo_private = new nInfoStruct[localTree.n_nodes];
+        curLevelStack    = new uint2[LETCreateStackSize];
+        nextLevelStack   = new uint2[LETCreateStackSize];
       }
-       double tCount = get_time()-tz;
+      //Each thread requires it's own copy since we modify some values during checking
+      memcpy(&nodeInfo_private[0], &nodeInfo[0], sizeof(nInfoStruct)*localTree.n_nodes);
 
-      //Buffer that will contain all the data:
-      //|real4| 2*particleCount*real4| nodes*real4 | nodes*real4 | nodes*3*real4 |
-      //1 + 1*particleCount + nodeCount + nodeCount + 3*nodeCount
-
-      //Increase the number of particles and the number of nodes by the texture-offset
-       //such that these are correctly aligned in memory
-      countParticles += getTextureAllignmentOffset(countParticles, sizeof(real4));
-      countNodes     += getTextureAllignmentOffset(countNodes    , sizeof(real4));
-
-      //0-1 )                               Info about #particles, #nodes, start and end of tree-walk
-      //1- Npart)                           The particle positions
-      //1+1*Npart-Nnode )                   The nodeSizeData
-      //1+1*Npart+Nnode   - Npart+2*Nnode ) The nodeCenterData
-      //1+1*Npart+2*Nnode - Npart+5*Nnode ) The multipole data, is 3x number of nodes (mono and quadrupole data)
-      int bufferSize = 1 + 1*countParticles + 5*countNodes;
-
-      if(bufferSize > letBuffSize) //Increase in case size is not sufficient
+      while(true) //Continue until everything is computed
       {
-        LETDataBuffer = (real4*) realloc(LETDataBuffer, bufferSize);
-        letBuffSize   = bufferSize;
-      }
+        int currentTicket = 0;
 
-      double ty = get_time();
-      stackFill(&LETDataBuffer[1], &localTree.boxCenterInfo[0],
-                 &localTree.boxSizeInfo[0], &localTree.bodies_Ppos[0],
-                 &localTree.multipole[0],
-                 nodeInfo, countParticles, countNodes,
-                 node_begend.x, node_begend.y,
-                 (uint*)curLevelStack, (uint*)nextLevelStack);
+        #pragma omp critical
+          currentTicket = omp_ticket++; //Get a unique ticket to determine which process to build the LET for
 
-      LOG("LET count&fill: Count: %lg Fill; %lg, Total : %lg (#P: %d \t#N: %d) \tsince start: %lg \n",
-          tCount, get_time() - ty, get_time()-t1, countParticles, countNodes, get_time()-t0);
+        if(currentTicket >= (nProcs - 1)) //Break out if everything is processed
+          break;
+          
+        int ib       = (nProcs-1)-currentTicket;
 
-      //Set the tree properties, before we exchange the data
-      LETDataBuffer[0].x = host_int_as_float(countParticles);    //Number of particles in the LET
-      LETDataBuffer[0].y = host_int_as_float(countNodes);        //Number of nodes     in the LET
-      LETDataBuffer[0].z = host_int_as_float(node_begend.x);     //First node on the level that indicates the start of the tree walk
-      LETDataBuffer[0].w = host_int_as_float(node_begend.y);     //last node on the level that indicates the start of the tree walk
+        int ibox = (ib+procId)%nProcs; //index to send...
+        if (ib == nProcs-1)
+        {
+            isource= (procId+1)%nProcs;
+        }
+        else
+        {
+            isource                        = (isource+1)%nProcs;
+            if (isource == procId) isource = (isource+1)%nProcs;
+        }
+        //Above could be replaced by a priority list, based on previous
+        //loops (eg nearest neighbours first)
+
+        double t1 = get_time();
+
+        //Group info for this process
+        int idx          =   globalGrpTreeOffsets[ibox];
+        real4 *grpCenter =  &globalGrpTreeCntSize[idx];
+        idx             += this->globalGrpTreeCount[ibox] / 2; //Divide by two to get halfway
+        real4 *grpSize   =  &globalGrpTreeCntSize[idx];
+
+        //Retrieve required for the tree-walk from the top node
+        union{int i; float f;} itof; //float as int
+
+        itof.f       = grpCenter[0].x;
+        int startGrp = itof.i;
+        itof.f       = grpCenter[0].y;
+        int endGrp   = itof.i;
+
+        int countNodes = 0, countParticles = 0;
+
+        double tz = get_time();
+        if(tree.n > 0)
+        {
+          tree_walking_tree_stack_versionC13(
+             &localTree.multipole[0], &nodeInfo_private[0], //Local Tree
+             grpSize, grpCenter, //remote Tree
+             node_begend.x, node_begend.y, startGrp, endGrp-1,
+             countNodes, countParticles,
+             curLevelStack, nextLevelStack);
+        }
+        double tCount = get_time()-tz;
+
+        //Buffer that will contain all the data:
+        //|real4| 2*particleCount*real4| nodes*real4 | nodes*real4 | nodes*3*real4 |
+        //1 + 1*particleCount + nodeCount + nodeCount + 3*nodeCount
+
+        //Increase the number of particles and the number of nodes by the texture-offset
+        //such that these are correctly aligned in memory
+        countParticles += getTextureAllignmentOffset(countParticles, sizeof(real4));
+        countNodes     += getTextureAllignmentOffset(countNodes    , sizeof(real4));
+
+        //0-1 )                               Info about #particles, #nodes, start and end of tree-walk
+        //1- Npart)                           The particle positions
+        //1+1*Npart-Nnode )                   The nodeSizeData
+        //1+1*Npart+Nnode   - Npart+2*Nnode ) The nodeCenterData
+        //1+1*Npart+2*Nnode - Npart+5*Nnode ) The multipole data, is 3x number of nodes (mono and quadrupole data)
+        int bufferSize = 1 + 1*countParticles + 5*countNodes;
+        
+        
+        //We could try to reuse an existing buffer. TODO
+
+        real4 *LETDataBuffer;
+        #pragma omp critical //Malloc seems to be not so thread safe..
+          LETDataBuffer = (real4*)malloc(sizeof(real4)*bufferSize);
+
+        double ty = get_time();
+        stackFill(&LETDataBuffer[1],
+                  &localTree.boxCenterInfo[0],  &localTree.boxSizeInfo[0], &localTree.bodies_Ppos[0],
+                  &localTree.multipole[0],        nodeInfo_private, countParticles, countNodes,
+                   node_begend.x, node_begend.y, (uint*)curLevelStack, (uint*)nextLevelStack);
+
+        fprintf(stderr,"LET count&fill [%d,%d]: Dest: %d Count: %lg Fill; %lg, Total : %lg (#P: %d \t#N: %d) \tsince start: %lg \n",
+                       procId, tid, ibox, tCount, get_time() - ty, get_time()-t1, countParticles, countNodes, get_time()-t0);
+
+        //Set the tree properties, before we exchange the data
+        LETDataBuffer[0].x = host_int_as_float(countParticles);    //Number of particles in the LET
+        LETDataBuffer[0].y = host_int_as_float(countNodes);        //Number of nodes     in the LET
+        LETDataBuffer[0].z = host_int_as_float(node_begend.x);     //First node on the level that indicates the start of the tree walk
+        LETDataBuffer[0].w = host_int_as_float(node_begend.y);     //last node on the level that indicates the start of the tree walk
+
+        //In a critical section to prevent multiple threads writing to the same location
+        #pragma omp critical
+        {
+          computedLETs[nComputedLETs].buffer      = LETDataBuffer;
+          computedLETs[nComputedLETs].destination = ibox;
+          computedLETs[nComputedLETs].size        = sizeof(real4)*bufferSize;
+          nComputedLETs++;
+        }
 
 
-      //Exchange the data of the tree structures  between the processes
-      treeBuffers[recvTree] = MP_exchange_bhlist(ibox, isource, bufferSize, LETDataBuffer);
+        if(tid == 0)
+        {
+          //This determines if we interrupt the computation by starting a gravity kernel on the GPU
+          if(gravStream->isFinished())
+          {
+            LOGF(stderr,"GRAVFINISHED %d recvTree: %d  Time: %lg Since start: %lg\n",
+                         procId, nReceived, get_time()-t1, get_time()-t0);
 
-      //Increase the top-node count
-      int topStart = host_float_as_int(treeBuffers[recvTree][0].z);
-      int topEnd   = host_float_as_int(treeBuffers[recvTree][0].w);
+            //Only start if there actually is new data
+            if((nReceived - procTrees) > 0)
+            {
+              fprintf(stderr,"[%d] Starting gpu work! \n", procId);
+              int recvTree      = 0;
+              int topNodeCount  = 0;
+              #pragma omp critical(updateReceivedProcessed)
+              {
+                recvTree             = nReceived;
+                topNodeCount         = topNodeOnTheFlyCount;
+                topNodeOnTheFlyCount = 0;
+              }
 
-      topNodeOnTheFlyCount += (topEnd-topStart);
+              mergeAndLaunchLETStructures(tree, remote, treeBuffers, topNodeCount,
+                                          recvTree, mergeOwntree, procTrees, tStart);
 
-      //This determines if we interrupt the exchange by starting a gravity kernel on the GPU
-      if(gravStream->isFinished())
+              totalLETExTime += thisPartLETExTime;
+            }// (nReceived - procTrees) > 0)
+          }// isFinished
+        }//tid == 0
+
+      }//end while
+
+      //All data that has to be send out is computed
+      if(tid == 0)
       {
-        LOGF(stderr,"GRAVFINISHED %d recvTree: %d  Time: %lg Since start: %lg\n",
-                     procId, recvTree, get_time()-t1, get_time()-t0);
-        recvTree++;
-        break;
-      }
-    }//end for each process
+        //Thread 0 starts the GPU work so it stays alive until that is complete
+        while(procTrees != nProcs-1) //Exit when everything is processed
+        {
+          bool startGrav = false;
+          if(nReceived == nProcs-1) //Indicates that we have received all there is to receive
+          {
+            startGrav = true;
+          }
 
-    z-=recvTree;
+          //This determines if we interrupt the computation/waiting by starting a gravity kernel on the GPU
+          //Since the GPU is being idle
+          if(gravStream->isFinished())
+          {
+            //Only start if there actually is new data
+            if((nReceived - procTrees) > 0) startGrav = true;
+          }
 
-    //Now we have to merge the separate tree-structures into one big-tree
+          if(startGrav)
+          {
+            int recvTree      = 0;
+            int topNodeCount  = 0;
+            #pragma omp critical(updateReceivedProcessed)
+            {
+              recvTree             = nReceived;
+              topNodeCount         = topNodeOnTheFlyCount;
+              topNodeOnTheFlyCount = 0;
+            }
 
-//     double t1 = get_time();
+            mergeAndLaunchLETStructures(tree, remote, treeBuffers, topNodeCount,
+                                        recvTree, mergeOwntree, procTrees, tStart);
 
-    int PROCS = recvTree;
+            totalLETExTime += thisPartLETExTime;
+          }
+          else
+          {
+            usleep(10);
+          }//if startGrav
+        }//while 1
+      }//if tid==0
 
-    procTrees += recvTree;
 
-    if(mergeOwntree)
-    {
-      //Add the processors own tree to the LET tree
-      int particleCount   = tree.n;
-      int nodeCount       = tree.n_nodes;
-
-      int realParticleCount = tree.n;
-      int realNodeCount     = tree.n_nodes;
-
-      particleCount += getTextureAllignmentOffset(particleCount, sizeof(real4));
-      nodeCount     += getTextureAllignmentOffset(nodeCount    , sizeof(real4));
-
-      int bufferSizeLocal = 1 + 1*particleCount + 5*nodeCount;
-
-      treeBuffers[PROCS]  = new real4[bufferSizeLocal];
-
-      //Note that we use the real*Counts otherwise we read out of the array boundaries!!
-      int idx = 1;
-      memcpy(&treeBuffers[PROCS][idx], &bodies[0],         sizeof(real4)*realParticleCount);
-      idx += particleCount;
-//      memcpy(&treeBuffers[PROCS][idx], &velocities[0],     sizeof(real4)*realParticleCount);
-//      idx += particleCount;
-      memcpy(&treeBuffers[PROCS][idx], &nodeSizeInfo[0],   sizeof(real4)*realNodeCount);
-      idx += nodeCount;
-      memcpy(&treeBuffers[PROCS][idx], &nodeCenterInfo[0], sizeof(real4)*realNodeCount);
-      idx += nodeCount;
-      memcpy(&treeBuffers[PROCS][idx], &multipole[0],      sizeof(real4)*realNodeCount*3);
-
-      treeBuffers[PROCS][0].x = host_int_as_float(particleCount);
-      treeBuffers[PROCS][0].y = host_int_as_float(nodeCount);
-      treeBuffers[PROCS][0].z = host_int_as_float(tree.level_list[level_start].x);
-      treeBuffers[PROCS][0].w = host_int_as_float(tree.level_list[level_start].y);
-
-      topNodeOnTheFlyCount += (tree.level_list[level_start].y-tree.level_list[level_start].x);
-
-      PROCS                   = PROCS + 1; //Signal that we added one more tree-structure
-      mergeOwntree            = false;     //Set it to false in case we do not merge all trees at once, we only include our own once
+      delete[] curLevelStack;
+      delete[] nextLevelStack;
+      delete[] nodeInfo_private;
     }
-
-    //Arrays to store and compute the offsets
-    int *particleSumOffsets  = new int[mpiGetNProcs()+1];
-    int *nodeSumOffsets      = new int[mpiGetNProcs()+1];
-    int *startNodeSumOffsets = new int[mpiGetNProcs()+1];
-    uint2 *nodesBegEnd       = new uint2[mpiGetNProcs()+1];
-
-    //Offsets start at 0 and then are increased by the number of nodes of each LET tree
-    particleSumOffsets[0]           = 0;
-    nodeSumOffsets[0]               = 0;
-    startNodeSumOffsets[0]          = 0;
-    nodesBegEnd[mpiGetNProcs()].x   = nodesBegEnd[mpiGetNProcs()].y = 0; //Make valgrind happy
-    int totalTopNodes               = 0;
-
-//    #define DO_NOT_USE_TOP_TREE //If this is defined there is no tree-build on top of the start nodes
-    vector<real4> topBoxCenters(1*topNodeOnTheFlyCount);
-    vector<real4> topBoxSizes  (1*topNodeOnTheFlyCount);
-    vector<real4> topMultiPoles(3*topNodeOnTheFlyCount);
-    vector<real4> topTempBuffer(3*topNodeOnTheFlyCount);
-    vector<int  > topSourceProc; //Do not assign size since we use 'insert'
-
-    //Calculate the offsets
-    for(int i=0; i < PROCS ; i++)
+    else if(tid == 1)
     {
-      int particles = host_float_as_int(treeBuffers[i][0].x);
-      int nodes     = host_float_as_int(treeBuffers[i][0].y);
+      while(1)
+      {
+        //Sending part
+        int tempComputed = nComputedLETs;
 
-      nodesBegEnd[i].x = host_float_as_int(treeBuffers[i][0].z);
-      nodesBegEnd[i].y = host_float_as_int(treeBuffers[i][0].w);
+        if(tempComputed > nSendOut)
+        {
+          for(int i=nSendOut; i < tempComputed; i++)
+          {
+            //fprintf(stderr,"[%d] Sending out data to: %d \n", procId, computedLETs[i].destination);
+            MPI_Isend(&(computedLETs[i].buffer)[0],computedLETs[i].size,
+                      MPI_BYTE, computedLETs[i].destination, 999,
+                      MPI_COMM_WORLD, &(computedLETs[i].req));
+          }
+          nSendOut = tempComputed;
+        }
 
-      particleSumOffsets[i+1]     = particleSumOffsets[i]  + particles;
-      nodeSumOffsets[i+1]         = nodeSumOffsets[i]      + nodes - nodesBegEnd[i].y;    //Without the top-nodes
-      startNodeSumOffsets[i+1]    = startNodeSumOffsets[i] + nodesBegEnd[i].y-nodesBegEnd[i].x;
+        //Receiving
+        MPI_Status probeStatus;
+        MPI_Status recvStatus;
+        int flag  = 0;
+
+        do
+        {
+          MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &probeStatus);
+
+          if(flag)
+          {
+            int count;
+            MPI_Get_count(&probeStatus, MPI_BYTE, &count);
+            //fprintf(stderr,"%d\tThere is a message of size: %d %ld From: %d tag: %d\n",tid, count, count / sizeof(real4), probeStatus.MPI_SOURCE, probeStatus.MPI_TAG);
+
+            double tY = get_time();
+            real4 *recvDataBuffer = new real4[count / sizeof(real4)];
+            double tZ = get_time();
+            MPI_Recv(&recvDataBuffer[0], count, MPI_BYTE, probeStatus.MPI_SOURCE, probeStatus.MPI_TAG, MPI_COMM_WORLD,&recvStatus);
+
+            fprintf(stderr, "[%d] Receive complete from: %d  || recvTree: %d since start: %lg alloc: %lg Recv: %lg Size: %d\n",
+                procId, recvStatus.MPI_SOURCE, 0, get_time()-tStart,tZ-tY, get_time()-tZ, count);
+
+            treeBuffers[nReceived] = recvDataBuffer;
+
+            //Increase the top-node count
+            int topStart = host_float_as_int(treeBuffers[nReceived][0].z);
+            int topEnd   = host_float_as_int(treeBuffers[nReceived][0].w);
 
 
-      //Copy the properties for the top-nodes
-      int nTop = nodesBegEnd[i].y-nodesBegEnd[i].x;
-      memcpy(&topBoxSizes[totalTopNodes],
-             &treeBuffers[i][1+1*particles+nodesBegEnd[i].x],             sizeof(real4)*nTop);
-      memcpy(&topBoxCenters[totalTopNodes],
-             &treeBuffers[i][1+1*particles+nodes+nodesBegEnd[i].x],       sizeof(real4)*nTop);
-      memcpy(&topMultiPoles[3*totalTopNodes],
-             &treeBuffers[i][1+1*particles+2*nodes+3*nodesBegEnd[i].x], 3*sizeof(real4)*nTop);
-      topSourceProc.insert(topSourceProc.end(), nTop, i ); //Assign source process id
+            #pragma omp critical(updateReceivedProcessed)
+            {
+              //This is in a critical section since topNodeOnTheFlyCount is reset
+              //by the GPU worker thread (thread == 0)
+              topNodeOnTheFlyCount += (topEnd-topStart);
+              nReceived++;
+            }
 
-      totalTopNodes += nodesBegEnd[i].y-nodesBegEnd[i].x;
+            flag = 0;
+          }//if flag
 
-    }
+        }while(flag);
+
+        //Exit if we have send and received all there is
+        if(nReceived == nProcs-1)
+          if(nSendOut == nProcs-1)
+            break;
+
+        //Check if we can clean up some sends in between the receive/send process
+        MPI_Status waitStatus;
+        int testFlag = 0;
+        for(int i=0; i  < nSendOut; i++)
+        {
+         if(computedLETs[i].buffer != NULL) MPI_Test(&(computedLETs[i].req), &testFlag, &waitStatus);
+         if (testFlag)
+         {
+           free(computedLETs[i].buffer);
+           computedLETs[i].buffer = NULL;
+           testFlag               = 0;
+         }
+        }//end for nSendOut
+
+        usleep(10);
+
+      } //while (1) surrounding the thread-id==1 code
+
+      MPI_Status waitStatus;
+      for(int i=0; i < nSendOut; i++)
+      {
+        if(computedLETs[i].buffer)
+        {
+          MPI_Wait(&(computedLETs[i].req), &waitStatus);
+          free(computedLETs[i].buffer);
+          computedLETs[i].buffer = NULL;
+        }
+      }//for i < nSendOut
+
+    }//if tid = 1
+  }//end OMP section
+
+  delete[] computedLETs;
+  delete[] treeBuffers;
+  LOGF(stderr,"LET Creation and Exchanging time [%d] curStep: %g\t   Total: %g \n", procId, thisPartLETExTime, totalLETExTime);
+
+  LOGF(stderr,"Since start: %lg \t %lg \n", get_time()-tStart, get_time()-t0);
+
+}//essential tree-exchange
+
+
+void octree::mergeAndLaunchLETStructures(
+    tree_structure &tree, tree_structure &remote,
+    real4 **treeBuffers, int topNodeOnTheFlyCount,
+    int &recvTree, bool &mergeOwntree, int &procTrees, double &tStart)
+{
+  //Now we have to merge the separate tree-structures into one big-tree
+
+  int PROCS  = recvTree;
+
+
+#if 0 //This is no longer safe now that we use OpenMP and overlapping communication/computation
+      //to use this (only in debug/test case) make sure GPU work is only launched AFTER ALL data
+      //is received
+  if(mergeOwntree)
+  {
+    real4  *bodies              = &tree.bodies_Ppos[0];
+    real4  *velocities          = &tree.bodies_Pvel[0];
+    real4  *multipole           = &tree.multipole[0];
+    real4  *nodeSizeInfo        = &tree.boxSizeInfo[0];
+    real4  *nodeCenterInfo      = &tree.boxCenterInfo[0];
+    int     level_start         = tree.startLevelMin;
+    //Add the processors own tree to the LET tree
+    int particleCount   = tree.n;
+    int nodeCount       = tree.n_nodes;
+
+    int realParticleCount = tree.n;
+    int realNodeCount     = tree.n_nodes;
+
+    particleCount += getTextureAllignmentOffset(particleCount, sizeof(real4));
+    nodeCount     += getTextureAllignmentOffset(nodeCount    , sizeof(real4));
+
+    int bufferSizeLocal = 1 + 1*particleCount + 5*nodeCount;
+
+    treeBuffers[PROCS]  = new real4[bufferSizeLocal];
+
+    //Note that we use the real*Counts otherwise we read out of the array boundaries!!
+    int idx = 1;
+    memcpy(&treeBuffers[PROCS][idx], &bodies[0],         sizeof(real4)*realParticleCount);
+    idx += particleCount;
+    //      memcpy(&treeBuffers[PROCS][idx], &velocities[0],     sizeof(real4)*realParticleCount);
+    //      idx += particleCount;
+    memcpy(&treeBuffers[PROCS][idx], &nodeSizeInfo[0],   sizeof(real4)*realNodeCount);
+    idx += nodeCount;
+    memcpy(&treeBuffers[PROCS][idx], &nodeCenterInfo[0], sizeof(real4)*realNodeCount);
+    idx += nodeCount;
+    memcpy(&treeBuffers[PROCS][idx], &multipole[0],      sizeof(real4)*realNodeCount*3);
+
+    treeBuffers[PROCS][0].x = host_int_as_float(particleCount);
+    treeBuffers[PROCS][0].y = host_int_as_float(nodeCount);
+    treeBuffers[PROCS][0].z = host_int_as_float(tree.level_list[level_start].x);
+    treeBuffers[PROCS][0].w = host_int_as_float(tree.level_list[level_start].y);
+
+    topNodeOnTheFlyCount += (tree.level_list[level_start].y-tree.level_list[level_start].x);
+
+    PROCS                   = PROCS + 1; //Signal that we added one more tree-structure
+    mergeOwntree            = false;     //Set it to false in case we do not merge all trees at once, we only include our own once
+  }
+#endif
+
+  //Arrays to store and compute the offsets
+  int *particleSumOffsets  = new int[mpiGetNProcs()+1];
+  int *nodeSumOffsets      = new int[mpiGetNProcs()+1];
+  int *startNodeSumOffsets = new int[mpiGetNProcs()+1];
+  uint2 *nodesBegEnd       = new uint2[mpiGetNProcs()+1];
+
+  //Offsets start at 0 and then are increased by the number of nodes of each LET tree
+  particleSumOffsets[0]           = 0;
+  nodeSumOffsets[0]               = 0;
+  startNodeSumOffsets[0]          = 0;
+  nodesBegEnd[mpiGetNProcs()].x   = nodesBegEnd[mpiGetNProcs()].y = 0; //Make valgrind happy
+  int totalTopNodes               = 0;
+
+  //#define DO_NOT_USE_TOP_TREE //If this is defined there is no tree-build on top of the start nodes
+  vector<real4> topBoxCenters(1*topNodeOnTheFlyCount);
+  vector<real4> topBoxSizes  (1*topNodeOnTheFlyCount);
+  vector<real4> topMultiPoles(3*topNodeOnTheFlyCount);
+  vector<real4> topTempBuffer(3*topNodeOnTheFlyCount);
+  vector<int  > topSourceProc; //Do not assign size since we use 'insert'
+
+  //Calculate the offsets
+  for(int i=procTrees; i < PROCS ; i++)
+  {
+    int particles = host_float_as_int(treeBuffers[i][0].x);
+    int nodes     = host_float_as_int(treeBuffers[i][0].y);
+
+    nodesBegEnd[i].x = host_float_as_int(treeBuffers[i][0].z);
+    nodesBegEnd[i].y = host_float_as_int(treeBuffers[i][0].w);
+
+    particleSumOffsets[i+1]     = particleSumOffsets[i]  + particles;
+    nodeSumOffsets[i+1]         = nodeSumOffsets[i]      + nodes - nodesBegEnd[i].y;    //Without the top-nodes
+    startNodeSumOffsets[i+1]    = startNodeSumOffsets[i] + nodesBegEnd[i].y-nodesBegEnd[i].x;
+
+    //Copy the properties for the top-nodes
+    int nTop = nodesBegEnd[i].y-nodesBegEnd[i].x;
+    memcpy(&topBoxSizes[totalTopNodes],
+        &treeBuffers[i][1+1*particles+nodesBegEnd[i].x],             sizeof(real4)*nTop);
+    memcpy(&topBoxCenters[totalTopNodes],
+        &treeBuffers[i][1+1*particles+nodes+nodesBegEnd[i].x],       sizeof(real4)*nTop);
+    memcpy(&topMultiPoles[3*totalTopNodes],
+        &treeBuffers[i][1+1*particles+2*nodes+3*nodesBegEnd[i].x], 3*sizeof(real4)*nTop);
+    topSourceProc.insert(topSourceProc.end(), nTop, i ); //Assign source process id
+
+    totalTopNodes += nodesBegEnd[i].y-nodesBegEnd[i].x;
+  }
 
 #ifndef DO_NOT_USE_TOP_TREE
-    uint4 *keys          = new uint4[topNodeOnTheFlyCount];
-    //Compute the keys for the top nodes based on their centers
-    for(int i=0; i < topNodeOnTheFlyCount; i++)
-    {
-      real4 nodeCenter = topBoxCenters[i];
-      int4 crd;
-      crd.x = (int)((nodeCenter.x - tree.corner.x) / tree.corner.w);
-      crd.y = (int)((nodeCenter.y - tree.corner.y) / tree.corner.w);
-      crd.z = (int)((nodeCenter.z - tree.corner.z) / tree.corner.w);
+  uint4 *keys          = new uint4[topNodeOnTheFlyCount];
+  //Compute the keys for the top nodes based on their centers
+  for(int i=0; i < topNodeOnTheFlyCount; i++)
+  {
+    real4 nodeCenter = topBoxCenters[i];
+    int4 crd;
+    crd.x = (int)((nodeCenter.x - tree.corner.x) / tree.corner.w);
+    crd.y = (int)((nodeCenter.y - tree.corner.y) / tree.corner.w);
+    crd.z = (int)((nodeCenter.z - tree.corner.z) / tree.corner.w);
 
-      keys[i]   = host_get_key(crd);
-      keys[i].w = i;
-    }//for i,
+    keys[i]   = host_get_key(crd);
+    keys[i].w = i;
+  }//for i,
 
-    //Sort the cells by their keys
-    std::sort(keys, keys+topNodeOnTheFlyCount, cmp_ph_key());
+  //Sort the cells by their keys
+  std::sort(keys, keys+topNodeOnTheFlyCount, cmp_ph_key());
 
-    int *topSourceTempBuffer = (int*)&topTempBuffer[2*topNodeOnTheFlyCount]; //Allocated after sizes and centers
+  int *topSourceTempBuffer = (int*)&topTempBuffer[2*topNodeOnTheFlyCount]; //Allocated after sizes and centers
 
-    //Shuffle the top-nodes after sorting
-    for(int i=0; i < topNodeOnTheFlyCount; i++)
-    {
-      topTempBuffer[i]                      = topBoxSizes[i];
-      topTempBuffer[i+topNodeOnTheFlyCount] = topBoxCenters[i];
-      topSourceTempBuffer[i]                = topSourceProc[i];
-    }
-    for(int i=0; i < topNodeOnTheFlyCount; i++)
-    {
-      topBoxSizes[i]   = topTempBuffer[                       keys[i].w];
-      topBoxCenters[i] = topTempBuffer[topNodeOnTheFlyCount + keys[i].w];
-      topSourceProc[i] = topSourceTempBuffer[                 keys[i].w];
-    }
-    for(int i=0; i < topNodeOnTheFlyCount; i++)
-    {
-      topTempBuffer[3*i+0]                  = topMultiPoles[3*i+0];
-      topTempBuffer[3*i+1]                  = topMultiPoles[3*i+1];
-      topTempBuffer[3*i+2]                  = topMultiPoles[3*i+2];
-    }
-    for(int i=0; i < topNodeOnTheFlyCount; i++)
-    {
-      topMultiPoles[3*i+0]                  = topTempBuffer[3*keys[i].w+0];
-      topMultiPoles[3*i+1]                  = topTempBuffer[3*keys[i].w+1];
-      topMultiPoles[3*i+2]                  = topTempBuffer[3*keys[i].w+2];
-    }
+  //Shuffle the top-nodes after sorting
+  for(int i=0; i < topNodeOnTheFlyCount; i++)
+  {
+    topTempBuffer[i]                      = topBoxSizes[i];
+    topTempBuffer[i+topNodeOnTheFlyCount] = topBoxCenters[i];
+    topSourceTempBuffer[i]                = topSourceProc[i];
+  }
+  for(int i=0; i < topNodeOnTheFlyCount; i++)
+  {
+    topBoxSizes[i]   = topTempBuffer[                       keys[i].w];
+    topBoxCenters[i] = topTempBuffer[topNodeOnTheFlyCount + keys[i].w];
+    topSourceProc[i] = topSourceTempBuffer[                 keys[i].w];
+  }
+  for(int i=0; i < topNodeOnTheFlyCount; i++)
+  {
+    topTempBuffer[3*i+0]                  = topMultiPoles[3*i+0];
+    topTempBuffer[3*i+1]                  = topMultiPoles[3*i+1];
+    topTempBuffer[3*i+2]                  = topMultiPoles[3*i+2];
+  }
+  for(int i=0; i < topNodeOnTheFlyCount; i++)
+  {
+    topMultiPoles[3*i+0]                  = topTempBuffer[3*keys[i].w+0];
+    topMultiPoles[3*i+1]                  = topTempBuffer[3*keys[i].w+1];
+    topMultiPoles[3*i+2]                  = topTempBuffer[3*keys[i].w+2];
+  }
 
-    //Build the tree
-    //Assume we do not need more than 4 times number of top nodes. TODO verify this is true
-    uint2 *nodes    = new uint2[4*topNodeOnTheFlyCount];
-    uint4 *nodeKeys = new uint4[4*topNodeOnTheFlyCount];
+  //Build the tree
+  //Assume we do not need more than 4 times number of top nodes. TODO verify this is true
+  uint2 *nodes    = new uint2[4*topNodeOnTheFlyCount];
+  uint4 *nodeKeys = new uint4[4*topNodeOnTheFlyCount];
 
-    //Build the tree
-    uint node_levels[MAXLEVELS];
-    int topTree_n_levels;
-    int topTree_startNode;
-    int topTree_endNode;
-    int topTree_n_nodes;
-    build_NewTopLevels(topNodeOnTheFlyCount,   &keys[0],          nodes,
-                       nodeKeys,        node_levels,       topTree_n_levels,
-                       topTree_n_nodes, topTree_startNode, topTree_endNode);
+  //Build the tree
+  uint node_levels[MAXLEVELS];
+  int topTree_n_levels;
+  int topTree_startNode;
+  int topTree_endNode;
+  int topTree_n_nodes;
+  build_NewTopLevels(topNodeOnTheFlyCount,   &keys[0],          nodes,
+      nodeKeys,        node_levels,       topTree_n_levels,
+      topTree_n_nodes, topTree_startNode, topTree_endNode);
 
-    LOGF(stderr, "Start %d end: %d Number of Original nodes: %d \n", topTree_startNode, topTree_endNode, topNodeOnTheFlyCount);
+  LOGF(stderr, "Start %d end: %d Number of Original nodes: %d \n", topTree_startNode, topTree_endNode, topNodeOnTheFlyCount);
 
-//    mpiSync();
-//    exit(0);
+  //Next compute the properties
+  float4  *topTreeCenters    = new float4 [  topTree_n_nodes];
+  float4  *topTreeSizes      = new float4 [  topTree_n_nodes];
+  float4  *topTreeMultipole  = new float4 [3*topTree_n_nodes];
+  double4 *tempMultipoleRes  = new double4[3*topTree_n_nodes];
 
-    //Next compute the properties
-    float4  *topTreeCenters    = new float4 [  topTree_n_nodes];
-    float4  *topTreeSizes      = new float4 [  topTree_n_nodes];
-    float4  *topTreeMultipole  = new float4 [3*topTree_n_nodes];
-    double4 *tempMultipoleRes  = new double4[3*topTree_n_nodes];
+  computeProps_TopLevelTree(topTree_n_nodes,
+      topTree_n_levels,
+      node_levels,
+      nodes,
+      topTreeCenters,
+      topTreeSizes,
+      topTreeMultipole,
+      &topBoxCenters[0],
+      &topBoxSizes[0],
+      &topMultiPoles[0],
+      tempMultipoleRes);
 
-    computeProps_TopLevelTree(topTree_n_nodes,
-                              topTree_n_levels,
-                              node_levels,
-                              nodes,
-                              topTreeCenters,
-                              topTreeSizes,
-                              topTreeMultipole,
-                              &topBoxCenters[0],
-                              &topBoxSizes[0],
-                              &topMultiPoles[0],
-                              tempMultipoleRes);
-
-    //Tree properties computed, now do some magic to put everything in one array
+  //Tree properties computed, now do some magic to put everything in one array
 
 #else
-    int topTree_n_nodes = 0;
+  int topTree_n_nodes = 0;
 #endif //DO_NOT_USE_TOP_TREE
 
-    //Modify the offsets of the children to fix the index references to their childs
-    for(int i=0; i < topNodeOnTheFlyCount; i++)
+//Modify the offsets of the children to fix the index references to their childs
+  for(int i=0; i < topNodeOnTheFlyCount; i++)
+  {
+    real4 center  = topBoxCenters[i];
+    real4 size    = topBoxSizes  [i];
+    int   srcProc = topSourceProc[i];
+
+    bool leaf        = center.w <= 0;
+
+    int childinfo    = host_float_as_int(size.w);
+    int child, nchild;
+
+    if(childinfo == 0xFFFFFFFF)
     {
-      real4 center  = topBoxCenters[i];
-      real4 size    = topBoxSizes  [i];
-      int   srcProc = topSourceProc[i];
+      //End point, do not modify it should not be split
+      child = childinfo;
+    }
+    else
+    {
+      if(!leaf)
+      {
+        //Node
+        child    =    childinfo & 0x0FFFFFFF;                  //Index to the first child of the node
+        nchild   = (((childinfo & 0xF0000000) >> 28)) ;        //The number of children this node has
 
-      bool leaf        = center.w <= 0;
+        //Calculate the new start for non-leaf nodes.
+        child = child - nodesBegEnd[srcProc].y + topTree_n_nodes + totalTopNodes + nodeSumOffsets[srcProc];
+        child = child | (nchild << 28);                        //Merging back in one integer
 
-      int childinfo    = host_float_as_int(size.w);
+        if(nchild == 0) child = 0;                             //To prevent incorrect negative values
+      }//if !leaf
+      else
+      { //Leaf
+        child   =   childinfo & BODYMASK;                      //the first body in the leaf
+        nchild  = (((childinfo & INVBMASK) >> LEAFBIT)+1);     //number of bodies in the leaf masked with the flag
+
+        child   =  child + particleSumOffsets[srcProc];        //Increasing offset
+        child   = child | ((nchild-1) << LEAFBIT);             //Merging back to one integer
+      }//end !leaf
+    }//if endpoint
+
+    topBoxSizes[i].w =  host_int_as_float(child);      //store the modified offset
+  }//For topNodeOnTheFly
+
+
+  //Compute total particles and total nodes, totalNodes is WITHOUT topNodes
+  int totalParticles    = particleSumOffsets[PROCS];
+  int totalNodes        = nodeSumOffsets[PROCS];
+
+  //To bind parts of the memory to different textures, the memory start address
+  //has to be aligned with XXX bytes, so nodeInformation*sizeof(real4) has to be
+  //increased by an offset, so that the node data starts at a XXX byte boundary
+  //this is already done on the sending process, but since we modify the structure
+  //it has to be done again
+  int nodeTextOffset = getTextureAllignmentOffset(totalNodes+totalTopNodes+topTree_n_nodes, sizeof(real4));
+
+  //Compute the total size of the buffer
+  int bufferSize     = 1*(totalParticles) + 5*(totalNodes+totalTopNodes+topTree_n_nodes + nodeTextOffset);
+
+  thisPartLETExTime += get_time() - tStart;
+  //Allocate memory on host and device to store the merged tree-structure
+  if(bufferSize > remote.fullRemoteTree.get_size())
+  {
+    //Can only resize if we are sure the LET is not running
+    if(letRunning)
+    {
+      gravStream->sync(); //Wait till the LET run is finished
+    }
+    remote.fullRemoteTree.cresize(bufferSize, false);  //Change the size but ONLY if we need more memory
+  }
+  tStart = get_time();
+
+  real4 *combinedRemoteTree = &remote.fullRemoteTree[0];
+
+  //First copy the properties of the top_tree nodes and the original top-nodes
+
+#ifndef DO_NOT_USE_TOP_TREE
+  //The top-tree node properties
+  //Sizes
+  memcpy(&combinedRemoteTree[1*(totalParticles)],
+      topTreeSizes, sizeof(real4)*topTree_n_nodes);
+  //Centers
+  memcpy(&combinedRemoteTree[1*(totalParticles) + (totalNodes + totalTopNodes + topTree_n_nodes + nodeTextOffset)],
+      topTreeCenters, sizeof(real4)*topTree_n_nodes);
+  //Multipoles
+  memcpy(&combinedRemoteTree[1*(totalParticles) +
+                             2*(totalNodes+totalTopNodes+topTree_n_nodes+nodeTextOffset)],
+                             topTreeMultipole, sizeof(real4)*topTree_n_nodes*3);
+
+  //Cleanup
+  delete[] keys;
+  delete[] nodes;
+  delete[] nodeKeys;
+  delete[] topTreeCenters;
+  delete[] topTreeSizes;
+  delete[] topTreeMultipole;
+  delete[] tempMultipoleRes;
+#endif
+
+  //The top-boxes properties
+  //sizes
+  memcpy(&combinedRemoteTree[1*(totalParticles) + topTree_n_nodes],
+      &topBoxSizes[0], sizeof(real4)*topNodeOnTheFlyCount);
+  //Node center information
+  memcpy(&combinedRemoteTree[1*(totalParticles) + (totalNodes + totalTopNodes + topTree_n_nodes + nodeTextOffset) + topTree_n_nodes],
+      &topBoxCenters[0], sizeof(real4)*topNodeOnTheFlyCount);
+  //Multipole information
+  memcpy(&combinedRemoteTree[1*(totalParticles) +
+                             2*(totalNodes+totalTopNodes+topTree_n_nodes+nodeTextOffset)+3*topTree_n_nodes],
+                             &topMultiPoles[0], sizeof(real4)*topNodeOnTheFlyCount*3);
+
+  //Copy all the 'normal' pieces of the different trees at the correct memory offsets
+  for(int i=procTrees; i < PROCS; i++)
+  {
+    //Get the properties of the LET, TODO this should be changed in int_as_float instead of casts
+    int remoteP      = host_float_as_int(treeBuffers[i][0].x);    //Number of particles
+    int remoteN      = host_float_as_int(treeBuffers[i][0].y);    //Number of nodes
+    int remoteB      = host_float_as_int(treeBuffers[i][0].z);    //Begin id of top nodes
+    int remoteE      = host_float_as_int(treeBuffers[i][0].w);    //End   id of top nodes
+    int remoteNstart = remoteE-remoteB;
+
+    //Particles
+    memcpy(&combinedRemoteTree[particleSumOffsets[i]],   &treeBuffers[i][1], sizeof(real4)*remoteP);
+
+    //Non start nodes, nodeSizeInfo
+    memcpy(&combinedRemoteTree[1*(totalParticles) +  totalTopNodes + topTree_n_nodes + nodeSumOffsets[i]],
+        &treeBuffers[i][1+1*remoteP+remoteE], //From the last start node onwards
+        sizeof(real4)*(remoteN-remoteE));
+
+    //Non start nodes, nodeCenterInfo
+    memcpy(&combinedRemoteTree[1*(totalParticles) + totalTopNodes + topTree_n_nodes + nodeSumOffsets[i] +
+                               (totalNodes + totalTopNodes + topTree_n_nodes + nodeTextOffset)],
+                               &treeBuffers[i][1+1*remoteP+remoteE + remoteN], //From the last start node onwards
+                               sizeof(real4)*(remoteN-remoteE));
+
+    //Non start nodes, multipole
+    memcpy(&combinedRemoteTree[1*(totalParticles) +  3*(totalTopNodes+topTree_n_nodes) +
+                               3*nodeSumOffsets[i] + 2*(totalNodes+totalTopNodes+topTree_n_nodes+nodeTextOffset)],
+                               &treeBuffers[i][1+1*remoteP+remoteE*3 + 2*remoteN], //From the last start node onwards
+                               sizeof(real4)*(remoteN-remoteE)*3);
+
+    /*
+      |real4| 1*particleCount*real4| nodes*real4 | nodes*real4 | nodes*3*real4 |
+      1 + 1*particleCount + nodeCount + nodeCount + 3*nodeCount
+
+      Info about #particles, #nodes, start and end of tree-walk
+      The particle positions
+      The nodeSizeData
+      The nodeCenterData
+      The multipole data, is 3x number of nodes (mono and quadrupole data)
+
+      Now that the data is copied, modify the offsets of the tree so that everything works
+      with the new correct locations and references. This takes place in two steps:
+      First  the top nodes
+      Second the normal nodes
+      Has to be done in two steps since they are not continuous in memory if NPROCS > 2
+     */
+
+    //Modify the non-top nodes for this process
+    int modStart =  totalTopNodes + topTree_n_nodes + nodeSumOffsets[i] + 1*(totalParticles);
+    int modEnd   =  modStart      + remoteN-remoteE;
+
+    for(int j=modStart; j < modEnd; j++)
+    {
+      real4 nodeCenter = combinedRemoteTree[j+totalTopNodes+topTree_n_nodes+totalNodes+nodeTextOffset];
+      real4 nodeSize   = combinedRemoteTree[j];
+      bool leaf        = nodeCenter.w <= 0;
+
+      int childinfo = host_float_as_int(nodeSize.w);
       int child, nchild;
 
       if(childinfo == 0xFFFFFFFF)
-      {
-        //End point, do not modify it should not be split
+      { //End point
         child = childinfo;
       }
       else
@@ -1461,322 +1843,76 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         if(!leaf)
         {
           //Node
-          child    =    childinfo & 0x0FFFFFFF;                  //Index to the first child of the node
-          nchild   = (((childinfo & 0xF0000000) >> 28)) ;        //The number of children this node has
+          child    =    childinfo & 0x0FFFFFFF;                   //Index to the first child of the node
+          nchild   = (((childinfo & 0xF0000000) >> 28)) ;         //The number of children this node has
 
-          //Calculate the new start for non-leaf nodes.
-          child = child - nodesBegEnd[srcProc].y + topTree_n_nodes + totalTopNodes + nodeSumOffsets[srcProc];
-          child = child | (nchild << 28);                        //Merging back in one integer
+          //Calculate the new start (non-leaf)
+          child = child - nodesBegEnd[i].y + totalTopNodes + topTree_n_nodes + nodeSumOffsets[i];
 
-          if(nchild == 0) child = 0;                             //To prevent incorrect negative values
-        }//if !leaf
-        else
-        { //Leaf
-          child   =   childinfo & BODYMASK;                      //the first body in the leaf
-          nchild  = (((childinfo & INVBMASK) >> LEAFBIT)+1);     //number of bodies in the leaf masked with the flag
+          child = child | (nchild << 28); //Combine and store
 
-          child   =  child + particleSumOffsets[srcProc];        //Increasing offset
-          child   = child | ((nchild-1) << LEAFBIT);             //Merging back to one integer
+          if(nchild == 0) child = 0;                              //To prevent incorrect negative values
+        }else{ //Leaf
+          child   =   childinfo & BODYMASK;                       //the first body in the leaf
+          nchild  = (((childinfo & INVBMASK) >> LEAFBIT)+1);      //number of bodies in the leaf masked with the flag
+
+          child = child + particleSumOffsets[i];                 //Modify the particle offsets
+          child = child | ((nchild-1) << LEAFBIT);               //Merging the data back into one integer
         }//end !leaf
-      }//if endpoint
-
-      topBoxSizes[i].w =  host_int_as_float(child);      //store the modified offset
-    }//For topNodeOnTheFly
-
-
-    //Compute total particles and total nodes, totalNodes is WITHOUT topNodes
-    int totalParticles    = particleSumOffsets[PROCS];
-    int totalNodes        = nodeSumOffsets[PROCS];
-
-    //To bind parts of the memory to different textures, the memory start address
-    //has to be aligned with XXX bytes, so nodeInformation*sizeof(real4) has to be
-    //increased by an offset, so that the node data starts at a XXX byte boundary
-    //this is already done on the sending process, but since we modify the structure
-    //it has to be done again
-    int nodeTextOffset = getTextureAllignmentOffset(totalNodes+totalTopNodes+topTree_n_nodes, sizeof(real4));
-
-    //Compute the total size of the buffer
-    int bufferSize     = 1*(totalParticles) + 5*(totalNodes+totalTopNodes+topTree_n_nodes + nodeTextOffset);
-
-    thisPartLETExTime += get_time() - tStart;
-    //Allocate memory on host and device to store the merged tree-structure
-    if(bufferSize > remote.fullRemoteTree.get_size())
-    {
-      //Can only resize if we are sure the LET is not running
-      if(letRunning)
-      {
-        gravStream->sync(); //Wait till the LET run is finished
       }
-      remote.fullRemoteTree.cresize(bufferSize, false);  //Change the size but ONLY if we need more memory
-    }
-    tStart = get_time();
+      combinedRemoteTree[j].w =  host_int_as_float(child);      //Store the modified value
+    }//for non-top nodes
 
-    real4 *combinedRemoteTree = &remote.fullRemoteTree[0];
+    delete[] treeBuffers[i];    //Free the memory of this part of the LET
+    treeBuffers[i] = NULL;
+  } //for PROCS
 
-    //First copy the properties of the top_tree nodes and the original top-nodes
+  /*
+    The final tree structure looks as follows:
+    particlesT1, particlesT2,...mparticlesTn |,
+    topNodeSizeT1, topNodeSizeT2,..., topNodeSizeT2 | nodeSizeT1, nodeSizeT2, ...nodeSizeT3 |,
+    topNodeCentT1, topNodeCentT2,..., topNodeCentT2 | nodeCentT1, nodeCentT2, ...nodeCentT3 |,
+    topNodeMultT1, topNodeMultT2,..., topNodeMultT2 | nodeMultT1, nodeMultT2, ...nodeMultT3
 
-    #ifndef DO_NOT_USE_TOP_TREE
-      //The top-tree node properties
-      //Sizes
-      memcpy(&combinedRemoteTree[1*(totalParticles)],
-          topTreeSizes, sizeof(real4)*topTree_n_nodes);
-      //Centers
-      memcpy(&combinedRemoteTree[1*(totalParticles) + (totalNodes + totalTopNodes + topTree_n_nodes + nodeTextOffset)],
-            topTreeCenters, sizeof(real4)*topTree_n_nodes);
-      //Multipoles
-      memcpy(&combinedRemoteTree[1*(totalParticles) +
-             2*(totalNodes+totalTopNodes+topTree_n_nodes+nodeTextOffset)],
-             topTreeMultipole, sizeof(real4)*topTree_n_nodes*3);
+    NOTE that the Multi-pole data consists of 3 float4 values per node
+   */
+  //     fprintf(stderr,"Modifying the LET took: %g \n", get_time()-t1);
 
-      //Cleanup
-      delete[] keys;
-      delete[] nodes;
-      delete[] nodeKeys;
-      delete[] topTreeCenters;
-      delete[] topTreeSizes;
-      delete[] topTreeMultipole;
-      delete[] tempMultipoleRes;
-    #endif
+  LOGF(stderr,"Number of local bodies: %d number LET bodies: %d number LET nodes: %d top nodes: %d Processed trees: %d (%d) \n",
+      tree.n, totalParticles, totalNodes, totalTopNodes, PROCS, procTrees);
 
-    //The top-boxes properties
-    //sizes
-    memcpy(&combinedRemoteTree[1*(totalParticles) + topTree_n_nodes],
-        &topBoxSizes[0], sizeof(real4)*topNodeOnTheFlyCount);
-    //Node center information
-    memcpy(&combinedRemoteTree[1*(totalParticles) + (totalNodes + totalTopNodes + topTree_n_nodes + nodeTextOffset) + topTree_n_nodes],
-        &topBoxCenters[0], sizeof(real4)*topNodeOnTheFlyCount);
-    //Multipole information
-    memcpy(&combinedRemoteTree[1*(totalParticles) +
-           2*(totalNodes+totalTopNodes+topTree_n_nodes+nodeTextOffset)+3*topTree_n_nodes],
-           &topMultiPoles[0], sizeof(real4)*topNodeOnTheFlyCount*3);
-
-
-//    if(procId < 0)
-//    {
-//      for(int Z=0; Z < topTree_n_nodes; Z++)
-//        LOGF(stderr,"Toptreecenters: %d\t%f\tSize: %f\n", Z, topTreeCenters[Z].w, topTreeSizes[Z].w);
-//          LOGF(stderr,"totalNodes: %d\ttotalTopNodes: %d\ttopTree_n_nodes: %d\t nodeTextOffset: %d\n",
-//          totalNodes,totalTopNodes,topTree_n_nodes,nodeTextOffset);
-//    }
-//    for(int Z=0; Z < topNodeOnTheFlyCount; Z++)
-//    {
-//      if(procId == 0)
-//      {
-//        LOGF(stderr,"topBoxCenters test: %d \t %f \n", Z, topBoxCenters[Z].w);
-//      }
-//    }
-//    for(int Z=0; Z < topNodeOnTheFlyCount+topTree_n_nodes; Z++)
-//    {
-//      if(procId == 0)
-//      {
-//        LOGF(stderr,"CentersTest2 test: %d dest: %d size-dest: %d \t %f \n", Z,
-//            1*(totalParticles)+Z,
-//            1*(totalParticles) + (totalNodes + totalTopNodes + topTree_n_nodes + nodeTextOffset)+Z,
-//            combinedRemoteTree[1*(totalParticles) + (totalNodes + totalTopNodes + topTree_n_nodes + nodeTextOffset)+Z].w);
-//      }
-//    }
-
-//    if(procId < 0){
-//      for(int Z=0; Z < topTree_n_nodes; Z++)
-//      {
-//        if(procId == 0)
-//        {
-//          LOGF(stderr,"topMultipoles-tree test: %d \t %f \n", Z, topTreeMultipole[3*Z].x);
-//        }
-//      }
-//      for(int Z=0; Z < topNodeOnTheFlyCount; Z++)
-//      {
-//        if(procId == 0)
-//        {
-//          LOGF(stderr,"topMultipoles-boxes test: %d \t %f \n", Z, topMultiPoles[3*Z].x);
-//        }
-//      }
-//    }
-
-
-    //Copy all the 'normal' pieces of the different trees at the correct memory offsets
-    for(int i=0; i < PROCS; i++)
-    {
-      //Get the properties of the LET, TODO this should be changed in int_as_float instead of casts
-      int remoteP      = host_float_as_int(treeBuffers[i][0].x);    //Number of particles
-      int remoteN      = host_float_as_int(treeBuffers[i][0].y);    //Number of nodes
-      int remoteB      = host_float_as_int(treeBuffers[i][0].z);    //Begin id of top nodes
-      int remoteE      = host_float_as_int(treeBuffers[i][0].w);    //End   id of top nodes
-      int remoteNstart = remoteE-remoteB;
-
-      //Particles
-      memcpy(&combinedRemoteTree[particleSumOffsets[i]],   &treeBuffers[i][1], sizeof(real4)*remoteP);
-
-      //Non start nodes, nodeSizeInfo
-      memcpy(&combinedRemoteTree[1*(totalParticles) +  totalTopNodes + topTree_n_nodes + nodeSumOffsets[i]],
-            &treeBuffers[i][1+1*remoteP+remoteE], //From the last start node onwards
-            sizeof(real4)*(remoteN-remoteE));
-
-      //Non start nodes, nodeCenterInfo
-      memcpy(&combinedRemoteTree[1*(totalParticles) + totalTopNodes + topTree_n_nodes + nodeSumOffsets[i]
-                                      + (totalNodes + totalTopNodes + topTree_n_nodes + nodeTextOffset)],
-            &treeBuffers[i][1+1*remoteP+remoteE + remoteN], //From the last start node onwards
-            sizeof(real4)*(remoteN-remoteE));
-
-      //Non start nodes, multipole
-      memcpy(&combinedRemoteTree[1*(totalParticles) +  3*(totalTopNodes+topTree_n_nodes) +
-            3*nodeSumOffsets[i] + 2*(totalNodes+totalTopNodes+topTree_n_nodes+nodeTextOffset)],
-            &treeBuffers[i][1+1*remoteP+remoteE*3 + 2*remoteN], //From the last start node onwards
-            sizeof(real4)*(remoteN-remoteE)*3);
-
-//      if(procId < 0){
-//      for(int Z=0; Z < 25; Z++)
-//            {
-//              if(procId == 0)
-//              {
-//                LOGF(stderr,"Center test: %d Dest: %d Size-dest: %d\t %f \n", Z,
-//                    1*(totalParticles) + totalTopNodes + topTree_n_nodes + nodeSumOffsets[i]
-//                     + (totalNodes + totalTopNodes + topTree_n_nodes + nodeTextOffset) + Z,
-//                     1*(totalParticles) +  totalTopNodes + topTree_n_nodes + nodeSumOffsets[i] + Z,
-//                    treeBuffers[i][1+1*remoteP+remoteE + remoteN +Z].w);
-//              }
-//            }
-//      }
-      /*
-        |real4| 1*particleCount*real4| nodes*real4 | nodes*real4 | nodes*3*real4 |
-        1 + 1*particleCount + nodeCount + nodeCount + 3*nodeCount
-
-        Info about #particles, #nodes, start and end of tree-walk
-        The particle positions
-        The nodeSizeData
-        The nodeCenterData
-        The multipole data, is 3x number of nodes (mono and quadrupole data)
-
-        Now that the data is copied, modify the offsets of the tree so that everything works
-        with the new correct locations and references. This takes place in two steps:
-        First  the top nodes
-        Second the normal nodes
-        Has to be done in two steps since they are not continuous in memory if NPROCS > 2
-      */
-
-      //Modify the non-top nodes for this process
-      int modStart =  totalTopNodes + topTree_n_nodes + nodeSumOffsets[i] + 1*(totalParticles);
-      int modEnd   =  modStart      + remoteN-remoteE;
-
-      for(int j=modStart; j < modEnd; j++)
-      {
-        real4 nodeCenter = combinedRemoteTree[j+totalTopNodes+topTree_n_nodes+totalNodes+nodeTextOffset];
-        real4 nodeSize   = combinedRemoteTree[j];
-        bool leaf        = nodeCenter.w <= 0;
-
-        int childinfo = host_float_as_int(nodeSize.w);
-        int child, nchild;
-
-        if(childinfo == 0xFFFFFFFF)
-        { //End point
-          child = childinfo;
-        }
-        else
-        {
-          if(!leaf)
-          {
-            //Node
-            child    =    childinfo & 0x0FFFFFFF;                   //Index to the first child of the node
-            nchild   = (((childinfo & 0xF0000000) >> 28)) ;         //The number of children this node has
-
-            //Calculate the new start (non-leaf)
-            child = child - nodesBegEnd[i].y + totalTopNodes + topTree_n_nodes + nodeSumOffsets[i];
-
-            child = child | (nchild << 28); //Combine and store
-
-            if(nchild == 0) child = 0;                              //To prevent incorrect negative values
-          }else{ //Leaf
-            child   =   childinfo & BODYMASK;                       //the first body in the leaf
-            nchild  = (((childinfo & INVBMASK) >> LEAFBIT)+1);      //number of bodies in the leaf masked with the flag
-
-            child = child + particleSumOffsets[i];                 //Modify the particle offsets
-            child = child | ((nchild-1) << LEAFBIT);               //Merging the data back into one integer
-          }//end !leaf
-        }
-        combinedRemoteTree[j].w =  host_int_as_float(child);      //Store the modified value
-
-      }//for non-top nodes
-
-      delete[] treeBuffers[i];    //Free the memory of this part of the LET
-    } //for PROCS
-
-    /*
-      The final tree structure looks as follows:
-      particlesT1, particlesT2,...mparticlesTn |,
-      topNodeSizeT1, topNodeSizeT2,..., topNodeSizeT2 | nodeSizeT1, nodeSizeT2, ...nodeSizeT3 |,
-      topNodeCentT1, topNodeCentT2,..., topNodeCentT2 | nodeCentT1, nodeCentT2, ...nodeCentT3 |,
-      topNodeMultT1, topNodeMultT2,..., topNodeMultT2 | nodeMultT1, nodeMultT2, ...nodeMultT3
-
-      NOTE that the Multi-pole data consists of 3 float4 values per node
-    */
-    //     fprintf(stderr,"Modifying the LET took: %g \n", get_time()-t1);
-
-    LOGF(stderr,"Number of local bodies: %d number LET bodies: %d number LET nodes: %d top nodes: %d Processed trees: %d (%d) \n",
-                        tree.n, totalParticles, totalNodes, totalTopNodes, PROCS, procTrees);
-
-    //Store the tree properties (number of particles, number of nodes, start and end topnode)
-    remote.remoteTreeStruct.x = totalParticles;
-    remote.remoteTreeStruct.y = totalNodes+totalTopNodes+topTree_n_nodes;
-    remote.remoteTreeStruct.z = nodeTextOffset;
+  //Store the tree properties (number of particles, number of nodes, start and end topnode)
+  remote.remoteTreeStruct.x = totalParticles;
+  remote.remoteTreeStruct.y = totalNodes+totalTopNodes+topTree_n_nodes;
+  remote.remoteTreeStruct.z = nodeTextOffset;
 
 #ifndef DO_NOT_USE_TOP_TREE
-    //Using this we use our newly build tree as starting point
-    totalTopNodes             = topTree_startNode << 16 | topTree_endNode;
+  //Using this we use our newly build tree as starting point
+  totalTopNodes             = topTree_startNode << 16 | topTree_endNode;
 
-    //Using this we get back our original start-points and do not use the extra tree.
-    //totalTopNodes             = (topTree_n_nodes << 16) | (topTree_n_nodes+topNodeOnTheFlyCount);
+  //Using this we get back our original start-points and do not use the extra tree.
+  //totalTopNodes             = (topTree_n_nodes << 16) | (topTree_n_nodes+topNodeOnTheFlyCount);
 #else
-    totalTopNodes             = (0 << 16) | (topNodeOnTheFlyCount);  //If its a merged tree we start at 0
+  totalTopNodes             = (0 << 16) | (topNodeOnTheFlyCount);  //If its a merged tree we start at 0
 #endif
 
-    remote.remoteTreeStruct.w = totalTopNodes;
+  remote.remoteTreeStruct.w = totalTopNodes;
+  topNodeOnTheFlyCount      = 0; //Reset counters
 
+  delete[] particleSumOffsets;
+  delete[] nodeSumOffsets;
+  delete[] startNodeSumOffsets;
+  delete[] nodesBegEnd;
 
+  thisPartLETExTime += get_time() - tStart;
 
-    topNodeOnTheFlyCount = 0; //Reset counters
+  procTrees += recvTree;
 
-//    if(procId < 0)
-//    {
-//      for(int i=0; i < 200; i++)
-//      {
-//        float temp  = combinedRemoteTree[1*(totalParticles) +i].w; //size
-//        float temp2 = combinedRemoteTree[1*(totalParticles) +    (totalNodes+topNodeOnTheFlyCount+topTree_n_nodes+nodeTextOffset) +i].w; //center
-//        float temp3 = combinedRemoteTree[1*(totalParticles) +  2*(totalNodes+topNodeOnTheFlyCount+topTree_n_nodes+nodeTextOffset) + 3*i].x;
-//        int node_data = host_float_as_int(temp);
-//        int child    =    node_data & 0x0FFFFFFF;                  //Index to the first child of the node
-//        int nchild   = (((node_data & 0xF0000000) >> 28));         //The number of children this node has
-//        LOGF(stderr,"Test. Node: %d\tChild: %d\t\tNchild: %d \tLeaf: %d\t%f\tSize: %f COM: %f\tSize-idx: %d\t%d\n",
-//            i, child, nchild, temp2 <= 0, temp2,
-//            temp, temp3,
-//            1*(totalParticles) +i,
-//            1*(totalParticles) + (totalNodes+topNodeOnTheFlyCount+topTree_n_nodes+nodeTextOffset) +i);
-//      }
-//    }
+  //Check if we need to summarize which particles are active,
+  //only done during the last approximate_gravity_let call
+  bool doActivePart = (procTrees == mpiGetNProcs() -1);
 
-    delete[] particleSumOffsets;
-    delete[] nodeSumOffsets;
-    delete[] startNodeSumOffsets;
-    delete[] nodesBegEnd;
-
-
-    thisPartLETExTime += get_time() - tStart;
-
-
-    //Check if we need to summarize which particles are active,
-    //only done during the last approximate_gravity_let call
-    bool doActivePart = (procTrees == mpiGetNProcs() -1);
-
-    approximate_gravity_let(this->localTree, this->remoteTree, bufferSize, doActivePart);
-
-  } //end z
-  delete[] treeBuffers;
-  free(LETDataBuffer);
-  delete[] curLevelStack;
-  delete[] nextLevelStack;
-
-  totalLETExTime += thisPartLETExTime;
-
-  LOGF(stderr,"LET Creation and Exchanging time [%d] curStep: %g\t   Total: %g \n", procId, thisPartLETExTime, totalLETExTime);
+  approximate_gravity_let(this->localTree, this->remoteTree, bufferSize, doActivePart);
 }
 
 
@@ -2093,6 +2229,14 @@ real4* octree::MP_exchange_bhlist(int ibox, int isource,
     double t1= get_time();
     //Resize the buffer so it has the correct size and then exchange the tree
     real4 *recvDataBuffer = new real4[nrecvlist];
+/*
+    http://books.google.nl/books?id=x79puJ2YkroC&lpg=PA90&ots=54LRnnXOH4&dq=mpi_irecv%20producer%20consumer&pg=PA83#v=onepage&q=mpi_irecv%20producer%20consumer&f=false
+    http://www.mpi-forum.org/docs/mpi-11-html/node47.html
+    http://supercomputingblog.com/mpi/mpi-tutorial-5-asynchronous-communication/
+    http://cs.ucsb.edu/~hnielsen/cs140/mpi-deadlocks.html
+    http://www.mpi-forum.org/docs/mpi-11-html/node50.html
+    MPI_test
+   MPI_wait*/
 
 
     double t2=get_time();

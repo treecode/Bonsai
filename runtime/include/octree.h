@@ -866,6 +866,10 @@ public:
   void essential_tree_exchangeV2(tree_structure &tree,
                                  tree_structure &remote,
                                  nInfoStruct *nodeInfo);
+  void mergeAndLaunchLETStructures(
+      tree_structure &tree, tree_structure &remote,
+      real4 **treeBuffers,  int topNodeOnTheFlyCount,
+      int &recvTree, bool &mergeOwntree, int &procTrees, double &tStart);
 
   void tree_walking_tree_stack_versionC13(
      real4 *multipoleS, nInfoStruct* nodeInfoS, //Local Tree

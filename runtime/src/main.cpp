@@ -30,6 +30,10 @@ http://github.com/treecode/Bonsai
 #include "anyoption.h"
 #include "renderloop.h"
 
+#ifdef USE_MPI
+  #include <omp.h>
+#endif
+
 #if ENABLE_LOG
   bool ENABLE_RUNTIME_LOG;
   bool PREPEND_RANK;
@@ -1062,6 +1066,12 @@ int main(int argc, char** argv)
       tree->localTree.dust_ids.h2d();    
    }
   #endif //ifdef USE_DUST
+
+
+  #ifdef USE_MPI
+    //Startup the OMP threads
+    omp_set_num_threads(4);
+  #endif
 	
   
   //Start the integration
