@@ -617,6 +617,7 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
   this->devMemCountsx.waitForCopyEvent();
   copyStream->sync();
 
+  //Make number of hash-blocks dynamic based on number of particles
   n_parallel = tree.n / 1024;
   n_parallel = max(16, n_parallel);
 
@@ -701,8 +702,8 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
   execStream->sync(); //Make sure segmentedSummaryBasic and d2h completed
 
   //Compute keys again, needed for the redistribution
-  // Note we can call this in parallel with the communication of the hashes.
-  //THis is done on predicted positions, to make sure that particles AFTER
+  //Note we can call this in parallel with the communication of the hashes.
+  //This is done on predicted positions, to make sure that particles AFTER
   //prediction are separated by boundaries
   build_key_list.set_arg<cl_mem>(1,   tree.bodies_Ppos.p());
   build_key_list.set_arg<real4>(3,    &tree.corner);

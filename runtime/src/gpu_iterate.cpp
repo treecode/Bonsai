@@ -479,8 +479,8 @@ bool octree::iterate_once(IterationData &idata) {
     lastLocal = ms;
     lastTotal = ms + msLET;    
 
-    lastLocal = 1;//JB1 REMOVE TODO NOTE
-    lastTotal = 1;//JB1 REMOVE TODO NOTE
+//    lastLocal = 1;//JB1 REMOVE TODO NOTE
+//    lastTotal = 1;//JB1 REMOVE TODO NOTE
 
 //    lastTotal = ms + 300./msLET;
 //    lastTotal = ms + msLET;
@@ -651,7 +651,7 @@ void octree::iterate_setup(IterationData &idata) {
 
 
   lastLocal            = get_time() - t1;
-  lastLocal = 1;//JB1 REMOVE TODO NOTE
+//  lastLocal = 1;//JB1 REMOVE TODO NOTE
   lastTotal            = lastLocal;
   idata.lastGravTime   = lastLocal;
   idata.totalGravTime += lastLocal;

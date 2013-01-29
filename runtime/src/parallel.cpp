@@ -239,6 +239,58 @@ int balanceLoad(int *nParticlesOriginal, int *nParticlesNew, float *load,
 
 }
 
+//Uses one communication by storing data in one buffer
+//nsample can be set to zero if this call is only used
+//to get updated domain information
+//This one is used when only updating the currentbox sizes
+void octree::sendCurrentRadiusInfo(real4 &rmin, real4 &rmax)
+{
+  sampleRadInfo curProcState;
+
+  int nsample               = 0; //Place holder to just use same datastructure
+  curProcState.nsample      = nsample;
+  curProcState.rmin         = make_double4(rmin.x, rmin.y, rmin.z, rmin.w);
+  curProcState.rmax         = make_double4(rmax.x, rmax.y, rmax.z, rmax.w);
+
+#ifdef USE_MPI
+  //Get the number of sample particles and the domain size information
+  MPI_Allgather(&curProcState, sizeof(sampleRadInfo), MPI_BYTE,  curSysState,
+                sizeof(sampleRadInfo), MPI_BYTE, MPI_COMM_WORLD);
+#else
+  curSysState[0] = curProcState;
+#endif
+
+  rmin.x                 = (real)(currentRLow[0].x = curSysState[0].rmin.x);
+  rmin.y                 = (real)(currentRLow[0].y = curSysState[0].rmin.y);
+  rmin.z                 = (real)(currentRLow[0].z = curSysState[0].rmin.z);
+                                  currentRLow[0].w = curSysState[0].rmin.w;
+
+  rmax.x                 = (real)(currentRHigh[0].x = curSysState[0].rmax.x);
+  rmax.y                 = (real)(currentRHigh[0].y = curSysState[0].rmax.y);
+  rmax.z                 = (real)(currentRHigh[0].z = curSysState[0].rmax.z);
+                                  currentRHigh[0].w = curSysState[0].rmax.w;
+
+  for(int i=1; i < nProcs; i++)
+  {
+    rmin.x = std::min(rmin.x, (real)curSysState[i].rmin.x);
+    rmin.y = std::min(rmin.y, (real)curSysState[i].rmin.y);
+    rmin.z = std::min(rmin.z, (real)curSysState[i].rmin.z);
+
+    rmax.x = std::max(rmax.x, (real)curSysState[i].rmax.x);
+    rmax.y = std::max(rmax.y, (real)curSysState[i].rmax.y);
+    rmax.z = std::max(rmax.z, (real)curSysState[i].rmax.z);
+
+    currentRLow[i].x = curSysState[i].rmin.x;
+    currentRLow[i].y = curSysState[i].rmin.y;
+    currentRLow[i].z = curSysState[i].rmin.z;
+    currentRLow[i].w = curSysState[i].rmin.w;
+
+    currentRHigh[i].x = curSysState[i].rmax.x;
+    currentRHigh[i].y = curSysState[i].rmax.y;
+    currentRHigh[i].z = curSysState[i].rmax.z;
+    currentRHigh[i].w = curSysState[i].rmax.w;
+  }
+}
 
 void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries, float lastExecTime, float lastExecTime2)
 {
@@ -248,18 +300,10 @@ void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries, f
   hashInfo hInfo;
   hInfo.nHashes     = nHashes;
   hInfo.nParticles  = this->localTree.n;
-  hInfo.execTime  = lastExecTime;
-  hInfo.execTime2 = lastExecTime2;
-
-//  hInfo.execTime    = 0.3; //TODO get this number passed on from ccaller functions
-  //Bogus data for now
-  //if(procId == 0) sleep(1);
-//  srand48(time(0));
-//  drand48();
-//  hInfo.execTime = 0.3*drand48();
+  hInfo.execTime    = lastExecTime;
+  hInfo.execTime2   = lastExecTime2;
 
   LOGF(stderr, "Exectime: Proc: %d -> %f \n", procId, hInfo.execTime);
-
 
   int       *nReceiveCnts  = NULL;
   int       *nReceiveDpls  = NULL;
@@ -267,10 +311,7 @@ void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries, f
   float     *execTimes2    = NULL;
   hashInfo  *recvHashInfo  = new hashInfo[nProcs];
 
-
-
   //First receive the number of hashes
-  //MPI_Gather(&nHashes, 1, MPI_INT, nReceiveCnts, 1, MPI_INT, 0, MPI_COMM_WORLD);
   MPI_Gather(&hInfo, sizeof(hashInfo), MPI_BYTE, recvHashInfo, sizeof(hashInfo), MPI_BYTE, 0, MPI_COMM_WORLD);
 
   int    totalNumberOfHashes = 0;
@@ -659,14 +700,11 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
   int tempSize = localTree.generalBuffer1.get_size() - localTree.n;
   int needSize = (int)(1.01f*(validCount*(sizeof(bodyStruct)/sizeof(int))));
 
-//  LOGF(stderr, "Temp: %d needed: %d \n", tempSize, needSize);
-
   if(tempSize < needSize)
   {
     int itemsNeeded = needSize + localTree.n + 4096; //Slightly larger as before for offset space
 
-    //Copy the compact list to the host we need this list intact
-    compactList.d2h();
+    compactList.d2h();  //Copy the compact list to the host we need this list intact
     int *tempBuf = new int[localTree.n];
     memcpy(tempBuf, &compactList[0], localTree.n*sizeof(int));
 
@@ -709,23 +747,22 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
   //this can be done in parallel with exchange operation to hide some time
 
   //One integer for counting, true-> initialize to zero so counting starts at 0
-//  my_dev::dev_mem<uint>  atomicBuff(devContext, 1, true);
   my_dev::dev_mem<uint>  atomicBuff(devContext);
   memOffset1 = atomicBuff.cmalloc_copy(localTree.generalBuffer1,1, memOffset1);
   atomicBuff.zeroMem();
 
 
   //Internal particle movement
-  internalMoveSFC.set_arg<int>(0,    &validCount);
-  internalMoveSFC.set_arg<int>(1,    &localTree.n);
-  internalMoveSFC.set_arg<uint4>(2,    &lowerBoundary);
-  internalMoveSFC.set_arg<uint4>(3,    &upperBoundary);
-  internalMoveSFC.set_arg<cl_mem>(4, compactList.p());
-  internalMoveSFC.set_arg<cl_mem>(5, atomicBuff.p());
-  internalMoveSFC.set_arg<cl_mem>(6, localTree.bodies_Ppos.p());
-  internalMoveSFC.set_arg<cl_mem>(7, localTree.bodies_Pvel.p());
-  internalMoveSFC.set_arg<cl_mem>(8, localTree.bodies_pos.p());
-  internalMoveSFC.set_arg<cl_mem>(9, localTree.bodies_vel.p());
+  internalMoveSFC.set_arg<int>(0,     &validCount);
+  internalMoveSFC.set_arg<int>(1,     &localTree.n);
+  internalMoveSFC.set_arg<uint4>(2,   &lowerBoundary);
+  internalMoveSFC.set_arg<uint4>(3,   &upperBoundary);
+  internalMoveSFC.set_arg<cl_mem>(4,  compactList.p());
+  internalMoveSFC.set_arg<cl_mem>(5,  atomicBuff.p());
+  internalMoveSFC.set_arg<cl_mem>(6,  localTree.bodies_Ppos.p());
+  internalMoveSFC.set_arg<cl_mem>(7,  localTree.bodies_Pvel.p());
+  internalMoveSFC.set_arg<cl_mem>(8,  localTree.bodies_pos.p());
+  internalMoveSFC.set_arg<cl_mem>(9,  localTree.bodies_vel.p());
   internalMoveSFC.set_arg<cl_mem>(10, localTree.bodies_acc0.p());
   internalMoveSFC.set_arg<cl_mem>(11, localTree.bodies_acc1.p());
   internalMoveSFC.set_arg<cl_mem>(12, localTree.bodies_time.p());
@@ -759,7 +796,7 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
   // away are stored after each other in the array
   double t1 = get_time();
 
-  //Array reserve some memory beforhand , 1%
+  //Array reserve some memory before hand , 1%
   vector<bodyStruct> array2Send;
   array2Send.reserve((int)(nToSend*1.5));
 
@@ -873,39 +910,38 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
   //Have to resize the bodies vector to keep the numbering correct
   //but do not reduce the size since we need to preserve the particles
   //in the oversized memory
-  tree.bodies_pos.cresize (newN + 1, false);
+  tree.bodies_pos. cresize(newN + 1, false);
   tree.bodies_acc0.cresize(newN,     false);
   tree.bodies_acc1.cresize(newN,     false);
-  tree.bodies_vel.cresize (newN,     false);
+  tree.bodies_vel. cresize(newN,     false);
   tree.bodies_time.cresize(newN,     false);
-  tree.bodies_ids.cresize (newN + 1, false);
+  tree.bodies_ids. cresize(newN + 1, false);
   tree.bodies_Ppos.cresize(newN + 1, false);
   tree.bodies_Pvel.cresize(newN + 1, false);
-  tree.bodies_key.cresize(newN + 1, false);
+  tree.bodies_key. cresize(newN + 1, false);
 
 
 
-  //This one has to be at least the same size as the number of particles inorder to
+  //This one has to be at least the same size as the number of particles in order to
   //have enough space to store the other buffers
   //Can only be resized after we are done since we still have
   //parts of memory pointing to that buffer (extractList)
-  //Note that we allocate some extra memory to make everything texture/memory alligned
+  //Note that we allocate some extra memory to make everything texture/memory aligned
   tree.generalBuffer1.cresize(3*(newN)*4 + 4096, false);
 
 
-  //Now we have to copy the data in batches incase the generalBuffer1 is not large enough
+  //Now we have to copy the data in batches in case the generalBuffer1 is not large enough
   //Amount we can store:
   int spaceInIntSize    = 3*(newN)*4;
-  int newParticleSpace  = spaceInIntSize / (sizeof(bodyStruct) / sizeof(int));
-  int stepSize          = newParticleSpace;
+  int stepSize          = spaceInIntSize / (sizeof(bodyStruct) / sizeof(int));
 
   my_dev::dev_mem<bodyStruct>  bodyBuffer(devContext);
 
   int memOffset1 = bodyBuffer.cmalloc_copy(localTree.generalBuffer1,
-                                              stepSize, 0);
+                                           stepSize, 0);
 
   LOGF(stderr, "Exchange, received particles: (%d): %d \tnewN: %d\tItems that can be insert in one step: %d\n",
-                   procId, recvCount, newN, stepSize);
+                procId, recvCount, newN, stepSize);
 
   int insertOffset = 0;
   for(unsigned int i=0; i < recvCount; i+= stepSize)
@@ -918,8 +954,6 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
       memcpy(&bodyBuffer[0], &recv_buffer3[insertOffset], sizeof(bodyStruct)*items);
 
       bodyBuffer.h2d(items);
-
-//       int threads = max(nToSend, (int)recvCount);
 
       //Start the kernel that puts everything in place
       insertNewParticlesSFC.set_arg<int>(0,    &nToSend);
@@ -943,7 +977,7 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
     insertOffset += items;
   }
 
-//   printf("Benodigde gpu malloc tijd stap 1: %lg \t Size: %d \tRank: %d \t Size: %d \n",
+//   printf("Required gpu malloc time step 1: %lg \t Size: %d \tRank: %d \t Size: %d \n",
 //          get_time()-t1, newN, mpiGetRank(), tree.bodies_Ppos.get_size());
 //   t1 = get_time();
   tree.setN(newN);
@@ -951,8 +985,8 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
   //Resize the arrays of the tree
   reallocateParticleMemory(tree);
 
-//   printf("Benodigde gpu malloc tijd stap 2: %lg \n", get_time()-t1);
-//   printf("Totale GPU interactie tijd: %lg \n", get_time()-t2);
+//   printf("Required gpu malloc time step 2: %lg \n", get_time()-t1);
+//   printf("Total GPU interaction time: %lg \n", get_time()-t2);
 
 
   int retValue = 0;
@@ -1295,7 +1329,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             //Only start if there actually is new data
             if((nReceived - procTrees) > 0)
             {
-              fprintf(stderr,"[%d] Starting gpu work! \n", procId);
               int recvTree      = 0;
               int topNodeCount  = 0;
               #pragma omp critical(updateReceivedProcessed)
@@ -1478,7 +1511,7 @@ void octree::mergeAndLaunchLETStructures(
 {
   //Now we have to merge the separate tree-structures into one big-tree
 
-  int PROCS  = recvTree;
+  int PROCS  = recvTree-procTrees;
 
 
 #if 0 //This is no longer safe now that we use OpenMP and overlapping communication/computation
@@ -1551,13 +1584,13 @@ void octree::mergeAndLaunchLETStructures(
   vector<int  > topSourceProc; //Do not assign size since we use 'insert'
 
   //Calculate the offsets
-  for(int i=procTrees; i < PROCS ; i++)
+  for(int i=0; i < PROCS ; i++)
   {
-    int particles = host_float_as_int(treeBuffers[i][0].x);
-    int nodes     = host_float_as_int(treeBuffers[i][0].y);
+    int particles = host_float_as_int(treeBuffers[procTrees+i][0].x);
+    int nodes     = host_float_as_int(treeBuffers[procTrees+i][0].y);
 
-    nodesBegEnd[i].x = host_float_as_int(treeBuffers[i][0].z);
-    nodesBegEnd[i].y = host_float_as_int(treeBuffers[i][0].w);
+    nodesBegEnd[i].x = host_float_as_int(treeBuffers[procTrees+i][0].z);
+    nodesBegEnd[i].y = host_float_as_int(treeBuffers[procTrees+i][0].w);
 
     particleSumOffsets[i+1]     = particleSumOffsets[i]  + particles;
     nodeSumOffsets[i+1]         = nodeSumOffsets[i]      + nodes - nodesBegEnd[i].y;    //Without the top-nodes
@@ -1566,11 +1599,11 @@ void octree::mergeAndLaunchLETStructures(
     //Copy the properties for the top-nodes
     int nTop = nodesBegEnd[i].y-nodesBegEnd[i].x;
     memcpy(&topBoxSizes[totalTopNodes],
-        &treeBuffers[i][1+1*particles+nodesBegEnd[i].x],             sizeof(real4)*nTop);
+        &treeBuffers[procTrees+i][1+1*particles+nodesBegEnd[i].x],             sizeof(real4)*nTop);
     memcpy(&topBoxCenters[totalTopNodes],
-        &treeBuffers[i][1+1*particles+nodes+nodesBegEnd[i].x],       sizeof(real4)*nTop);
+        &treeBuffers[procTrees+i][1+1*particles+nodes+nodesBegEnd[i].x],       sizeof(real4)*nTop);
     memcpy(&topMultiPoles[3*totalTopNodes],
-        &treeBuffers[i][1+1*particles+2*nodes+3*nodesBegEnd[i].x], 3*sizeof(real4)*nTop);
+        &treeBuffers[procTrees+i][1+1*particles+2*nodes+3*nodesBegEnd[i].x], 3*sizeof(real4)*nTop);
     topSourceProc.insert(topSourceProc.end(), nTop, i ); //Assign source process id
 
     totalTopNodes += nodesBegEnd[i].y-nodesBegEnd[i].x;
@@ -1775,33 +1808,33 @@ void octree::mergeAndLaunchLETStructures(
                              &topMultiPoles[0], sizeof(real4)*topNodeOnTheFlyCount*3);
 
   //Copy all the 'normal' pieces of the different trees at the correct memory offsets
-  for(int i=procTrees; i < PROCS; i++)
+  for(int i=0; i < PROCS; i++)
   {
     //Get the properties of the LET, TODO this should be changed in int_as_float instead of casts
-    int remoteP      = host_float_as_int(treeBuffers[i][0].x);    //Number of particles
-    int remoteN      = host_float_as_int(treeBuffers[i][0].y);    //Number of nodes
-    int remoteB      = host_float_as_int(treeBuffers[i][0].z);    //Begin id of top nodes
-    int remoteE      = host_float_as_int(treeBuffers[i][0].w);    //End   id of top nodes
+    int remoteP      = host_float_as_int(treeBuffers[i+procTrees][0].x);    //Number of particles
+    int remoteN      = host_float_as_int(treeBuffers[i+procTrees][0].y);    //Number of nodes
+    int remoteB      = host_float_as_int(treeBuffers[i+procTrees][0].z);    //Begin id of top nodes
+    int remoteE      = host_float_as_int(treeBuffers[i+procTrees][0].w);    //End   id of top nodes
     int remoteNstart = remoteE-remoteB;
 
     //Particles
-    memcpy(&combinedRemoteTree[particleSumOffsets[i]],   &treeBuffers[i][1], sizeof(real4)*remoteP);
+    memcpy(&combinedRemoteTree[particleSumOffsets[i]],   &treeBuffers[i+procTrees][1], sizeof(real4)*remoteP);
 
     //Non start nodes, nodeSizeInfo
     memcpy(&combinedRemoteTree[1*(totalParticles) +  totalTopNodes + topTree_n_nodes + nodeSumOffsets[i]],
-        &treeBuffers[i][1+1*remoteP+remoteE], //From the last start node onwards
+        &treeBuffers[i+procTrees][1+1*remoteP+remoteE], //From the last start node onwards
         sizeof(real4)*(remoteN-remoteE));
 
     //Non start nodes, nodeCenterInfo
     memcpy(&combinedRemoteTree[1*(totalParticles) + totalTopNodes + topTree_n_nodes + nodeSumOffsets[i] +
                                (totalNodes + totalTopNodes + topTree_n_nodes + nodeTextOffset)],
-                               &treeBuffers[i][1+1*remoteP+remoteE + remoteN], //From the last start node onwards
+                               &treeBuffers[i+procTrees][1+1*remoteP+remoteE + remoteN], //From the last start node onwards
                                sizeof(real4)*(remoteN-remoteE));
 
     //Non start nodes, multipole
     memcpy(&combinedRemoteTree[1*(totalParticles) +  3*(totalTopNodes+topTree_n_nodes) +
                                3*nodeSumOffsets[i] + 2*(totalNodes+totalTopNodes+topTree_n_nodes+nodeTextOffset)],
-                               &treeBuffers[i][1+1*remoteP+remoteE*3 + 2*remoteN], //From the last start node onwards
+                               &treeBuffers[i+procTrees][1+1*remoteP+remoteE*3 + 2*remoteN], //From the last start node onwards
                                sizeof(real4)*(remoteN-remoteE)*3);
 
     /*
@@ -1863,8 +1896,8 @@ void octree::mergeAndLaunchLETStructures(
       combinedRemoteTree[j].w =  host_int_as_float(child);      //Store the modified value
     }//for non-top nodes
 
-    delete[] treeBuffers[i];    //Free the memory of this part of the LET
-    treeBuffers[i] = NULL;
+    delete[] treeBuffers[i+procTrees];    //Free the memory of this part of the LET
+    treeBuffers[i+procTrees] = NULL;
   } //for PROCS
 
   /*
@@ -1906,7 +1939,7 @@ void octree::mergeAndLaunchLETStructures(
 
   thisPartLETExTime += get_time() - tStart;
 
-  procTrees += recvTree;
+  procTrees = recvTree;
 
   //Check if we need to summarize which particles are active,
   //only done during the last approximate_gravity_let call
@@ -2510,59 +2543,7 @@ void octree::sendCurrentRadiusInfoCoarse(real4 *rmin, real4 *rmax, int n_coarseG
   #endif
 }
 
-//Uses one communication by storing data in one buffer
-//nsample can be set to zero if this call is only used
-//to get updated domain information
-//This one is used when only updating the currentbox sizes
-void octree::sendCurrentRadiusInfo(real4 &rmin, real4 &rmax)
-{
-  sampleRadInfo curProcState;
 
-  int nsample               = 0; //Place holder to just use same datastructure
-  curProcState.nsample      = nsample;
-  curProcState.rmin         = make_double4(rmin.x, rmin.y, rmin.z, rmin.w);
-  curProcState.rmax         = make_double4(rmax.x, rmax.y, rmax.z, rmax.w);
-
-#ifdef USE_MPI
-  //Get the number of sample particles and the domain size information
-  MPI_Allgather(&curProcState, sizeof(sampleRadInfo), MPI_BYTE,  curSysState,
-                sizeof(sampleRadInfo), MPI_BYTE, MPI_COMM_WORLD);
-  mpiSync();
-#else
-  curSysState[0] = curProcState;
-#endif
-
-  rmin.x                 = (real)(currentRLow[0].x = curSysState[0].rmin.x);
-  rmin.y                 = (real)(currentRLow[0].y = curSysState[0].rmin.y);
-  rmin.z                 = (real)(currentRLow[0].z = curSysState[0].rmin.z);
-                                  currentRLow[0].w = curSysState[0].rmin.w;
-
-  rmax.x                 = (real)(currentRHigh[0].x = curSysState[0].rmax.x);
-  rmax.y                 = (real)(currentRHigh[0].y = curSysState[0].rmax.y);
-  rmax.z                 = (real)(currentRHigh[0].z = curSysState[0].rmax.z);
-                                  currentRHigh[0].w = curSysState[0].rmax.w;
-
-  for(int i=1; i < nProcs; i++)
-  {
-    rmin.x = std::min(rmin.x, (real)curSysState[i].rmin.x);
-    rmin.y = std::min(rmin.y, (real)curSysState[i].rmin.y);
-    rmin.z = std::min(rmin.z, (real)curSysState[i].rmin.z);
-
-    rmax.x = std::max(rmax.x, (real)curSysState[i].rmax.x);
-    rmax.y = std::max(rmax.y, (real)curSysState[i].rmax.y);
-    rmax.z = std::max(rmax.z, (real)curSysState[i].rmax.z);
-
-    currentRLow[i].x = curSysState[i].rmin.x;
-    currentRLow[i].y = curSysState[i].rmin.y;
-    currentRLow[i].z = curSysState[i].rmin.z;
-    currentRLow[i].w = curSysState[i].rmin.w;
-
-    currentRHigh[i].x = curSysState[i].rmax.x;
-    currentRHigh[i].y = curSysState[i].rmax.y;
-    currentRHigh[i].z = curSysState[i].rmax.z;
-    currentRHigh[i].w = curSysState[i].rmax.w;
-  }
-}
 
 //Uses one communication by storing data in one buffer
 //nsample can be set to zero if this call is only used
