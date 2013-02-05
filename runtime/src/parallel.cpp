@@ -672,7 +672,7 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
   int memOffset2 = validList.cmalloc_copy(localTree.generalBuffer1,
                                             localTree.n, memOffset1);
 
-
+  https://github.com/egaburov/fvmhd3d/blob/master/MPI/myMPI.h
 
   uint4 lowerBoundary = boundaries[this->procId];
   uint4 upperBoundary = boundaries[this->procId+1];
@@ -790,6 +790,19 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
 
   int *firstloc   = new int[nProcs+1];
   int *nparticles = new int[nProcs+1];
+  int *nreceive   = new int[nProcs];
+  int *nsendbytes = new int[nProcs];
+  int *nrecvbytes = new int[nProcs];
+
+  int *nsendDispls = new int [nProcs+1];
+  int *nrecvDispls = new int [nProcs+1];
+
+
+
+  memset(nparticles, 0, sizeof(int)*(nProcs+1));
+  memset(nreceive,   0, sizeof(int)*(nProcs));
+  memset(nsendbytes,   0, sizeof(int)*(nProcs));
+  memset(nsendDispls,   0, sizeof(int)*(nProcs));
 
   // Loop over particles and determine which particle needs to go where
   // reorder the bodies in such a way that bodies that have to be send
@@ -802,8 +815,9 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
 
   for(int ib=0;ib<nproc;ib++)
   {
-    int ibox       = (ib+myid)%nproc;
-    firstloc[ibox] = iloc;      //Index of the first particle send to proc: ibox
+    int ibox          = (ib+myid)%nproc;
+    firstloc[ibox]    = iloc;      //Index of the first particle send to proc: ibox
+    nsendDispls[ibox] = iloc*sizeof(bodyStruct);
 
     for(int i=iloc; i<nbody;i++)
     {
@@ -829,32 +843,55 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
       }// end if
     }//for i=iloc
     nparticles[ibox] = iloc-firstloc[ibox];//Number of particles that has to be send to proc: ibox
+    nsendbytes[ibox] = nparticles[ibox]*sizeof(bodyStruct);
   } // for(int ib=0;ib<nproc;ib++)
 
 
 //   printf("Required search time: %lg ,proc: %d found in our own box: %d n: %d  to others: %ld \n",
 //          get_time()-t1, myid, nparticles[myid], tree.n, array2Send.size());
-
-
   if(iloc < nbody)
   {
-      cerr << procId <<" exchange_particle error: particle in no box...iloc: " << iloc
-                     << " and nbody: " << nbody << "\n";
-      exit(0);
+    LOGF(stderr, "Exchange_particle error: A particle could not be assigned to a box: iloc: %d total: %d \n", iloc,nbody);
+    exit(0);
   }
 
-
-  /*totalsent = nbody - nparticles[myid];
-
-  int tmp;
-  MPI_Reduce(&totalsent,&tmp,1, MPI_INT, MPI_SUM,0,MPI_COMM_WORLD);
-  if(procId == 0)
-  {
-    totalsent = tmp;
-    cout << "Exchanged particles = " << totalsent << endl;
-  }*/
-
   t1 = get_time();
+#if 1
+  MPI_Alltoall(nparticles, 1, MPI_INT, nreceive, 1, MPI_INT, MPI_COMM_WORLD);
+
+
+  //Compute how much we will receive and the offsets and displacements
+  nrecvDispls[0]   = 0;
+  nrecvbytes [0]   = nreceive[0]*sizeof(bodyStruct);
+  unsigned int recvCount  = nreceive[0];
+  for(int i=1; i < nProcs; i++)
+  {
+    nrecvbytes [i] = nreceive[i]*sizeof(bodyStruct);
+    nrecvDispls[i] = nrecvDispls[i-1] + nrecvbytes [i-1];
+    recvCount     += nreceive[i];
+  }
+
+  LOGF(stderr,"Going to receive: %d || %d %d : %d %d\n",
+      recvCount, nrecvbytes[0], nrecvDispls[0],
+      nrecvbytes[1], nrecvDispls[1]);
+  LOGF(stderr,"Going to send: %d || %d %d : %d %d\n",
+      nToSend, nsendbytes[0], nsendDispls[0],
+        nsendbytes[1], nsendDispls[1]);
+
+
+  vector<bodyStruct> recv_buffer3(recvCount);
+
+  MPI_Alltoallv(&array2Send[0],   nsendbytes, nsendDispls, MPI_BYTE,
+                &recv_buffer3[0], nrecvbytes, nrecvDispls, MPI_BYTE,
+                MPI_COMM_WORLD);
+
+  delete[] nsendbytes;
+  delete[] nrecvbytes;
+  delete[] nreceive;
+  delete[] nsendDispls;
+  delete[] nrecvDispls;
+
+#else
 
   //Allocate two times the amount of memory of that which we send
   vector<bodyStruct> recv_buffer3(nbody*2);
@@ -896,10 +933,9 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
       //Something went wrong
     cerr << "ERROR in exchange_particles_with_overflow_check! \n"; exit(0);
   }
+#endif
 
-
-  LOG("Required inter-process communication time: %lg ,proc: %d\n",
-         get_time()-t1, myid);
+  LOGF(stderr,"Required inter-process communication time: %lg ,proc: %d\n", get_time()-t1, myid);
 
   //Compute the new number of particles:
   int newN = tree.n + recvCount - nToSend;
@@ -907,32 +943,36 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
   execStream->sync();   //make certain that the particle movement on the device
                         //is complete before we resize
 
+  //Allocate 10% extra if we have to allocate, to reduce the total number of
+  //memory allocations
+  int memSize = newN;
+  if(tree.bodies_acc0.get_size() < newN)
+    memSize = newN * MULTI_GPU_MEM_INCREASE;
+
   //Have to resize the bodies vector to keep the numbering correct
   //but do not reduce the size since we need to preserve the particles
-  //in the oversized memory
-  tree.bodies_pos. cresize(newN + 1, false);
-  tree.bodies_acc0.cresize(newN,     false);
-  tree.bodies_acc1.cresize(newN,     false);
-  tree.bodies_vel. cresize(newN,     false);
-  tree.bodies_time.cresize(newN,     false);
-  tree.bodies_ids. cresize(newN + 1, false);
-  tree.bodies_Ppos.cresize(newN + 1, false);
-  tree.bodies_Pvel.cresize(newN + 1, false);
-  tree.bodies_key. cresize(newN + 1, false);
-
-
+  //in the over sized memory
+  tree.bodies_pos. cresize(memSize + 1, false);
+  tree.bodies_acc0.cresize(memSize,     false);
+  tree.bodies_acc1.cresize(memSize,     false);
+  tree.bodies_vel. cresize(memSize,     false);
+  tree.bodies_time.cresize(memSize,     false);
+  tree.bodies_ids. cresize(memSize + 1, false);
+  tree.bodies_Ppos.cresize(memSize + 1, false);
+  tree.bodies_Pvel.cresize(memSize + 1, false);
+  tree.bodies_key. cresize(memSize + 1, false);
 
   //This one has to be at least the same size as the number of particles in order to
   //have enough space to store the other buffers
   //Can only be resized after we are done since we still have
   //parts of memory pointing to that buffer (extractList)
   //Note that we allocate some extra memory to make everything texture/memory aligned
-  tree.generalBuffer1.cresize(3*(newN)*4 + 4096, false);
+  tree.generalBuffer1.cresize(3*(memSize)*4 + 4096, false);
 
 
   //Now we have to copy the data in batches in case the generalBuffer1 is not large enough
   //Amount we can store:
-  int spaceInIntSize    = 3*(newN)*4;
+  int spaceInIntSize    = 3*(memSize)*4;
   int stepSize          = spaceInIntSize / (sizeof(bodyStruct) / sizeof(int));
 
   my_dev::dev_mem<bodyStruct>  bodyBuffer(devContext);
@@ -940,8 +980,8 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
   int memOffset1 = bodyBuffer.cmalloc_copy(localTree.generalBuffer1,
                                            stepSize, 0);
 
-  LOGF(stderr, "Exchange, received particles: (%d): %d \tnewN: %d\tItems that can be insert in one step: %d\n",
-                procId, recvCount, newN, stepSize);
+  LOGF(stderr, "Exchange, received %d \tSend: %d newN: %d\tItems that can be insert in one step: %d\n",
+                recvCount, nToSend, newN, stepSize);
 
   int insertOffset = 0;
   for(unsigned int i=0; i < recvCount; i+= stepSize)

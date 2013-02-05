@@ -11,7 +11,7 @@ void octree::allocateParticleMemory(tree_structure &tree)
 
   
   if(nProcs > 1)                //10% extra space, only in parallel when
-    n_bodies = (int)(n_bodies*1.1f);    //number of particles can fluctuate
+    n_bodies = (int)(n_bodies*MULTI_GPU_MEM_INCREASE);    //number of particles can fluctuate
   
   //Particle properties
   tree.bodies_pos.cmalloc(n_bodies+1, true);   //+1 to set end pos, host mapped? TODO not needed right since we use Ppos
@@ -133,7 +133,9 @@ void octree::reallocateParticleMemory(tree_structure &tree)
   int n_bodies = tree.n;
   
 
-  
+  if(tree.activePartlist.get_size() < tree.n)
+    n_bodies *= MULTI_GPU_MEM_INCREASE;
+
   
   bool reduce = false;  //Set this to true to limit memory usage by only allocating what
                         //is required. If its false, then memory is not reduced and a larger
@@ -152,11 +154,11 @@ void octree::reallocateParticleMemory(tree_structure &tree)
   tree.bodies_acc1.cresize(n_bodies, reduce);    //ccalloc -> init to 0
   tree.bodies_time.cresize(n_bodies, reduce);    //ccalloc -> init to 0
   
-  tree.oriParticleOrder.cresize(n_bodies, reduce);     //To desort the bodies tree later on         
+  tree.oriParticleOrder.cresize(n_bodies,   reduce);     //To desort the bodies tree later on
   //iteration properties / information
-  tree.activePartlist.cresize(n_bodies+2, reduce);      //+1 since we use the last value as a atomicCounter
-  tree.ngb.cresize(n_bodies, reduce);  
-  tree.interactions.cresize(n_bodies, reduce);
+  tree.activePartlist.cresize(  n_bodies+2, reduce);      //+1 since we use the last value as a atomicCounter
+  tree.ngb.cresize(             n_bodies,   reduce);
+  tree.interactions.cresize(    n_bodies,   reduce);
   
   tree.body2group_list.cresize(n_bodies, reduce);  
 
@@ -177,8 +179,8 @@ void octree::reallocateParticleMemory(tree_structure &tree)
 #endif
     
   int tempSize   = max(n_bodies, 4096);   //Use minium of 4096 to prevent offsets mess up with small N
-  tempSize       = 3*tempSize *4 + 4096;  //Add 4096 to give some space for memory allignment  
-  tempSize = max(tempSize, treeWalkStackSize);
+  tempSize       = 3*tempSize *4 + 4096;  //Add 4096 to give some space for memory alignment
+  tempSize       = max(tempSize, treeWalkStackSize);
   
   //General buffer is used at multiple locations and reused in different functions
   tree.generalBuffer1.cresize(tempSize, reduce);    
@@ -186,7 +188,7 @@ void octree::reallocateParticleMemory(tree_structure &tree)
   #ifdef USE_B40C
     delete sorter;
     sorter = new Sort90(n_bodies, tree.generalBuffer1.d());
-//      sorter = new Sort90(n_bodies);
+    //sorter = new Sort90(n_bodies);
   #endif
         
   
@@ -623,7 +625,7 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
 
   build_parallel_grps.set_arg<int>(2, &n_parallel);
 
-
+  double t10 = get_time();
   //TODO rewrite this in similar way as build_tree loop, to remove copy
   //TODO change this in a way that information is extracted from the tree-structure
   //this way it should be must faster than it is now
@@ -659,7 +661,8 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
   //list. This sorting/reordering will take place in the segmentedSummaryBasic kernel
   gpuCompact(devContext, startBoundaryIndex, compactList, tree.n+1, &validCount);
 
-  LOGF(stderr,"Number of hash-blocks: %d , of which valid: %d\n", offset, validCount);
+  LOGF(stderr,"Number of hash-blocks: %d , of which valid: %d tree.n: %d n_parallel: %d Creation: %lg\n",
+               offset, validCount, tree.n, n_parallel, get_time()-t10);
 
   //Get the properties: key+number of particles with that key, + possibly interaction count
   execStream->sync();
@@ -686,12 +689,11 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
 
   //Compute the boundarys of the tree
 #if EFFICIENT
-  real size     = 1.001f*std::max(r_max.z - r_min.z,
-                         std::max(r_max.y - r_min.y, r_max.x - r_min.x));
-#else
+  real size ;
+#endif
+
   size     = 1.001f*std::max(r_max.z - r_min.z,
                            std::max(r_max.y - r_min.y, r_max.x - r_min.x));
-#endif
 
   tree.corner   = make_real4(0.5f*(r_min.x + r_max.x) - 0.5f*size,
                              0.5f*(r_min.y + r_max.y) - 0.5f*size,

@@ -272,8 +272,9 @@ bool octree::iterate_once(IterationData &idata) {
     LOG("At the start of iterate:\n");
     
     bool forceTreeRebuild = false;
+    bool needDomainUpdate = true;
 
-    //predict localtree
+    //predict local tree
     devContext.startTiming(execStream->s());
     predict(this->localTree);
     devContext.stopTiming("Predict", 9, execStream->s());
@@ -287,6 +288,7 @@ bool octree::iterate_once(IterationData &idata) {
       devContext.stopTiming("UpdateDomain", 6, execStream->s());
       idata.lastDomTime   = get_time()-tZ;
       idata.totalDomTime += idata.lastDomTime;
+      needDomainUpdate    = false; //We did a boundary sync in the parallel decomposition part
     }
 
 
@@ -310,48 +312,47 @@ bool octree::iterate_once(IterationData &idata) {
     }
     else
     {
-      bool needDomainUpdate = true;
+
 
       //Redistribute the particles
-
-      if(0)
-      {      
-        if(nProcs > 1)
-        { 
-          // if(iter % rebuild_tree_rate == 0)
-          if(0)
-          {     
-            //If we do a redistribution we _always_ have to do 
-            //an update of the particle domain, otherwise the boxes 
-            //do not match and we get errors of particles outside
-            //domains
-            t1 = get_time();
-
-            devContext.startTiming(execStream->s());
-            gpu_updateDomainDistribution(idata.lastGravTime);          
-            devContext.stopTiming("DomainUpdate", 6, execStream->s());
-
-            devContext.startTiming(execStream->s());
-            gpuRedistributeParticles();
-            devContext.stopTiming("Exchange", 6, execStream->s());
-
-            needDomainUpdate = false;
-
-            idata.lastDomTime   = get_time() - t1;
-            idata.totalDomTime += idata.lastDomTime;          
-          }
-          else
-          {
-            //TODO make a new function for this for the SFC decomp
-
-            //Only send new box sizes, incase we do not exchange particles
-            //but continue with the current tree_structure
-            gpu_updateDomainOnly();
-
-            needDomainUpdate = false;
-          }
-        } //if nProcs > 1
-      }//if (0)        
+//      if(0)
+//      {
+//        if(nProcs > 1)
+//        {
+//          // if(iter % rebuild_tree_rate == 0)
+//          if(0)
+//          {
+//            //If we do a redistribution we _always_ have to do
+//            //an update of the particle domain, otherwise the boxes
+//            //do not match and we get errors of particles outside
+//            //domains
+//            t1 = get_time();
+//
+//            devContext.startTiming(execStream->s());
+//            gpu_updateDomainDistribution(idata.lastGravTime);
+//            devContext.stopTiming("DomainUpdate", 6, execStream->s());
+//
+//            devContext.startTiming(execStream->s());
+//            gpuRedistributeParticles();
+//            devContext.stopTiming("Exchange", 6, execStream->s());
+//
+//            needDomainUpdate = false;
+//
+//            idata.lastDomTime   = get_time() - t1;
+//            idata.totalDomTime += idata.lastDomTime;
+//          }
+//          else
+//          {
+//            //TODO make a new function for this for the SFC decomp
+//
+//            //Only send new box sizes, incase we do not exchange particles
+//            //but continue with the current tree_structure
+//            gpu_updateDomainOnly();
+//
+//            needDomainUpdate = false;
+//          }
+//        } //if nProcs > 1
+//      }//if (0)
 
 
       //Build the tree using the predicted positions
@@ -372,8 +373,7 @@ bool octree::iterate_once(IterationData &idata) {
 
         double tTemp = get_time();
 
-        LOGF(stderr, " done in %g sec : %g Mptcl/sec\n",
-            tTemp-t1, this->localTree.n/1e6/(tTemp-t1));
+        LOGF(stderr, " done in %g sec : %g Mptcl/sec\n", tTemp-t1, this->localTree.n/1e6/(tTemp-t1));
 
         devContext.startTiming(execStream->s());
         this->allocateTreePropMemory(this->localTree);
@@ -437,7 +437,7 @@ bool octree::iterate_once(IterationData &idata) {
             approximate_dust(this->localTree);
             devContext.stopTiming("Approximation_dust", 4, gravStream->s());
       #endif
-    }
+    }//else if useDirectGravity
 
     gravStream->sync();
 
@@ -461,8 +461,6 @@ bool octree::iterate_once(IterationData &idata) {
     sprintf(buff,  "APPTIME [%d]: Iter: %d\t%g \tn: %d EventTime: %f  and %f\tSum: %f\n",
         procId, iter, idata.lastGravTime, this->localTree.n, ms, msLET, ms+msLET);
     devContext.writeLogEvent(buff);
-
-
 #else
     ms    = 1;
     msLET = 1;
@@ -472,8 +470,6 @@ bool octree::iterate_once(IterationData &idata) {
     idata.lastGPUGravTimeLET     = msLET;
     idata.totalGPUGravTimeLocal += ms;
     idata.totalGPUGravTimeLET   += msLET;
-
-//    LOGF(stderr, "APPTIME [%d]: Iter: %d\t%g \tn: %d\n", procId, iter, idata.lastGravTime, this->localTree.n);
 
     //Different options for basing the load balance on
     lastLocal = ms;
@@ -651,7 +647,7 @@ void octree::iterate_setup(IterationData &idata) {
 
 
   lastLocal            = get_time() - t1;
-//  lastLocal = 1;//JB1 REMOVE TODO NOTE
+  //  lastLocal = 1;//Setting this to 1 disables load-balance (all processes took equal time '1')
   lastTotal            = lastLocal;
   idata.lastGravTime   = lastLocal;
   idata.totalGravTime += lastLocal;

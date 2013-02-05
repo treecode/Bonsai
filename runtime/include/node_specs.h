@@ -57,6 +57,10 @@ inline int getTreeWalkBlocksPerSM(int devMajor, int devMinor)
   }  
 }
 
+//Factor of extra memory we allocate during multi-GPU runs. By allocating a bit extra
+//we reduce the number of memory allocations when particle numbers fluctuate. 1.1 == 10% extra
+#define MULTI_GPU_MEM_INCREASE 1.1
+
 
 #define TEXTURE_BOUNDARY  512   //Fermi architecture boundary for textures
 
