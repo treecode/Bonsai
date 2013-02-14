@@ -1501,7 +1501,7 @@ __launch_bounds__(NTHREAD)
 
       lmem = &MEM_BUF[blockIdx.x*(LMEM_STACK_SIZE*blockDim.x + LMEM_EXTRA_SIZE)];
 
-      if(threadIdx.x == 0)
+      if(laneId == 0)
       {
         atomicExch(&active_inout[n_bodies+1], 0); //Release the lock
       }
