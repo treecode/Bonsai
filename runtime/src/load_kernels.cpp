@@ -332,6 +332,7 @@ void octree::load_kernels() {
   internalMoveSFC.setContext(devContext);
   extractOutOfDomainParticlesAdvancedSFC.setContext(devContext);
   insertNewParticlesSFC.setContext(devContext);
+  extractSampleParticlesSFC.setContext(devContext);
 
 
 #ifdef USE_CUDA
@@ -348,6 +349,7 @@ void octree::load_kernels() {
   internalMoveSFC.load_source("./parallel.ptx", pathName.c_str());
   extractOutOfDomainParticlesAdvancedSFC.load_source("./parallel.ptx", pathName.c_str());
   insertNewParticlesSFC.load_source("./parallel.ptx", pathName.c_str());
+  extractSampleParticlesSFC.load_source("./parallel.ptx", pathName.c_str());
 
   domainCheck.create("doDomainCheck", (const void*)&doDomainCheck);
   extractSampleParticles.create("extractSampleParticles", (const void*)&gpu_extractSampleParticles);
@@ -356,6 +358,7 @@ void octree::load_kernels() {
   insertNewParticles.create("insertNewParticles", (const void*)&gpu_insertNewParticles);
   internalMove.create("internalMove", (const void*)&gpu_internalMove);
 
+  extractSampleParticlesSFC.create("build_parallel_grps", (const void*)&gpu_extractSampleParticlesSFC);
   build_parallel_grps.create("build_parallel_grps", (const void*)&gpu_build_parallel_grps);
   segmentedSummaryBasic.create("segmentedSummaryBasic", (const void*)&gpu_segmentedSummaryBasic);
   domainCheckSFC.create("domainCheckSFC", (const void*)&gpu_domainCheckSFC);

@@ -464,6 +464,7 @@ protected:
   my_dev::kernel internalMoveSFC;
   my_dev::kernel extractOutOfDomainParticlesAdvancedSFC;
   my_dev::kernel insertNewParticlesSFC;
+  my_dev::kernel extractSampleParticlesSFC;
 
 #ifdef USE_B40C
   Sort90 *sorter;
@@ -505,7 +506,8 @@ public:
    void write_dumbp_snapshot_parallel(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName, float time) ;
    void write_dumbp_snapshot_parallel_tipsy(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName,
                                             int NCombTotal, int NCombFirst, int NCombSecond, int NCombThird, float time);
-   
+   void write_snapshot_per_process(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName, float time);
+
    void set_src_directory(string src_dir);
 
    //Memory used in the whole system, not depending on a certain number of particles
@@ -710,6 +712,7 @@ public:
   void sendSampleAndRadiusInfo(int nsample, real4 &rmin, real4 &rmax);
   void sendCurrentRadiusInfo(real4 &rmin, real4 &rmax);
   void sendCurrentRadiusInfoCoarse(real4 *, real4*, int);
+  void sendCurrentRadiusAndSampleInfo(real4 &rmin, real4 &rmax, int nsample, int *nSamples);
   
   //Function for Device assisted domain division
   void gpu_collect_sample_particles(int nSample, real4 *sampleParticles);
@@ -862,6 +865,12 @@ public:
                               real4 *treeSize,  uint2 *nodes,   uint  *node_levels, int    n_levels);
 
   void sendCurrentInfoGrpTree();
+
+  void computeSampleRateSFC(float lastExecTime, int &nSamples, int &sampleRate);
+
+  void exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSamples,
+                                           uint4 *globalSamples, int  *nReceiveCnts, int *nReceiveDpls,
+                                           int    totalCount,   uint4 *parallelBoundaries);
 
   void essential_tree_exchangeV2(tree_structure &tree,
                                  tree_structure &remote,

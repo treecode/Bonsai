@@ -61,6 +61,11 @@ inline int getTreeWalkBlocksPerSM(int devMajor, int devMinor)
 //we reduce the number of memory allocations when particle numbers fluctuate. 1.1 == 10% extra
 #define MULTI_GPU_MEM_INCREASE 1.1
 
+//If USE_HASH_TABLE_DOMAIN_DECOMP is set to 1 we build a hash-table, otherwise we use
+//sampling particles to get an idea of the domain space used to compute the domain
+//decomposition
+#define USE_HASH_TABLE_DOMAIN_DECOMP 0
+
 
 #define TEXTURE_BOUNDARY  512   //Fermi architecture boundary for textures
 

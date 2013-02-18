@@ -96,6 +96,25 @@ KERNEL_DECLARE(gpu_extractSampleParticles)(int    n_bodies,
   samplePosition[id] =  body_pos[idx];
 }
 
+KERNEL_DECLARE(gpu_extractSampleParticlesSFC)(int    n_bodies,
+                                              int    nSamples,
+                                              int    sample_freq,
+                                              uint4  *body_pos,
+                                              uint4  *samplePosition
+){
+  CUXTIMER("extractSampleParticles");
+  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
+  uint tid = threadIdx.x;
+  uint id  = bid * blockDim.x + tid;
+
+  if(id >= nSamples) return;
+
+  int idx  = id*sample_freq;
+  if  (idx >= n_bodies) return;
+
+  samplePosition[id] =  body_pos[idx];
+}
+
 KERNEL_DECLARE(extractOutOfDomainParticlesR4)(int n_extract,
                                                        int *extractList,
                                                        real4 *source,

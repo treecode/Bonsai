@@ -530,8 +530,19 @@ bool octree::iterate_once(IterationData &idata) {
         localTree.bodies_vel.d2h();
         localTree.bodies_ids.d2h();
 
-        write_dumbp_snapshot_parallel(&localTree.bodies_pos[0], &localTree.bodies_vel[0],
+        if(nProcs <= 16)
+        {
+          write_dumbp_snapshot_parallel(&localTree.bodies_pos[0], &localTree.bodies_vel[0],
               &localTree.bodies_ids[0], localTree.n + localTree.n_dust, fileName.c_str(), t_current) ;
+        }
+        else
+        {
+          sprintf(&fileName[0], "%s_%06d-%d", snapshotFile.c_str(), time + snapShotAdd, procId);
+          write_snapshot_per_process(&localTree.bodies_pos[0], &localTree.bodies_vel[0],
+                                     &localTree.bodies_ids[0], localTree.n + localTree.n_dust,
+                                     fileName.c_str(), t_current) ;
+        }
+
       }
     }
 
@@ -684,8 +695,20 @@ void octree::iterate_setup(IterationData &idata) {
         localTree.bodies_vel.d2h();
         localTree.bodies_ids.d2h();
 
-        write_dumbp_snapshot_parallel(&localTree.bodies_pos[0], &localTree.bodies_vel[0],
-          &localTree.bodies_ids[0], localTree.n + localTree.n_dust, fileName.c_str(), t_current) ;
+        if(nProcs <= 16)
+        {
+          write_dumbp_snapshot_parallel(&localTree.bodies_pos[0], &localTree.bodies_vel[0],
+              &localTree.bodies_ids[0], localTree.n + localTree.n_dust, fileName.c_str(), t_current) ;
+        }
+        else
+        {
+          sprintf(&fileName[0], "%s_%06d-%d", snapshotFile.c_str(), time + snapShotAdd, procId);
+          write_snapshot_per_process(&localTree.bodies_pos[0], &localTree.bodies_vel[0],
+                                     &localTree.bodies_ids[0], localTree.n + localTree.n_dust,
+                                     fileName.c_str(), t_current) ;
+        }
+
+
       }
   }
 

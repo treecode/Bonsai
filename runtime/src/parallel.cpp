@@ -239,10 +239,188 @@ int balanceLoad(int *nParticlesOriginal, int *nParticlesNew, float *load,
 
 }
 
-//Uses one communication by storing data in one buffer
-//nsample can be set to zero if this call is only used
-//to get updated domain information
-//This one is used when only updating the currentbox sizes
+//Uses one communication by storing data in one buffer and communicate required information,
+//such as box-sizes and number of sample particles on this process (Note that the number is only
+//used by process-0
+void octree::sendCurrentRadiusAndSampleInfo(real4 &rmin, real4 &rmax, int nsample, int *nSamples)
+{
+  sampleRadInfo curProcState;
+
+  curProcState.nsample      = nsample;
+  curProcState.rmin         = make_double4(rmin.x, rmin.y, rmin.z, rmin.w);
+  curProcState.rmax         = make_double4(rmax.x, rmax.y, rmax.z, rmax.w);
+
+#ifdef USE_MPI
+  //Get the number of sample particles and the domain size information
+  MPI_Allgather(&curProcState, sizeof(sampleRadInfo), MPI_BYTE,  curSysState,
+                sizeof(sampleRadInfo), MPI_BYTE, MPI_COMM_WORLD);
+#else
+  curSysState[0] = curProcState;
+#endif
+
+  rmin.x                 = (real)(currentRLow[0].x = curSysState[0].rmin.x);
+  rmin.y                 = (real)(currentRLow[0].y = curSysState[0].rmin.y);
+  rmin.z                 = (real)(currentRLow[0].z = curSysState[0].rmin.z);
+                                  currentRLow[0].w = curSysState[0].rmin.w;
+
+  rmax.x                 = (real)(currentRHigh[0].x = curSysState[0].rmax.x);
+  rmax.y                 = (real)(currentRHigh[0].y = curSysState[0].rmax.y);
+  rmax.z                 = (real)(currentRHigh[0].z = curSysState[0].rmax.z);
+                                  currentRHigh[0].w = curSysState[0].rmax.w;
+
+  nSamples[0] = curSysState[0].nsample;
+
+  for(int i=1; i < nProcs; i++)
+  {
+    rmin.x = std::min(rmin.x, (real)curSysState[i].rmin.x);
+    rmin.y = std::min(rmin.y, (real)curSysState[i].rmin.y);
+    rmin.z = std::min(rmin.z, (real)curSysState[i].rmin.z);
+
+    rmax.x = std::max(rmax.x, (real)curSysState[i].rmax.x);
+    rmax.y = std::max(rmax.y, (real)curSysState[i].rmax.y);
+    rmax.z = std::max(rmax.z, (real)curSysState[i].rmax.z);
+
+    currentRLow[i].x = curSysState[i].rmin.x;
+    currentRLow[i].y = curSysState[i].rmin.y;
+    currentRLow[i].z = curSysState[i].rmin.z;
+    currentRLow[i].w = curSysState[i].rmin.w;
+
+    currentRHigh[i].x = curSysState[i].rmax.x;
+    currentRHigh[i].y = curSysState[i].rmax.y;
+    currentRHigh[i].z = curSysState[i].rmax.z;
+    currentRHigh[i].w = curSysState[i].rmax.w;
+
+    nSamples[i] = curSysState[i].nsample;
+  }
+}
+
+void octree::computeSampleRateSFC(float lastExecTime, int &nSamples, int &sampleRate)
+{
+  #ifdef USE_MPI
+    //Compute the number of particles to sample.
+    //Average the previous and current execution time to make everything smoother
+    //results in much better load-balance
+    static double prevDurStep  = -1;
+    static int    prevSampFreq = -1;
+    prevDurStep                = (prevDurStep <= 0) ? lastExecTime : prevDurStep;
+    double timeLocal           = (lastExecTime + prevDurStep) / 2;
+
+    #define LOAD_BALANCE 1
+    #define LOAD_BALANCE_MEMORY 1
+
+    double nrate = 0;
+    if(LOAD_BALANCE) //Base load balancing on the computation time
+    {
+      double timeSum   = 0.0;
+
+      //Sum the execution times over all processes
+      MPI_Allreduce( &timeLocal, &timeSum, 1,MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+      nrate = timeLocal / timeSum;
+
+      if(LOAD_BALANCE_MEMORY)       //Don't fluctuate particles too much
+      {
+        #define SAMPLING_LOWER_LIMIT_FACTOR  (1.9)
+
+        double nrate2 = (double)localTree.n / (double) nTotalFreq;
+        nrate2       /= SAMPLING_LOWER_LIMIT_FACTOR;
+
+        if(nrate < nrate2)
+        {
+          nrate = nrate2;
+        }
+
+        double nrate2_sum = 0.0;
+
+        MPI_Allreduce(&nrate, &nrate2_sum, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+        nrate /= nrate2_sum;
+      }
+    }
+    else
+    {
+      nrate = (double)localTree.n / (double)nTotalFreq; //Equal number of particles
+    }
+
+    int    nsamp  = (int)(nTotalFreq*0.001f) + 1;  //Total number of sample particles, global
+    nSamples      = (int)(nsamp*nrate) + 1;
+    sampleRate    = localTree.n / nSamples;
+
+    LOGF(stderr, "NSAMP [%d]: sample: %d nrate: %f final sampleRate: %d localTree.n: %d\tprevious: %d timeLocal: %f prevTimeLocal: %f \n",
+                  procId, nSamples, nrate, sampleRate, localTree.n, prevSampFreq,
+                  timeLocal, prevDurStep);
+
+    prevDurStep  = timeLocal;
+    prevSampFreq = sampleRate;
+
+  #endif
+}
+
+void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSamples,
+                                                 uint4 *globalSamples, int  *nReceiveCnts, int *nReceiveDpls,
+                                                 int    totalCount,   uint4 *parallelBoundaries)
+{
+  #ifdef USE_MPI
+    //Send actual data
+     MPI_Gatherv(&sampleKeys[0],    nSamples*sizeof(uint4), MPI_BYTE,
+                 &globalSamples[0], nReceiveCnts, nReceiveDpls, MPI_BYTE,
+                 0, MPI_COMM_WORLD);
+
+
+     if(procId == 0)
+     {
+       //Sort the keys. Use stable_sort (merge sort) since the separate blocks are already
+       //sorted. This is faster than std::sort (quicksort)
+       //std::sort(allHashes, allHashes+totalNumberOfHashes, cmp_ph_key());
+       std::stable_sort(globalSamples, globalSamples+totalCount, cmp_ph_key());
+
+       //Split the samples in equal parts to get the boundaries
+       int perProc = totalCount / nProcs;
+       int tempSum   = 0;
+       int procIdx   = 1;
+
+       parallelBoundaries[0] = make_uint4(0x0, 0x0, 0x0, 0x0);
+       for(int i=0; i < totalCount; i++)
+       {
+         tempSum += 1;
+         if(tempSum >= perProc)
+         {
+           LOGF(stderr, "Boundary at: %d\t%d %d %d %d \t %d \n",
+                         i, globalSamples[i+1].x,globalSamples[i+1].y,globalSamples[i+1].z,globalSamples[i+1].w, tempSum);
+           tempSum = 0;
+           parallelBoundaries[procIdx++] = globalSamples[i+1];
+         }
+       }//for totalNumberOfHashes
+
+
+       //Force final boundary to be the highest possible key value
+       parallelBoundaries[nProcs]  = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
+
+       delete[] globalSamples;
+     }
+
+     //Send the boundaries to all processes
+     MPI_Bcast(&parallelBoundaries[0], sizeof(uint4)*(nProcs+1), MPI_BYTE, 0, MPI_COMM_WORLD);
+
+     if(procId == 0)
+     {
+       for(int i=0; i < nProcs; i++)
+       {
+         LOGF(stderr, "Proc: %d Going from: >= %u %u %u  to < %u %u %u \n",i,
+             parallelBoundaries[i].x,   parallelBoundaries[i].y,   parallelBoundaries[i].z,
+             parallelBoundaries[i+1].x, parallelBoundaries[i+1].y, parallelBoundaries[i+1].z);
+       }
+     }
+  #endif
+}
+//End Domain decomposition based on Sample particle related functions
+
+//Domain decomposition based on particle hashes related functions
+
+
+//Uses one communication by storing data in one buffer and communicate required information,
+//such as box-sizes and number of sample particles on this process. Nsample is set to 0
+//since it is not used in this function/hash-method
 void octree::sendCurrentRadiusInfo(real4 &rmin, real4 &rmax)
 {
   sampleRadInfo curProcState;
@@ -291,6 +469,7 @@ void octree::sendCurrentRadiusInfo(real4 &rmin, real4 &rmax)
     currentRHigh[i].w = curSysState[i].rmax.w;
   }
 }
+
 
 void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries, float lastExecTime, float lastExecTime2)
 {
@@ -871,13 +1050,12 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
     recvCount     += nreceive[i];
   }
 
-  LOGF(stderr,"Going to receive: %d || %d %d : %d %d\n",
-      recvCount, nrecvbytes[0], nrecvDispls[0],
-      nrecvbytes[1], nrecvDispls[1]);
-  LOGF(stderr,"Going to send: %d || %d %d : %d %d\n",
-      nToSend, nsendbytes[0], nsendDispls[0],
-        nsendbytes[1], nsendDispls[1]);
-
+//  LOGF(stderr,"Going to receive: %d || %d %d : %d %d\n",
+//      recvCount, nrecvbytes[0], nrecvDispls[0],
+//      nrecvbytes[1], nrecvDispls[1]);
+//  LOGF(stderr,"Going to send: %d || %d %d : %d %d\n",
+//      nToSend, nsendbytes[0], nsendDispls[0],
+//        nsendbytes[1], nsendDispls[1]);
 
   vector<bodyStruct> recv_buffer3(recvCount);
 
@@ -2503,7 +2681,7 @@ void octree::determine_sample_freq(int numberOfParticles)
     int maxsample = (int)(NMAXSAMPLE*0.8); // 0.8 is safety factor
     sampleFreq = (nTotalFreq+maxsample-1)/maxsample;
 
-    LOGF(stderr,"Sample FREQ: %d \n", sampleFreq);
+    if(procId == 0)  LOGF(stderr,"Sample Frequency: %d \n", sampleFreq);
 
     prevSampFreq = sampleFreq;
 

@@ -95,6 +95,8 @@ extern "C" void  (gpu_internalMoveSFC) (int       n_extract, int       n_bodies,
 extern "C" void  (gpu_extractOutOfDomainParticlesAdvancedSFC)(int n_extract, int *extractList, real4 *Ppos, real4 *Pvel, real4 *pos, real4 *vel, real4 *acc0, real4 *acc1, float2 *time, int   *body_id, uint4 *body_key, bodyStruct *destination);
 
 extern "C" void  (gpu_insertNewParticlesSFC)(int       n_extract, int       n_insert, int       n_oldbodies, int       offset, real4     *Ppos, real4     *Pvel, real4     *pos, real4     *vel, real4     *acc0, real4     *acc1, float2    *time, int       *body_id, uint4     *body_key, bodyStruct *source);
+extern "C" void  (gpu_extractSampleParticlesSFC)(int    n_bodies, int    sample_freq, uint4  *body_pos, uint4  *samplePosition);
+
 
 
 extern "C" void  (gpu_build_parallel_grps)( uint   compact_list_len, uint   offset, uint  *compact_list, uint4 *bodies_key, uint4 *parGrpBlockKey, uint2 *parGrpBlockInfo, uint  *startBoundary);

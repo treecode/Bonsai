@@ -447,7 +447,8 @@ void octree::build (tree_structure &tree) {
 
   define_groups.set_arg<int>    (0, &tree.n);  
   define_groups.set_arg<cl_mem> (1, validList.p());    
-  define_groups.set_arg<uint2>  (2, &tree.level_list[tree.startLevelMin]);
+  //define_groups.set_arg<uint2>  (2, &tree.level_list[tree.startLevelMin]);
+  define_groups.set_arg<uint2>  (2, &tree.level_list[tree.startLevelMin+1]); //Bit deeper for extra cuts
   define_groups.set_arg<cl_mem> (3, tree.node_bodies.p());
   define_groups.set_arg<cl_mem> (4, tree.node_level_list.p());
   define_groups.set_arg<int>    (5, &level);
@@ -507,13 +508,14 @@ void octree::build (tree_structure &tree) {
 //domain distribution based on the SFC
 
 void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float lastExecTime2) {
-
+  double t0 = get_time();
+#if USE_HASH_TABLE_DOMAIN_DECOMP
   int level      = 0;
   int validCount = 0;
   int offset     = 0;
   int n_parallel = 1024;
 
-  double t0 = get_time();
+
   /******** create memory buffers and reserve memory using the shared buffer **********/
 
   my_dev::dev_mem<uint>   validList(devContext);
@@ -714,19 +716,213 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
   LOGF(stderr, "Compute hashes took: %f \n", get_time()-t0);
 
 
-  if(1)
-  {
-    gpu_collect_hashes(validCount, &tree.parallelHashes[0], &tree.parallelBoundaries[0],
+  gpu_collect_hashes(validCount, &tree.parallelHashes[0], &tree.parallelBoundaries[0],
            lastExecTime, lastExecTime2);
 
-  
-    LOGF(stderr, "Computing and exchanging and update domain took: %f \n", get_time()-t0);
+#else
+  real4 r_min = {+1e10, +1e10, +1e10, +1e10};
+  real4 r_max = {-1e10, -1e10, -1e10, -1e10};
+  getBoundaries(tree, r_min, r_max); //Used for predicted position keys further down
+
+  //Build keys on current positions, since those are already sorted, while predicted are not
+  build_key_list.set_arg<cl_mem>(0,   tree.bodies_key.p());
+  build_key_list.set_arg<cl_mem>(1,   tree.bodies_pos.p());
+  build_key_list.set_arg<int>(2,      &tree.n);
+  build_key_list.set_arg<real4>(3,    &tree.corner);
+  build_key_list.setWork(tree.n, 128); //128 threads per block
+  build_key_list.execute(execStream->s());
+
+  int nSamples   = 0;
+  int sampleRate = 0;
+  computeSampleRateSFC(lastExecTime, nSamples, sampleRate);
+
+#if 0
+  //Compute the number of particles to sample.
+  //Average the previous and current execution time to make everything smoother
+  //results in much better load-balance
+  static double prevDurStep  = -1;
+  static int    prevSampFreq = -1;
+  prevDurStep                = (prevDurStep <= 0) ? lastExecTime : prevDurStep;
+  double timeLocal           = (lastExecTime + prevDurStep) / 2;
+
+  #define LOAD_BALANCE 1
+  #define LOAD_BALANCE_MEMORY 1
+
+  double nrate = 0;
+  if(LOAD_BALANCE) //Base load balancing on the computation time
+  {
+     double timeSum   = 0.0;
+
+     //Sum the execution times over all processes
+     MPI_Allreduce( &timeLocal, &timeSum, 1,MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+     nrate = timeLocal / timeSum;
+
+     if(LOAD_BALANCE_MEMORY)       //Don't fluctuate particles too much
+     {
+       #define SAMPLING_LOWER_LIMIT_FACTOR  (1.9)
+
+       double nrate2 = (double)localTree.n / (double) nTotalFreq;
+       nrate2       /= SAMPLING_LOWER_LIMIT_FACTOR;
+
+       if(nrate < nrate2)
+       {
+         nrate = nrate2;
+       }
+
+       double nrate2_sum = 0.0;
+
+       MPI_Allreduce(&nrate, &nrate2_sum, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+       nrate /= nrate2_sum;
+     }
+   }
+   else
+   {
+     nrate = (double)localTree.n / (double)nTotalFreq; //Equal number of particles
+   }
+
+   int    nsamp    = (int)(nTotalFreq*0.001f) + 1;  //Total number of sample particles, global
+   int nSamples    = (int)(nsamp*nrate) + 1;
+   int finalNRate  = localTree.n / nSamples;
+
+   LOGF(stderr, "NSAMP [%d]: sample: %d nrate: %f finalrate: %d localTree.n: %d  \
+                    previous: %d timeLocal: %f prevTimeLocal: %f \n",
+                 procId, nSamples, nrate, finalNRate, localTree.n, prevSampFreq,
+                 timeLocal, prevDurStep);
+
+   prevDurStep  = timeLocal;
+   prevSampFreq = finalNRate;
+#endif
+
+
+   my_dev::dev_mem<uint4>  sampleKeys(devContext);
+   int memBufOffset = sampleKeys.cmalloc_copy(localTree.generalBuffer1, nSamples, 0);
+
+   extractSampleParticlesSFC.set_arg<int>(0,     &localTree.n);
+   extractSampleParticlesSFC.set_arg<int>(1,     &nSamples);
+   extractSampleParticlesSFC.set_arg<int>(2,     &sampleRate);
+   extractSampleParticlesSFC.set_arg<cl_mem>(3,  localTree.bodies_key.p());
+   extractSampleParticlesSFC.set_arg<cl_mem>(4,  sampleKeys.p());
+   extractSampleParticlesSFC.setWork(nSamples, 256);
+   extractSampleParticlesSFC.execute(execStream->s());
+   sampleKeys.d2h(false,execStream->s());
+
+   //Sync the boundary and number of sample particles over the various processes
+   //this overlaps with the sample extraction on the device
+   int *nsampleInfo  = new int[nProcs];
+   this->sendCurrentRadiusAndSampleInfo(r_min, r_max, nSamples, nsampleInfo);
+
+   //TODO allocate these buffers at the start of program
+   int   *nReceiveCnts = new int[nProcs];
+   int   *nReceiveDpls = new int[nProcs];
+   uint4 *globalSamples;
+
+   //Compute the receive offsets and counts for the sample particles on process 0
+   int totalCount = 0;
+   if(procId == 0)
+   {
+     nReceiveCnts[0] = nsampleInfo[0]*sizeof(uint4);
+     nReceiveDpls[0] = 0;
+     totalCount     += nsampleInfo[0];
+     for(int i=1; i < nProcs; i++)
+     {
+       nReceiveCnts[i] = nsampleInfo[i]*sizeof(uint4);
+       nReceiveDpls[i] = nReceiveDpls[i-1] + nReceiveCnts[i-1];
+       totalCount     += nsampleInfo[i];
+     }
+     globalSamples = new uint4[totalCount+1];
+   }
+
+   execStream->sync(); //Wait till all data is on the host
+
+   //Compute the boundary's of the tree
+   real size     = 1.001f*std::max(r_max.z - r_min.z,
+                          std::max(r_max.y - r_min.y, r_max.x - r_min.x));
+
+   tree.corner   = make_real4(0.5f*(r_min.x + r_max.x) - 0.5f*size,
+                              0.5f*(r_min.y + r_max.y) - 0.5f*size,
+                              0.5f*(r_min.z + r_max.z) - 0.5f*size,
+                              size/(1 << MAXLEVELS));
+
+   //Compute keys again, needed for the redistribution
+   //Note we can call this in parallel with the computation of the domain.
+   //This is done on predicted positions, to make sure that particles AFTER
+   //prediction are separated by boundaries
+   build_key_list.set_arg<cl_mem>(1,   tree.bodies_Ppos.p());
+   build_key_list.set_arg<real4>(3,    &tree.corner);
+   build_key_list.execute(execStream->s());
+
+   exchangeSamplesAndUpdateBoundarySFC(&sampleKeys[0], nSamples,    &globalSamples[0],
+                                        nReceiveCnts,  nReceiveDpls, totalCount,
+                                       &tree.parallelBoundaries[0]);
+
+#if 0
+   //Send actual data
+   MPI_Gatherv(&sampleKeys[0],    nSamples*sizeof(uint4), MPI_BYTE,
+               &globalSamples[0], nReceiveCnts, nReceiveDpls, MPI_BYTE,
+               0, MPI_COMM_WORLD);
+
+
+   if(procId == 0)
+   {
+     //Sort the keys. Use stable_sort (merge sort) since the separate blocks are already
+     //sorted. This is faster than std::sort (quicksort)
+     //std::sort(allHashes, allHashes+totalNumberOfHashes, cmp_ph_key());
+     std::stable_sort(globalSamples, globalSamples+totalCount, cmp_ph_key());
+
+     //Split the samples in equal parts to get the boundaries
+     int perProc = totalCount / nProcs;
+     int tempSum   = 0;
+     int procIdx   = 1;
+
+     tree.parallelBoundaries[0] = make_uint4(0x0, 0x0, 0x0, 0x0);
+     for(int i=0; i < totalCount; i++)
+     {
+       tempSum += 1;
+       if(tempSum >= perProc)
+       {
+         LOGF(stderr, "Boundary at: %d\t%d %d %d %d \t %d \n",
+                       i, globalSamples[i+1].x,globalSamples[i+1].y,globalSamples[i+1].z,globalSamples[i+1].w, tempSum);
+         tempSum = 0;
+         tree.parallelBoundaries[procIdx++] = globalSamples[i+1];
+       }
+     }//for totalNumberOfHashes
+
+
+     //Force final boundary to be the highest possible key value
+     tree.parallelBoundaries[nProcs]  = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
+
+     delete[] globalSamples;
+   }
+
+   //Send the boundaries to all processes
+   MPI_Bcast(&tree.parallelBoundaries[0], sizeof(uint4)*(nProcs+1), MPI_BYTE, 0, MPI_COMM_WORLD);
+
+   if(procId == 0)
+   {
+     for(int i=0; i < nProcs; i++)
+     {
+       LOGF(stderr, "Proc: %d Going from: >= %u %u %u  to < %u %u %u \n",i,
+           tree.parallelBoundaries[i].x,  tree.parallelBoundaries[i].y,  tree.parallelBoundaries[i].z,
+           tree.parallelBoundaries[i+1].x,tree.parallelBoundaries[i+1].y,tree.parallelBoundaries[i+1].z);
+     }
+   }
+#endif
+
+   delete[] nsampleInfo;
+   delete[] nReceiveCnts;
+   delete[] nReceiveDpls;
+#endif
+
+
+    LOGF(stderr, "Computing, exchanging and recompute of domain boundaries took: %f \n", get_time()-t0);
     t0 = get_time();
 
     gpuRedistributeParticles_SFC(&tree.parallelBoundaries[0]);
-  }
 
-  LOGF(stderr, "Redistribute domain took: %f\n", get_time()-t0);
+
+    LOGF(stderr, "Redistribute domain took: %f\n", get_time()-t0);
 
   /*************************/
 

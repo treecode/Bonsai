@@ -1017,6 +1017,15 @@ int main(int argc, char** argv)
   tree->localTree.bodies_Pvel.h2d();
   tree->localTree.bodies_ids.h2d();
    
+  #if USE_HASH_TABLE_DOMAIN_DECOMP
+
+  #else
+    #ifdef USE_MPI
+      //Use sampling particles, determine frequency
+      tree->determine_sample_freq(tree->localTree.n); //Determine initial frequency
+    #endif
+  #endif
+
   //Distribute the particles so each process has particles
   //assigned to his domain
 //  if(nProcs > 1)
