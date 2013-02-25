@@ -248,7 +248,8 @@ void octree::compute_properties(tree_structure &tree) {
       double tlocal = get_time();
       //Reuse some already allocated memory
       uint2 *nodes    = (uint2*)&tree.generalBuffer1[grpKeysOffset];
-      uint4 *nodeKeys = (uint4*)&tree.generalBuffer1[grpKeysOffset+2*tree.n_groups]; //2* since generalBuffer is uint
+      int tempSize    = max(tree.n_groups, 2048); //Minimum size otherwise we have a chance of overwriteing keys
+      uint4 *nodeKeys = (uint4*)&tree.generalBuffer1[grpKeysOffset+2*tempSize]; //2* since generalBuffer is uint
 
       uint node_levels[MAXLEVELS];
       int grpTree_n_levels;
@@ -277,30 +278,37 @@ void octree::compute_properties(tree_structure &tree) {
       {
         if(localGrpTreeCntSize)
         {
-          localGrpTreeCntSize  = (real4*)realloc(localGrpTreeCntSize,  2*grpTree_n_nodes*sizeof(real4));
+          localGrpTreeCntSize  = (real4*)realloc(localGrpTreeCntSize,  (2+2*grpTree_n_nodes)*sizeof(real4));
         }
         else
         {
-          localGrpTreeCntSize =  (real4*) malloc(2*grpTree_n_nodes*sizeof(real4));
+          localGrpTreeCntSize =  (real4*) malloc((2+2*grpTree_n_nodes)*sizeof(real4));
         }
       }
 
       //Compute groupTree properties
       computeProps_GroupTree(&tree.groupCenterInfo[0], &tree.groupSizeInfo[0],
-                             localGrpTreeCntSize, &localGrpTreeCntSize[grpTree_n_nodes],
+                             &localGrpTreeCntSize[2], &localGrpTreeCntSize[2+grpTree_n_nodes],
                              nodes, node_levels, grpTree_n_levels);
+
+      //Copy the top-node
+      localGrpTreeCntSize[0] = localGrpTreeCntSize[2];
+      localGrpTreeCntSize[0] = localGrpTreeCntSize[2];
+      localGrpTreeCntSize[1] = localGrpTreeCntSize[2+grpTree_n_nodes];
+      localGrpTreeCntSize[1] = localGrpTreeCntSize[2+grpTree_n_nodes];
+      localGrpTreeCntSize[0].w = -1; //Mark as leaf/end-point
 
       //Store information required for the tree-walk in the top node
       union{int i; float f;} itof; //__int_as_float
 
       itof.i                = grpTree_startGrp;
-      localGrpTreeCntSize[0].x = itof.f;
+      localGrpTreeCntSize[2].x = itof.f;
 
       itof.i                = grpTree_endGrp;
-      localGrpTreeCntSize[0].y = itof.f;
+      localGrpTreeCntSize[2].y = itof.f;
 
       itof.i                = grpTree_n_nodes;
-      localGrpTreeCntSize[0].z = itof.f;
+      localGrpTreeCntSize[2].z = itof.f;
 
       double t1 = get_time();
       LOGF(stderr, "Build local tree; %lg Since start compProps: %lg\n", t1-tlocal, t1-t0);

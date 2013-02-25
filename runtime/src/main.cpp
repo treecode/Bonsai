@@ -875,6 +875,56 @@ int main(int argc, char** argv)
   int procId = tree->mpiGetRank();
   int nProcs = tree->mpiGetNProcs();
   
+#if 0
+  omp_set_num_threads(4);
+  //default
+ // int cpulist[] = {0,1,2,3,8,9,10,11};
+  int cpulist[] = {0,1,2,3, 8,9,10,11, 4,5,6,7, 12,13,14,15}; //HA-PACS
+  //int cpulist[] = {0,1,2,3,4,5,6,7};
+  //int cpulist[] = {0,2,4,6, 8,10,12,14};
+  //int cpulist[] = {1,3,5,7, 9,11,13,15};
+  //int cpulist[] = {1,9,5,11, 3,7,13,15};
+  //int cpulist[] = {1,15,3,13, 2,4,6,8};
+  //int cpulist[] = {1,1,1,1, 1,1,1,1};
+
+
+  #pragma omp parallel
+  {
+    int tid = omp_get_thread_num();
+    //int core_id = procId*4+tid;
+    int core_id = (procId%4)*4+tid;
+    core_id = cpulist[core_id];
+
+    int num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+  //    if (core_id >= num_cores)
+
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(core_id, &cpuset);
+    pthread_t current_thread = pthread_self();
+    int return_val = pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset);
+
+    CPU_ZERO(&cpuset);
+    pthread_getaffinity_np(pthread_self()  , sizeof( cpu_set_t ), &cpuset );
+
+    int i, set=-1;
+    for (i = 0; i < CPU_SETSIZE; i++)
+     if (CPU_ISSET(i, &cpuset))
+            set = i;
+           //printf("CPU2: CPU %d\n", i);
+
+
+    fprintf(stderr,"Binding thread: %d of rank: %d to cpu: %d CHECK: %d Total cores: %d\n",
+                          tid, procId, core_id, set, num_cores);
+
+  }
+#endif
+
+
+
+
+
+
   #if ENABLE_LOG
     #ifdef USE_MPI
       PREPEND_RANK_PROCID = procId;

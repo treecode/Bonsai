@@ -8,15 +8,7 @@
 /*********************************/
 /*********************************/
 
-inline int cmp_uint2(const uint2 a, const uint2 b) {
-  if      (a.x < b.x) return -1;
-  else if (a.x > b.x) return +1;
-  else {
-    if       (a.y < b.y) return -1;
-    else  if (a.y > b.y) return +1;
-    return 0;
-  }
-}
+
 
 void octree::set_src_directory(string src_dir) {                                                                                                                                 
     this->src_directory = (char*)src_dir.c_str();                                                                                                                                

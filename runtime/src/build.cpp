@@ -507,7 +507,8 @@ void octree::build (tree_structure &tree) {
 //This function builds a hash-table for the particle-keys which is required for the
 //domain distribution based on the SFC
 
-void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float lastExecTime2) {
+void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float lastExecTime2,
+    double &domComp, double &domExch) {
   double t0 = get_time();
 #if USE_HASH_TABLE_DOMAIN_DECOMP
   int level      = 0;
@@ -915,11 +916,15 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
    delete[] nReceiveDpls;
 #endif
 
+    domComp = get_time()-t0;
+
 
     LOGF(stderr, "Computing, exchanging and recompute of domain boundaries took: %f \n", get_time()-t0);
     t0 = get_time();
 
     gpuRedistributeParticles_SFC(&tree.parallelBoundaries[0]);
+
+    domExch = get_time()-t0;
 
 
     LOGF(stderr, "Redistribute domain took: %f\n", get_time()-t0);

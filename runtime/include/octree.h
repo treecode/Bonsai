@@ -93,7 +93,21 @@ typedef struct sampleRadInfo
 }sampleRadInfo;
 
 
+inline int cmp_uint2(const uint2 a, const uint2 b) {
+  if      (a.x < b.x) return -1;
+  else if (a.x > b.x) return +1;
+  else {
+    if       (a.y < b.y) return -1;
+    else  if (a.y > b.y) return +1;
+    return 0;
+  }
+}
 
+struct cmp_uint2_reverse{
+  bool operator()(const uint2 &a, const uint2 &b){
+    return (cmp_uint2(a,b) >= 1);
+  }
+};
 
 inline int cmp_uint4(uint4 a, uint4 b) {
   if      (a.x < b.x) return -1;
@@ -580,7 +594,8 @@ public:
           totalWaitTime(0), lastWaitTime(0), startTime(0),
           totalGPUGravTimeLocal(0), totalGPUGravTimeLET(0),
           lastGPUGravTimeLocal(0), lastGPUGravTimeLET(0),
-          lastLETCommTime(0), totalLETCommTime(0){}
+          lastLETCommTime(0), totalLETCommTime(0),
+          totalDomUp(0), totalDomEx(0) {}
 
       int    Nact_since_last_tree_rebuild;
       double totalGravTime; //CPU timers, includes any non-hidden communication cost
@@ -598,6 +613,8 @@ public:
       double lastGPUGravTimeLET;
       double lastLETCommTime; //Time it takes to communicate/build LET structures
       double totalLETCommTime;
+      double totalDomUp;
+      double totalDomEx;
   };
 
   void iterate_setup(IterationData &idata); 
@@ -620,7 +637,7 @@ public:
                                int bufferSize, bool doActivePart);
 
   //Parallel version functions
-  int procId, nProcs;   //Proccess ID in the mpi stack, number of processors in the commm world
+  int procId, nProcs;   //Process ID in the mpi stack, number of processors in the commm world
   int nx, ny, nz;       //The division parameters, number of procs in the x,y and z axis
   int sampleFreq;       //Sample frequency for the division
   int nTotalFreq;       //Total Number of particles over all processes
@@ -629,34 +646,23 @@ public:
   double prevDurStep;   //Duration of gravity time in previous step
   double thisPartLETExTime;     //The time it took to communicate with the neighbours during the last step
 
-  double4 *domainRLow, *domainRHigh;    //Contains the current domain distribution
   double4 *currentRLow, *currentRHigh;  //Contains the actual domain distribution, to be used
                                         //during the LET-tree generatino
 
-  std::vector<double4> currentRLowCoarse;		//The coarse group boundaries for all processes
-  std::vector<double4> currentRHighCoarse;		//The coarse group boundaries for all processes
-  std::vector<uint4>   currentRCoarseOffsets;	//The offsets to get to the right group and number of coarse groups
-  	  	  	  	  	  	  	  	  	  	  	    //uint4 for info, could be done in uint2
-                                        
-  double4 *xlowPrev, *xhighPrev;                                        
   
-  int4 *domHistoryLow, *domHistoryHigh;         //used to remember the domain boundaries to improve load balance
-  
-  uint *globalCoarseGrpCount;
-  uint *globalCoarseGrpOffsets;
-  
-  real4 *coarseGroupBoundMin;		//Boundaries of coarse groups for all processors, min locations
-  real4 *coarseGroupBoundMax;		//Boundaries of coarse groups for all processors, max locations
-
-  double4 *coarseGroupBoxCenter;//Center of bounding boxes
-  double4 *coarseGroupBoxSize;  //size of bounding boxes
-
   real4 *localGrpTreeCntSize;
 
   real4 *globalGrpTreeCntSize;
 
   uint *globalGrpTreeCount;
   uint *globalGrpTreeOffsets;
+
+  int  *fullGrpAndLETRequest;
+  uint2 *fullGrpAndLETRequestStatistics;
+
+  std::vector<int> infoGrpTreeBuffer;
+  std::vector<int> exchangePartBuffer;
+
 
   int grpTree_n_nodes;
 
@@ -667,19 +673,13 @@ public:
   real4 rMinLocalTree;            //for particles
   real4 rMaxLocalTree;            //for particles
 
-  real4 rMinLocalTreeGroups;      //for groups
-  real4 rMaxLocalTreeGroups;      //for groups
-  
   real4 rMinGlobal;
   real4 rMaxGlobal;
   
   bool letRunning;
   
 
-  float        globalRmax;
   unsigned int totalNumberOfSamples;
-  vector<real4> sampleArray;
-  int2 *nSampleAndSizeValues;
   sampleRadInfo *curSysState;
 
   //Functions
@@ -697,21 +697,8 @@ public:
   //Functions for domain division
   void createORB();
   void determine_sample_freq(int numberOfParticles);
-  void createDistribution(real4 *bodies, int n_bodies);
-  void collect_sample_particles(real4 *bodies, int nbody,
-                              int sample_freq, vector<real4> &sampleArray,
-                              int &nsample, double &rmax);
-  void determine_division(int np, vector<real4> &pos, int nx, int ny, int nz,
-                          double rmax, double4 xlow[], double4 xhigh[]);
-  void sortCoordinates(real4 *r, int lo, int up, int cid );
-  void sortCoordinates2(real4 *r, int lo, int up, int cid );
-  
-  void calculate_boxdim(int np, real4 pos[], int cid, int istart, int iend,
-                      double rmax, double & xlow, double & xhigh);
 
-  void sendSampleAndRadiusInfo(int nsample, real4 &rmin, real4 &rmax);
   void sendCurrentRadiusInfo(real4 &rmin, real4 &rmax);
-  void sendCurrentRadiusInfoCoarse(real4 *, real4*, int);
   void sendCurrentRadiusAndSampleInfo(real4 &rmin, real4 &rmax, int nsample, int *nSamples);
   
   //Function for Device assisted domain division
@@ -739,87 +726,6 @@ public:
                                               unsigned int &recvCount);
 
    //Local Essential Tree related functions
-  void essential_tree_exchange(vector<real4> &LETParticles,
-                               tree_structure &tree, tree_structure &remoteTree);
-  void create_local_essential_tree(real4* bodies, real4* multipole,
-                                   real4* nodeSizeInfo, real4* nodeCenterInfo,
-                                   double4 boxCenter, double4 boxSize, float group_eps, int start, int end,
-                                   vector<real4> &particles,    vector<real4> &multipoleData,
-                                   vector<real4> &nodeSizeData, vector<real4> &nodeCenterData);
-//  void create_local_essential_tree_count(real4* bodies, real4* multipole,
-//                                         real4* nodeSizeInfo, real4* nodeCenterInfo,
-//                                         double4 boxCenter, double4 boxSize,
-//                                         float group_eps, int start, int end,
-//                                         int &particleCount, int &nodeCount);
-//  void create_local_essential_tree_fill(real4* bodies, real4* velocities,
-//                                        real4* multipole, real4* nodeSizeInfo,
-//                                        real4* nodeCenterInfo, double4 boxCenter,
-//                                        double4 boxSize,  float group_eps, int start,
-//                                        int end, int particleCount, int nodeCount, real4 *dataBuffer);
-
-  void create_local_essential_tree_count(real4* bodies, real4* multipole,
-                                         real4* nodeSizeInfo, real4* nodeCenterInfo,
-                                         int remoteId,
-                                         float group_eps, int start, int end,
-                                         int &particleCount, int &nodeCount);
-  void create_local_essential_tree_fill(real4* bodies, real4* velocities,
-                                        real4* multipole, real4* nodeSizeInfo,
-                                        real4* nodeCenterInfo,
-                                        int remoteId, float group_eps, int start,
-                                        int end, int particleCount, int nodeCount, real4 *dataBuffer);
-
-  void create_local_essential_tree_count_novector(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
-                                           int remoteId, float group_eps, int start, int end,
-                                           int &particles, int &nodes);
-
-  void create_local_essential_tree_count_vector_filter(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
-                                           int remoteId, float group_eps, int start, int end,
-                                           int &particles, int &nodes);
-
-  void create_local_essential_tree_count_novector_startend(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
-                                           int remoteId, float group_eps, int start, int end,
-                                           int &particles, int &nodes);
-  void create_local_essential_tree_count_novector_startend2(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
-                                           int remoteId, float group_eps, int start, int end,
-                                           int &particles, int &nodes);
-
-    void create_local_essential_tree_count_novector_startend3(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
-                                           int remoteId, float group_eps, int start, int end,
-                                           int &particles, int &nodes);
-    
-    void create_local_essential_tree_count_novector_startend4(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
-                                           int remoteId, float group_eps, int start, int end,
-                                           int &particles, int &nodes);
-    
-    void create_local_essential_tree_count_novector_startend5(real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
-                                           int remoteId, float group_eps, int start, int end,
-                                           int &particles, int &nodes);
-
-    void create_local_essential_tree_fill_novector_startend4(real4* bodies, real4* velocities, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
-                                                  int remoteId, float group_eps, int start, int end,
-                                                  int particleCount, int nodeCount, real4 *dataBuffer);
-
-
-  void create_local_essential_tree_count_recursive_part2(
-      real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
-      int nodeID, vector<int> &remoteGrps, uint remoteGrpStart,
-      int &particles, int &nodes);
-
-  void create_local_essential_tree_count_recursive(
-      real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
-      int remoteId, float group_eps, int start, int end,
-      int &particles, int &nodes);
-
-
-  void create_local_essential_tree_count_recursive_try2(
-      real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
-      int remoteId, float group_eps, int start, int end,
-      int &particles, int &nodes);
-
-  void create_local_essential_tree_count_recursive_part2_try2(
-      real4* bodies, real4* multipole, real4* nodeSizeInfo, real4* nodeCenterInfo,
-      int nodeID, uint remoteGrpID, int &particles, int &nodes, bool &allDone);
-
 
   real4* MP_exchange_bhlist(int ibox, int isource,
                                 int bufferSize, real4 *letDataBuffer);
@@ -853,7 +759,8 @@ public:
 
   void makeLET();
 
-  void parallelDataSummary(tree_structure &tree, float lastExecTime, float lastExecTime2);
+  void parallelDataSummary(tree_structure &tree, float lastExecTime, float lastExecTime2, double &domUpdate, double &domExch);
+
 
   void gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries, float lastExecTime, float lastExecTime2);
   void gpuRedistributeParticles_SFC(uint4 *boundaries);
@@ -993,9 +900,6 @@ public:
     }
 
 
-
-
-
 //    LOGF(stderr, "Settings device : %d\t"  << devID << "\t" << device << "\t" << nProcs <<endl;
 
     snapshotIter = snapI;
@@ -1026,16 +930,46 @@ public:
     copyStream = NULL;
     LETDataToHostStream = NULL;
     
-    coarseGroupBoundMin	= NULL;
-    coarseGroupBoundMax	= NULL;
+    infoGrpTreeBuffer.resize(7*nProcs);
+    exchangePartBuffer.resize(8*nProcs);
 
     localGrpTreeCntSize = NULL;
-
     globalGrpTreeCntSize = NULL;
 
-    coarseGroupBoxCenter = NULL;
-    coarseGroupBoxSize   = NULL;
 
+    //An initial guess for group broadcasted information
+    //We set the statistics for our neighboring processes
+    //to 1 and all remote ones to 0 for starters
+    fullGrpAndLETRequest           = new int[nProcs];
+    fullGrpAndLETRequestStatistics = new uint2[nProcs];
+    if(nProcs <= NUMBER_OF_FULL_EXCHANGE)
+    {
+      //Set all processors to use the full-grp data
+      for(int i=0; i < nProcs; i++)
+      {
+        fullGrpAndLETRequestStatistics[i] = make_uint2(0xFFFFFFF0,i);
+      }
+      fullGrpAndLETRequestStatistics[procId] = make_uint2(0,procId);
+    }
+    else
+    {
+      for(int i=0; i < nProcs; i++) fullGrpAndLETRequestStatistics[i] = make_uint2(0,i);
+
+      //Initially set the neighboring processes to use the full data
+      for(int i=1; i <= NUMBER_OF_FULL_EXCHANGE/2; i++)
+      {
+              int src = (procId-i);
+              if(src < 0) src+=nProcs;
+              fprintf(stderr, "[%d] Writing src: %d \n", procId, src);
+              fullGrpAndLETRequestStatistics[src] = make_uint2(src+1,src);
+      }
+      for(int i=1; i <= NUMBER_OF_FULL_EXCHANGE/2; i++)
+      {
+              int src = (procId+i) % nProcs;
+              fprintf(stderr, "[%d] Writing src: %d \n", procId, src);
+              fullGrpAndLETRequestStatistics[src] = make_uint2(src+1,src);
+      }
+    }
 
 
     prevDurStep = -1;   //Set it to negative so we know its the first step
@@ -1054,31 +988,18 @@ public:
 
   }
   ~octree() {    
-    delete[] domainRLow;
-    delete[] domainRHigh;
+
     delete[] currentRLow;
     delete[] currentRHigh;
-    delete[] nSampleAndSizeValues;
     delete[] curSysState;
-    delete[] xlowPrev;
-    delete[] xhighPrev;
-    delete[] domHistoryLow;
-    delete[] domHistoryHigh;   
-    
-    if(globalCoarseGrpCount)    delete[] globalCoarseGrpCount;
-    if(globalCoarseGrpOffsets)  delete[] globalCoarseGrpOffsets;    
-    if(coarseGroupBoundMin)		delete[] coarseGroupBoundMin;
-    if(coarseGroupBoundMax)		delete[] coarseGroupBoundMax;
-    
-    if(coarseGroupBoxCenter) delete[] coarseGroupBoxCenter;
-    if(coarseGroupBoxSize)   delete[] coarseGroupBoxSize;
 
     if(localGrpTreeCntSize) free(localGrpTreeCntSize);
     if(globalGrpTreeCntSize) delete[] globalGrpTreeCntSize;
     if(globalGrpTreeCount) delete[] globalGrpTreeCount;
     if(globalGrpTreeOffsets) delete[] globalGrpTreeOffsets;
 
-
+    if(fullGrpAndLETRequest)    delete[] fullGrpAndLETRequest;
+    if(fullGrpAndLETRequestStatistics) delete[] fullGrpAndLETRequestStatistics;
 
 
 #if USE_B40C

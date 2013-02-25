@@ -66,6 +66,10 @@ inline int getTreeWalkBlocksPerSM(int devMajor, int devMinor)
 //decomposition
 #define USE_HASH_TABLE_DOMAIN_DECOMP 0
 
+//Number of processors to which we exchange the full domain. Also means if nProcs <= this
+//number we will always do a full exchange
+#define NUMBER_OF_FULL_EXCHANGE 16
+
 
 #define TEXTURE_BOUNDARY  512   //Fermi architecture boundary for textures
 

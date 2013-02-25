@@ -85,10 +85,6 @@ void octree::getBoundariesGroups(tree_structure &tree, real4 &r_min, real4 &r_ma
   r_max.y = (float)((r_max.y < 0) ? r_max.y * smallFac1 : r_max.y * smallFac2);
   r_max.z = (float)((r_max.z < 0) ? r_max.z * smallFac1 : r_max.z * smallFac2);
   
-
-  rMinLocalTreeGroups = r_min;
-  rMaxLocalTreeGroups = r_max;
-  
   
   LOG("Found group boundarys after increase, number of groups %d : \n", tree.n_groups);
   LOG("min: %f\t%f\t%f\tmax: %f\t%f\t%f \n", r_min.x,r_min.y,r_min.z,r_max.x,r_max.y,r_max.z);

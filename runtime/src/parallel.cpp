@@ -32,28 +32,6 @@ inline float host_int_as_float(int val)
   return itof.f;
 }
 
-//inline int cmp_uint4(uint4 a, uint4 b) {
-//  if      (a.x < b.x) return -1;
-//  else if (a.x > b.x) return +1;
-//  else {
-//    if       (a.y < b.y) return -1;
-//    else  if (a.y > b.y) return +1;
-//    else {
-//      if       (a.z < b.z) return -1;
-//      else  if (a.z > b.z) return +1;
-//      return 0;
-//    } //end z
-//  }  //end y
-//} //end x, function
-//
-//
-//struct cmp_ph_key{
-//  bool operator () (const uint4 &a, const uint4 &b){
-//    return ( cmp_uint4( a, b) < 1);
-//  }
-//};
-
-
 void octree::mpiInit(int argc,char *argv[], int &procId, int &nProcs)
 {
 #ifdef USE_MPI
@@ -86,31 +64,31 @@ void octree::mpiInit(int argc,char *argv[], int &procId, int &nProcs)
 #endif
 
     //Allocate memory for the used buffers
-    domainRLow  = new double4[nProcs];
-    domainRHigh = new double4[nProcs];
-
-    domHistoryLow   = new int4[nProcs];
-    domHistoryHigh  = new int4[nProcs];
+//    domainRLow  = new double4[nProcs];
+//    domainRHigh = new double4[nProcs];
+//
+//    domHistoryLow   = new int4[nProcs];
+//    domHistoryHigh  = new int4[nProcs];
     
     //Fill domainRX with constants so we can check if its initialized before
-    for(int i=0; i < nProcs; i++)
-    {
-      domainRLow[i] = domainRHigh[i] = make_double4(1e10, 1e10, 1e10, 1e10);
-      
-      domHistoryLow[i] = domHistoryHigh[i] = make_int4(0,0,0,0);
-    }
+//    for(int i=0; i < nProcs; i++)
+//    {
+//      domainRLow[i] = domainRHigh[i] = make_double4(1e10, 1e10, 1e10, 1e10);
+//
+//      domHistoryLow[i] = domHistoryHigh[i] = make_int4(0,0,0,0);
+//    }
     
     currentRLow  = new double4[nProcs];
     currentRHigh = new double4[nProcs];
+//
+//    xlowPrev  = new double4[nProcs];
+//    xhighPrev = new double4[nProcs];
+//
     
-    xlowPrev  = new double4[nProcs];
-    xhighPrev = new double4[nProcs];
-    
-    
-    globalCoarseGrpCount     = new uint[nProcs];
-    globalCoarseGrpOffsets   = new uint[nProcs];
+//    globalCoarseGrpCount     = new uint[nProcs];
+//    globalCoarseGrpOffsets   = new uint[nProcs];
 
-    nSampleAndSizeValues    = new int2[nProcs];  
+//    nSampleAndSizeValues    = new int2[nProcs];
     curSysState             = new sampleRadInfo[nProcs];
 
     globalGrpTreeCount   = new uint[nProcs];
@@ -379,6 +357,7 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
        int tempSum   = 0;
        int procIdx   = 1;
 
+       globalSamples[totalCount] = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
        parallelBoundaries[0] = make_uint4(0x0, 0x0, 0x0, 0x0);
        for(int i=0; i < totalCount; i++)
        {
@@ -967,21 +946,29 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
 
   bodyStruct  tmpp;
 
-  int *firstloc   = new int[nProcs+1];
-  int *nparticles = new int[nProcs+1];
-  int *nreceive   = new int[nProcs];
-  int *nsendbytes = new int[nProcs];
-  int *nrecvbytes = new int[nProcs];
+//  int *firstloc   = new int[nProcs+1];
+//  int *nparticles = new int[nProcs+1];
+//  int *nreceive   = new int[nProcs];
+//  int *nsendbytes = new int[nProcs];
+//  int *nrecvbytes = new int[nProcs];
+//
+//  int *nsendDispls = new int [nProcs+1];
+//  int *nrecvDispls = new int [nProcs+1];
 
-  int *nsendDispls = new int [nProcs+1];
-  int *nrecvDispls = new int [nProcs+1];
+  int *firstloc    = &exchangePartBuffer[0*nProcs];                //Size nProcs+1
+  int *nparticles  = &exchangePartBuffer[1*(nProcs+1)];            //Size nProcs+1
+  int *nsendDispls = &exchangePartBuffer[2*(nProcs+1)];            //Size nProcs+1
+  int *nrecvDispls = &exchangePartBuffer[3*(nProcs+1)];            //Size nProcs+1
+  int *nreceive    = &exchangePartBuffer[4*(nProcs+1)];            //Size nProcs
+  int *nsendbytes  = &exchangePartBuffer[4*(nProcs+1) + 1*nProcs]; //Size nProcs
+  int *nrecvbytes  = &exchangePartBuffer[4*(nProcs+1) + 2*nProcs]; //Size nProcs
 
 
 
-  memset(nparticles, 0, sizeof(int)*(nProcs+1));
-  memset(nreceive,   0, sizeof(int)*(nProcs));
-  memset(nsendbytes,   0, sizeof(int)*(nProcs));
-  memset(nsendDispls,   0, sizeof(int)*(nProcs));
+  memset(nparticles,  0, sizeof(int)*(nProcs+1));
+  memset(nreceive,    0, sizeof(int)*(nProcs));
+  memset(nsendbytes,  0, sizeof(int)*(nProcs));
+  memset(nsendDispls, 0, sizeof(int)*(nProcs));
 
   // Loop over particles and determine which particle needs to go where
   // reorder the bodies in such a way that bodies that have to be send
@@ -1035,7 +1022,7 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
   }
 
   t1 = get_time();
-#if 1
+#if 0
   MPI_Alltoall(nparticles, 1, MPI_INT, nreceive, 1, MPI_INT, MPI_COMM_WORLD);
 
 
@@ -1063,11 +1050,56 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
                 &recv_buffer3[0], nrecvbytes, nrecvDispls, MPI_BYTE,
                 MPI_COMM_WORLD);
 
-  delete[] nsendbytes;
-  delete[] nrecvbytes;
-  delete[] nreceive;
-  delete[] nsendDispls;
-  delete[] nrecvDispls;
+//  delete[] nsendbytes;
+//  delete[] nrecvbytes;
+//  delete[] nreceive;
+//  delete[] nsendDispls;
+//  delete[] nrecvDispls;
+
+#elif 1
+  MPI_Alltoall(nparticles, 1, MPI_INT, nreceive, 1, MPI_INT, MPI_COMM_WORLD);
+  double t92 = get_time();
+  unsigned int recvCount  = nreceive[0];
+        for (int i = 1; i < nproc; i++)
+  {
+    recvCount     += nreceive[i];
+  }
+  vector<bodyStruct> recv_buffer3(recvCount);
+  double t93=get_time();
+
+  int recvOffset = 0;
+
+  static MPI_Status stat;
+        for (int dist = 1; dist < nproc; dist++)
+  {
+    const int src = (nproc + myid - dist) % nproc;
+    const int dst = (nproc + myid + dist) % nproc;
+    const int scount = nsendbytes[dst];
+    const int rcount = nreceive[src]*sizeof(bodyStruct);
+    if ((myid/dist) & 1)
+    {
+
+      if (scount > 0) MPI_Send(&array2Send[nsendDispls[dst]/sizeof(bodyStruct)], scount, MPI_BYTE, dst, 1, MPI_COMM_WORLD);
+      if (rcount > 0) MPI_Recv(&recv_buffer3[recvOffset], rcount, MPI_BYTE   , src, 1, MPI_COMM_WORLD, &stat);
+
+      recvOffset +=  nreceive[src];
+    }
+    else
+    {
+      if (rcount > 0) MPI_Recv(&recv_buffer3[recvOffset], rcount, MPI_BYTE   , src, 1, MPI_COMM_WORLD, &stat);
+      if (scount > 0) MPI_Send(&array2Send[nsendDispls[dst]/sizeof(bodyStruct)], scount, MPI_BYTE, dst, 1, MPI_COMM_WORLD);
+
+      recvOffset +=  nreceive[src];
+    }
+  }
+
+
+//  delete[] nsendbytes;
+//  delete[] nrecvbytes;
+//  delete[] nreceive;
+//  delete[] nsendDispls;
+//  delete[] nrecvDispls;
+  double t94 = get_time();
 
 #else
 
@@ -1209,8 +1241,8 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
 
   int retValue = 0;
 
-  delete[] firstloc;
-  delete[] nparticles;
+//  delete[] firstloc;
+//  delete[] nparticles;
 
   return retValue;
 }
@@ -1226,7 +1258,202 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
 //Maybe we want to do this in a separate thread
 void octree::sendCurrentInfoGrpTree()
 {
-  #ifdef USE_MPI
+#define USE_MPI
+#ifdef USE_MPI
+
+#if 1
+    //Per process a request for a full node or only the topnode
+
+    int *sendReq           = &infoGrpTreeBuffer[0*nProcs];
+    int *recvReq           = &infoGrpTreeBuffer[1*nProcs];
+    int *incomingDataSizes = &infoGrpTreeBuffer[2*nProcs];
+    int *sendDisplacement  = &infoGrpTreeBuffer[3*nProcs];
+    int *sendCount         = &infoGrpTreeBuffer[4*nProcs];
+    int *recvDisplacement  = &infoGrpTreeBuffer[5*nProcs];
+    int *recvSizeBytes     = &infoGrpTreeBuffer[6*nProcs];
+
+
+    if(nProcs > NUMBER_OF_FULL_EXCHANGE)
+    {
+      //Sort the data and take the top NUMBER_OF_FULL_EXCHANGE to be used
+      std::partial_sort(fullGrpAndLETRequestStatistics,
+                        fullGrpAndLETRequestStatistics+NUMBER_OF_FULL_EXCHANGE, //Top items
+                        fullGrpAndLETRequestStatistics+nProcs,
+                        cmp_uint2_reverse());
+
+      //Set the top NUMBER_OF_FULL_EXCHANGE to be active
+      memset(fullGrpAndLETRequest, 0, sizeof(int)*nProcs);
+      for(int i=0; i < NUMBER_OF_FULL_EXCHANGE; i++)
+      {
+        fullGrpAndLETRequest[fullGrpAndLETRequestStatistics[i].y] = 1;
+      }
+    }
+    else
+    {
+      //Set everything active, except ourself
+      for(int i=0; i < nProcs; i++)
+        fullGrpAndLETRequest[i] = 1;
+      fullGrpAndLETRequest[procId] = 0;
+    }
+
+    memcpy(sendReq, fullGrpAndLETRequest, sizeof(int)*nProcs);
+
+
+    double t00 = get_time();
+    //gather the requests
+    MPI_Alltoall(sendReq, 1, MPI_INT, recvReq, 1, MPI_INT, MPI_COMM_WORLD);
+    double t10 = get_time();
+    //Debug print
+//    char buff[512];
+//    sprintf(buff, "%d A:\t", procId);
+//
+//    {
+//      for(int i=0; i < nProcs; i++)
+//      {
+//        sprintf(buff, "%s%d\t",buff, recvReq[i]);
+//      }
+//      LOGF(stderr, "%s\n", buff);
+//    }
+
+    //We now know which process requires the full-tree (recvReq[process] == 1)
+    //and which process can get away with only the top-node (recvReq[process] == 0)
+
+    int outGoingFullRequests = 0;
+    //Set the memory sizes, reuse sendReq, also directly set memory displacements, we need those anyway
+    for(int i=0; i < nProcs; i++)
+    {
+      if(recvReq[i] == 1)
+      {
+        sendReq[i]          = 2*grpTree_n_nodes; //Times two since we send size and center in one array
+        sendDisplacement[i] = sizeof(real4)*2;  //Jump 2 ahead, first 2 is top-node only
+        outGoingFullRequests++;                 //Count how many full-trees we send. That is how many
+                                                //direct receives we expect in LET phase
+      }
+      else
+      {
+        if(procId != i)
+        {
+          sendReq[i]          = 2;   //2 times a float4
+          sendDisplacement[i] = 0;
+        }
+        else
+        {
+          //Make sure to not include ourself
+          sendReq[i] = 0; sendDisplacement[i] = 0;
+        }
+      }
+    }
+    //Send the memory sizes
+    MPI_Alltoall(sendReq, 1, MPI_INT, incomingDataSizes, 1, MPI_INT, MPI_COMM_WORLD);
+    double t20 = get_time();
+    //Debug print
+//    sprintf(buff, "%d B:\t", procId);
+//    {
+//      for(int i=0; i < nProcs; i++)
+//      {
+//        sprintf(buff, "%s%d\t",buff, incomingDataSizes[i]);
+//      }
+//      LOGF(stderr, "%s\n", buff);
+//    }
+
+    //Compute memory offsets, for the receive
+    unsigned int recvCount  = incomingDataSizes[0];
+    recvDisplacement[0]     = 0;
+    sendReq[0]              = sendReq[0]*sizeof(real4);
+    recvSizeBytes [0]       = incomingDataSizes[0]*sizeof(real4);
+
+    this->globalGrpTreeCount[0]   = incomingDataSizes[0];
+    this->globalGrpTreeOffsets[0] = 0;
+
+    for(int i=1; i < nProcs; i++)
+    {
+      sendReq[i]          = sendReq[i]*sizeof(real4);
+      recvSizeBytes [i]   = incomingDataSizes[i]*sizeof(real4);
+      recvDisplacement[i] = recvDisplacement[i-1] + recvSizeBytes [i-1];
+      recvCount          += incomingDataSizes[i];
+
+      this->globalGrpTreeCount[i]   = incomingDataSizes[i];
+      this->globalGrpTreeOffsets[i] = this->globalGrpTreeOffsets[i-1] + this->globalGrpTreeCount[i-1];
+    }
+
+    //Debug print
+//    sprintf(buff, "%d C:\t", procId);
+//    {
+//      for(int i=0; i < nProcs; i++)
+//      {
+//        sprintf(buff, "%s[%d,%d]\t",buff, recvSizeBytes[i],recvDisplacement[i]);
+//      }
+//      LOGF(stderr, "%s\n", buff);
+//    }
+
+    //Allocate memory
+    if(globalGrpTreeCntSize) delete[] globalGrpTreeCntSize;
+    globalGrpTreeCntSize = new real4[recvCount];
+
+    double t30 = get_time();
+
+    //Compute how much we will receive and the offsets and displacements
+
+    MPI_Alltoallv(&localGrpTreeCntSize[0], sendReq, sendDisplacement, MPI_BYTE,
+                  &globalGrpTreeCntSize[0], recvSizeBytes, recvDisplacement, MPI_BYTE,
+                  MPI_COMM_WORLD);
+    double t40 = get_time();
+
+    LOGF(stderr, "Gathering Grp-Tree timings, request: %lg size: %lg MemOffset: %lg data: %lg Total: %lg NGroups: %d\n",
+                t10-t00, t20-t10, t30-t20, t40-t30, t40-t00, recvCount);
+
+//    exit(0);
+#elif 1
+    //Send the full groups to all processes
+      int *treeGrpCountBytes   = new int[nProcs];
+      int *receiveOffsetsBytes = new int[nProcs];
+
+      double t0 = get_time();
+      //Send the number of group-tree-nodes that belongs to this process, and gather
+      //that information from the other processors
+      int temp = 2*grpTree_n_nodes; //Times two since we send size and center in one array
+      if(grpTree_n_nodes == 0) temp = 1;
+      MPI_Allgather(&temp,                    sizeof(int),  MPI_BYTE,
+                    this->globalGrpTreeCount, sizeof(uint), MPI_BYTE, MPI_COMM_WORLD);
+
+      double tSize = get_time()-t0;
+
+
+      //Compute offsets using prefix sum and total number of groups we will receive
+      this->globalGrpTreeOffsets[0]   = 0;
+      treeGrpCountBytes[0]            = this->globalGrpTreeCount[0]*sizeof(real4);
+      receiveOffsetsBytes[0]          = 0;
+      for(int i=1; i < nProcs; i++)
+      {
+        this->globalGrpTreeOffsets[i]  = this->globalGrpTreeOffsets[i-1] + this->globalGrpTreeCount[i-1];
+
+        treeGrpCountBytes[i]   = this->globalGrpTreeCount[i]  *sizeof(real4);
+        receiveOffsetsBytes[i] = this->globalGrpTreeOffsets[i]*sizeof(real4);
+
+  //      LOGF(stderr,"Proc: %d Received on idx: %d\t%d prefix: %d \n", procId, i, globalGrpTreeCount[i], globalGrpTreeOffsets[i]);
+      }
+
+      int totalNumberOfGroups = this->globalGrpTreeOffsets[nProcs-1]+this->globalGrpTreeCount[nProcs-1];
+
+      //Allocate memory
+      if(globalGrpTreeCntSize) delete[] globalGrpTreeCntSize;
+      globalGrpTreeCntSize = new real4[totalNumberOfGroups];
+
+      double t2 = get_time();
+      //Exchange the coarse group boundaries
+      MPI_Allgatherv(&localGrpTreeCntSize[2],  temp*sizeof(real4), MPI_BYTE,
+                     globalGrpTreeCntSize, treeGrpCountBytes,
+                     receiveOffsetsBytes,  MPI_BYTE, MPI_COMM_WORLD);
+
+      LOGF(stderr, "Gathering Grp-Tree timings, size: %lg data: %lg Total: %lg NGroups: %d\n",
+                  tSize, get_time()-t2, get_time()-t0, totalNumberOfGroups);
+
+      delete[] treeGrpCountBytes;
+      delete[] receiveOffsetsBytes;
+
+
+#else
+    //Send the full groups to all processes
     int *treeGrpCountBytes   = new int[nProcs];
     int *receiveOffsetsBytes = new int[nProcs];
 
@@ -1272,6 +1499,10 @@ void octree::sendCurrentInfoGrpTree()
 
     delete[] treeGrpCountBytes;
     delete[] receiveOffsetsBytes;
+#endif
+
+
+
   #else
     //TODO check if we need something here
     //  curSysState[0] = curProcState;
@@ -1460,6 +1691,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
         double t1 = get_time();
 
+        int doFullGrp = fullGrpAndLETRequest[ibox];
+
         //Group info for this process
         int idx          =   globalGrpTreeOffsets[ibox];
         real4 *grpCenter =  &globalGrpTreeCntSize[idx];
@@ -1474,6 +1707,14 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         itof.f       = grpCenter[0].y;
         int endGrp   = itof.i;
 
+
+        if(!doFullGrp)
+        {
+          //This is a topNode only
+          startGrp = 0;
+          endGrp   = 1;
+        }
+
         int countNodes = 0, countParticles = 0;
 
         double tz = get_time();
@@ -1487,6 +1728,9 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
              curLevelStack, nextLevelStack);
         }
         double tCount = get_time()-tz;
+
+        //Record the number of particles required
+        this->fullGrpAndLETRequestStatistics[ibox] = make_uint2(countParticles, ibox);
 
         //Buffer that will contain all the data:
         //|real4| 2*particleCount*real4| nodes*real4 | nodes*real4 | nodes*3*real4 |
@@ -1874,9 +2118,10 @@ void octree::mergeAndLaunchLETStructures(
   }
 
   //Build the tree
-  //Assume we do not need more than 4 times number of top nodes. TODO verify this is true
-  uint2 *nodes    = new uint2[4*topNodeOnTheFlyCount];
-  uint4 *nodeKeys = new uint4[4*topNodeOnTheFlyCount];
+  //Assume we do not need more than 4 times number of top nodes.
+  //but use a minimum of 2048 to be save
+  uint2 *nodes    = new uint2[max(4*topNodeOnTheFlyCount, 2048)];
+  uint4 *nodeKeys = new uint4[max(4*topNodeOnTheFlyCount, 2048)];
 
   //Build the tree
   uint node_levels[MAXLEVELS];
@@ -2545,7 +2790,34 @@ void octree::ICRecv(int recvFrom, vector<real4> &bodyPositions, vector<real4> &b
 #endif
 }
 
+void octree::determine_sample_freq(int numberOfParticles)
+{
+    //Sum the number of particles on all processes
+#ifdef USE_MPI
+    int tmp;
+    MPI_Allreduce(&numberOfParticles,&tmp,1, MPI_INT, MPI_SUM,MPI_COMM_WORLD);
 
+    nTotalFreq = tmp;
+#else
+    nTotalFreq = numberOfParticles;
+#endif
+
+
+    #ifdef PRINT_MPI_DEBUG
+    if(procId == 0)
+      LOG("Total number of particles: %d\n", nTotalFreq);
+    #endif
+
+    int maxsample = (int)(NMAXSAMPLE*0.8); // 0.8 is safety factor
+    sampleFreq = (nTotalFreq+maxsample-1)/maxsample;
+
+    if(procId == 0)  LOGF(stderr,"Sample Frequency: %d \n", sampleFreq);
+
+    prevSampFreq = sampleFreq;
+
+}
+
+#if 0
 /*************************************************************************
 *                                                                        *
 *                          NON-Used  / Old functions                     *
@@ -2660,32 +2932,7 @@ void octree::createORB()
 }
 
 
-void octree::determine_sample_freq(int numberOfParticles)
-{
-    //Sum the number of particles on all processes
-#ifdef USE_MPI
-    int tmp;
-    MPI_Allreduce(&numberOfParticles,&tmp,1, MPI_INT, MPI_SUM,MPI_COMM_WORLD);
 
-    nTotalFreq = tmp;
-#else
-    nTotalFreq = numberOfParticles;
-#endif
-
-
-    #ifdef PRINT_MPI_DEBUG
-    if(procId == 0)
-      LOG("Total number of particles: %d\n", nTotalFreq);
-    #endif
-
-    int maxsample = (int)(NMAXSAMPLE*0.8); // 0.8 is safety factor
-    sampleFreq = (nTotalFreq+maxsample-1)/maxsample;
-
-    if(procId == 0)  LOGF(stderr,"Sample Frequency: %d \n", sampleFreq);
-
-    prevSampFreq = sampleFreq;
-
-}
 
 
 
@@ -9293,6 +9540,8 @@ void merge_sort3(uint4 *result, uint4 *data, int *sizes, int *starts, int nLists
   }//end while
 
 }
+#endif
+
 #endif
 
 

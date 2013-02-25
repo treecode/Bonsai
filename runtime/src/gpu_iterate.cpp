@@ -282,13 +282,25 @@ bool octree::iterate_once(IterationData &idata) {
 
     if(nProcs > 1)
     {
+      double domUp =0, domEx = 0;
       double tZ = get_time();
       devContext.startTiming(execStream->s());
-      parallelDataSummary(localTree, lastTotal, lastLocal);
+      parallelDataSummary(localTree, lastTotal, lastLocal, domUp, domEx);
       devContext.stopTiming("UpdateDomain", 6, execStream->s());
       idata.lastDomTime   = get_time()-tZ;
       idata.totalDomTime += idata.lastDomTime;
+
+      idata.totalDomUp += domUp;
+      idata.totalDomEx += domEx;
+
+      devContext.startTiming(execStream->s());
+      mpiSync();
+      devContext.stopTiming("DomainUnbalance", 12, execStream->s());
+
+
+
       needDomainUpdate    = false; //We did a boundary sync in the parallel decomposition part
+      needDomainUpdate    = true; //TODO if I set it to false results degrade. Check why, for now just updte
     }
 
 
@@ -600,9 +612,9 @@ void octree::iterate_setup(IterationData &idata) {
   //predict localtree
   predict(this->localTree);
 
-
+  double notUsed = 0;
   if(nProcs > 1)
-    parallelDataSummary(localTree, 1, 1); //1 for all process, equal part distribution
+    parallelDataSummary(localTree, 1, 1, notUsed, notUsed); //1 for all process, equal part distribution
 
   //Start construction of the tree
   sort_bodies(localTree, true);
@@ -717,11 +729,12 @@ void octree::iterate_setup(IterationData &idata) {
 
 void octree::iterate_teardown(IterationData &idata) {
   double totalTime = get_time() - idata.startTime;
-  LOGF(stderr,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\n",
+  LOGF(stderr,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\n",
                   procId, totalTime, idata.totalGravTime,
                   (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
                   idata.totalLETCommTime,
-                  idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime);     
+                  idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
+                  idata.totalDomUp, idata.totalDomEx);
   
   if(execStream != NULL)
   {
