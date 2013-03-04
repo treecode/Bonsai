@@ -6,6 +6,9 @@
  */
 
 
+  #ifdef USE_MPI
+    #include <mpi.h>
+#endif
 #include <stdarg.h>
 #include <log.h>
 #include <stdio.h>
