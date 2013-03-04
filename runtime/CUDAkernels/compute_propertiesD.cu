@@ -343,9 +343,15 @@ KERNEL_DECLARE(compute_scaling)(const int node_count,
   boxSizeInfo[idx].z = boxSize.z;
   boxSizeInfo[idx].w = __int_as_float(n_children[idx]);
 
+#if 1
   boxCenterInfo[idx].x = boxCenter.x;
   boxCenterInfo[idx].y = boxCenter.y;
   boxCenterInfo[idx].z = boxCenter.z;
+#else /* added by egaburov, see dev_approximate_gravity_warp.cu for matching code*/
+  boxCenterInfo[idx].x = mon.x;
+  boxCenterInfo[idx].y = mon.y;
+  boxCenterInfo[idx].z = mon.z;
+#endif
 
   //Extra check, shouldnt be necessary, probably it is otherwise the test for leaf can fail
   //So it IS important Otherwise 0.0 < 0 can fail, now it will be: -1e-12 < 0 
