@@ -114,9 +114,9 @@ set (CUFILES
 if (COMPILE_SM30)
   set (CUFILES 
     ${CUFILES}
-    CUDAkernels/dev_approximate_gravity_warp.cu  
+    CUDAkernels/dev_approximate_gravity_warp_new.cu  
     )
-  set(GENCODE -gencode arch=compute_30,code=sm_30 -gencode arch=compute_30,code=compute_30)
+  set(GENCODE -gencode arch=compute_35,code=sm_35 -gencode arch=compute_35,code=compute_35 -Xptxas=-v -ftz=true)
 
 else (COMPILE_SM30)
   set (CUFILES

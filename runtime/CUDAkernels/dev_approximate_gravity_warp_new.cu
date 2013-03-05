@@ -899,6 +899,7 @@ uint2 approximate_gravity1(
 {
   const int laneIdx = threadIdx.x & (WARP_SIZE-1);
 
+  /* this helps to unload register pressure */
   float4 pos_i[NI];
 #pragma unroll 1
   for (int i = 0; i < NI; i++)
