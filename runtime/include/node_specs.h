@@ -55,7 +55,7 @@ inline int getTreeWalkBlocksPerSM(int devMajor, int devMinor)
     case 2:     //Fermi
       return 16;     
     case 3:     //Kepler
-      return 13*8;
+      return 32;
     default:    //Future proof...
       return 32;
   }  
