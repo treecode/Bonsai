@@ -959,9 +959,10 @@ uint2 approximate_gravity1(
     /**********************************************/
 
     const bool isNode = cellPos.w > 0.0f;
-    bool splitNode  = isNode && splitCell && useCell;
 
     {
+      bool splitNode  = isNode && splitCell && useCell;
+
       /* use exclusive scan to compute scatter addresses for each of the child cells */
       const int2 childScatter = warpIntExclusiveScan(nChildren & (-splitNode));
 
@@ -969,6 +970,7 @@ uint2 approximate_gravity1(
       if (childScatter.y + nCells - cellListBlock > (CELL_LIST_MEM_PER_WARP<<SHIFT))
         return make_uint2(0xFFFFFFFF,0xFFFFFFFF);
 
+#if 1
       /* if so populate next level stack in gmem */
       if (splitNode)
       {
@@ -976,6 +978,26 @@ uint2 approximate_gravity1(
         for (int i = 0; i < nChildren; i++)
           cellList[ringAddr<SHIFT>(scatterIdx + i)] = firstChild + i;
       }
+#else  /* use scan operation to accomplish steps above, doesn't bring performance benefit */
+      int nChildren  = childScatter.y;
+      int nProcessed = 0;
+      int2 scanVal   = {0};
+      const int offset = cellListOffset + nCells + nextLevelCellCounter;
+      while (nChildren > 0)
+      {
+        tmpList[laneIdx] = 1;
+        if (splitNode && (childScatter.x - nProcessed < WARP_SIZE))
+        {
+          splitNode = false;
+          tmpList[childScatter.x - nProcessed] = -1-firstChild;
+        }
+        scanVal = inclusive_segscan_warp(tmpList[laneIdx], scanVal.y);
+        if (laneIdx < nChildren)
+          cellList[ringAddr<SHIFT>(offset + nProcessed + laneIdx)] = scanVal.x;
+        nChildren  -= WARP_SIZE;
+        nProcessed += WARP_SIZE;
+      }
+#endif
       nextLevelCellCounter += childScatter.y;  /* increment nextLevelCounter by total # of children */
     }
 
@@ -1029,7 +1051,7 @@ uint2 approximate_gravity1(
       const int2 childScatter = warpIntExclusiveScan(nBody & (-isDirect));
       int nParticle  = childScatter.y;
       int nProcessed = 0;
-      int carryIdx   = 0;
+      int2 scanVal   = {0};
 
       /* conduct segmented scan for all leaves that need to be expanded */
       while (nParticle > 0)
@@ -1040,9 +1062,8 @@ uint2 approximate_gravity1(
           isDirect = false;
           tmpList[childScatter.x - nProcessed] = -1-firstBody;
         }
-        const int2 scanVal = inclusive_segscan_warp(tmpList[laneIdx], carryIdx); 
+        scanVal = inclusive_segscan_warp(tmpList[laneIdx], scanVal.y);
         const int  ptclIdx = scanVal.x;
-        carryIdx = scanVal.y;
 
         if (nParticle >= WARP_SIZE)
         {
