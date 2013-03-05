@@ -1322,7 +1322,7 @@ __launch_bounds__(NTHREAD)
 }
 #else
   extern "C"
-__launch_bounds__(NTHREAD,8)
+__launch_bounds__(128,8)
   __global__ void
   dev_approximate_gravity(
       const int n_active_groups,
