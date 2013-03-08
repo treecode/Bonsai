@@ -665,6 +665,7 @@ public:
 
 
   int grpTree_n_nodes;
+  int grpTree_n_topNodes;
 
 
 
@@ -781,7 +782,10 @@ public:
 
   void essential_tree_exchangeV2(tree_structure &tree,
                                  tree_structure &remote,
-                                 nInfoStruct *nodeInfo);
+                                 nInfoStruct *nodeInfo,
+                                 vector<real4> &topLevelTrees,
+                                 vector<uint2> &topLevelTreesSizeOffset,
+                                 int     nTopLevelTrees);
   void mergeAndLaunchLETStructures(
       tree_structure &tree, tree_structure &remote,
       real4 **treeBuffers,  int topNodeOnTheFlyCount,
@@ -800,6 +804,20 @@ public:
       int nParticles, int nNodes,
       int start, int end,
       uint *curLevelStack, uint* nextLevelStack);
+
+  int stackBasedTopLEvelsCheck(tree_structure &tree, real4 *topLevelTree, int proc, int topLevels,
+                                uint2 *curLevelStack,
+                                uint2 *nextLevelStack,
+                                int &DistanceCheck);
+  int recursiveBasedTopLEvelsCheckStart(tree_structure &tree,
+                                        real4 *treeBuffer,
+                                        real4 *grpCenter,
+                                        real4 *grpSize,
+                                        int startGrp,
+                                        int endGrp,
+                                        int &DistanceCheck);
+  int recursiveTopLevelCheck(uint4 checkNode, real4* treeBoxSizes, real4* treeBoxCenters, real4* treeBoxMoments,
+                          real4* grpCenter, real4* grpSize, int &DistanceCheck, int &DistanceCheckPP, int maxLevel);
 
   //End functions for parallel code
   

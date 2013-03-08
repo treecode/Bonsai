@@ -39,7 +39,7 @@ void octree::allocateParticleMemory(tree_structure &tree)
   
 
   //The generalBuffer is also used during the tree-walk, so the size has to be at least
-  //large enough to store the tree-walk stack. Add 4096 for extra memory allignment space
+  //large enough to store the tree-walk stack. Add 4096 for extra memory alignment space
   //Times 2 since first half is used for regular walks, 2nd half for walks that go outside 
   //the memory stack and require another walk with 'unlimited' stack size
 #if 0

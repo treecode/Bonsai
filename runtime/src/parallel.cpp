@@ -1272,7 +1272,6 @@ void octree::sendCurrentInfoGrpTree()
     int *recvDisplacement  = &infoGrpTreeBuffer[5*nProcs];
     int *recvSizeBytes     = &infoGrpTreeBuffer[6*nProcs];
 
-
     if(nProcs > NUMBER_OF_FULL_EXCHANGE)
     {
       //Sort the data and take the top NUMBER_OF_FULL_EXCHANGE to be used
@@ -1325,7 +1324,7 @@ void octree::sendCurrentInfoGrpTree()
       if(recvReq[i] == 1)
       {
         sendReq[i]          = 2*grpTree_n_nodes; //Times two since we send size and center in one array
-        sendDisplacement[i] = sizeof(real4)*2;  //Jump 2 ahead, first 2 is top-node only
+        sendDisplacement[i] = 2*sizeof(real4)*grpTree_n_topNodes;  //Jump 2 ahead, first 2 is top-node only
         outGoingFullRequests++;                 //Count how many full-trees we send. That is how many
                                                 //direct receives we expect in LET phase
       }
@@ -1333,7 +1332,7 @@ void octree::sendCurrentInfoGrpTree()
       {
         if(procId != i)
         {
-          sendReq[i]          = 2;   //2 times a float4
+          sendReq[i]          = 2*grpTree_n_topNodes;   //2 times a float4
           sendDisplacement[i] = 0;
         }
         else
@@ -1593,16 +1592,147 @@ typedef struct letObject
   real4       *buffer;
   int          size;
   int          destination;
+#ifdef USE_MPI
   MPI_Request  req;
+#endif
 } letObject;
+
+
+
+int octree::recursiveTopLevelCheck(uint4 checkNode, real4* treeBoxSizes, real4* treeBoxCenters, real4* treeBoxMoments,
+                          real4* grpCenter, real4* grpSize, int &DistanceCheck, int &DistanceCheckPP, int maxLevel)
+{
+     int nodeID = checkNode.x;
+     int grpID  = checkNode.y;
+     int endGrp = checkNode.z;
+
+     real4 nodeCOM  = treeBoxMoments[nodeID*3];
+     real4 nodeSize = treeBoxSizes  [nodeID];
+     real4 nodeCntr = treeBoxCenters[nodeID];
+
+//     LOGF(stderr,"Checking node: %d grpID: %d endGrp: %d depth: %d \n",nodeID, grpID, endGrp, maxLevel);
+
+     int res = maxLevel;
+
+     nodeCOM.w = nodeCntr.w;
+     for(int grp=grpID; grp < endGrp; grp++)
+     {
+       real4 grpcntr = grpCenter[grp];
+       real4 grpsize = grpSize[grp];
+
+       bool split = false;
+       {
+         DistanceCheck++;
+         DistanceCheckPP++;
+         //Compute the distance between the group and the cell
+         float3 dr = make_float3(fabs((float)grpcntr.x - nodeCOM.x) - (float)grpsize.x,
+                                 fabs((float)grpcntr.y - nodeCOM.y) - (float)grpsize.y,
+                                 fabs((float)grpcntr.z - nodeCOM.z) - (float)grpsize.z);
+
+         dr.x += fabs(dr.x); dr.x *= 0.5f;
+         dr.y += fabs(dr.y); dr.y *= 0.5f;
+         dr.z += fabs(dr.z); dr.z *= 0.5f;
+
+         //Distance squared, no need to do sqrt since opening criteria has been squared
+         float ds2    = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
+
+         if (ds2     <= fabs(nodeCOM.w))           split = true;
+         if (fabs(ds2 - fabs(nodeCOM.w)) < 10e-04) split = true; //Limited precision can result in round of errors. Use this as extra safe guard
+
+//         LOGF(stderr,"Node: %d grp: %d  split: %d || %f %f\n", nodeID, grp, split, ds2, nodeCOM.w);
+       }
+//       LOGF(stderr,"Node: %d grp: %d  split: %d Leaf: %d \t %d %f \n",nodeID, grp, split, nodeCntr.w <= 0,(host_float_as_int(nodeSize.w) == 0xFFFFFFFF), nodeCntr.w);
+
+       if(split)
+       {
+         if(host_float_as_int(nodeSize.w) == 0xFFFFFFFF)
+         {
+           //We want to split, but then we go to deep. So we need a full tree-walk
+           return -1;
+         }
+
+         int child, nchild;
+         int childinfo = host_float_as_int(nodeSize.w);
+         bool leaf = nodeCntr.w <= 0;
+
+         if(!leaf)
+         {
+           //Node
+           child    =    childinfo & 0x0FFFFFFF;           //Index to the first child of the node
+           nchild   = (((childinfo & 0xF0000000) >> 28)) ; //The number of children this node has
+
+           //Process node children
+           for(int y=child; y < child+nchild; y++)
+           {
+//             mpirun -np 8 ./bonsai2_slowdust -i ~/plum1MU.tipsy -T 10 -r 1 -o 8.4 --prepend-rank --log 2>&1 | tee log.txt
+//
+//             Hier gebleven.
+//             Hoe kan het dat groups die eerst faalden. Later wel werken op child
+//             nodes. Dat zou niet mogelijk moeten zijn
+
+
+             //uint4 nextCheck = make_uint4(y, grp, endGrp, 0);
+             uint4 nextCheck = make_uint4(y, grpID, endGrp, 0);
+             int res2 = recursiveTopLevelCheck(nextCheck, treeBoxSizes, treeBoxCenters, treeBoxMoments,
+                                     grpCenter, grpSize, DistanceCheck, DistanceCheckPP, maxLevel+1);
+             if(res2 < 0) return -1;
+
+             res = max(res,res2);
+           }
+         }//!leaf
+         else
+         {
+           //It is a leaf, no need to check any other groups
+           return res;
+         }
+         //No need to check further groups since this one already succeeded
+         grp = endGrp;
+       }//Split
+     }
+     return res;
+}
+
+int octree::recursiveBasedTopLEvelsCheckStart(tree_structure &tree,
+                                     real4 *treeBuffer,
+                                     real4 *grpCenter,
+                                     real4 *grpSize,
+                                     int startGrp,
+                                     int endGrp,
+                                     int &DistanceCheck)
+{
+   //Tree info
+  const int nParticles = host_float_as_int(treeBuffer[0].x);
+  const int nNodes     = host_float_as_int(treeBuffer[0].y);
+
+//  LOGF(stderr,"Working with %d and %d || %d %d\n", nParticles, nNodes, 1+nParticles+nNodes,nTopLevelTrees );
+
+  real4* treeBoxSizes   = &treeBuffer[1+nParticles];
+  real4* treeBoxCenters = &treeBuffer[1+nParticles+nNodes];
+  real4* treeBoxMoments = &treeBuffer[1+nParticles+2*nNodes];
+
+  const int nodeID = 0;
+  uint4 checkNode = make_uint4(nodeID, startGrp, endGrp, 0);
+
+  int DistanceCheckPP = 0;
+  int maxLevel = recursiveTopLevelCheck(checkNode, treeBoxSizes, treeBoxCenters, treeBoxMoments,
+                                         grpCenter, grpSize, DistanceCheck, DistanceCheckPP, 0);
+
+
+//  LOGF(stderr, "Finally Max level found: %d Process : %d \n", maxLevel, ibox)
+  return maxLevel;
+}
+
+
 
 void octree::essential_tree_exchangeV2(tree_structure &tree,
                                        tree_structure &remote,
-                                       nInfoStruct *nodeInfo)
+                                       nInfoStruct *nodeInfo,
+                                       vector<real4> &topLevelTrees,
+                                       vector<uint2> &topLevelTreesSizeOffset,
+                                       int     nTopLevelTrees)
 {
   double t0         = get_time();
 
-  int isource       = 0;
   bool mergeOwntree = false;              //Default do not include our own tree-structure, thats mainly used for testing
   int level_start   = tree.startLevelMin; //Depth of where to start the tree-walk
   int procTrees     = 0;                  //Number of trees that we've received and processed
@@ -1626,9 +1756,26 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
   int topNodeOnTheFlyCount = 0;
 
+  this->fullGrpAndLETRequestStatistics[0] = make_uint2(0, 0); //Reset our box
+
   uint2 node_begend;
   node_begend.x   = tree.level_list[level_start].x;
   node_begend.y   = tree.level_list[level_start].y;
+
+  int resultOfQuickCheck[nProcs];
+
+  int quickCheckSendSizes [nProcs];
+  int quickCheckSendOffset[nProcs];
+
+  int quickCheckRecvSizes [nProcs];
+  int quickCheckRecvOffset[nProcs];
+
+
+  int nCompletedQuickCheck = 0;
+
+  resultOfQuickCheck[procId]    = 99; //Mark ourself
+  quickCheckSendSizes[procId]   =  0;
+  quickCheckSendOffset[procId]  =  0;
 
 
   omp_set_num_threads(4);
@@ -1640,18 +1787,18 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
   int nReceived       = 0;
   int nSendOut        = 0;
 
+
   //Use multiple OpenMP threads in parallel to build and exchange LETs
   #pragma omp parallel
   {
     int tid      = omp_get_thread_num();
     int nthreads = omp_get_num_threads();
 
-    if(tid != 1) //Tid 0, does LET creation and GPU control, tid == 1 does MPI communication, all others do LET creation
+    if(tid != 1) //Thread 0, does LET creation and GPU control, Thread == 1 does MPI communication, all others do LET creation
     {
       nInfoStruct  *nodeInfo_private;
       uint2        *curLevelStack;
       uint2        *nextLevelStack;
-
 
       const int LETCreateStackSize = 2*512*1024; //TODO make this dynamic in some sense
 
@@ -1664,6 +1811,10 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       //Each thread requires it's own copy since we modify some values during checking
       memcpy(&nodeInfo_private[0], &nodeInfo[0], sizeof(nInfoStruct)*localTree.n_nodes);
 
+
+      int DistanceCheck = 0;
+      double tGrpTest = get_time();
+
       while(true) //Continue until everything is computed
       {
         int currentTicket = 0;
@@ -1671,21 +1822,28 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         #pragma omp critical
           currentTicket = omp_ticket++; //Get a unique ticket to determine which process to build the LET for
 
-        if(currentTicket >= (nProcs - 1)) //Break out if everything is processed
-          break;
-          
-        int ib       = (nProcs-1)-currentTicket;
+        if(currentTicket == (nProcs-1)) //Skip ourself
+        {
+         // LOGF(stderr,"Quick test was done, thread: %d checks: %d Since start: %lg\n", tid, DistanceCheck, get_time()-tGrpTest);
 
-        int ibox = (ib+procId)%nProcs; //index to send...
-        if (ib == nProcs-1)
-        {
-            isource= (procId+1)%nProcs;
+          char buff[5120];
+          sprintf(buff, "GrpTesting tookB: %lg Checks: %d Res: ", get_time()-tGrpTest, DistanceCheck);
+          for(int i=0; i < nProcs; i++)
+          {
+            sprintf(buff, "%s%d\t",buff, resultOfQuickCheck[i]);
+          }
+          LOGF(stderr, "%s\n", buff);
+
+          continue;
         }
-        else
-        {
-            isource                        = (isource+1)%nProcs;
-            if (isource == procId) isource = (isource+1)%nProcs;
-        }
+
+        if(currentTicket >= (2*(nProcs) -1)) //Break out if everything is processed
+            break;
+
+        bool doQuickLETCheck = (currentTicket < nProcs - 1);
+        int ib               = (nProcs-1)-(currentTicket%nProcs);
+        int ibox             = (ib+procId)%nProcs; //index to send...
+
         //Above could be replaced by a priority list, based on previous
         //loops (eg nearest neighbours first)
 
@@ -1707,13 +1865,62 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         itof.f       = grpCenter[0].y;
         int endGrp   = itof.i;
 
-
         if(!doFullGrp)
         {
           //This is a topNode only
           startGrp = 0;
-          endGrp   = 1;
+          endGrp   = this->globalGrpTreeCount[ibox] / 2;
         }
+
+
+        if(doQuickLETCheck)
+        {
+          if(doFullGrp)
+          {
+            //can skip this one beforehand, otherwise we would not have received the full-grp info
+            resultOfQuickCheck[ibox]  = -1;
+            quickCheckSendSizes[ibox] = 0;
+          }
+          else
+          {
+            //Determine if we do the quick-check, or the full check
+            int maxLevel = recursiveBasedTopLEvelsCheckStart(tree,
+                                            &topLevelTrees[topLevelTreesSizeOffset[nTopLevelTrees].y],
+                                            grpCenter, grpSize, startGrp, endGrp, DistanceCheck);
+            resultOfQuickCheck[ibox] = maxLevel;
+
+            if(maxLevel >= 0)
+            {
+              quickCheckSendSizes[ibox]  = topLevelTreesSizeOffset[maxLevel].x; //Size
+              quickCheckSendOffset[ibox] = topLevelTreesSizeOffset[maxLevel].y; //Offset
+            }
+            else
+            {
+              quickCheckSendSizes[ibox]   = 0;
+              quickCheckSendOffset[ibox]  = 0;
+            }
+
+            //Also set the size and offset for the alltoall call. It will be two calls
+            //first with integer size -> alltoall
+            //second with integer size and offsets and displacements -> alltoallV
+          }
+
+          #pragma omp critical
+            nCompletedQuickCheck++;
+
+          continue;
+        }
+
+        //If we arrive here, we did the quick tests, so now go checking if we need to do the full test
+        if(resultOfQuickCheck[ibox] >= 0)
+        {
+          //We can skip this process, its been taken care of during the quick check
+          //continue;
+        }
+
+        //Modified the code up to here, now going to check if it still works
+
+
 
         int countNodes = 0, countParticles = 0;
 
@@ -1738,8 +1945,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
         //Increase the number of particles and the number of nodes by the texture-offset
         //such that these are correctly aligned in memory
-        countParticles += getTextureAllignmentOffset(countParticles, sizeof(real4));
-        countNodes     += getTextureAllignmentOffset(countNodes    , sizeof(real4));
+        //countParticles += getTextureAllignmentOffset(countParticles, sizeof(real4));
+        //countNodes     += getTextureAllignmentOffset(countNodes    , sizeof(real4));
 
         //0-1 )                               Info about #particles, #nodes, start and end of tree-walk
         //1- Npart)                           The particle positions
@@ -1860,6 +2067,51 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
     }
     else if(tid == 1)
     {
+
+      //All to all part
+
+      while(1)
+      {
+        if(nCompletedQuickCheck == nProcs-1)
+          break;
+        usleep(10);
+      }
+
+      //Send the sizes
+#if 0
+      fprintf(stderr, "[%d] Going to do the alltoall size communication! Since begin: %lg \n",
+          procId, get_time()-tStart);
+      double t100 = get_time();
+      MPI_Alltoall(quickCheckSendSizes, 1, MPI_INT, quickCheckRecvSizes, 1, MPI_INT, MPI_COMM_WORLD);
+      fprintf(stderr, "[%d] Completed_alltoall size communication! Took: %lg \n",
+          procId, get_time()-t100);
+
+      //Compute offsets, allocate memory
+      int recvCountItems      = quickCheckRecvSizes[0] / sizeof(real4);
+      quickCheckRecvOffset[0] = 0;
+      for(int i=1; i < nProcs; i++)
+      {
+        quickCheckRecvOffset[i] = quickCheckRecvSizes[i-1] +  quickCheckRecvOffset[i-1];
+        recvCountItems          = quickCheckRecvSizes[i] / sizeof(real4);
+      }
+      //int totalSize = quickCheckRecvOffset[nProcs-1] + quickCheckRecvSizes[nProcs-1];
+
+//      quickCheckSendOffset , quickCheckSendSizes
+      real4 *recvAllToAllBuffer =  new real4[recvCountItems];
+
+      double t110 = get_time();
+
+      MPI_Alltoallv(&topLevelTrees[0],       quickCheckSendSizes, quickCheckSendOffset, MPI_BYTE,
+                    &recvAllToAllBuffer[0],  quickCheckRecvSizes, quickCheckRecvOffset, MPI_BYTE,
+                    MPI_COMM_WORLD);
+      fprintf(stderr, "[%d] Completed_alltoall data communication! Took: %lg\tSize: %ld MB \n",
+          procId, get_time()-t110, (recvCountItems*sizeof(real4))/(1024*1024));
+
+
+      delete[] recvAllToAllBuffer;
+#endif
+
+
       while(1)
       {
         //Sending part
@@ -2214,6 +2466,9 @@ void octree::mergeAndLaunchLETStructures(
   //this is already done on the sending process, but since we modify the structure
   //it has to be done again
   int nodeTextOffset = getTextureAllignmentOffset(totalNodes+totalTopNodes+topTree_n_nodes, sizeof(real4));
+  int partTextOffset = getTextureAllignmentOffset(totalNodes+totalTopNodes+topTree_n_nodes, sizeof(real4));
+
+  totalParticles    += partTextOffset;
 
   //Compute the total size of the buffer
   int bufferSize     = 1*(totalParticles) + 5*(totalNodes+totalTopNodes+topTree_n_nodes + nodeTextOffset);
@@ -2623,20 +2878,12 @@ void octree::stackFill(real4 *LETBuffer, real4 *nodeCenter, real4* nodeSize,
     memcpy(&LETBuffer[multiStoreIdx], &multipole[3*node], sizeof(float4)*(3));
     multiStoreIdx += 3;
     nStoreIdx++;
-    if(procId < 0)
-    {
-      if(node < 200)
-      LOGF(stderr, "Node-top-skip: %d\tMultipole: %f\n", node, multipole[3*node].x);
-    }
   }
 
   int childNodeOffset     = end;
 
   for(int node=start; node < end; node++){
     curLevelStack[curLeveCount++] = node;
-    if(procId < 0)
-    LOGF(stderr, "Node-top-use: %d\n", node);
-
   }
 
   while(curLeveCount > 0)
@@ -9541,6 +9788,154 @@ void merge_sort3(uint4 *result, uint4 *data, int *sizes, int *starts, int nLists
 
 }
 #endif
+
+
+int octree::stackBasedTopLEvelsCheck(tree_structure &tree,
+                                     real4 *treeBuffer,
+                                     int proc,
+                                     int nTopLevelTrees,
+                                     uint2 *curLevelStack,
+                                     uint2 *nextLevelStack,
+                                     int &DistanceCheck)
+{
+  int DistanceCheckPP = 0;
+
+  int ib       = (nProcs-1)-proc;
+  int ibox = (ib+procId)%nProcs; //index to send...)
+
+//    LOGF(stderr,"Process %d Checking %d \t [%d %d %d ] \n", procId, ibox,i,ib,nProcs);
+
+  int doFullGrp = fullGrpAndLETRequest[ibox];
+
+  //Group info for this process
+  int idx          =   globalGrpTreeOffsets[ibox];
+  real4 *grpCenter =  &globalGrpTreeCntSize[idx];
+  idx             += this->globalGrpTreeCount[ibox] / 2; //Divide by two to get halfway
+  real4 *grpSize   =  &globalGrpTreeCntSize[idx];
+
+  //Retrieve required for the tree-walk from the top node
+  union{int i; float f;} itof; //float as int
+
+  itof.f       = grpCenter[0].x;
+  int startGrp = itof.i;
+  itof.f       = grpCenter[0].y;
+  int endGrp   = itof.i;
+
+  if(!doFullGrp)
+  {
+    //This is a topNode only
+    startGrp = 0;
+    endGrp   = this->globalGrpTreeCount[ibox] / 2;
+  }
+
+  //Tree info
+  const int nParticles = host_float_as_int(treeBuffer[0].x);
+  const int nNodes     = host_float_as_int(treeBuffer[0].y);
+
+//    LOGF(stderr,"Working with %d and %d || %d %d\n", nParticles, nNodes, 1+nParticles+nNodes,nTopLevelTrees );
+
+  real4* treeBoxSizes   = &treeBuffer[1+nParticles];
+  real4* treeBoxCenters = &treeBuffer[1+nParticles+nNodes];
+  real4* treeBoxMoments = &treeBuffer[1+nParticles+2*nNodes];
+
+  int maxLevel = 0;
+
+  //Walk these groups along our tree
+  //Add the topNode to the stack
+  int nexLevelCount = 0;
+  int curLevelCount = 1;
+  curLevelStack[0]  = make_uint2(0, startGrp); //Add top node
+
+  while(curLevelCount > 0)
+  {
+//        LOGF(stderr,"Processing level: %d  with %d %d  and %d Source: %d\n", maxLevel, curLevelCount, startGrp,endGrp, ibox);
+    for(int idx = 0; idx < curLevelCount; idx++)
+    {
+      int nodeID = curLevelStack[idx].x;
+      int grpID  = curLevelStack[idx].y;
+      //Check this node against the groups
+      real4 nodeCOM  = treeBoxMoments[nodeID*3];
+      real4 nodeSize = treeBoxSizes  [nodeID];
+      real4 nodeCntr = treeBoxCenters[nodeID];
+
+      nodeCOM.w = nodeCntr.w;
+      for(int grp=grpID; grp < endGrp; grp++)
+      {
+        real4 grpcntr = grpCenter[grp];
+        real4 grpsize = grpSize[grp];
+
+        bool split = false;
+        {
+          DistanceCheck++;
+          DistanceCheckPP++;
+          //Compute the distance between the group and the cell
+          float3 dr = make_float3(fabs((float)grpcntr.x - nodeCOM.x) - (float)grpsize.x,
+                                  fabs((float)grpcntr.y - nodeCOM.y) - (float)grpsize.y,
+                                  fabs((float)grpcntr.z - nodeCOM.z) - (float)grpsize.z);
+
+          dr.x += fabs(dr.x); dr.x *= 0.5f;
+          dr.y += fabs(dr.y); dr.y *= 0.5f;
+          dr.z += fabs(dr.z); dr.z *= 0.5f;
+
+          //Distance squared, no need to do sqrt since opening criteria has been squared
+          float ds2    = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
+
+          if (ds2     <= fabs(nodeCOM.w))           split = true;
+          if (fabs(ds2 - fabs(nodeCOM.w)) < 10e-04) split = true; //Limited precision can result in round of errors. Use this as extra safe guard
+
+//          LOGF(stderr,"Node: %d grp: %d  split: %d || %f %f\n", curLevelStack[idx], grp, split, ds2, nodeCOM.w);
+        }
+
+
+        if(split)
+        {
+          if(host_float_as_int(nodeSize.w) == 0xFFFFFFFF)
+          {
+            //We want to split, but then we go to deep. So we need a full tree-walk
+            return -1;
+          }
+
+          int child, nchild;
+          int childinfo = host_float_as_int(nodeSize.w);
+          bool leaf = nodeCntr.w <= 0;
+
+          if(!leaf)
+          {
+            //Node
+            child    =    childinfo & 0x0FFFFFFF;           //Index to the first child of the node
+            nchild   = (((childinfo & 0xF0000000) >> 28)) ; //The number of children this node has
+            //Add the child-nodes to the next stack
+            for(int y=child; y < child+nchild; y++)
+              nextLevelStack[nexLevelCount++] = make_uint2(y,grpID);
+          }//!leaf
+          //Skip rest of the groups
+          grp = endGrp;
+        }//if split
+        if(maxLevel < 0) break;
+      }//for groups
+
+      if(maxLevel < 0) break;
+    }//for curLevelCount
+    if(maxLevel < 0) break;
+
+    if(nexLevelCount == 0)
+      return maxLevel;
+
+    //Check if we continue
+    if(nexLevelCount > 0)
+    {
+      curLevelCount   = nexLevelCount; nexLevelCount = 0;
+      uint2 *temp     = nextLevelStack;
+      nextLevelStack  = curLevelStack;
+      curLevelStack   = temp;
+      maxLevel++;
+//          LOGF(stderr, "Max level found: %d \n", maxLevel)
+    }
+  }//while curLevelCount > 0
+
+//  LOGF(stderr, "Finally Max level found: %d Process : %d \n", maxLevel, ibox)
+  return maxLevel;
+}
 
 #endif
 

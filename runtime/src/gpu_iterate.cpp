@@ -20,7 +20,12 @@ float runningLETTimeSum;
 float lastTotal;
 float lastLocal;
 
-
+inline float host_int_as_float(int val)
+{
+  union{int i; float f;} itof; //__int_as_float
+  itof.i           = val;
+  return itof.f;
+}
 
 void octree::makeLET()
 {
@@ -52,13 +57,181 @@ void octree::makeLET()
     nInfo.z     = 0;
     nodeInfo[i] = nInfo;
   }
+
   localTree.multipole.waitForCopyEvent();
 
+//
+//  Hier gebleven
+//  Code schrijven die een extract maakt van de bovenste levels
+//  Kan dat niet op de GPU?
+//  Misschien wel, maar dan gekloot met offsets, sneller om zelfde te doen
+//  [info][particles][nodes start-level][nodes start-level+1]
+//
+//  Buffer nodig? Kunnen aantal nodes halen uit level list
+//  aantal particles niet
+
+  //The next piece of code, makes extracts from our tree-structure. This is done for the "copyTreeUpToLevel"
+  //top levels. These small trees can then be send to other processors, that are far away. This should be
+  //more efficient then making a tree for each of them.
+
+  //I make multiple copies depending on which level the tree has to go to. This to reduce
+  //data size that is being send around.
+
+
+  double t00        = get_time();
+  int startLevel    = this->localTree.startLevelMin;
+  uint2 node_begend;
+
+  const int copyTreeUpToLevel = startLevel+2;
+
+  //Compute worst case memory requirement
+  int buffSize2 = 0;
+  int bufferUpToThisLevel = 0;
+  for(int level=0; level <= copyTreeUpToLevel; level++)
+  {
+
+    node_begend.x      = this->localTree.level_list[level].x;
+    node_begend.y      = this->localTree.level_list[level].y;
+    int nNodes = (node_begend.y-node_begend.x);
+    int nParticles = 0;
+    if(level >= this->localTree.startLevelMin)
+    {
+      nParticles = NLEAF*nNodes;
+    }
+    nParticles            += getTextureAllignmentOffset(nParticles, sizeof(real4));
+    nNodes                += getTextureAllignmentOffset(nNodes    , sizeof(real4));
+    bufferUpToThisLevel   += 5*nNodes+nParticles+1;
+
+    //Total buffer size this level would be all previous levels plus this one
+    buffSize2 += bufferUpToThisLevel;
+  }
+
+  std::vector<real4> particleBuffer; particleBuffer.reserve(2048);
+  std::vector<real4> nodeBuffer;     nodeBuffer.reserve(2048);
+  std::vector<real4> topLevelsBuffer;
+  topLevelsBuffer.reserve(buffSize2);
+  memset(&topLevelsBuffer[0], 0, sizeof(real4)*buffSize2); //makes Valgrind happier
+
+  int nextLevelOffsset = 0;
+
+  std::vector<uint2> treeSizeAndOffset(copyTreeUpToLevel+1);
+
+  for(int i=0; i <=copyTreeUpToLevel; i++)
+  {
+    particleBuffer.clear();
+    nodeBuffer.clear();
+
+    int nParticles = 0;
+    int nNodes     = this->localTree.level_list[i].y;
+    for(int level=0; level <= i; level++)
+    {
+      node_begend.x      = this->localTree.level_list[level].x;
+      node_begend.y      = this->localTree.level_list[level].y;
+
+      //Check for leafs/particles, count them
+      for(int j=node_begend.x; j < node_begend.y; j++)
+      {
+        nodeBuffer.push_back(localTree.boxSizeInfo[j]);
+
+        u.f         = localTree.boxSizeInfo[j].w;
+        int nchild  = (((u.i & INVBMASK) >> LEAFBIT)+1);
+        int child   =   u.i & BODYMASK;
+
+        //Mark it as a non-splitable if this is the deepest level
+        if(level == i)
+        {
+          u.i                               = 0xFFFFFFFF;
+          nodeBuffer[nodeBuffer.size()-1].w = u.f;
+        }
+
+        if(this->localTree.boxCenterInfo[j].w <= 0) //Check if it is a leaf
+        {
+          //Only include the particles if this is not the last level, OR if there is only 1 child if
+          //there is only one child the leaf is _always_ opened for accuracy reasons. See compute_scaling
+          if(level < copyTreeUpToLevel)
+          {
+            u.i         = (nParticles | ((nchild-1) << LEAFBIT));
+            nParticles += nchild;
+            for(int z=child; z<child+nchild; z++)
+            {
+              particleBuffer.push_back(localTree.bodies_Ppos[z]);
+            }
+
+            //Modify the offset to point to the correct particle
+            nodeBuffer[nodeBuffer.size()-1].w = u.f;
+          }
+          else
+          {
+            if(nchild == 1) //nchild == 1 means it will be split, so we have to always include it
+            {
+              u.i         = (nParticles | (nchild-1) << LEAFBIT);
+              nParticles += nchild;
+              particleBuffer.push_back(localTree.bodies_Ppos[child]);
+              nodeBuffer[nodeBuffer.size()-1].w = u.f; //Modify the offset, (also means its splitable)
+            }//if nchild == 1
+          } // if(level < copyTreeUpToLevel)
+        } //if(this->localTree.boxCenterInfo[j].w < 0)
+      }//for node_begend
+    }//for level
+
+    //Make the particles and nodes align on memory boundaries
+    nParticles  += getTextureAllignmentOffset(nParticles, sizeof(real4));
+    nNodes      += getTextureAllignmentOffset(nNodes    , sizeof(real4));
+
+//    LOGF(stderr,"Total particles: %d and nodes %d (%d) \n", nParticles,nNodes, nodeBuffer.size());
+
+    real4 *buffer = &topLevelsBuffer[nextLevelOffsset];
+
+    //Copy particles, centers, sizes and multi-pole information
+    memcpy(&buffer[1+0         +(0*nNodes)], &particleBuffer[0],          sizeof(real4)*particleBuffer.size());
+    memcpy(&buffer[1+nParticles+(0*nNodes)], &nodeBuffer[0],              sizeof(real4)*nodeBuffer.size());
+    memcpy(&buffer[1+nParticles+(1*nNodes)], &localTree.boxCenterInfo[0], sizeof(real4)*nodeBuffer.size());
+    memcpy(&buffer[1+nParticles+(2*nNodes)], &localTree.multipole[0],     sizeof(real4)*nodeBuffer.size()*3);
+    //Store the properties of this tree
+    node_begend.x = this->localTree.level_list[i].x;
+    node_begend.y = this->localTree.level_list[i].y;
+    buffer[0].x   = host_int_as_float(nParticles);    //Number of particles in the LET
+    buffer[0].y   = host_int_as_float(nNodes);        //Number of nodes     in the LET
+    buffer[0].z   = host_int_as_float(node_begend.x); //First node on the level that indicates the start of the tree walk
+    buffer[0].w   = host_int_as_float(node_begend.y); //last node on the level that indicates the start of the tree walk
+
+    treeSizeAndOffset[i] = make_uint2((nParticles+(5*nNodes)+1), nextLevelOffsset);
+    nextLevelOffsset    += (nParticles+(5*nNodes)+1);
+  }
+
+#if 0
+  for(int j=0; j <= this->localTree.startLevelMin; j++ )
+  {
+    string nodeFileName = "fullTreeStructure.txt";
+    char fileName[256];
+    sprintf(fileName, "fullTreeStructure-%d-%d.txt", mpiGetRank(), j);
+    ofstream nodeFile;
+    //nodeFile.open(nodeFileName.c_str());
+    nodeFile.open(fileName);
+
+    nodeFile << "NODES" << endl;
+
+    for(int i=this->localTree.level_list[j].x; i < this->localTree.level_list[j].y; i++)
+    {
+        nodeFile <<  this->localTree.boxCenterInfo[i].x << "\t" << this->localTree.boxCenterInfo[i].y << "\t" << this->localTree.boxCenterInfo[i].z;
+        nodeFile << "\t" << localTree.boxSizeInfo[i].x << "\t" << localTree.boxSizeInfo[i].y << "\t" << localTree.boxSizeInfo[i].z << "\n";
+    }
+    nodeFile.close();
+  }
+#endif
+
+  LOGF(stderr,"Preparing top trees took: %lg \n", get_time() -t00);
+
+
+ //End tree-extract
+
+
   //Start LET kernels
-  essential_tree_exchangeV2(localTree, remoteTree, nodeInfo);
+  essential_tree_exchangeV2(localTree, remoteTree, nodeInfo, topLevelsBuffer, treeSizeAndOffset, copyTreeUpToLevel);
 
   
   delete[] nodeInfo;
+
   letRunning = false;
 }
 
