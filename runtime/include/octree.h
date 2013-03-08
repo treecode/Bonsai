@@ -30,6 +30,9 @@
 #include <algorithm>
 #include <iostream>
 #include <fstream>
+#include <sys/types.h>
+#include <unistd.h>
+
 
 
 #include "log.h"
