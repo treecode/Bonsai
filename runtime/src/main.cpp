@@ -21,6 +21,12 @@ http://github.com/treecode/Bonsai
 #define M_PI        3.14159265358979323846264338328
 #endif
 
+
+#ifdef USE_MPI
+  #include <omp.h>
+  #include <mpi.h>
+#endif
+
 #include <iostream>
 #include <stdlib.h>
 #include <vector>
@@ -30,9 +36,6 @@ http://github.com/treecode/Bonsai
 #include "anyoption.h"
 #include "renderloop.h"
 
-#ifdef USE_MPI
-  #include <omp.h>
-#endif
 
 #if ENABLE_LOG
   bool ENABLE_RUNTIME_LOG;

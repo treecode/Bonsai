@@ -1,6 +1,11 @@
 #ifndef _OCTREE_H_
 #define _OCTREE_H_
 
+#ifdef USE_MPI
+#include "mpi.h"
+#endif
+
+
 #ifdef WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -26,9 +31,6 @@
 #include <iostream>
 #include <fstream>
 
-#ifdef USE_MPI
-#include "mpi.h"
-#endif
 
 #include "log.h"
 

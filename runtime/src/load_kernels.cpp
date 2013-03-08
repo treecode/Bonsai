@@ -299,6 +299,19 @@ void octree::load_kernels() {
   predictParticles.create("predict_particles", (const void*)&predict_particles);
   getNActive.create("get_nactive", (const void*)&get_nactive);
   approxGrav.create("dev_approximate_gravity", (const void*)&dev_approximate_gravity);
+
+#if 1  /* preferL1 equal egaburov */
+  cudaFuncSetCacheConfig((const void*)&dev_approximate_gravity, cudaFuncCachePreferL1);
+#if 0
+#if 1
+  cudaDeviceSetSharedMemConfig(cudaSharedMemBankSizeFourByte);
+#else
+  cudaDeviceSetSharedMemConfig(cudaSharedMemBankSizeEightByte);
+#endif
+#endif
+#endif
+
+
   directGrav.create("dev_direct_gravity", (const void*)&dev_direct_gravity);
   correctParticles.create("correct_particles", (const void*)&correct_particles);
   computeDt.create("compute_dt", (const void*)&compute_dt);
@@ -308,7 +321,9 @@ void octree::load_kernels() {
   distanceCheck.create("distanceCheck", (const void*)&distanceCheck);
   
   approxGravLET.create("dev_approximate_gravity_let", (const void*)&dev_approximate_gravity_let);
+#if 0  /* egaburov, doesn't compile with this */
   determineLET.create("dev_determineLET", (const void*)&dev_determineLET);
+#endif
 
 #else
   getTNext.load_source("", "");
