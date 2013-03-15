@@ -877,7 +877,32 @@ int main(int argc, char** argv)
   //Get parallel processing information  
   int procId = tree->mpiGetRank();
   int nProcs = tree->mpiGetNProcs();
-  
+
+#ifdef USE_MPI
+#if 0
+ omp_set_num_threads(8);
+  #pragma omp parallel
+  {
+    int tid = omp_get_thread_num();
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    pthread_getaffinity_np(pthread_self()  , sizeof( cpu_set_t ), &cpuset );
+
+
+        int num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+
+    int i, set=-1;
+    for (i = 0; i < CPU_SETSIZE; i++)
+      if (CPU_ISSET(i, &cpuset))
+            set = i;
+    fprintf(stderr,"[Proc: %d ] Thread %d bound to: %d Total cores: %d\n",
+                          procId, tid,  set, num_cores);
+}
+#endif
+
+
+
+
 #if 0
   omp_set_num_threads(4);
   //default
@@ -922,7 +947,7 @@ int main(int argc, char** argv)
 
   }
 #endif
-
+#endif
 
 
 

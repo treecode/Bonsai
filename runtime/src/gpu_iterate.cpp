@@ -444,6 +444,23 @@ bool octree::addGalaxy(int galaxyID)
 bool octree::iterate_once(IterationData &idata) {
     double t1 = 0;
 
+//if(t_current < 1) //Clear startup timings
+if(0)
+{
+	idata.totalGPUGravTimeLocal = 0;
+	idata.totalGPUGravTimeLET = 0;
+	idata.totalLETCommTime = 0;
+	idata.totalBuildTime = 0;
+	idata.totalDomTime = 0;
+	idata.lastWaitTime = 0;
+	idata.startTime = get_time();
+	idata.totalGravTime = 0;
+	idata.totalDomUp = 0;
+	idata.totalDomEx = 0;
+}
+
+
+
     LOG("At the start of iterate:\n");
     
     bool forceTreeRebuild = false;

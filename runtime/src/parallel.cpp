@@ -6,7 +6,6 @@
   #include <omp.h>
 #endif
 
-#include "mpi.h"
 
 //SSE stuff for local tree-walk
 typedef float  _v4sf  __attribute__((vector_size(16)));
@@ -153,7 +152,8 @@ typedef struct hashInfo
 int balanceLoad(int *nParticlesOriginal, int *nParticlesNew, float *load,
                 int nProcs, int leftIdx, int nTotal, float loadAvg)
 {
-  //Sum the total load left and right
+#ifdef USE_MPI
+      	//Sum the total load left and right
   int nProcsLeftSide    = nProcs / 2;
   int nProcsRightSide   = nProcs  - nProcsLeftSide;
   int rightIdx          = leftIdx + nProcsLeftSide;
@@ -213,8 +213,9 @@ int balanceLoad(int *nParticlesOriginal, int *nParticlesNew, float *load,
   balanceLoad(nParticlesOriginal, nParticlesNew, load, nProcsLeftSide, leftIdx,  newLeft, loadAvg);
   balanceLoad(nParticlesOriginal, nParticlesNew, load, nProcsRightSide, rightIdx, newRight, loadAvg);
 
-  return 0;
+#endif
 
+  return 0;
 }
 
 //Uses one communication by storing data in one buffer and communicate required information,
@@ -938,6 +939,8 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
                                                        my_dev::dev_mem<uint> &extractList,
                                                        int nToSend)
 {
+#ifdef USE_MPI
+
   int myid      = procId;
   int nproc     = nProcs;
   int iloc      = 0;
@@ -1238,7 +1241,7 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
 //   printf("Required gpu malloc time step 2: %lg \n", get_time()-t1);
 //   printf("Total GPU interaction time: %lg \n", get_time()-t2);
 
-
+#endif
   int retValue = 0;
 
 //  delete[] firstloc;
@@ -1258,7 +1261,6 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
 //Maybe we want to do this in a separate thread
 void octree::sendCurrentInfoGrpTree()
 {
-#define USE_MPI
 #ifdef USE_MPI
 
 #if 1
@@ -1731,6 +1733,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                        vector<uint2> &topLevelTreesSizeOffset,
                                        int     nTopLevelTrees)
 {
+#ifdef USE_MPI	
   double t0         = get_time();
 
   bool mergeOwntree = false;              //Default do not include our own tree-structure, thats mainly used for testing
@@ -2147,8 +2150,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
           LOGF(stderr, "%s\n", buff);
 
         int test2 = quickCheckRecvSizes[nProcs-1] + quickCheckRecvOffset[nProcs-1];
-        LOGF(stderr, "Allocating %ld size: %f MB \n", (recvCountItems*sizeof(real4)),(recvCountItems*sizeof(real4))/((float)(1024*1024)));
-        LOGF(stderr, "Allocating2 %d |  %d | %d  \n", test2, sizeof(real4), test2 / sizeof(real4));
 
 //      quickCheckSendOffset , quickCheckSendSizes
       recvAllToAllBuffer =  new real4[recvCountItems];
@@ -2308,7 +2309,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
   LOGF(stderr,"LET Creation and Exchanging time [%d] curStep: %g\t   Total: %g \n", procId, thisPartLETExTime, totalLETExTime);
 
   LOGF(stderr,"Since start: %lg \t %lg \n", get_time()-tStart, get_time()-t0);
-
+#endif
 }//essential tree-exchange
 
 
