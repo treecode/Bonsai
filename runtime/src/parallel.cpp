@@ -1747,6 +1747,9 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
   //creates a new array of pointers to int objects, with space for the local tree
   treeBuffers  = new real4*[mpiGetNProcs()];
+  int *treeBuffersSource = new int[nProcs];  
+  
+  real4 *recvAllToAllBuffer = NULL;
 
   //Timers for the LET Exchange
   static double totalLETExTime    = 0;
@@ -1776,6 +1779,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
   resultOfQuickCheck[procId]    = 99; //Mark ourself
   quickCheckSendSizes[procId]   =  0;
   quickCheckSendOffset[procId]  =  0;
+  
+  int nQuickCheckSends          = 0;
 
 
   omp_set_num_threads(4);
@@ -1840,7 +1845,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         if(currentTicket >= (2*(nProcs) -1)) //Break out if everything is processed
             break;
 
-        bool doQuickLETCheck = (currentTicket < nProcs - 1);
+        bool doQuickLETCheck = (currentTicket < (nProcs - 1));
         int ib               = (nProcs-1)-(currentTicket%nProcs);
         int ibox             = (ib+procId)%nProcs; //index to send...
 
@@ -1875,11 +1880,27 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
         if(doQuickLETCheck)
         {
+
+//Use this to 'disable' the Quick LET checks, with this disabled all
+//communication will be done as point to point
+//#define DO_NOT_DO_QUICK_LET_CHECK
+
+#ifdef DO_NOT_DO_QUICK_LET_CHECK
+
+          resultOfQuickCheck[ibox]   = -1;
+          quickCheckSendSizes[ibox]  = 0;
+          quickCheckSendOffset[ibox] = 0;
+          #pragma omp critical
+              nCompletedQuickCheck++;
+      continue;
+#else
+
           if(doFullGrp)
           {
             //can skip this one beforehand, otherwise we would not have received the full-grp info
-            resultOfQuickCheck[ibox]  = -1;
-            quickCheckSendSizes[ibox] = 0;
+            resultOfQuickCheck[ibox]   = -1;
+            quickCheckSendSizes[ibox]  = 0;
+            quickCheckSendOffset[ibox] = 0;
           }
           else
           {
@@ -1893,6 +1914,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             {
               quickCheckSendSizes[ibox]  = topLevelTreesSizeOffset[maxLevel].x; //Size
               quickCheckSendOffset[ibox] = topLevelTreesSizeOffset[maxLevel].y; //Offset
+              #pragma omp critical
+                nQuickCheckSends++;
             }
             else
             {
@@ -1909,13 +1932,23 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             nCompletedQuickCheck++;
 
           continue;
+#endif
+        }
+
+        //Only continue if 'nCompletedQuickCheck' is done, otherwise some thread might still be
+        //executing the quick check!
+        while(1)
+        {
+          if(nCompletedQuickCheck == nProcs-1)
+            break;
+          usleep(10);
         }
 
         //If we arrive here, we did the quick tests, so now go checking if we need to do the full test
         if(resultOfQuickCheck[ibox] >= 0)
         {
           //We can skip this process, its been taken care of during the quick check
-          //continue;
+          continue;
         }
 
         //Modified the code up to here, now going to check if it still works
@@ -2007,8 +2040,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                 topNodeOnTheFlyCount = 0;
               }
 
-              mergeAndLaunchLETStructures(tree, remote, treeBuffers, topNodeCount,
-                                          recvTree, mergeOwntree, procTrees, tStart);
+              mergeAndLaunchLETStructures(tree, remote, treeBuffers, treeBuffersSource,
+                                          topNodeCount, recvTree, mergeOwntree, procTrees, tStart);
 
               totalLETExTime += thisPartLETExTime;
             }// (nReceived - procTrees) > 0)
@@ -2048,8 +2081,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
               topNodeOnTheFlyCount = 0;
             }
 
-            mergeAndLaunchLETStructures(tree, remote, treeBuffers, topNodeCount,
-                                        recvTree, mergeOwntree, procTrees, tStart);
+            mergeAndLaunchLETStructures(tree, remote, treeBuffers, treeBuffersSource,
+                                        topNodeCount,recvTree, mergeOwntree, procTrees, tStart);
 
             totalLETExTime += thisPartLETExTime;
           }
@@ -2070,6 +2103,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
       //All to all part
 
+#ifndef DO_NOT_DO_QUICK_LET_CHECK
       while(1)
       {
         if(nCompletedQuickCheck == nProcs-1)
@@ -2078,7 +2112,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       }
 
       //Send the sizes
-#if 0
+
       fprintf(stderr, "[%d] Going to do the alltoall size communication! Since begin: %lg \n",
           procId, get_time()-tStart);
       double t100 = get_time();
@@ -2087,29 +2121,81 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
           procId, get_time()-t100);
 
       //Compute offsets, allocate memory
-      int recvCountItems      = quickCheckRecvSizes[0] / sizeof(real4);
+      int recvCountItems      = quickCheckRecvSizes[0];
+      quickCheckRecvSizes[0]  = quickCheckRecvSizes[0]*sizeof(real4);
       quickCheckRecvOffset[0] = 0;
       for(int i=1; i < nProcs; i++)
       {
+        recvCountItems         += quickCheckRecvSizes[i];
+        quickCheckRecvSizes[i]  = quickCheckRecvSizes[i]*sizeof(real4);
         quickCheckRecvOffset[i] = quickCheckRecvSizes[i-1] +  quickCheckRecvOffset[i-1];
-        recvCountItems          = quickCheckRecvSizes[i] / sizeof(real4);
       }
       //int totalSize = quickCheckRecvOffset[nProcs-1] + quickCheckRecvSizes[nProcs-1];
+          char buff[5120];
+          sprintf(buff, "AlltoAllSend: ");
+          for(int i=0; i < nProcs; i++)
+          {
+            sprintf(buff, "%s[%d,%d]\t",buff, quickCheckSendSizes[i], quickCheckSendOffset[i]);
+          }
+          LOGF(stderr, "%s\n", buff);
+
+          sprintf(buff, "AlltoAllRecv: ");
+          for(int i=0; i < nProcs; i++)
+          {
+            sprintf(buff, "%s[%d,%d]\t",buff, quickCheckRecvSizes[i], quickCheckRecvOffset[i]);
+          }
+          LOGF(stderr, "%s\n", buff);
+
+        int test2 = quickCheckRecvSizes[nProcs-1] + quickCheckRecvOffset[nProcs-1];
+        LOGF(stderr, "Allocating %ld size: %f MB \n", (recvCountItems*sizeof(real4)),(recvCountItems*sizeof(real4))/((float)(1024*1024)));
+        LOGF(stderr, "Allocating2 %d |  %d | %d  \n", test2, sizeof(real4), test2 / sizeof(real4));
 
 //      quickCheckSendOffset , quickCheckSendSizes
-      real4 *recvAllToAllBuffer =  new real4[recvCountItems];
+      recvAllToAllBuffer =  new real4[recvCountItems];
+
+
+      //Convert the values to bytes to get correct offsets and sizes
+      for(int i=0; i < nProcs; i++)
+      {
+        quickCheckSendSizes[i]  *= sizeof(real4);
+        quickCheckSendOffset[i] *= sizeof(real4);
+
+      }
 
       double t110 = get_time();
 
       MPI_Alltoallv(&topLevelTrees[0],       quickCheckSendSizes, quickCheckSendOffset, MPI_BYTE,
                     &recvAllToAllBuffer[0],  quickCheckRecvSizes, quickCheckRecvOffset, MPI_BYTE,
                     MPI_COMM_WORLD);
-      fprintf(stderr, "[%d] Completed_alltoall data communication! Took: %lg\tSize: %ld MB \n",
+      LOGF(stderr, "[%d] Completed_alltoall data communication! Took: %lg\tSize: %ld MB \n",
           procId, get_time()-t110, (recvCountItems*sizeof(real4))/(1024*1024));
 
+      #pragma omp critical(updateReceivedProcessed)
+      {
+        //This is in a critical section since topNodeOnTheFlyCount is reset
+        //by the GPU worker thread (thread == 0)
+        for(int i=0;  i < nProcs; i++)
+        {
+          int items  = quickCheckRecvSizes[i]  / sizeof(real4);
+          if(items > 0)
+          {
+            int offset = quickCheckRecvOffset[i] / sizeof(real4);
+        
+            treeBuffers[nReceived] = &recvAllToAllBuffer[offset];
 
-      delete[] recvAllToAllBuffer;
-#endif
+            //Increase the top-node count
+            int topStart = host_float_as_int(treeBuffers[nReceived][0].z);
+            int topEnd   = host_float_as_int(treeBuffers[nReceived][0].w);
+
+            topNodeOnTheFlyCount += (topEnd-topStart);
+            treeBuffersSource[nReceived] = 1; //1 indicate quick check source
+            nReceived++;
+          }
+        }
+      }
+      
+      LOGF(stderr, "Received trees using quickcheck: %d \n", nReceived);
+#endif //#ifndef DO_NOT_DO_QUICK_LET_CHECK
 
 
       while(1)
@@ -2153,6 +2239,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                 procId, recvStatus.MPI_SOURCE, 0, get_time()-tStart,tZ-tY, get_time()-tZ, count);
 
             treeBuffers[nReceived] = recvDataBuffer;
+            treeBuffersSource[nReceived] = 0; //0 indicates point to point source
 
             //Increase the top-node count
             int topStart = host_float_as_int(treeBuffers[nReceived][0].z);
@@ -2166,15 +2253,17 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
               topNodeOnTheFlyCount += (topEnd-topStart);
               nReceived++;
             }
-
             flag = 0;
           }//if flag
+
+          //TODO we could at an other probe here to keep, receiving data
+          //untill there is nothing more
 
         }while(flag);
 
         //Exit if we have send and received all there is
         if(nReceived == nProcs-1)
-          if(nSendOut == nProcs-1)
+          if((nSendOut+nQuickCheckSends) == nProcs-1)
             break;
 
         //Check if we can clean up some sends in between the receive/send process
@@ -2191,10 +2280,13 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
          }
         }//end for nSendOut
 
+        //TODO only do this sleep if we did not send/receive something
+
         usleep(10);
 
       } //while (1) surrounding the thread-id==1 code
 
+      //Wait till all outgoing sends have completed
       MPI_Status waitStatus;
       for(int i=0; i < nSendOut; i++)
       {
@@ -2209,6 +2301,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
     }//if tid = 1
   }//end OMP section
 
+  if(recvAllToAllBuffer) delete[] recvAllToAllBuffer;
+  delete[] treeBuffersSource;
   delete[] computedLETs;
   delete[] treeBuffers;
   LOGF(stderr,"LET Creation and Exchanging time [%d] curStep: %g\t   Total: %g \n", procId, thisPartLETExTime, totalLETExTime);
@@ -2220,7 +2314,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
 void octree::mergeAndLaunchLETStructures(
     tree_structure &tree, tree_structure &remote,
-    real4 **treeBuffers, int topNodeOnTheFlyCount,
+    real4 **treeBuffers, int *treeBuffersSource,
+    int topNodeOnTheFlyCount,
     int &recvTree, bool &mergeOwntree, int &procTrees, double &tStart)
 {
   //Now we have to merge the separate tree-structures into one big-tree
@@ -2466,7 +2561,7 @@ void octree::mergeAndLaunchLETStructures(
   //this is already done on the sending process, but since we modify the structure
   //it has to be done again
   int nodeTextOffset = getTextureAllignmentOffset(totalNodes+totalTopNodes+topTree_n_nodes, sizeof(real4));
-  int partTextOffset = getTextureAllignmentOffset(totalNodes+totalTopNodes+topTree_n_nodes, sizeof(real4));
+  int partTextOffset = getTextureAllignmentOffset(totalParticles                          , sizeof(real4));
 
   totalParticles    += partTextOffset;
 
@@ -2614,8 +2709,13 @@ void octree::mergeAndLaunchLETStructures(
       combinedRemoteTree[j].w =  host_int_as_float(child);      //Store the modified value
     }//for non-top nodes
 
-    delete[] treeBuffers[i+procTrees];    //Free the memory of this part of the LET
-    treeBuffers[i+procTrees] = NULL;
+    if(treeBuffersSource[i+procTrees] == 0) //Check if its a point to point source
+    {
+      delete[] treeBuffers[i+procTrees];    //Free the memory of this part of the LET
+      treeBuffers[i+procTrees] = NULL;
+    }
+    
+    
   } //for PROCS
 
   /*
@@ -2655,6 +2755,8 @@ void octree::mergeAndLaunchLETStructures(
   delete[] startNodeSumOffsets;
   delete[] nodesBegEnd;
 
+
+  
   thisPartLETExTime += get_time() - tStart;
 
   procTrees = recvTree;

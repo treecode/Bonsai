@@ -793,7 +793,7 @@ public:
                                  int     nTopLevelTrees);
   void mergeAndLaunchLETStructures(
       tree_structure &tree, tree_structure &remote,
-      real4 **treeBuffers,  int topNodeOnTheFlyCount,
+      real4 **treeBuffers,  int* treeBuffersSource, int topNodeOnTheFlyCount,
       int &recvTree, bool &mergeOwntree, int &procTrees, double &tStart);
 
   void tree_walking_tree_stack_versionC13(

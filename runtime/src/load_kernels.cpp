@@ -300,7 +300,7 @@ void octree::load_kernels() {
   getNActive.create("get_nactive", (const void*)&get_nactive);
   approxGrav.create("dev_approximate_gravity", (const void*)&dev_approximate_gravity);
 
-#if 1  /* preferL1 equal egaburov */
+#if 0  /* preferL1 equal egaburov */
   cudaFuncSetCacheConfig((const void*)&dev_approximate_gravity, cudaFuncCachePreferL1);
 #if 0
 #if 1

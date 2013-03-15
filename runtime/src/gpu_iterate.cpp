@@ -82,7 +82,9 @@ void octree::makeLET()
   int startLevel    = this->localTree.startLevelMin;
   uint2 node_begend;
 
-  const int copyTreeUpToLevel = startLevel+2;
+  int copyTreeUpToLevel = startLevel+2;
+  if(copyTreeUpToLevel >= this->localTree.n_levels) //In some cases we have not so many levels that we can do the above
+    copyTreeUpToLevel = startLevel;
 
   //Compute worst case memory requirement
   int buffSize2 = 0;
@@ -98,8 +100,8 @@ void octree::makeLET()
     {
       nParticles = NLEAF*nNodes;
     }
-    nParticles            += getTextureAllignmentOffset(nParticles, sizeof(real4));
-    nNodes                += getTextureAllignmentOffset(nNodes    , sizeof(real4));
+   // nParticles            += getTextureAllignmentOffset(nParticles, sizeof(real4));
+   // nNodes                += getTextureAllignmentOffset(nNodes    , sizeof(real4));
     bufferUpToThisLevel   += 5*nNodes+nParticles+1;
 
     //Total buffer size this level would be all previous levels plus this one
@@ -175,8 +177,8 @@ void octree::makeLET()
     }//for level
 
     //Make the particles and nodes align on memory boundaries
-    nParticles  += getTextureAllignmentOffset(nParticles, sizeof(real4));
-    nNodes      += getTextureAllignmentOffset(nNodes    , sizeof(real4));
+    //nParticles  += getTextureAllignmentOffset(nParticles, sizeof(real4));
+    //nNodes      += getTextureAllignmentOffset(nNodes    , sizeof(real4));
 
 //    LOGF(stderr,"Total particles: %d and nodes %d (%d) \n", nParticles,nNodes, nodeBuffer.size());
 
