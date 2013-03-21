@@ -35,6 +35,7 @@ http://github.com/treecode/Bonsai
 #include "log.h"
 #include "anyoption.h"
 #include "renderloop.h"
+#include "plummer.h"
 
 
 #if ENABLE_LOG
@@ -661,6 +662,7 @@ int main(int argc, char** argv)
 	dTstartGlow = 1.0;
 #endif
 
+  int nPlummer = -1;
 	/************** beg - command line arguments ********/
 #if 1
 	{
@@ -702,6 +704,7 @@ int main(int argc, char** argv)
 #endif
 
 
+		ADDUSAGE("    --plummer  #      use plummer model with # particles per proc \n");
 		ADDUSAGE(" ");
 
 
@@ -712,6 +715,7 @@ int main(int argc, char** argv)
 		opt.setOption( "eps",     'e' );
 		opt.setOption( "theta",   'o' );
 		opt.setOption( "rebuild", 'r' );
+		opt.setOption( "plummer");
 		opt.setOption( "dev" );
 		opt.setOption( "renderdev" );
 		opt.setOption( "logfile" );
@@ -758,6 +762,7 @@ int main(int argc, char** argv)
 #endif    
 		char *optarg = NULL;
 		if ((optarg = opt.getValue("infile")))       fileName           = string(optarg);
+		if ((optarg = opt.getValue("plummer")))      nPlummer           = atoi(optarg);
 		if ((optarg = opt.getValue("logfile")))      logFileName        = string(optarg);
 		if ((optarg = opt.getValue("dev")))          devID              = atoi  (optarg);
         renderDevID = devID;
@@ -779,7 +784,7 @@ int main(int argc, char** argv)
         if ((optarg = opt.getValue("dTglow")))	 dTstartGlow  = (float)atof(optarg);
         dTstartGlow = std::max(dTstartGlow, 1.0f);
 #endif
-		if (fileName.empty()) 
+		if (fileName.empty() && nPlummer == -1)
 		{
 			opt.printUsage();
 			exit(0);
@@ -973,22 +978,49 @@ int main(int argc, char** argv)
   ofstream logFile(logFileName.c_str());
     
   tree->set_context(logFile, false); //Do logging to file and enable timing (false = enabled)
-  
-  if(procId == 0)
-  {
-   #ifdef TIPSYOUTPUT
-      read_tipsy_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, 
-                               procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
-                               dustPositions, dustVelocities, dustIDs, reduce_bodies_factor, reduce_dust_factor);    
-   #else
-      read_dumbp_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, procId, nProcs, NTotal, NFirst, NSecond, NThird, tree, reduce_bodies_factor);
-   #endif
 
+  if (nPlummer == -1)
+  {
+    if(procId == 0)
+    {
+     #ifdef TIPSYOUTPUT
+        read_tipsy_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, 
+                                 procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
+                                 dustPositions, dustVelocities, dustIDs, reduce_bodies_factor, reduce_dust_factor);    
+     #else
+        read_dumbp_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, procId, nProcs, NTotal, NFirst, NSecond, NThird, tree, reduce_bodies_factor);
+     #endif
+
+    }
+    else
+    {
+      tree->ICRecv(0, bodyPositions, bodyVelocities,  bodyIDs);
+    }
   }
   else
   {
-    tree->ICRecv(0, bodyPositions, bodyVelocities,  bodyIDs);
+    if (procId == 0) printf("Using plummer model with n= %d per proc \n", nPlummer);
+    const int seed = 19810614 + procId*113;
+    const Plummer m(nPlummer, procId, seed);
+    bodyPositions.resize(nPlummer);
+    bodyVelocities.resize(nPlummer);
+    bodyIDs.resize(nPlummer);
+    for (int i= 0; i < nPlummer; i++)
+    {
+      bodyIDs[i]   = nPlummer*procId + i;
+
+      bodyPositions[i].x = m.pos[i].x;
+      bodyPositions[i].y = m.pos[i].y;
+      bodyPositions[i].z = m.pos[i].z;
+      bodyPositions[i].w = m.mass[i] * 1.0/nProcs;
+
+      bodyVelocities[i].x = m.vel[i].x;
+      bodyVelocities[i].y = m.vel[i].y;
+      bodyVelocities[i].z = m.vel[i].z;
+      bodyVelocities[i].w = 0;
+    }
   }
+
 
 #ifdef TIPSYOUTPUT
 	LOGF(stderr, " t_current = %g\n", tree->get_t_current());
