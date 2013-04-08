@@ -1076,18 +1076,20 @@ int main(int argc, char** argv)
 
   if (nPlummer == -1)
   {
-    #ifdef TIPSYOUTPUT
-      read_tipsy_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, 
-                               procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
-                               dustPositions, dustVelocities, dustIDs, reduce_bodies_factor, reduce_dust_factor);    
+    if(procId == 0)
+    {
+      #ifdef TIPSYOUTPUT
+        read_tipsy_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, 
+                                procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
+                                dustPositions, dustVelocities, dustIDs, reduce_bodies_factor, reduce_dust_factor);    
 
-  //      read_generate_cube(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, 
-  //                               procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
-  //                              dustPositions, dustVelocities, dustIDs, reduce_bodies_factor, reduce_dust_factor);    
+    //      read_generate_cube(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, 
+    //                               procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
+    //                              dustPositions, dustVelocities, dustIDs, reduce_bodies_factor, reduce_dust_factor);    
 
-    #else
-        read_dumbp_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, procId, nProcs, NTotal, NFirst, NSecond, NThird, tree, reduce_bodies_factor);
-    #endif
+      #else
+          read_dumbp_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, procId, nProcs, NTotal, NFirst, NSecond, NThird, tree, reduce_bodies_factor);
+      #endif
     }
     else
     {
