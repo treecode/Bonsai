@@ -153,7 +153,7 @@ int balanceLoad(int *nParticlesOriginal, int *nParticlesNew, float *load,
                 int nProcs, int leftIdx, int nTotal, float loadAvg)
 {
 #ifdef USE_MPI
-      	//Sum the total load left and right
+  //Sum the total load left and right
   int nProcsLeftSide    = nProcs / 2;
   int nProcsRightSide   = nProcs  - nProcsLeftSide;
   int rightIdx          = leftIdx + nProcsLeftSide;
@@ -276,7 +276,8 @@ void octree::sendCurrentRadiusAndSampleInfo(real4 &rmin, real4 &rmax, int nsampl
 void octree::computeSampleRateSFC(float lastExecTime, int &nSamples, int &sampleRate)
 {
   #ifdef USE_MPI
-    //Compute the number of particles to sample.
+    double t00 = get_time();
+	//Compute the number of particles to sample.
     //Average the previous and current execution time to make everything smoother
     //results in much better load-balance
     static double prevDurStep  = -1;
@@ -325,9 +326,9 @@ void octree::computeSampleRateSFC(float lastExecTime, int &nSamples, int &sample
     nSamples      = (int)(nsamp*nrate) + 1;
     sampleRate    = localTree.n / nSamples;
 
-    LOGF(stderr, "NSAMP [%d]: sample: %d nrate: %f final sampleRate: %d localTree.n: %d\tprevious: %d timeLocal: %f prevTimeLocal: %f \n",
+    LOGF(stderr, "NSAMP [%d]: sample: %d nrate: %f final sampleRate: %d localTree.n: %d\tprevious: %d timeLocal: %f prevTimeLocal: %f  Took: %lg\n",
                   procId, nSamples, nrate, sampleRate, localTree.n, prevSampFreq,
-                  timeLocal, prevDurStep);
+                  timeLocal, prevDurStep,get_time()-t00);
 
     prevDurStep  = timeLocal;
     prevSampFreq = sampleRate;
@@ -351,7 +352,10 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
        //Sort the keys. Use stable_sort (merge sort) since the separate blocks are already
        //sorted. This is faster than std::sort (quicksort)
        //std::sort(allHashes, allHashes+totalNumberOfHashes, cmp_ph_key());
+       double t00 = get_time();
        std::stable_sort(globalSamples, globalSamples+totalCount, cmp_ph_key());
+	LOGF(stderr,"Boundary sorting took: %lg \n", get_time()-t00);
+
 
        //Split the samples in equal parts to get the boundaries
        int perProc = totalCount / nProcs;
@@ -365,8 +369,8 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
          tempSum += 1;
          if(tempSum >= perProc)
          {
-           LOGF(stderr, "Boundary at: %d\t%d %d %d %d \t %d \n",
-                         i, globalSamples[i+1].x,globalSamples[i+1].y,globalSamples[i+1].z,globalSamples[i+1].w, tempSum);
+           //LOGF(stderr, "Boundary at: %d\t%d %d %d %d \t %d \n",
+           //              i, globalSamples[i+1].x,globalSamples[i+1].y,globalSamples[i+1].z,globalSamples[i+1].w, tempSum);
            tempSum = 0;
            parallelBoundaries[procIdx++] = globalSamples[i+1];
          }
@@ -382,7 +386,7 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
      //Send the boundaries to all processes
      MPI_Bcast(&parallelBoundaries[0], sizeof(uint4)*(nProcs+1), MPI_BYTE, 0, MPI_COMM_WORLD);
 
-     if(procId == 0)
+     if(procId == -1)
      {
        for(int i=0; i < nProcs; i++)
        {
@@ -1023,7 +1027,8 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
     LOGF(stderr, "Exchange_particle error: A particle could not be assigned to a box: iloc: %d total: %d \n", iloc,nbody);
     exit(0);
   }
-
+ LOGF(stderr,  "EXCHANGE reorder iter: %d  took: %lg \tItems: %d Total-n: %d\n", 
+		 iter, get_time()-t1, nToSend, tree.n);
   t1 = get_time();
 #if 0
   MPI_Alltoall(nparticles, 1, MPI_INT, nreceive, 1, MPI_INT, MPI_COMM_WORLD);
@@ -1059,7 +1064,7 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
 //  delete[] nsendDispls;
 //  delete[] nrecvDispls;
 
-#elif 1
+#elif 0
   MPI_Alltoall(nparticles, 1, MPI_INT, nreceive, 1, MPI_INT, MPI_COMM_WORLD);
   double t92 = get_time();
   unsigned int recvCount  = nreceive[0];
@@ -1103,6 +1108,48 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
 //  delete[] nsendDispls;
 //  delete[] nrecvDispls;
   double t94 = get_time();
+
+#elif 1
+
+  double t91 = get_time();
+  MPI_Alltoall(nparticles, 1, MPI_INT, nreceive, 1, MPI_INT, MPI_COMM_WORLD);
+
+
+
+  double t92 = get_time();
+  unsigned int recvCount  = nreceive[0];
+        for (int i = 1; i < nproc; i++)
+  {
+    recvCount     += nreceive[i];
+  }
+  vector<bodyStruct> recv_buffer3(recvCount);
+  double t93=get_time();
+
+  int recvOffset = 0;
+
+#define NMAXPROC 32768
+  static MPI_Status stat[NMAXPROC];
+  static MPI_Request req[NMAXPROC*2];
+    int nreq = 0; 
+  for (int dist = 1; dist < nproc; dist++)
+  {
+    const int src = (nproc + myid - dist) % nproc;
+    const int dst = (nproc + myid + dist) % nproc;
+    const int scount = nsendbytes[dst];
+    const int rcount = nreceive[src]*sizeof(bodyStruct);
+  
+    if (scount > 0) MPI_Isend(&array2Send[nsendDispls[dst]/sizeof(bodyStruct)], scount, MPI_BYTE, dst, 1, MPI_COMM_WORLD, &req[nreq++]);
+    if(rcount > 0)
+    {
+	    MPI_Irecv(&recv_buffer3[recvOffset], rcount, MPI_BYTE, src, 1, MPI_COMM_WORLD, &req[nreq++]);
+	    recvOffset += nreceive[src];
+    }
+  }
+ double t94 = get_time();
+    MPI_Waitall(nreq, req, stat);
+
+    LOGF(stderr, "EXCHANGE comm iter: %d  a2asize: %lg alloc: %lg data-start: %lg data-wait: %lg \n", 
+		    iter, t92-t91, t93-t92, t94-t93, get_time() -t94); 
 
 #else
 
@@ -1834,14 +1881,14 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         {
          // LOGF(stderr,"Quick test was done, thread: %d checks: %d Since start: %lg\n", tid, DistanceCheck, get_time()-tGrpTest);
 
-          char buff[5120];
+      /*    char buff[5120];
           sprintf(buff, "GrpTesting tookB: %lg Checks: %d Res: ", get_time()-tGrpTest, DistanceCheck);
           for(int i=0; i < nProcs; i++)
           {
             sprintf(buff, "%s%d\t",buff, resultOfQuickCheck[i]);
           }
           LOGF(stderr, "%s\n", buff);
-
+*/
           continue;
         }
 
@@ -1890,13 +1937,14 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
 #ifdef DO_NOT_DO_QUICK_LET_CHECK
 
-          resultOfQuickCheck[ibox]   = -1;
-          quickCheckSendSizes[ibox]  = 0;
-          quickCheckSendOffset[ibox] = 0;
-          #pragma omp critical
-              nCompletedQuickCheck++;
-      continue;
+            resultOfQuickCheck[ibox]   = -1;
+            quickCheckSendSizes[ibox]  = 0;
+            quickCheckSendOffset[ibox] = 0;
+    	    #pragma omp critical
+            	nCompletedQuickCheck++;
+	continue;
 #else
+
 
           if(doFullGrp)
           {
@@ -1937,7 +1985,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
           continue;
 #endif
         }
-
         //Only continue if 'nCompletedQuickCheck' is done, otherwise some thread might still be
         //executing the quick check!
         while(1)
@@ -1986,7 +2033,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
         //0-1 )                               Info about #particles, #nodes, start and end of tree-walk
         //1- Npart)                           The particle positions
-        //1+1*Npart-Nnode )                   The nodeSizeData
+       //1+1*Npart-Nnode )                   The nodeSizeData
         //1+1*Npart+Nnode   - Npart+2*Nnode ) The nodeCenterData
         //1+1*Npart+2*Nnode - Npart+5*Nnode ) The multipole data, is 3x number of nodes (mono and quadrupole data)
         int bufferSize = 1 + 1*countParticles + 5*countNodes;
@@ -2134,7 +2181,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         quickCheckRecvOffset[i] = quickCheckRecvSizes[i-1] +  quickCheckRecvOffset[i-1];
       }
       //int totalSize = quickCheckRecvOffset[nProcs-1] + quickCheckRecvSizes[nProcs-1];
-          char buff[5120];
+/*          char buff[5120];
           sprintf(buff, "AlltoAllSend: ");
           for(int i=0; i < nProcs; i++)
           {
@@ -2150,10 +2197,14 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
           LOGF(stderr, "%s\n", buff);
 
         int test2 = quickCheckRecvSizes[nProcs-1] + quickCheckRecvOffset[nProcs-1];
-
+        LOGF(stderr, "Allocating %ld size: %f MB \n", (recvCountItems*sizeof(real4)),(recvCountItems*sizeof(real4))/((float)(1024*1024)));
+        LOGF(stderr, "Allocating2 %d |  %d | %d  \n", test2, sizeof(real4), test2 / sizeof(real4));
+*/
 //      quickCheckSendOffset , quickCheckSendSizes
+//
+	double tmem = get_time();   
       recvAllToAllBuffer =  new real4[recvCountItems];
-
+	LOGF(stderr, "Completed_alltoall mem alloc! Took: %lg \n", get_time()-tmem);
 
       //Convert the values to bytes to get correct offsets and sizes
       for(int i=0; i < nProcs; i++)
@@ -2254,6 +2305,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
               topNodeOnTheFlyCount += (topEnd-topStart);
               nReceived++;
             }
+
             flag = 0;
           }//if flag
 

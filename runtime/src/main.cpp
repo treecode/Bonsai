@@ -200,7 +200,6 @@ void read_dumbp_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
   LOGF(stderr, "NTotal:  %d\tper proc: %d\tFor ourself: %d \n", NTotal, perProc, (int)bodiesIDs.size());
 }
 
-
 void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyVelocities,
                               vector<int> &bodiesIDs,  float eps2, string fileName, 
                               int rank, int procs, int &NTotal2, int &NFirst, 
@@ -251,7 +250,7 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
   tree->set_t_current((float) h.time);
   
   //Rough divide
-  uint perProc = NTotal / procs;
+  uint perProc = (NTotal / procs) /reduce_bodies_factor;
   bodyPositions.reserve(perProc+10);
   bodyVelocities.reserve(perProc+10);
   bodiesIDs.reserve(perProc+10);
@@ -296,6 +295,14 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
       velocity.z        = s.vel[2];
       idummy            = s.phi;
     }
+
+
+    if(positions.z < -10e10)
+    {
+       fprintf(stderr," Removing particle %d because of Z is: %f \n", globalParticleCount, positions.z);
+       continue;
+    }
+
 
 	globalParticleCount++;
    
@@ -357,6 +364,92 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
 //   bodyPositions.resize(bodyPositions.size()-1);  
 //   NTotal2 = particleCount-1;
   NTotal2 = particleCount;
+  LOGF(stderr,"NTotal: %d\tper proc: %d\tFor ourself: %d \tNDust: %d \n",
+               NTotal, perProc, (int)bodiesIDs.size(), (int)dustPositions.size());
+}
+
+
+void read_generate_cube(vector<real4> &bodyPositions, vector<real4> &bodyVelocities,
+                              vector<int> &bodiesIDs,  float eps2, string fileName, 
+                              int rank, int procs, int &NTotal2, int &NFirst, 
+                              int &NSecond, int &NThird, octree *tree,
+                              vector<real4> &dustPositions, vector<real4> &dustVelocities,
+                              vector<int> &dustIDs, int reduce_bodies_factor,
+                              int reduce_dust_factor)  
+{
+  //Process 0 does the file reading and sends the data
+  //to the other processes
+  /* 
+
+     Read in our custom version of the tipsy file format.
+     Most important change is that we store particle id on the 
+     location where previously the potential was stored.
+  */
+  
+
+  int NTotal;
+  int idummy;
+  real4 positions;
+  real4 velocity;
+
+     
+  //Read tipsy header  
+  NTotal        = pow(2, 22);
+  NFirst        = NTotal;
+  NSecond       = 0;
+  NThird        = 0;
+
+  fprintf(stderr,"Going to generate a random cube , number of particles: %d \n", NTotal);
+
+  tree->set_t_current((float) 0);
+  
+  //Rough divide
+  uint perProc = NTotal / procs;
+  bodyPositions.reserve(perProc+10);
+  bodyVelocities.reserve(perProc+10);
+  bodiesIDs.reserve(perProc+10);
+  perProc -= 1;
+
+  //Start reading
+  int particleCount = 0;
+  int procCntr = 1;
+  
+
+  int globalParticleCount = 0;
+
+  float mass = 1.0  / NTotal;
+  
+  for(int i=0; i < NTotal; i++)
+  {
+      velocity.w        = 0;
+      positions.w       = mass;
+      positions.x       = drand48();
+      positions.y       = drand48();
+      positions.z       = drand48();
+      velocity.x        = 0.001*drand48();
+      velocity.y        = 0.001*drand48();
+      velocity.z        = 0.001*drand48();
+
+      globalParticleCount++;
+      bodyPositions.push_back(positions);
+      bodyVelocities.push_back(velocity);
+      bodiesIDs.push_back(globalParticleCount);  
+  
+    if(bodyPositions.size() > perProc && procCntr != procs)
+    { 
+      tree->ICSend(procCntr,  &bodyPositions[0], &bodyVelocities[0],  &bodiesIDs[0], (int)bodyPositions.size());
+      procCntr++;
+      
+      bodyPositions.clear();
+      bodyVelocities.clear();
+      bodiesIDs.clear();
+    }
+  }//end while
+  
+  //Clear the last one since its double
+//   bodyPositions.resize(bodyPositions.size()-1);  
+//   NTotal2 = particleCount-1;
+  NTotal2 = NTotal;
   LOGF(stderr,"NTotal: %d\tper proc: %d\tFor ourself: %d \tNDust: %d \n",
                NTotal, perProc, (int)bodiesIDs.size(), (int)dustPositions.size());
 }
@@ -874,6 +967,8 @@ int main(int argc, char** argv)
   //Creat the octree class and set the properties
   octree *tree = new octree(argv, devID, theta, eps, snapshotFile, snapshotIter,  timeStep, (int)tEnd, (int)remoDistance, snapShotAdd, rebuild_tree_rate, direct);
                             
+  double tStartup = tree->get_time();
+
   //Get parallel processing information  
   int procId = tree->mpiGetRank();
   int nProcs = tree->mpiGetNProcs();
@@ -980,6 +1075,11 @@ int main(int argc, char** argv)
       read_tipsy_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, 
                                procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
                                dustPositions, dustVelocities, dustIDs, reduce_bodies_factor, reduce_dust_factor);    
+
+//      read_generate_cube(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, 
+//                               procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
+ //                              dustPositions, dustVelocities, dustIDs, reduce_bodies_factor, reduce_dust_factor);    
+
    #else
       read_dumbp_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, procId, nProcs, NTotal, NFirst, NSecond, NThird, tree, reduce_bodies_factor);
    #endif
@@ -1068,7 +1168,7 @@ int main(int argc, char** argv)
   tree->mpiSync();  */
   
 
-  LOG("Starting! \n");
+  LOG("Starting! Bootup time: %lg \n", tree->get_time()-tStartup);
   
 
   double t0 = tree->get_time();

@@ -446,6 +446,7 @@ bool octree::iterate_once(IterationData &idata) {
 
 //if(t_current < 1) //Clear startup timings
 if(0)
+//if(iter < 32)	
 {
 	idata.totalGPUGravTimeLocal = 0;
 	idata.totalGPUGravTimeLET = 0;
@@ -749,6 +750,9 @@ if(0)
 
       }
     }
+
+
+    //if(iter > 64) return true;
 
     if(t_current >= tEnd)
     {
