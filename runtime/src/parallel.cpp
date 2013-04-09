@@ -2097,15 +2097,25 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             {
               int recvTree      = 0;
               int topNodeCount  = 0;
+              int oriTopCount   = 0;
               #pragma omp critical(updateReceivedProcessed)
               {
                 recvTree             = nReceived;
                 topNodeCount         = topNodeOnTheFlyCount;
+                oriTopCount          = topNodeOnTheFlyCount;
                 topNodeOnTheFlyCount = 0;
               }
 
               mergeAndLaunchLETStructures(tree, remote, treeBuffers, treeBuffersSource,
                                           topNodeCount, recvTree, mergeOwntree, procTrees, tStart);
+
+              //Correct the topNodeOnTheFlyCounter
+              #pragma omp critical(updateReceivedProcessed)
+              {
+                //Compute how many are left, and add these back to the globalCounter
+                int nTopNodesLeft     = oriTopCount-topNodeCount;
+                topNodeOnTheFlyCount += nTopNodesLeft;
+              }
 
               totalLETExTime += thisPartLETExTime;
             }// (nReceived - procTrees) > 0)
@@ -2138,15 +2148,25 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
           {
             int recvTree      = 0;
             int topNodeCount  = 0;
+            int oriTopCount   = 0;
             #pragma omp critical(updateReceivedProcessed)
             {
               recvTree             = nReceived;
               topNodeCount         = topNodeOnTheFlyCount;
+              oriTopCount          = topNodeOnTheFlyCount;
               topNodeOnTheFlyCount = 0;
             }
 
             mergeAndLaunchLETStructures(tree, remote, treeBuffers, treeBuffersSource,
                                         topNodeCount,recvTree, mergeOwntree, procTrees, tStart);
+
+            //Correct the topNodeOnTheFlyCounter
+            #pragma omp critical(updateReceivedProcessed)
+            {
+              //Compute how many are left, and add these back to the globalCounter
+              int nTopNodesLeft     = oriTopCount-topNodeCount;
+              topNodeOnTheFlyCount += nTopNodesLeft;
+            }
 
             totalLETExTime += thisPartLETExTime;
           }
@@ -2382,7 +2402,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 void octree::mergeAndLaunchLETStructures(
     tree_structure &tree, tree_structure &remote,
     real4 **treeBuffers, int *treeBuffersSource,
-    int topNodeOnTheFlyCount,
+    int &topNodeOnTheFlyCount,
     int &recvTree, bool &mergeOwntree, int &procTrees, double &tStart)
 {
   //Now we have to merge the separate tree-structures into one big-tree
@@ -2459,11 +2479,45 @@ void octree::mergeAndLaunchLETStructures(
   vector<real4> topTempBuffer(3*topNodeOnTheFlyCount);
   vector<int  > topSourceProc; //Do not assign size since we use 'insert'
 
+
+  int nParticlesCounted   = 0;
+  int nNodesCounted       = 0;
+  int nProcsProcessed     = 0;
+  bool continueProcessing = true;
+
   //Calculate the offsets
   for(int i=0; i < PROCS ; i++)
   {
     int particles = host_float_as_int(treeBuffers[procTrees+i][0].x);
     int nodes     = host_float_as_int(treeBuffers[procTrees+i][0].y);
+
+    nParticlesCounted += particles;
+    nNodesCounted     += nodes;
+
+    //Check if we go over the limit, if so, we have two options:
+    // - Ignore this last one, if we have processed nodes before (nProcsProcessed > 0)
+    // - Process this one anyway and hope we have enough memory, do this if nProcsProcessed == 0
+    //   otherwise we would make no progress
+
+    int localLimit   =  tree.n            + 5*tree.n_nodes;
+    int currentCount =  nParticlesCounted + 5*nNodesCounted;
+
+    if(currentCount > localLimit)
+    {
+      LOGF(stderr, "Processing breaches memory limit. Limits local: %d, current: %d processed: %d \n",
+                    localLimit, currentCount, nProcsProcessed);
+
+      if(nProcsProcessed > 0)
+      {
+        break; //Ignore this process, will be used next loop
+      }
+
+      //Stop after this process
+      continueProcessing = false;
+    }
+    nProcsProcessed++;
+
+    //Continue processing this domain
 
     nodesBegEnd[i].x = host_float_as_int(treeBuffers[procTrees+i][0].z);
     nodesBegEnd[i].y = host_float_as_int(treeBuffers[procTrees+i][0].w);
@@ -2483,7 +2537,19 @@ void octree::mergeAndLaunchLETStructures(
     topSourceProc.insert(topSourceProc.end(), nTop, i ); //Assign source process id
 
     totalTopNodes += nodesBegEnd[i].y-nodesBegEnd[i].x;
+
+    if(continueProcessing == false)
+      break;
   }
+
+  //Modify NPROCS, to set it to what we actually processed. Same for the
+  //number of top-nodes, which is later passed back to the calling function
+  //to update the overall number of top-nodes that is left to be processed
+  PROCS                = nProcsProcessed;
+  topNodeOnTheFlyCount = totalTopNodes;
+
+
+
 
 #ifndef DO_NOT_USE_TOP_TREE
   uint4 *keys          = new uint4[topNodeOnTheFlyCount];
@@ -2826,7 +2892,9 @@ void octree::mergeAndLaunchLETStructures(
   
   thisPartLETExTime += get_time() - tStart;
 
-  procTrees = recvTree;
+  //procTrees = recvTree;
+  procTrees += PROCS; //Changed since PROCS can be smaller than total number that can be processed
+
 
   //Check if we need to summarize which particles are active,
   //only done during the last approximate_gravity_let call
