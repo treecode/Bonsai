@@ -996,7 +996,6 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
   {
     //    int ibox          = (ib+myid)%nproc;
     int ibox = fullGrpAndLETRequestStatistics[ib].y;
-    if(ibox == procId) continue;
 
     firstloc[ibox]    = iloc;      //Index of the first particle send to proc: ibox
     nsendDispls[ibox] = iloc*sizeof(bodyStruct);
@@ -1821,7 +1820,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
   int topNodeOnTheFlyCount = 0;
 
-  this->fullGrpAndLETRequestStatistics[0] = make_uint2(0, 0); //Reset our box
+  this->fullGrpAndLETRequestStatistics[procId] = make_uint2(0, procId); //Reset our box
 
   uint2 node_begend;
   node_begend.x   = tree.level_list[level_start].x;
