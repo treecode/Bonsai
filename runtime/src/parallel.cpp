@@ -943,7 +943,8 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
                                                        my_dev::dev_mem<uint> &extractList,
                                                        int nToSend)
 {
-#ifdef USE_MPI
+#define USE_MPI
+  #ifdef USE_MPI
 
   int myid      = procId;
   int nproc     = nProcs;
@@ -986,9 +987,17 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
   vector<bodyStruct> array2Send;
   array2Send.reserve((int)(nToSend*1.5));
 
+
+  //Sort the statistics, causing the processes with which we interact most to be on top
+  std::sort(fullGrpAndLETRequestStatistics, fullGrpAndLETRequestStatistics+nProcs, cmp_uint2_reverse());
+
+
   for(int ib=0;ib<nproc;ib++)
   {
-    int ibox          = (ib+myid)%nproc;
+    //    int ibox          = (ib+myid)%nproc;
+    int ibox = fullGrpAndLETRequestStatistics[ib].y;
+    if(ibox == procId) continue;
+
     firstloc[ibox]    = iloc;      //Index of the first particle send to proc: ibox
     nsendDispls[ibox] = iloc*sizeof(bodyStruct);
 
@@ -1118,7 +1127,8 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
 
   double t92 = get_time();
   unsigned int recvCount  = nreceive[0];
-        for (int i = 1; i < nproc; i++)
+
+  for (int i = 1; i < nproc; i++)
   {
     recvCount     += nreceive[i];
   }
@@ -1127,14 +1137,15 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
 
   int recvOffset = 0;
 
-#define NMAXPROC 32768
+  #define NMAXPROC 32768
   static MPI_Status stat[NMAXPROC];
   static MPI_Request req[NMAXPROC*2];
-    int nreq = 0; 
+
+  int nreq = 0;
   for (int dist = 1; dist < nproc; dist++)
   {
-    const int src = (nproc + myid - dist) % nproc;
-    const int dst = (nproc + myid + dist) % nproc;
+    const int src    = (nproc + myid - dist) % nproc;
+    const int dst    = (nproc + myid + dist) % nproc;
     const int scount = nsendbytes[dst];
     const int rcount = nreceive[src]*sizeof(bodyStruct);
   
@@ -1145,11 +1156,12 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
 	    recvOffset += nreceive[src];
     }
   }
- double t94 = get_time();
-    MPI_Waitall(nreq, req, stat);
 
-    LOGF(stderr, "EXCHANGE comm iter: %d  a2asize: %lg alloc: %lg data-start: %lg data-wait: %lg \n", 
-		    iter, t92-t91, t93-t92, t94-t93, get_time() -t94); 
+  double t94 = get_time();
+  MPI_Waitall(nreq, req, stat);
+
+  LOGF(stderr, "EXCHANGE comm iter: %d  a2asize: %lg alloc: %lg data-start: %lg data-wait: %lg \n",
+                iter, t92-t91, t93-t92, t94-t93, get_time() -t94);
 
 #else
 
@@ -2020,7 +2032,10 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         double tCount = get_time()-tz;
 
         //Record the number of particles required
-        this->fullGrpAndLETRequestStatistics[ibox] = make_uint2(countParticles, ibox);
+        //this->fullGrpAndLETRequestStatistics[ibox] = make_uint2(countParticles, ibox);
+
+        //Test, use particles and node stats, but let particles count more heavy
+        this->fullGrpAndLETRequestStatistics[ibox] = make_uint2(countParticles*10 + countNodes, ibox);
 
         //Buffer that will contain all the data:
         //|real4| 2*particleCount*real4| nodes*real4 | nodes*real4 | nodes*3*real4 |
