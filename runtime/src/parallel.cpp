@@ -2197,12 +2197,12 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
       //Send the sizes
 
-      fprintf(stderr, "[%d] Going to do the alltoall size communication! Since begin: %lg \n",
-          procId, get_time()-tStart);
+      fprintf(stderr, "[%d] Going to do the alltoall size communication! Iter: %d Since begin: %lg \n",
+          procId, iter, get_time()-tStart);
       double t100 = get_time();
       MPI_Alltoall(quickCheckSendSizes, 1, MPI_INT, quickCheckRecvSizes, 1, MPI_INT, MPI_COMM_WORLD);
-      fprintf(stderr, "[%d] Completed_alltoall size communication! Took: %lg \n",
-          procId, get_time()-t100);
+      fprintf(stderr, "[%d] Completed_alltoall size communication! Iter: %d Took: %lg \n",
+          procId, iter, get_time()-t100);
 
       //Compute offsets, allocate memory
       int recvCountItems      = quickCheckRecvSizes[0];
@@ -2236,9 +2236,9 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 */
 //      quickCheckSendOffset , quickCheckSendSizes
 //
-	double tmem = get_time();   
+      double tmem = get_time();
       recvAllToAllBuffer =  new real4[recvCountItems];
-	LOGF(stderr, "Completed_alltoall mem alloc! Took: %lg \n", get_time()-tmem);
+      LOGF(stderr, "Completed_alltoall mem alloc! Iter: %d Took: %lg \n", iter, get_time()-tmem);
 
       //Convert the values to bytes to get correct offsets and sizes
       for(int i=0; i < nProcs; i++)
@@ -2253,8 +2253,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       MPI_Alltoallv(&topLevelTrees[0],       quickCheckSendSizes, quickCheckSendOffset, MPI_BYTE,
                     &recvAllToAllBuffer[0],  quickCheckRecvSizes, quickCheckRecvOffset, MPI_BYTE,
                     MPI_COMM_WORLD);
-      LOGF(stderr, "[%d] Completed_alltoall data communication! Took: %lg\tSize: %ld MB \n",
-          procId, get_time()-t110, (recvCountItems*sizeof(real4))/(1024*1024));
+      LOGF(stderr, "[%d] Completed_alltoall data communication! Iter: %d Took: %lg\tSize: %ld MB \n",
+          procId, iter, get_time()-t110, (recvCountItems*sizeof(real4))/(1024*1024));
 
       #pragma omp critical(updateReceivedProcessed)
       {
