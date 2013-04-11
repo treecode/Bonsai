@@ -1978,6 +1978,9 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
               quickCheckSendOffset[ibox] = topLevelTreesSizeOffset[maxLevel].y; //Offset
               #pragma omp critical
                 nQuickCheckSends++;
+
+              //Store the statistics
+              this->fullGrpAndLETRequestStatistics[ibox] = make_uint2(maxLevel, ibox);
             }
             else
             {
@@ -2011,9 +2014,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
           //We can skip this process, its been taken care of during the quick check
           continue;
         }
-
-        //Modified the code up to here, now going to check if it still works
-
 
 
         int countNodes = 0, countParticles = 0;

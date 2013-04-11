@@ -480,9 +480,11 @@ void approximate_gravity(
         bool leaf       = node_pos.w <= 0;  //Small AND equal incase of a 1 particle cell       //Check if it is a leaf
         //         split = true;
 
-//If node_data = 0xF it means the remote process decided split was not required
-        //if(node_data == 0xFFFFFFFF)
-//          split = false;
+        //If node_data = 0xF it means the remote process decided split was not required
+        //important for traversal of LET trees!! Since numerical difference between CPU and GPU
+        //can cause different outcomes on the split test
+        if(node_data == 0xFFFFFFFF)
+          split = false;
 
 
 
