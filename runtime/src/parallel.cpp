@@ -6,6 +6,10 @@
   #include <omp.h>
 #endif
 
+#if ENABLE_LOG
+  extern bool ENABLE_RUNTIME_LOG;
+  extern bool PREPEND_RANK;
+#endif
 
 //SSE stuff for local tree-walk
 typedef float  _v4sf  __attribute__((vector_size(16)));
@@ -1844,7 +1848,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
   int nQuickCheckSends          = 0;
 
 
-  omp_set_num_threads(4);
+  omp_set_num_threads(16);
 
   letObject *computedLETs = new letObject[nProcs-1];
 
@@ -2065,7 +2069,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                   &localTree.multipole[0],        nodeInfo_private, countParticles, countNodes,
                    node_begend.x, node_begend.y, (uint*)curLevelStack, (uint*)nextLevelStack);
 
-        fprintf(stderr,"LET count&fill [%d,%d]: Dest: %d Count: %lg Fill; %lg, Total : %lg (#P: %d \t#N: %d) \tsince start: %lg \n",
+        if (ENABLE_RUNTIME_LOG)
+          fprintf(stderr,"LET count&fill [%d,%d]: Dest: %d Count: %lg Fill; %lg, Total : %lg (#P: %d \t#N: %d) \tsince start: %lg \n",
                        procId, tid, ibox, tCount, get_time() - ty, get_time()-t1, countParticles, countNodes, get_time()-t0);
 
         //Set the tree properties, before we exchange the data
@@ -2106,8 +2111,11 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                 topNodeOnTheFlyCount = 0;
               }
 
+              double t000 = get_time();
               mergeAndLaunchLETStructures(tree, remote, treeBuffers, treeBuffersSource,
                                           topNodeCount, recvTree, mergeOwntree, procTrees, tStart);
+              LOGF(stderr, "Merging and launching iter: %d took: %lg \n", iter, get_time()-t000);
+
 
               //Correct the topNodeOnTheFlyCounter
               #pragma omp critical(updateReceivedProcessed)
@@ -2157,8 +2165,10 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
               topNodeOnTheFlyCount = 0;
             }
 
+            double t000 = get_time();
             mergeAndLaunchLETStructures(tree, remote, treeBuffers, treeBuffersSource,
                                         topNodeCount,recvTree, mergeOwntree, procTrees, tStart);
+            LOGF(stderr, "Merging and launching iter: %d took: %lg \n", iter, get_time()-t000);
 
             //Correct the topNodeOnTheFlyCounter
             #pragma omp critical(updateReceivedProcessed)
@@ -2197,12 +2207,10 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
       //Send the sizes
 
-      fprintf(stderr, "[%d] Going to do the alltoall size communication! Iter: %d Since begin: %lg \n",
-          procId, iter, get_time()-tStart);
+      LOGF(stderr, "Going to do the alltoall size communication! Iter: %d Since begin: %lg \n", iter, get_time()-tStart);
       double t100 = get_time();
       MPI_Alltoall(quickCheckSendSizes, 1, MPI_INT, quickCheckRecvSizes, 1, MPI_INT, MPI_COMM_WORLD);
-      fprintf(stderr, "[%d] Completed_alltoall size communication! Iter: %d Took: %lg \n",
-          procId, iter, get_time()-t100);
+      LOGF(stderr, "Completed_alltoall size communication! Iter: %d Took: %lg ( %lg )\n", iter, get_time()-t100, get_time()-t0);
 
       //Compute offsets, allocate memory
       int recvCountItems      = quickCheckRecvSizes[0];
@@ -2253,8 +2261,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       MPI_Alltoallv(&topLevelTrees[0],       quickCheckSendSizes, quickCheckSendOffset, MPI_BYTE,
                     &recvAllToAllBuffer[0],  quickCheckRecvSizes, quickCheckRecvOffset, MPI_BYTE,
                     MPI_COMM_WORLD);
-      LOGF(stderr, "[%d] Completed_alltoall data communication! Iter: %d Took: %lg\tSize: %ld MB \n",
-          procId, iter, get_time()-t110, (recvCountItems*sizeof(real4))/(1024*1024));
+      LOGF(stderr, "[%d] Completed_alltoall data communication! Iter: %d Took: %lg ( %lg )\tSize: %ld MB \n",
+          procId, iter, get_time()-t110,  get_time()-t0, (recvCountItems*sizeof(real4))/(1024*1024));
 
       #pragma omp critical(updateReceivedProcessed)
       {
@@ -2321,8 +2329,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             double tZ = get_time();
             MPI_Recv(&recvDataBuffer[0], count, MPI_BYTE, probeStatus.MPI_SOURCE, probeStatus.MPI_TAG, MPI_COMM_WORLD,&recvStatus);
 
-            fprintf(stderr, "[%d] Receive complete from: %d  || recvTree: %d since start: %lg alloc: %lg Recv: %lg Size: %d\n",
-                procId, recvStatus.MPI_SOURCE, 0, get_time()-tStart,tZ-tY, get_time()-tZ, count);
+            LOGF(stderr, "Receive complete from: %d  || recvTree: %d since start: %lg ( %lg ) alloc: %lg Recv: %lg Size: %d\n",
+                recvStatus.MPI_SOURCE, 0, get_time()-tStart,get_time()-t0,tZ-tY, get_time()-tZ, count);
 
             treeBuffers[nReceived] = recvDataBuffer;
             treeBuffersSource[nReceived] = 0; //0 indicates point to point source
