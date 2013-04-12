@@ -472,28 +472,29 @@ if(0)
     predict(this->localTree);
     devContext.stopTiming("Predict", 9, execStream->s());
 
-
     if(nProcs > 1)
     {
-      double domUp =0, domEx = 0;
-      double tZ = get_time();
-      devContext.startTiming(execStream->s());
-      parallelDataSummary(localTree, lastTotal, lastLocal, domUp, domEx);
-      devContext.stopTiming("UpdateDomain", 6, execStream->s());
-      idata.lastDomTime   = get_time()-tZ;
-      idata.totalDomTime += idata.lastDomTime;
+      //if(1) //Always update domain boundaries/particles
+      if((iter % rebuild_tree_rate) == 0)
+      {
+        double domUp =0, domEx = 0;
+        double tZ = get_time();
+        devContext.startTiming(execStream->s());
+        parallelDataSummary(localTree, lastTotal, lastLocal, domUp, domEx);
+        devContext.stopTiming("UpdateDomain", 6, execStream->s());
+        idata.lastDomTime   = get_time()-tZ;
+        idata.totalDomTime += idata.lastDomTime;
 
-      idata.totalDomUp += domUp;
-      idata.totalDomEx += domEx;
+        idata.totalDomUp += domUp;
+        idata.totalDomEx += domEx;
 
-      devContext.startTiming(execStream->s());
-      mpiSync();
-      devContext.stopTiming("DomainUnbalance", 12, execStream->s());
+        devContext.startTiming(execStream->s());
+        mpiSync();
+        devContext.stopTiming("DomainUnbalance", 12, execStream->s());
 
-
-
-      needDomainUpdate    = false; //We did a boundary sync in the parallel decomposition part
-      needDomainUpdate    = true; //TODO if I set it to false results degrade. Check why, for now just updte
+        needDomainUpdate    = false; //We did a boundary sync in the parallel decomposition part
+        needDomainUpdate    = true; //TODO if I set it to false results degrade. Check why, for now just updte
+      }
     }
 
 
@@ -517,54 +518,11 @@ if(0)
     }
     else
     {
-
-
-      //Redistribute the particles
-//      if(0)
-//      {
-//        if(nProcs > 1)
-//        {
-//          // if(iter % rebuild_tree_rate == 0)
-//          if(0)
-//          {
-//            //If we do a redistribution we _always_ have to do
-//            //an update of the particle domain, otherwise the boxes
-//            //do not match and we get errors of particles outside
-//            //domains
-//            t1 = get_time();
-//
-//            devContext.startTiming(execStream->s());
-//            gpu_updateDomainDistribution(idata.lastGravTime);
-//            devContext.stopTiming("DomainUpdate", 6, execStream->s());
-//
-//            devContext.startTiming(execStream->s());
-//            gpuRedistributeParticles();
-//            devContext.stopTiming("Exchange", 6, execStream->s());
-//
-//            needDomainUpdate = false;
-//
-//            idata.lastDomTime   = get_time() - t1;
-//            idata.totalDomTime += idata.lastDomTime;
-//          }
-//          else
-//          {
-//            //TODO make a new function for this for the SFC decomp
-//
-//            //Only send new box sizes, incase we do not exchange particles
-//            //but continue with the current tree_structure
-//            gpu_updateDomainOnly();
-//
-//            needDomainUpdate = false;
-//          }
-//        } //if nProcs > 1
-//      }//if (0)
-
-
       //Build the tree using the predicted positions
       // bool rebuild_tree = Nact_since_last_tree_rebuild > 4*this->localTree.n;   
       bool rebuild_tree = true;
 
-//      rebuild_tree = ((iter % rebuild_tree_rate) == 0) || forceTreeRebuild;
+      rebuild_tree = ((iter % rebuild_tree_rate) == 0);
       if(rebuild_tree)
       {
         t1 = get_time();
@@ -651,6 +609,24 @@ if(0)
     idata.lastLETCommTime   = thisPartLETExTime;
     idata.totalLETCommTime += thisPartLETExTime;
 
+
+    //Compute the total number of interactions that occured
+#if 1
+   localTree.interactions.d2h();
+
+   long long directSum = 0;
+   long long apprSum = 0;
+
+   for(int i=0; i < localTree.n; i++)
+   {
+     apprSum     += localTree.interactions[i].x;
+     directSum   += localTree.interactions[i].y;
+   }
+   char buff2[512];
+   sprintf(buff2, "INT Interaction at (rank= %d ) iter: %d\tdirect: %llu\tappr: %llu\tavg dir: %f\tavg appr: %f\n",
+                   procId,iter, directSum ,apprSum, directSum / (float)localTree.n, apprSum / (float)localTree.n);
+   devContext.writeLogEvent(buff2);
+#endif
 
 
     float ms=0, msLET=0;
@@ -932,6 +908,15 @@ void octree::iterate_teardown(IterationData &idata) {
                   idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
                   idata.totalDomUp, idata.totalDomEx);
   
+  char buff[16384];
+  sprintf(buff,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\n",
+                  procId, totalTime, idata.totalGravTime,
+                  (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
+                  idata.totalLETCommTime,
+                  idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
+                  idata.totalDomUp, idata.totalDomEx);
+  devContext.writeLogEvent(buff);
+
   if(execStream != NULL)
   {
     delete execStream;

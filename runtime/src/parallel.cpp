@@ -867,6 +867,7 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
   int tempSize = localTree.generalBuffer1.get_size() - localTree.n;
   int needSize = (int)(1.01f*(validCount*(sizeof(bodyStruct)/sizeof(int))));
 
+#if 0
   if(tempSize < needSize)
   {
     int itemsNeeded = needSize + localTree.n + 4096; //Slightly larger as before for offset space
@@ -893,6 +894,7 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
   memOffset1 = bodyBuffer.cmalloc_copy(localTree.generalBuffer1,
                               validCount, memOffset1);
 
+
   extractOutOfDomainParticlesAdvancedSFC.set_arg<int>(0,    &validCount);
   extractOutOfDomainParticlesAdvancedSFC.set_arg<cl_mem>(1, compactList.p());
   extractOutOfDomainParticlesAdvancedSFC.set_arg<cl_mem>(2, localTree.bodies_Ppos.p());
@@ -909,6 +911,73 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
   extractOutOfDomainParticlesAdvancedSFC.execute(execStream->s());
 
   bodyBuffer.d2h(validCount);
+
+#else
+
+  int stepSize          = (tempSize / (sizeof(bodyStruct) / sizeof(int)))-512;
+
+  bool doInOneGo = true;
+
+  bodyStruct *extraBodyBuffer = NULL;
+
+  if(stepSize > needSize)
+  {
+    //We can do it in one go
+    doInOneGo = true;
+  }
+  else
+  {
+    //We need an extra CPU buffer
+    doInOneGo       = false;
+    extraBodyBuffer = new bodyStruct[needSize];
+    assert(extraBodyBuffer != NULL);
+  }
+
+  my_dev::dev_mem<bodyStruct>  bodyBuffer(devContext);
+
+  memOffset1 = bodyBuffer.cmalloc_copy(localTree.generalBuffer1,
+                                       stepSize, memOffset1);
+
+  int extractOffset = 0;
+  for(unsigned int i=0; i < validCount; i+= stepSize)
+  {
+    int items = min(stepSize, (int)(validCount-i));
+
+    if(items > 0)
+    {
+      extractOutOfDomainParticlesAdvancedSFC.set_arg<int>(0,    &extractOffset);
+      extractOutOfDomainParticlesAdvancedSFC.set_arg<int>(1,    &items);
+      extractOutOfDomainParticlesAdvancedSFC.set_arg<cl_mem>(2, compactList.p());
+      extractOutOfDomainParticlesAdvancedSFC.set_arg<cl_mem>(3, localTree.bodies_Ppos.p());
+      extractOutOfDomainParticlesAdvancedSFC.set_arg<cl_mem>(4, localTree.bodies_Pvel.p());
+      extractOutOfDomainParticlesAdvancedSFC.set_arg<cl_mem>(5, localTree.bodies_pos.p());
+      extractOutOfDomainParticlesAdvancedSFC.set_arg<cl_mem>(6, localTree.bodies_vel.p());
+      extractOutOfDomainParticlesAdvancedSFC.set_arg<cl_mem>(7, localTree.bodies_acc0.p());
+      extractOutOfDomainParticlesAdvancedSFC.set_arg<cl_mem>(8, localTree.bodies_acc1.p());
+      extractOutOfDomainParticlesAdvancedSFC.set_arg<cl_mem>(9, localTree.bodies_time.p());
+      extractOutOfDomainParticlesAdvancedSFC.set_arg<cl_mem>(10, localTree.bodies_ids.p());
+      extractOutOfDomainParticlesAdvancedSFC.set_arg<cl_mem>(11, localTree.bodies_key.p());
+      extractOutOfDomainParticlesAdvancedSFC.set_arg<cl_mem>(12, bodyBuffer.p());
+      extractOutOfDomainParticlesAdvancedSFC.setWork(items, 128);
+      extractOutOfDomainParticlesAdvancedSFC.execute(execStream->s());
+
+      bodyBuffer.d2h(items); // validCount);
+      if(!doInOneGo)
+      {
+        //Do the extra memory copy to the CPU buffer
+        memcpy(&extraBodyBuffer[extractOffset], &bodyBuffer[0], sizeof(bodyStruct)*items);
+        extractOffset += items;
+      }
+    }
+  }//end for
+
+  if(doInOneGo)
+  {
+    extraBodyBuffer = &bodyBuffer[0]; //Assign correct pointer
+  }
+
+#endif
+
 
   //Now we have to move particles from the back of the array to the invalid spots
   //this can be done in parallel with exchange operation to hide some time
@@ -938,7 +1007,11 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
   internalMoveSFC.setWork(validCount, 128);
   internalMoveSFC.execute(execStream->s());
 
-  this->gpu_exchange_particles_with_overflow_check_SFC(localTree, &bodyBuffer[0], compactList, validCount);
+  //this->gpu_exchange_particles_with_overflow_check_SFC(localTree, &bodyBuffer[0], compactList, validCount);
+  this->gpu_exchange_particles_with_overflow_check_SFC(localTree, &extraBodyBuffer[0], compactList, validCount);
+
+  if(!doInOneGo) delete[] extraBodyBuffer;
+
 } //End gpuRedistributeParticles
 
 //Exchange particles with other processes

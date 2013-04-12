@@ -342,7 +342,9 @@ KERNEL_DECLARE(gpu_internalMoveSFC) (int       n_extract,
 
 }
 
-KERNEL_DECLARE(gpu_extractOutOfDomainParticlesAdvancedSFC)(int n_extract,
+KERNEL_DECLARE(gpu_extractOutOfDomainParticlesAdvancedSFC)(
+                                                       int offset,
+                                                       int n_extract,
                                                        int *extractList,
                                                        real4 *Ppos,
                                                        real4 *Pvel,
@@ -363,15 +365,15 @@ KERNEL_DECLARE(gpu_extractOutOfDomainParticlesAdvancedSFC)(int n_extract,
   if(id >= n_extract) return;
 
   //copy the data from a struct of arrays into a array of structs
-  destination[id].Ppos = Ppos[extractList[id]];
-  destination[id].Pvel = Pvel[extractList[id]];
-  destination[id].pos  = pos[extractList[id]];
-  destination[id].vel  = vel[extractList[id]];
-  destination[id].acc0  = acc0[extractList[id]];
-  destination[id].acc1  = acc1[extractList[id]];
-  destination[id].time  = time[extractList[id]];
-  destination[id].id    = body_id[extractList[id]];
-  destination[id].key   = body_key[extractList[id]];
+  destination[id].Ppos = Ppos[extractList[offset+id]];
+  destination[id].Pvel = Pvel[extractList[offset+id]];
+  destination[id].pos  = pos[extractList[offset+id]];
+  destination[id].vel  = vel[extractList[offset+id]];
+  destination[id].acc0  = acc0[extractList[offset+id]];
+  destination[id].acc1  = acc1[extractList[offset+id]];
+  destination[id].time  = time[extractList[offset+id]];
+  destination[id].id    = body_id[extractList[offset+id]];
+  destination[id].key   = body_key[extractList[offset+id]];
 
 }
 

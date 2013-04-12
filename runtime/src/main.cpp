@@ -756,6 +756,7 @@ int main(int argc, char** argv)
 #endif
 
   int nPlummer = -1;
+  int nSphere  = -1;
 	/************** beg - command line arguments ********/
 #if 1
 	{
@@ -797,7 +798,8 @@ int main(int argc, char** argv)
 #endif
 
 
-		ADDUSAGE("    --plummer  #      use plummer model with # particles per proc \n");
+		ADDUSAGE("     --plummer  #      use plummer model with # particles per proc");
+		ADDUSAGE("     --sphere   #      use spherical model with # particles per proc");
 		ADDUSAGE(" ");
 
 
@@ -809,6 +811,7 @@ int main(int argc, char** argv)
 		opt.setOption( "theta",   'o' );
 		opt.setOption( "rebuild", 'r' );
 		opt.setOption( "plummer");
+		opt.setOption( "sphere");
 		opt.setOption( "dev" );
 		opt.setOption( "renderdev" );
 		opt.setOption( "logfile" );
@@ -856,6 +859,7 @@ int main(int argc, char** argv)
 		char *optarg = NULL;
 		if ((optarg = opt.getValue("infile")))       fileName           = string(optarg);
 		if ((optarg = opt.getValue("plummer")))      nPlummer           = atoi(optarg);
+		if ((optarg = opt.getValue("sphere")))       nSphere            = atoi(optarg);
 		if ((optarg = opt.getValue("logfile")))      logFileName        = string(optarg);
 		if ((optarg = opt.getValue("dev")))          devID              = atoi  (optarg);
         renderDevID = devID;
@@ -877,7 +881,7 @@ int main(int argc, char** argv)
         if ((optarg = opt.getValue("dTglow")))	 dTstartGlow  = (float)atof(optarg);
         dTstartGlow = std::max(dTstartGlow, 1.0f);
 #endif
-		if (fileName.empty() && nPlummer == -1)
+		if (fileName.empty() && nPlummer == -1 && nSphere == -1)
 		{
 			opt.printUsage();
 			exit(0);
@@ -980,7 +984,7 @@ int main(int argc, char** argv)
 
 #ifdef USE_MPI
 #if 0
- omp_set_num_threads(8);
+ omp_set_num_threads(16);
   #pragma omp parallel
   {
     int tid = omp_get_thread_num();
@@ -1074,7 +1078,7 @@ int main(int argc, char** argv)
     
   tree->set_context(logFile, false); //Do logging to file and enable timing (false = enabled)
 
-  if (nPlummer == -1)
+  if (nPlummer == -1 && nSphere == -1)
   {
     if(procId == 0)
     {
@@ -1096,7 +1100,7 @@ int main(int argc, char** argv)
       tree->ICRecv(0, bodyPositions, bodyVelocities,  bodyIDs);
     }
   }
-  else
+  else if(nPlummer >= 0)
   {
     if (procId == 0) printf("Using plummer model with n= %d per proc \n", nPlummer);
     const int seed = 19810614 + procId*113;
@@ -1119,6 +1123,41 @@ int main(int argc, char** argv)
       bodyVelocities[i].w = 0;
     }
   }
+  else
+  {
+    //Sphere
+    if (procId == 0) printf("Using Spherical model with n= %d per proc \n", nSphere);
+    bodyPositions.resize(nSphere);
+    bodyVelocities.resize(nSphere);
+    bodyIDs.resize(nSphere);
+
+    srand48(procId+19840501);
+
+    /* generate uniform sphere */
+    int np = 0;
+    while (np < nSphere)
+    {
+     const double x = 2.0*drand48()-1.0;
+     const double y = 2.0*drand48()-1.0;
+     const double z = 2.0*drand48()-1.0;
+     const double r2 = x*x+y*y+z*z;
+     if (r2 < 1)
+     {
+       bodyIDs[np]   = nSphere*procId + np;
+
+       bodyPositions[np].x = x;
+       bodyPositions[np].y = y;
+       bodyPositions[np].z = z;
+       bodyPositions[np].w = (1.0/nSphere) * 1.0/nProcs;
+
+       bodyVelocities[np].x = 0;
+       bodyVelocities[np].y = 0;
+       bodyVelocities[np].z = 0;
+       bodyVelocities[np].w = 0;
+       np++;
+     }//if
+    }//while
+  }//else
 
 
 #ifdef TIPSYOUTPUT
