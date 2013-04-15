@@ -163,7 +163,8 @@ void octree::build_GroupTree(int n_bodies,
           if (n_node <= 16 && n_levels > level_min)
           { //Leaf node
             for (int k = i_body; k < i1; k++)
-              keys[k] = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
+              keys[k] = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, keys[k].w); //We keep the w component for sorting the size and center arrays
+              //keys[k] = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
 
             nMasked += n_node;
 
@@ -193,8 +194,8 @@ void octree::build_GroupTree(int n_bodies,
 
 
   double tlink = get_time();
-//   for(int i=0; i < n_levels; i++)
-//     fprintf(stderr, "On level: %d : %d --> %d  \n", i, node_levels[i],node_levels[i+1]);
+  //for(int i=0; i < n_levels; i++)
+  //   LOGF(stderr, "On level: %d : %d --> %d  \n", i, node_levels[i],node_levels[i+1]);
 
 
 
@@ -218,6 +219,8 @@ void octree::build_GroupTree(int n_bodies,
       uint2 cij; cij.x = beg; cij.y = n1;  //Continue from last point
       beg    = find_key2(key, cij, &node_keys[0]);
       uint child = nodes[beg].x;
+
+//      if(procId == 1)	LOGF(stderr, "I iter: %d am ilevel: %d node: %d my parent is: %d \n", iter, level, i, beg);
 
       if (child == 0) {
         child = i;

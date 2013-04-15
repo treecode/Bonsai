@@ -255,17 +255,35 @@ void octree::compute_properties(tree_structure &tree) {
       int grpTree_n_levels;
       int grpTree_startGrp;
       int grpTree_endGrp;
+
+      //Sort since keys can be unordered if we do not rebuild the tree
+      std::sort(&grpKeys[0], &grpKeys[0]+tree.n_groups, cmp_ph_key());   
+
       build_GroupTree(tree.n_groups, &grpKeys[0], nodes,
                       nodeKeys, node_levels, grpTree_n_levels,
                       grpTree_n_nodes, grpTree_startGrp, grpTree_endGrp);
 
       //Send the number of nodes other processes so they can allocate memory
       //this can't be done yet since we can not do async communication
+      
+      real4 *tempGrpBuffer = new real4[tree.n_groups*2];
 
+      tree.groupCenterInfo.waitForCopyEvent(); //Make sure data is on the host
       tree.groupSizeInfo.waitForCopyEvent(); //Make sure data is on the host
 
       //Start copying the particle positions to the host, will overlap with compute properties
       localTree.bodies_Ppos.d2h(tree.n, false, LETDataToHostStream->s());
+
+      //Reorder the groupCenter and groupSize arrays after the ordering of the keys
+      for(int i=0; i < tree.n_groups; i++)	
+	{
+		tempGrpBuffer[i] 		= tree.groupCenterInfo[grpKeys[i].w];
+		tempGrpBuffer[i+tree.n_groups]  = tree.groupSizeInfo  [grpKeys[i].w];
+	}
+	memcpy(&tree.groupCenterInfo[0], &tempGrpBuffer[0], 		sizeof(real4)*tree.n_groups);
+	memcpy(&tree.groupSizeInfo[0],   &tempGrpBuffer[tree.n_groups], sizeof(real4)*tree.n_groups);
+
+	delete[] tempGrpBuffer;
 
       //We make a copy of the topGroups before the rest of the groups
       //These will be send to far away processes instead of the full-tree
@@ -294,6 +312,9 @@ void octree::compute_properties(tree_structure &tree) {
       computeProps_GroupTree(&tree.groupCenterInfo[0], &tree.groupSizeInfo[0],
                              &localGrpTreeCntSize[2*grpTree_n_topNodes], &localGrpTreeCntSize[2*grpTree_n_topNodes+grpTree_n_nodes],
                              nodes, node_levels, grpTree_n_levels);
+
+
+
 
       //Copy the top-groups
       for(int i=grpTree_startGrp; i < grpTree_endGrp; i++)
