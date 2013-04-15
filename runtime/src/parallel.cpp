@@ -929,7 +929,7 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
   {
     //We need an extra CPU buffer
     doInOneGo       = false;
-    extraBodyBuffer = new bodyStruct[needSize];
+    extraBodyBuffer = new bodyStruct[validCount];
     assert(extraBodyBuffer != NULL);
   }
 
