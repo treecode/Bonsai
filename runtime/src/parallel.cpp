@@ -3027,6 +3027,17 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
     }//if tid = 1
   }//end OMP section
 
+#if 1 //Moved freeing of memory to here for ha-pacs workaround
+  for(int i=0; i < nProcs-1; i++)
+  {
+      if(treeBuffersSource[i] == 0) //Check if its a point to point source
+      {
+       delete[] treeBuffers[i];    //Free the memory of this part of the LET
+       treeBuffers[i] = NULL;
+      }
+  }
+#endif
+
   if(recvAllToAllBuffer) delete[] recvAllToAllBuffer;
   delete[] treeBuffersSource;
   delete[] computedLETs;
@@ -3481,11 +3492,13 @@ void octree::mergeAndLaunchLETStructures(
       combinedRemoteTree[j].w =  host_int_as_float(child);      //Store the modified value
     }//for non-top nodes
 
+#if 0 //Ha-pacs fix
     if(treeBuffersSource[i+procTrees] == 0) //Check if its a point to point source
     {
       delete[] treeBuffers[i+procTrees];    //Free the memory of this part of the LET
       treeBuffers[i+procTrees] = NULL;
     }
+#endif
     
     
   } //for PROCS
