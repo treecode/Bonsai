@@ -163,7 +163,7 @@ void octree::build_GroupTree(int n_bodies,
           if (n_node <= 16 && n_levels > level_min)
           { //Leaf node
             for (int k = i_body; k < i1; k++)
-              keys[k] = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, keys[k].w); //We keep the w component for sorting the size and center arrays
+              keys[k] = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, k); //We keep the w component for sorting the size and center arrays
               //keys[k] = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
 
             nMasked += n_node;
