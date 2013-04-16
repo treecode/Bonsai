@@ -3548,6 +3548,25 @@ void octree::mergeAndLaunchLETStructures(
   procTrees += PROCS; //Changed since PROCS can be smaller than total number that can be processed
 
 
+#if 0
+  if(iter == 20)
+  {
+    char fileName[256];
+    sprintf(fileName, "letParticles-%d.bin", mpiGetRank());
+    ofstream nodeFile;
+    //nodeFile.open(nodeFileName.c_str());
+    nodeFile.open(fileName, ios::out | ios::binary | ios::app);
+    if(nodeFile.is_open())
+    {
+	for(int i=0; i < totalParticles; i++)
+	{
+		nodeFile.write((char*)&combinedRemoteTree[i], sizeof(real4));
+	}
+	nodeFile.close();
+    }
+  }
+#endif  
+
   //Check if we need to summarize which particles are active,
   //only done during the last approximate_gravity_let call
   bool doActivePart = (procTrees == mpiGetNProcs() -1);

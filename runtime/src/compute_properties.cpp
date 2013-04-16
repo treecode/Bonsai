@@ -342,8 +342,30 @@ void octree::compute_properties(tree_structure &tree) {
       localGrpTreeCntSize[2*grpTree_n_topNodes].z = itof.f;
 
       double t1 = get_time();
-      LOGF(stderr, "Build local tree; %lg Since start compProps: %lg\n", t1-tlocal, t1-t0);
-
+      LOGF(stderr, "Build local tree; %lg Since start compProps: %lg || nodes: %d \n", t1-tlocal, t1-t0, grpTree_n_nodes);
+#if 0
+  if(iter == 20)
+  {  
+    char fileName[256];
+    sprintf(fileName, "groupTreeStructure-%d.bin", mpiGetRank());
+    ofstream nodeFile;
+    nodeFile.open(fileName, ios::out | ios::binary);
+    if(nodeFile.is_open())
+    {
+      nodeFile.write((char*)&grpTree_n_nodes, sizeof(int));
+      nodeFile.write((char*)&grpTree_startGrp, sizeof(int));      
+      nodeFile.write((char*)&grpTree_endGrp, sizeof(int));    
+      
+      for(int i=0; i < grpTree_n_nodes; i++)
+      {
+        nodeFile.write((char*)&localGrpTreeCntSize[2*grpTree_n_topNodes+grpTree_n_nodes+i], sizeof(real4)); //size
+        nodeFile.write((char*)&localGrpTreeCntSize[2*grpTree_n_topNodes+i], sizeof(real4)); //center
+        
+      }    
+      nodeFile.close();
+    }    
+  }
+#endif
       //Now if the GPU is not done yet with computing properties we could start sending around
       //the grpTree properties. However we can't use async communication for now. So postpone
       //that method.
@@ -355,6 +377,79 @@ void octree::compute_properties(tree_structure &tree) {
   execStream->sync();
   LOGF(stderr, "Compute properties took: %lg  wait: %lg \n", get_time()-t0, get_time()-t1);
 
+
+
+#if 0
+
+
+if(iter == 20)
+{
+   char fileName[256];
+    sprintf(fileName, "groups-%d.bin", mpiGetRank());
+    ofstream nodeFile;
+    nodeFile.open(fileName, ios::out | ios::binary);
+    if(nodeFile.is_open())
+    {
+      nodeFile.write((char*)&tree.n_groups, sizeof(int));
+      
+      for(int i=0; i < tree.n_groups; i++)
+      {
+        nodeFile.write((char*)&tree.groupSizeInfo[i],  sizeof(real4)); //size
+        nodeFile.write((char*)&tree.groupCenterInfo[i], sizeof(real4)); //center
+      }
+    }
+  }    
+
+ //Write the tree-structure
+ if(iter == 20)
+ {
+   tree.multipole.d2h();
+  tree.boxSizeInfo.d2h();
+  tree.boxCenterInfo.d2h();
+  tree.bodies_Ppos.d2h();
+  
+    char fileName[256];
+    sprintf(fileName, "fullTreeStructure-%d.bin", mpiGetRank());
+    ofstream nodeFile;
+    //nodeFile.open(nodeFileName.c_str());
+    nodeFile.open(fileName, ios::out | ios::binary);
+    if(nodeFile.is_open())
+    {
+      uint2 node_begend;
+      int level_start = tree.startLevelMin;
+      node_begend.x   = tree.level_list[level_start].x;
+      node_begend.y   = tree.level_list[level_start].y;
+
+      nodeFile.write((char*)&node_begend.x, sizeof(int));
+      nodeFile.write((char*)&node_begend.y, sizeof(int));      
+      nodeFile.write((char*)&tree.n_nodes, sizeof(int));
+      nodeFile.write((char*)&tree.n, sizeof(int));
+      
+      for(int i=0; i < tree.n; i++)
+      {
+        nodeFile.write((char*)&tree.bodies_Ppos[i], sizeof(real4));
+      }
+
+      for(int i=0; i < tree.n_nodes; i++)
+      {
+        nodeFile.write((char*)&tree.multipole[3*i+0], sizeof(real4));
+        nodeFile.write((char*)&tree.multipole[3*i+1], sizeof(real4));
+        nodeFile.write((char*)&tree.multipole[3*i+2], sizeof(real4));;
+      }
+      
+      for(int i=0; i < tree.n_nodes; i++)
+      {
+        nodeFile.write((char*)&tree.boxSizeInfo[i], sizeof(real4));
+      }        
+      for(int i=0; i < tree.n_nodes; i++)
+      {
+        nodeFile.write((char*)&tree.boxCenterInfo[i], sizeof(real4));
+      }            
+      
+      nodeFile.close();
+    }
+}
+#endif
 
 
 #if 0
