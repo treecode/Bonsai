@@ -1552,6 +1552,8 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
   if(tree.bodies_acc0.get_size() < newN)
     memSize = newN * MULTI_GPU_MEM_INCREASE;
 
+  LOGF(stderr,"Going to allocate memory for %d particles \n", newN);
+
   //Have to resize the bodies vector to keep the numbering correct
   //but do not reduce the size since we need to preserve the particles
   //in the over sized memory
@@ -1570,7 +1572,7 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
   //Can only be resized after we are done since we still have
   //parts of memory pointing to that buffer (extractList)
   //Note that we allocate some extra memory to make everything texture/memory aligned
-  tree.generalBuffer1.cresize(3*(memSize)*4 + 4096, false);
+  tree.generalBuffer1.cresize_nocpy(3*(memSize)*4 + 4096, false);
 
 
   //Now we have to copy the data in batches in case the generalBuffer1 is not large enough
@@ -2817,8 +2819,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       }//if tid==0
 
 
-      delete[] curLevelStack;
-      delete[] nextLevelStack;
+      //delete[] curLevelStack;
+      //delete[] nextLevelStack;
       delete[] nodeInfo_private;
     }
     else if(tid == 1)
@@ -3347,7 +3349,7 @@ void octree::mergeAndLaunchLETStructures(
     {
       gravStream->sync(); //Wait till the LET run is finished
     }
-    remote.fullRemoteTree.cresize(bufferSize, false);  //Change the size but ONLY if we need more memory
+    remote.fullRemoteTree.cresize_nocpy(bufferSize, false);  //Change the size but ONLY if we need more memory
   }
   tStart = get_time();
 
