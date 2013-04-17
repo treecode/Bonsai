@@ -604,7 +604,7 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
        //std::sort(allHashes, allHashes+totalNumberOfHashes, cmp_ph_key());
        double t00 = get_time();
        std::stable_sort(globalSamples, globalSamples+totalCount, cmp_ph_key());
-       LOGF(stderr,"Boundary sorting took: %lg \n", get_time()-t00);
+       LOGF(stderr,"Boundary sorting took: %lg Items: %d\n", get_time()-t00, totalCount);
 
 
        //Split the samples in equal parts to get the boundaries
@@ -616,8 +616,9 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
        parallelBoundaries[0]     = make_uint4(0x0, 0x0, 0x0, 0x0);
        //Chop in equal sized parts
        for(int i=1; i < nProcs; i++)
-       {
-         parallelBoundaries[procIdx++] = globalSamples[(i * totalCount) / nProcs];
+       { 
+         int idx = (size_t(i)*size_t(totalCount))/size_t(nProcs);                                             
+         parallelBoundaries[procIdx++] = globalSamples[idx];            
        }
 #if 0
        int perProc = totalCount / nProcs;
@@ -1656,7 +1657,170 @@ void octree::sendCurrentInfoGrpTree()
 #ifdef USE_MPI
 
 #if 1
-    //Per process a request for a full node or only the topnode
+/*
+    als ontvangst van alltoall positief, sturen we de size van de kleine tree
+	    als negatief is het ook de size en geven we aan dat we ook de
+	    volledige tree willen (vergelijk baar met een sendReq van 1 in de vorige code)
+
+	    daarna all gather met de psotieve size en offsets om alles te ontvange
+
+	 daarna voor de negatieve doen we de volledige tree, maar daarvoor hebben we size
+	 voor nodig. Oke werkt niet
+
+	 gebruikt uint2 voor sendeq
+
+	 uint2.x = size van de top tree. Als positief, dan heben we alleen dit nodig. Als negatief willen we volledige tree
+	 uint2.y = size van de volledige tree.
+
+	 na de all2all doen we een all_gatherv, voor de kleine tree die iedereen krijgt
+	 daarna isend/irecv zoals in domain exchange voor de volledige tree. 
+	Hopelijk is dat sneller dan de huidige methode
+*/
+
+    if(nProcs > NUMBER_OF_FULL_EXCHANGE)
+    {
+      //Sort the data and take the top NUMBER_OF_FULL_EXCHANGE to be used
+      std::partial_sort(fullGrpAndLETRequestStatistics,
+                        fullGrpAndLETRequestStatistics+NUMBER_OF_FULL_EXCHANGE, //Top items
+                        fullGrpAndLETRequestStatistics+nProcs,
+                        cmp_uint2_reverse());
+
+      //Set the top NUMBER_OF_FULL_EXCHANGE to be active
+      memset(fullGrpAndLETRequest, 0, sizeof(int)*nProcs);
+      for(int i=0; i < NUMBER_OF_FULL_EXCHANGE; i++)
+      {
+        fullGrpAndLETRequest[fullGrpAndLETRequestStatistics[i].y] = 1;
+      }
+    }
+    else
+    {
+      //Set everything active, except ourself
+      for(int i=0; i < nProcs; i++)
+        fullGrpAndLETRequest[i] = 1;
+      fullGrpAndLETRequest[procId] = 0;
+    }
+
+
+    std::vector<int2> sendReq2(nProcs);
+    std::vector<int2> recvReq2(nProcs);
+
+    //Set the sizes and indicate what we need and don't need
+    //if .x is negative, we need the full tree
+    for(int i=0; i < nProcs; i++)
+    {
+      sendReq2[i].x = grpTree_n_topNodes*2;
+      sendReq2[i].y = grpTree_n_nodes*2;
+      if(fullGrpAndLETRequest[i] == 1) sendReq2[i].x = -1*sendReq2[i].x;
+    }
+    //Do the all2all
+
+
+    double t00 = get_time();
+    //gather the requests
+    MPI_Alltoall(&sendReq2[0], 1*sizeof(int2), MPI_BYTE, 
+                 &recvReq2[0], 1*sizeof(int2), MPI_BYTE, 
+                 MPI_COMM_WORLD);
+    double t10 = get_time();
+
+    //Compute offsets, sizes, displacements, etc
+    unsigned int allGatherRecvOffset = 0;
+    
+    unsigned int nWantFullTreeCount = 0;
+    unsigned int nWantFullTreeList[nProcs];
+   
+    int *allGatherRecvSizeBytes = &infoGrpTreeBuffer[0*nProcs];
+    int *allGatherRecvDispBytes = &infoGrpTreeBuffer[1*nProcs];
+    
+    for(int i=0; i < nProcs; i++)
+    {
+      if(recvReq2[i].x < 0)
+      {
+        nWantFullTreeList[nWantFullTreeCount++] = i;        
+      }
+            
+      //The size of the all gather is always the same
+      allGatherRecvSizeBytes[i] = abs(recvReq2[i].x)   * sizeof(real4);            
+      
+      if(fullGrpAndLETRequest[i] == 1)
+      {
+        //Fill in the full info for later, eventhough we first receive
+        //the small tree
+        this->globalGrpTreeCount[i]   = recvReq2[i].y;
+        this->globalGrpTreeOffsets[i] = allGatherRecvOffset;
+        
+        allGatherRecvDispBytes[i]     = allGatherRecvOffset * sizeof(real4);
+        allGatherRecvOffset          += recvReq2[i].y;
+      }
+      else
+      {
+        //Fill in the small-tree info, which is enough for us
+        this->globalGrpTreeCount[i]   = abs(recvReq2[i].x);
+        this->globalGrpTreeOffsets[i] = allGatherRecvOffset;
+        
+        allGatherRecvDispBytes[i]     = allGatherRecvOffset * sizeof(real4);
+        allGatherRecvOffset          += abs(recvReq2[i].x);           
+      }
+    } //for i < nProcs
+    
+    
+    //Allocate memory
+    if(globalGrpTreeCntSize) delete[] globalGrpTreeCntSize;
+    globalGrpTreeCntSize = new real4[allGatherRecvOffset];
+
+    double t30 = get_time();    
+    
+    
+    //Do the all gather
+    MPI_Allgatherv(&localGrpTreeCntSize[0],                     //Begin of array
+                   sizeof(real4)*(2*grpTree_n_topNodes),        //Number of top-nodes
+                   MPI_BYTE,
+                   globalGrpTreeCntSize,                        //Receive buffer
+                   allGatherRecvSizeBytes,                      //Array with size per node
+                   allGatherRecvDispBytes,                      //Array with offset per node
+                   MPI_BYTE, MPI_COMM_WORLD);
+    
+    double t40 = get_time();
+    
+    //Next do the non-blocking send and receives
+    #define NMAXPROC 32768
+    static MPI_Status stat[NMAXPROC];
+    static MPI_Request req[NMAXPROC*2];
+
+    int nreq = 0;
+    
+    //The sends
+    for(int i=0; i < nWantFullTreeCount; i++)
+    {
+      int dst  = nWantFullTreeList[i];      
+      int size = sizeof(real4)*2*grpTree_n_nodes; //Times two it is size and center in one 
+      //LOGF(stderr, "Sending full to: %d size: %d \n", dst, size);
+      MPI_Isend(&localGrpTreeCntSize[2*grpTree_n_topNodes], size, 
+                 MPI_BYTE, dst, 42, MPI_COMM_WORLD, &req[nreq++]);
+    }
+    
+    //The receives
+    for(int i=0; i < min(NUMBER_OF_FULL_EXCHANGE, nProcs); i++)
+    {
+      if(fullGrpAndLETRequestStatistics[i].y == procId) continue;
+      int src    = fullGrpAndLETRequestStatistics[i].y;
+      int size   = this->globalGrpTreeCount[src]   * sizeof(real4);
+      int offset = this->globalGrpTreeOffsets[src];
+
+      //LOGF(stderr, "Receiving full %d from: %d size: %d  Offset: %d\n", i, src, size, offset);
+      MPI_Irecv(&globalGrpTreeCntSize[offset], size, MPI_BYTE,
+                 src, 42, MPI_COMM_WORLD, &req[nreq++]);
+    }
+    
+    double t50 = get_time();
+    MPI_Waitall(nreq, req, stat);
+    double t60 = get_time();
+  
+    LOGF(stderr, "Gathering Grp-Tree timings, request: %lg allocs: %lg AllGather: %lg Sends: %lg Wait: %lg Total: %lg NGroups: %d\n",
+                t10-t00, t30-t10, t40-t30, t50-t40, t60-t50, t60-t00, allGatherRecvOffset / 2);
+
+#elif 1
+
+   //Per process a request for a full node or only the topnode
 
     int *sendReq           = &infoGrpTreeBuffer[0*nProcs];
     int *recvReq           = &infoGrpTreeBuffer[1*nProcs];
@@ -1696,6 +1860,8 @@ void octree::sendCurrentInfoGrpTree()
     //gather the requests
     MPI_Alltoall(sendReq, 1, MPI_INT, recvReq, 1, MPI_INT, MPI_COMM_WORLD);
     double t10 = get_time();
+
+
     //Debug print
 //    char buff[512];
 //    sprintf(buff, "%d A:\t", procId);
@@ -2668,7 +2834,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         if (ENABLE_RUNTIME_LOG)
         {
           fprintf(stderr,"Proc: %d LET count&fill [%d,%d]: Dest: %d Count: %lg Fill; %lg, Total : %lg (#P: %d \t#N: %d) \tsince start: %lg \n",
-                       procId, procId, tid, ibox, tCount, get_time() - ty, get_time()-t1, countParticles, countNodes, get_time()-t0);
+                       procId, procId, tid, ibox, doFullGrp, tCount, get_time() - ty, get_time()-t1, countParticles, countNodes, get_time()-t0);
         }
 
 #else
@@ -2698,7 +2864,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         this->fullGrpAndLETRequestStatistics[ibox] = make_uint2(countParticles*10 + countNodes, ibox);
         if (ENABLE_RUNTIME_LOG)
         {
-          fprintf(stderr,"Proc: %d LET getLetOp count&fill [%d,%d]: Dest: %d Total : %lg (#P: %d \t#N: %d) \tsince start: %lg \n", procId, procId, tid, ibox, get_time()-tz,countParticles, countNodes, get_time()-t0);
+          fprintf(stderr,"Proc: %d LET getLetOp count&fill [%d,%d]: Full: %d Dest: %d Total : %lg (#P: %d \t#N: %d) \tsince start: %lg \n", procId, procId, tid, doFullGrp, ibox, get_time()-tz,countParticles, countNodes, get_time()-t0);
         }
 
 

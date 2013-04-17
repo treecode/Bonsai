@@ -30,7 +30,7 @@ inline float host_int_as_float(int val)
 void octree::makeLET()
 {
    //LET code test
-//  double tTest = get_time();
+  double tTest = get_time();
 
 
   //Start copies, while grpTree info is exchanged
@@ -222,7 +222,7 @@ void octree::makeLET()
   }
 #endif
 
-  LOGF(stderr,"Preparing top trees took: %lg \n", get_time() -t00);
+  LOGF(stderr,"MakeLET Preparing top trees took: %lg Total: %lg \n", get_time() -t00, get_time()-tTest);
 
 
  //End tree-extract
