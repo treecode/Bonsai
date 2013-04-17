@@ -701,8 +701,16 @@ bool treewalk(
     //       ngb_out     [addr] = ngb_i;
     ngb_out     [addr] = addr; //JB Fixed this for demo 
     active_inout[addr] = 1;
-    interactions[addr].x = counters.x / ni;
-    interactions[addr].y = counters.y / ni ;
+    if (ACCUMULATE)
+    {
+      interactions[addr].x += counters.x / ni;
+      interactions[addr].y += counters.y / ni ;
+    }
+    else
+    {
+      interactions[addr].x = counters.x / ni;
+      interactions[addr].y = counters.y / ni ;
+    }
     if (ni == 2)
     {
       const int addr = body_i[1];
@@ -721,8 +729,16 @@ bool treewalk(
       //         ngb_out     [addr] = ngb_i;
       ngb_out     [addr] = addr; //JB Fixed this for demo 
       active_inout[addr] = 1;     
-      interactions[addr].x = counters.x / ni; 
-      interactions[addr].y = counters.y / ni; 
+      if (ACCUMULATE)
+      {
+        interactions[addr].x += counters.x / ni; 
+        interactions[addr].y += counters.y / ni; 
+      }
+      else
+      {
+        interactions[addr].x = counters.x / ni; 
+        interactions[addr].y = counters.y / ni; 
+      }
     }
   }
 
@@ -732,24 +748,24 @@ bool treewalk(
 template<bool ACCUMULATE, int BLOCKDIM2>
 static __device__
 void approximate_gravity_main(
-      const int n_active_groups,
-      int    n_bodies,
-      float eps2,
-      uint2 node_begend,
-      int    *active_groups,
-      real4  *body_pos,
-      real4  *multipole_data,
-      float4 *acc_out,
-      real4  *group_body_pos,           //This can be different from body_pos
-      int    *ngb_out,
-      int    *active_inout,
-      int2   *interactions,
-      float4  *boxSizeInfo,
-      float4  *groupSizeInfo,
-      float4  *boxCenterInfo,
-      float4  *groupCenterInfo,
-      real4   *body_vel,
-      int     *MEM_BUF) 
+    const int n_active_groups,
+    int    n_bodies,
+    float eps2,
+    uint2 node_begend,
+    int    *active_groups,
+    real4  *body_pos,
+    real4  *multipole_data,
+    float4 *acc_out,
+    real4  *group_body_pos,           //This can be different from body_pos
+    int    *ngb_out,
+    int    *active_inout,
+    int2   *interactions,
+    float4  *boxSizeInfo,
+    float4  *groupSizeInfo,
+    float4  *boxCenterInfo,
+    float4  *groupCenterInfo,
+    real4   *body_vel,
+    int     *MEM_BUF) 
 {
   const int blockDim2 = BLOCKDIM2;
   const int shMemSize = 1 * (1 << blockDim2);
