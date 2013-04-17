@@ -1276,7 +1276,6 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
                                                        my_dev::dev_mem<uint> &extractList,
                                                        int nToSend)
 {
-#define USE_MPI
   #ifdef USE_MPI
 
   int myid      = procId;
@@ -3208,9 +3207,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
   delete[] treeBuffersSource;
   delete[] computedLETs;
   delete[] treeBuffers;
-  LOGF(stderr,"LET Creation and Exchanging time [%d] curStep: %g\t   Total: %g \n", procId, thisPartLETExTime, totalLETExTime);
+  LOGF(stderr,"LET Creation and Exchanging time [%d] curStep: %g\t   Total: %g  Full-step: %lg  since last start: %lg\n", procId, thisPartLETExTime, totalLETExTime, get_time()-t0, get_time()-tStart);
 
-  LOGF(stderr,"Since start: %lg \t %lg \n", get_time()-tStart, get_time()-t0);
 #endif
 }//essential tree-exchange
 
