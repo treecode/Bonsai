@@ -105,18 +105,27 @@ void octree::build_GroupTree(int n_bodies,
                      int &startGrp,
                      int &endGrp) {
 
-  const int level_min = LEVEL_MIN_GRP_TREE;
+//  const int level_min = LEVEL_MIN_GRP_TREE;
+//
+  int level_min = -1;  
 
   double t0 = get_time();
 
   /***
   ****  --> generating tree nodes
   ***/
-
+  bool minReached = false;
   int nMasked = 0;
   n_nodes = 0;
   for (n_levels = 0; n_levels < MAXLEVELS; n_levels++) {
     node_levels[n_levels] = n_nodes;
+
+    if(n_nodes > 32 &&  !minReached)
+    {
+        //LOGF(stderr,"Min reached at: %d with %d \n", n_levels, n_nodes);
+        minReached = true;
+        level_min = n_levels-1;
+    }
 
     if(nMasked == n_bodies)
     { //Jump out when all bodies are processed
@@ -160,7 +169,7 @@ void octree::build_GroupTree(int n_bodies,
           uint2 node; // node.nb = n_node; node.b  = i_body;
 
 //          if (n_node <= NLEAF && n_levels > level_min)
-          if (n_node <= 16 && n_levels > level_min)
+          if (n_node <= 16 && minReached)
           { //Leaf node
             for (int k = i_body; k < i1; k++)
               keys[k] = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, k); //We keep the w component for sorting the size and center arrays
@@ -194,10 +203,11 @@ void octree::build_GroupTree(int n_bodies,
 
 
   double tlink = get_time();
-  //for(int i=0; i < n_levels; i++)
-  //   LOGF(stderr, "On level: %d : %d --> %d  \n", i, node_levels[i],node_levels[i+1]);
+  for(int i=0; i < n_levels; i++)
+     LOGF(stderr, "On level: %d : %d --> %d  \n", i, node_levels[i],node_levels[i+1]);
 
-
+//  mpiSync();
+//exit(0);
 
   /***
   ****  --> linking the tree
@@ -235,8 +245,8 @@ void octree::build_GroupTree(int n_bodies,
     }
   }
 
-  LOGF(stderr, "Building grp-tree took nodes: %lg Linking: %lg Total; %lg || n_levels= %d  n_nodes= %d [%d]\n",
-                tlink-t0, get_time()-tlink, get_time()-t0,  n_levels, n_nodes, node_levels[n_levels]);
+  LOGF(stderr, "Building grp-tree took nodes: %lg Linking: %lg Total; %lg || n_levels= %d  n_nodes= %d [%d] start: %d end: %d\n",
+                tlink-t0, get_time()-tlink, get_time()-t0,  n_levels, n_nodes, node_levels[n_levels], startGrp, endGrp);
 
   /***
   ****  --> collecting tree leaves
