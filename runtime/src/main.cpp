@@ -1109,13 +1109,18 @@ int main(int argc, char** argv)
   {
     if (procId == 0) printf("Using plummer model with n= %d per proc \n", nPlummer);
     assert(nPlummer > 0);
-    const int seed = 19810614 + procId*113;
+    const int seed = 19810614 + procId;
     const Plummer m(nPlummer, procId, seed);
     bodyPositions.resize(nPlummer);
     bodyVelocities.resize(nPlummer);
     bodyIDs.resize(nPlummer);
     for (int i= 0; i < nPlummer; i++)
     {
+
+      assert(!isnan(m.pos[i].x));
+      assert(!isnan(m.pos[i].y));
+      assert(!isnan(m.pos[i].z));
+      assert(m.mass[i] > 0.0);
       bodyIDs[i]   = nPlummer*procId + i;
 
       bodyPositions[i].x = m.pos[i].x;
