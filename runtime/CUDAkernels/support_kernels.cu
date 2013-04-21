@@ -185,6 +185,10 @@ static __device__ uint4 get_key(int4 crd)
   int i,xi, yi, zi;
   int mask;
   int key;
+
+  mask = crd.y;
+  crd.y = crd.z;
+  crd.z = mask;
     
   //0= 000, 1=001, 2=011, 3=010, 4=110, 5=111, 6=101, 7=100
   //000=0=0, 001=1=1, 011=3=2, 010=2=3, 110=6=4, 111=7=5, 101=5=6, 100=4=7

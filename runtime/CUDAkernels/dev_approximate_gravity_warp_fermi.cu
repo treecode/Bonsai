@@ -1142,8 +1142,8 @@ __launch_bounds__(NTHREAD)
 //       ngb_out     [addr] = ngb_i;
       ngb_out     [addr] = addr; //JB Fixed this for demo 
       active_inout[addr] = 1;
-      interactions[addr].x = apprCount / ni;
-      interactions[addr].y = direCount / ni;
+      interactions[addr].x += apprCount / ni;
+      interactions[addr].y += direCount / ni;
       if (ni == 2)
       {
         const int addr = body_i[1];
@@ -1154,8 +1154,8 @@ __launch_bounds__(NTHREAD)
 //       ngb_out     [addr] = ngb_i;
         ngb_out     [addr] = addr; //JB Fixed this for demo 
         active_inout[addr] = 1;     
-        interactions[addr].x = apprCount / ni;
-        interactions[addr].y = direCount / ni;
+        interactions[addr].x += apprCount / ni;
+        interactions[addr].y += direCount / ni;
       }
     }
   }     //end while
