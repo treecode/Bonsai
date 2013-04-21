@@ -736,7 +736,8 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
 #if 0
     std::stable_sort(globalSamples, globalSamples+totalCount, cmp_ph_key());
 #else
-       {
+#if 0
+    {
       const int BITS = 32*2;  /*  32*1 = 32 bit sort, 32*2 = 64 bit sort, 32*3 = 96 bit sort */
       typedef RadixSort<BITS> Radix;
       LOGF(stderr,"Boundary :: using %d-bit RadixSort\n", BITS);
@@ -762,6 +763,34 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
       free(keys);
 
     }
+#else
+    {
+      LOGF(stderr,"Boundary :: using %d-bit RadixSort\n", 64);
+      unsigned long long *keys;
+      posix_memalign((void**)&keys, 64, totalCount*sizeof(unsigned long long));
+      
+#pragma omp parallel for
+      for (int i = 0; i < totalCount; i++)
+      {
+        const uint4 key = globalSamples[i];
+        keys[i] = 
+          static_cast<unsigned long long>(key.y) | (static_cast<unsigned long long>(key.x) << 32);
+      }
+
+      RadixSort64 r(totalCount);
+      r.sort(keys);
+#pragma omp parallel for
+      for (int i = 0; i < totalCount; i++)
+      {
+        const unsigned long long key = keys[i];
+        globalSamples[i] = (uint4){
+          (key >> 32) & 0x00000000FFFFFFFF,
+          (key      ) & 0x00000000FFFFFFFF,
+          0,0};
+      }
+      free(keys);
+    }
+#endif
 
 #endif
     LOGF(stderr,"Boundary took: %lg  Items: %d\n", get_time()-t00, totalCount);
@@ -3332,7 +3361,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         real4 *LETDataBuffer;
         unsigned long long int nflops = 0;
 
-#if 1
+#if 0
         if (ENABLE_RUNTIME_LOG)
           fprintf(stderr,"Proc: %d starting getLetOp  Dest: %d \n", procId, ibox);
         int2  nExport = getLETopt(
