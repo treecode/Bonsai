@@ -82,11 +82,12 @@ struct Keys<64>
 #endif
 };
 
+#ifdef __SIZEOF_INT128__
 template<>
 struct Keys<96>
 {
   private:
-    typedef __int128 ulong;
+    typedef unsigned __int128 ulong;
     typedef unsigned int uint;
     ulong key;
 
@@ -122,6 +123,7 @@ struct Keys<96>
     }
 #endif
 };
+#endif
 
 template<int BITS>
 struct RadixSort
