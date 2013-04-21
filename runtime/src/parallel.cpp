@@ -1,6 +1,8 @@
 #include "octree.h"
 #include <xmmintrin.h>
 #include "radix.h"
+#include <parallel/algorithm>
+
 
 typedef float  _v4sf  __attribute__((vector_size(16)));
 typedef int    _v4si  __attribute__((vector_size(16)));
@@ -701,7 +703,7 @@ void octree::computeSampleRateSFC(float lastExecTime, int &nSamples, int &sample
     nrate = (double)localTree.n / (double)nTotalFreq; //Equal number of particles
   }
 
-  int    nsamp  = (int)(nTotalFreq*0.001f) + 1;  //Total number of sample particles, global
+  int    nsamp  = (int)(nTotalFreq*0.5f) + 1;  //Total number of sample particles, global
   nSamples      = (int)(nsamp*nrate) + 1;
   sampleRate    = localTree.n / nSamples;
 
@@ -777,8 +779,12 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
           static_cast<unsigned long long>(key.y) | (static_cast<unsigned long long>(key.x) << 32);
       }
 
+#if 0
       RadixSort64 r(totalCount);
       r.sort(keys);
+#else
+      __gnu_parallel::sort(keys, keys+totalCount);
+#endif
 #pragma omp parallel for
       for (int i = 0; i < totalCount; i++)
       {
