@@ -1117,9 +1117,9 @@ int main(int argc, char** argv)
     for (int i= 0; i < nPlummer; i++)
     {
 
-      assert(!isnan(m.pos[i].x));
-      assert(!isnan(m.pos[i].y));
-      assert(!isnan(m.pos[i].z));
+      assert(!std::isnan(m.pos[i].x));
+      assert(!std::isnan(m.pos[i].y));
+      assert(!std::isnan(m.pos[i].z));
       assert(m.mass[i] > 0.0);
       bodyIDs[i]   = nPlummer*procId + i;
 

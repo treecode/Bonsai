@@ -49,7 +49,7 @@ struct Plummer{
           continue;
         }
 				const double R = 1.0/sqrt( c );
-        if(isnan(R))
+        if(std::isnan(R))
         {
           fprintf(stderr, "%d : Nan detected R [c=%e] NaN, continue\n", (int)i, c);
           continue;

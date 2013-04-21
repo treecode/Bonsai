@@ -701,7 +701,7 @@ void octree::computeSampleRateSFC(float lastExecTime, int &nSamples, int &sample
     nrate = (double)localTree.n / (double)nTotalFreq; //Equal number of particles
   }
 
-  int    nsamp  = (int)(nTotalFreq*0.001f) + 1;  //Total number of sample particles, global
+  int    nsamp  = (int)(nTotalFreq*0.5f) + 1;  //Total number of sample particles, global
   nSamples      = (int)(nsamp*nrate) + 1;
   sampleRate    = localTree.n / nSamples;
 
@@ -784,8 +784,8 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
       {
         const unsigned long long key = keys[i];
         globalSamples[i] = (uint4){
-          (key >> 32) & 0x00000000FFFFFFFF,
-          (key      ) & 0x00000000FFFFFFFF,
+          (uint)((key >> 32) & 0x00000000FFFFFFFF),
+          (uint)((key      ) & 0x00000000FFFFFFFF),
           0,0};
       }
       free(keys);
@@ -2703,7 +2703,7 @@ int2 getLETopt(
     levelGroups.first().push_back(group);
 
   for (int cell = cellBeg; cell < cellEnd; cell++)
-    levelList.first().push_back((uint4){cell, 0, levelGroups.first().size(),0});
+    levelList.first().push_back((uint4){cell, 0, (int)levelGroups.first().size(),0});
 
   while (!levelList.first().empty())
   {
@@ -2780,7 +2780,7 @@ int2 getLETopt(
           sizew = (nExportCellOffset | (lnchild << LEAFBIT));
           nExportCellOffset += lnchild;
           for (int i = lchild; i < lchild + lnchild; i++)
-            levelList.second().push_back((uint4){i,groupNextBeg,levelGroups.second().size()});
+            levelList.second().push_back((uint4){i,groupNextBeg,(int)levelGroups.second().size()});
         }
         else
         {
