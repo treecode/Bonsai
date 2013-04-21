@@ -156,7 +156,7 @@ struct RadixSort
 #pragma omp master
     gridDim = omp_get_num_threads();
 
-    if (0)
+    if (1)
     {
       blockSize = std::max((count/gridDim/64) & -64, 64);  /* sandy bridge */
     }
