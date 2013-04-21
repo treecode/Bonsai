@@ -703,7 +703,7 @@ void octree::computeSampleRateSFC(float lastExecTime, int &nSamples, int &sample
     nrate = (double)localTree.n / (double)nTotalFreq; //Equal number of particles
   }
 
-  int    nsamp  = (int)(nTotalFreq*0.5f) + 1;  //Total number of sample particles, global
+  int    nsamp  = (int)(nTotalFreq*0.001f) + 1;  //Total number of sample particles, global
   nSamples      = (int)(nsamp*nrate) + 1;
   sampleRate    = localTree.n / nSamples;
 
