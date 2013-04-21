@@ -742,14 +742,16 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
       LOGF(stderr,"Boundary :: using %d-bit RadixSort\n", BITS);
 
       Radix radix(totalCount);
+#if 0
       typedef typename Radix::key_t key_t;
+#endif
 
-      key_t *keys;
-      posix_memalign((void**)&keys, 64, totalCount*sizeof(key_t));
+      Radix::key_t *keys;
+      posix_memalign((void**)&keys, 64, totalCount*sizeof(Radix::key_t));
 
 #pragma omp parallel for
       for (int i = 0; i < totalCount; i++)
-        keys[i] = key_t(globalSamples[i]);
+        keys[i] = Radix::key_t(globalSamples[i]);
 
       radix.sort(keys);
 
