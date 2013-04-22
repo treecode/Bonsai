@@ -366,7 +366,7 @@ void extractGroups(
   int depth = 0;
   while (!levelList.first().empty())
   {
-    fprintf(stderr, " depth= %d \n", depth++);
+    //LOGF(stderr, " depth= %d \n", depth++);
     const int csize = levelList.first().size();
     for (int i = 0; i < csize; i++)
     {
@@ -3250,11 +3250,12 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                 grpCenter, grpSize, startGrp, endGrp, DistanceCheck);
             resultOfQuickCheck[ibox] = maxLevel;
 
+            //#define MAXLEVELSIZE_ALLGATHER 2048
+            #define MAXLEVELSIZE_ALLGATHER -1
             #if 0
             if(maxLevel >= 0)
             {
-              #define MAXLEVELSIZE2 1024
-              if((topLevelTreesSizeOffset[maxLevel].x * sizeof(real4)) > MAXLEVELSIZE2)
+              if((topLevelTreesSizeOffset[maxLevel].x * sizeof(real4)) > MAXLEVELSIZE_ALLGATHER)
               {
                 LOGF(stderr, "NOT using : %d  %d \t size: %d \n", ibox, maxLevel, topLevelTreesSizeOffset[maxLevel].x * sizeof(real4));
                 resultOfQuickCheck[ibox] = -1;
@@ -3550,15 +3551,15 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       }
 
       //Send the sizes
-#if 0
+
+#if MAXLEVELSIZE_ALLGATHER > 0
     //Combined all_gatherv and alltoall
     //First determine the maximum level
 
-    #define MAXLEVELSIZE 1024
     int allGatherLevel = 0;
     for(int level=0; level < nTopLevelTrees; level++)
     {
-      if((topLevelTreesSizeOffset[level].x * sizeof(real4)) > MAXLEVELSIZE)
+      if((topLevelTreesSizeOffset[level].x * sizeof(real4)) > MAXLEVELSIZE_ALLGATHER)
         break;
       allGatherLevel++;
     }
@@ -3591,19 +3592,26 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         summaryOfDataToSend[proc].z = 0; //Not used
 
         //Set quickCheckSize to zero since it will not do an all2all
-        quickCheckSendSizes[procId]   =  0;
-        quickCheckSendOffset[procId]  =  0;
+        quickCheckSendSizes[proc]   =  0;
+        quickCheckSendOffset[proc]  =  0;
       }
       else if(resultOfQuickCheck[proc] >= 0)
       {//Send using alltoall
         summaryOfDataToSend[proc].x = 2; //It needs the top level
         summaryOfDataToSend[proc].y = allGatherLevelSize; //Size of the top level
-        summaryOfDataToSend[proc].z = topLevelTreesSizeOffset[resultOfQuickCheck[proc]].x; //alltoall size
+        summaryOfDataToSend[proc].z = sizeof(real4)*topLevelTreesSizeOffset[resultOfQuickCheck[proc]].x; //alltoall size
+        
+         
+        quickCheckSendSizes[proc]   =  sizeof(real4)*topLevelTreesSizeOffset[resultOfQuickCheck[proc]].x;
+        quickCheckSendOffset[proc]  =  sizeof(real4)*topLevelTreesSizeOffset[resultOfQuickCheck[proc]].y;        
       }
       else
       { //Send with getLET
         summaryOfDataToSend[proc].x = 3; //It needs the top level
         summaryOfDataToSend[proc].y = allGatherLevelSize; //Size of the top level
+        
+        quickCheckSendSizes[proc]   =  0;
+        quickCheckSendOffset[proc]  =  0;        
       }
     }//for each process
 
@@ -3619,6 +3627,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
     //Count the number of incomming data items
     //First the allgather, size and offsets
     int allGatherOffset = 0;
+    int allToAllOffset  = 0;
     std::vector<int> allGatherSizes(nProcs);  //Sizes to receive
     std::vector<int> allGatherOffsets(nProcs); //offsets
     std::vector<int> allGatherUses   (nProcs);  //Indicate if we use this (1) or not (-1)
@@ -3635,9 +3644,16 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         allGatherUses[proc] = 1;
       else
         allGatherUses[proc] = -1;
+        
+      //Sum the alltoall size to be able to alloc
+      if(summaryOfDataToReceive[proc].x == 2)
+        allToAllOffset += summaryOfDataToReceive[proc].z;
     }
 
     recvAllGatherVBuffer =  new real4[allGatherOffset / sizeof(real4)];
+    recvAllToAllBuffer   =  new real4[allToAllOffset  / sizeof(real4)];
+    
+    double tGatherStart = get_time();
 
     MPI_Allgatherv(&(topLevelTrees[allGatherLevelOffset / sizeof(real4)]),    //Begin of array
                    allGatherLevelSize,                      //Number of top-nodes
@@ -3647,6 +3663,11 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                    &allGatherOffsets[0],    //Array with offset per node
                    MPI_BYTE, MPI_COMM_WORLD);
 
+    double tGatherEnd = get_time();
+    
+    LOGF(stderr, "All_GatherV took: %lg ( %lg ) Size: %lg  \n", 
+                  tGatherEnd-tGatherStart, get_time()-t0, (allGatherOffset  / sizeof(real4)*sizeof(real4))/(double)(1024*1024));
+    
       for(int i=0; i < nProcs; i++)
       {
         int offset   = allGatherOffsets[i] / sizeof(real4);
@@ -3677,19 +3698,87 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             int topStart = host_float_as_int(treeBuffers[nReceived][0].z);
             int topEnd   = host_float_as_int(treeBuffers[nReceived][0].w);
 
-            LOGF(stderr, "Received from: %d  start: %d end: %d P: %d N: %d\n",
-                          i, topStart, topEnd, p, n);
+//          LOGF(stderr, "Received from: %d  start: %d end: %d P: %d N: %d\n",
+ //                       i, topStart, topEnd, p, n);
 
             topNodeOnTheFlyCount        += (topEnd-topStart);
             treeBuffersSource[nReceived] = 1; //1 indicate quick check source
             nReceived++;
           }
         }
-        LOGF(stderr, "Received trees using quickcheck: %d top-nodes: %d \n", nReceived, topNodeOnTheFlyCount);
+      LOGF(stderr, "Received trees using quickcheck-agv: %d top-nodes: %d \n", nReceived, topNodeOnTheFlyCount);
+    }
 
+    //Receive data using alltoall
+    allToAllOffset  = 0;
+    std::vector<int> allToAllRecvSizes  (nProcs);  //Sizes to receive
+    std::vector<int> allToAllRecvOffsets(nProcs);  //offsets
+    std::vector<int> allToAllUses   (nProcs);  //Indicate if we use this (1) or not (-1)    
+    for(int proc = 0; proc < nProcs; proc++)
+    {
+      if(summaryOfDataToReceive[proc].x == 2)
+      {
+        allGatherUses[proc] = 1;
+        allToAllRecvSizes[proc]    = summaryOfDataToReceive[proc].z;
+        allToAllRecvOffsets[proc]  = allToAllOffset;
+        allToAllOffset            += summaryOfDataToReceive[proc].z;
+      }       
+      else
+      {
+        allGatherUses[proc]        = -1;
+        allToAllRecvSizes[proc]    = 0;
+        allToAllRecvOffsets[proc]  = 0;      
+      }
+    }    
+
+    LOGF(stderr, "Starting 1D alltoall \n");
+    double t110 = get_time();
+    MPI_Alltoallv(&topLevelTrees[0],   
+                  quickCheckSendSizes, quickCheckSendOffset, MPI_BYTE,
+                  &recvAllToAllBuffer[0],
+                  &allToAllRecvSizes[0], &allToAllRecvOffsets[0], MPI_BYTE,
+                  MPI_COMM_WORLD);
+    LOGF(stderr, "[%d] Completed_alltoall 1D data communication! Iter: %d Took: %lg ( %lg )\tSize: %lg MB \n",
+        procId, iter, get_time()-t110,  get_time()-t0, (allToAllOffset  / sizeof(real4)*sizeof(real4))/(double)(1024*1024));    
+    
+    #pragma omp critical(updateReceivedProcessed)
+    {
+      //This is in a critical section since topNodeOnTheFlyCount is reset
+      //by the GPU worker thread (thread == 0)
+      int offset    = 0;
+      int na2acount = 0;
+      int na2atopnode = 0;
+      for(int i=0;  i < nProcs; i++)
+      {
+        if(allGatherUses[i] > 0)
+        {
+          int items              = allToAllRecvSizes[i]  / sizeof(real4);
+          treeBuffers[nReceived] = &recvAllToAllBuffer[offset];
+          offset                += items;
+
+          //Increase the top-node count
+          int p        = host_float_as_int(treeBuffers[nReceived][0].x);
+          int n        = host_float_as_int(treeBuffers[nReceived][0].y);
+          int topStart = host_float_as_int(treeBuffers[nReceived][0].z);
+          int topEnd   = host_float_as_int(treeBuffers[nReceived][0].w);
+
+   //       LOGF(stderr, "Received from: %d  start: %d end: %d P: %d N: %d\n",
+   //                     i, topStart, topEnd, p, n);
+                        
+          na2atopnode += (topEnd-topStart);                            
+
+          topNodeOnTheFlyCount        += (topEnd-topStart);
+          treeBuffersSource[nReceived] = 1; //1 indicate quick check source
+          nReceived++;
+          na2acount++;
+        }
+      }
+      if (ENABLE_RUNTIME_LOG)
+      {
+        fprintf(stderr,"Proc: %d Received trees using quickcheck-a2a: %d top-nodes: %d \n", procId, na2acount, na2atopnode);
+      }
       }
 
-//      MPI_Finalize();      exit(0);
 
       #else
 
