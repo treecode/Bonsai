@@ -645,7 +645,8 @@ public:
   int procId, nProcs;   //Process ID in the mpi stack, number of processors in the commm world
   int nx, ny, nz;       //The division parameters, number of procs in the x,y and z axis
   int sampleFreq;       //Sample frequency for the division
-  int nTotalFreq;       //Total Number of particles over all processes
+  int nTotalFreq_int;       //Total Number of particles over all processes
+  unsigned long long  nTotalFreq_ull;       //Total Number of particles over all processes
   
   int prevSampFreq;     //Sample frequency of the previous step
   double prevDurStep;   //Duration of gravity time in previous step
@@ -983,13 +984,13 @@ public:
       {
               int src = (procId-i);
               if(src < 0) src+=nProcs;
-              fprintf(stderr, "[%d] Writing src: %d \n", procId, src);
+//              fprintf(stderr, "[%d] Writing src: %d \n", procId, src);
               fullGrpAndLETRequestStatistics[src] = make_uint2(src+1,src);
       }
       for(int i=1; i <= NUMBER_OF_FULL_EXCHANGE/2; i++)
       {
               int src = (procId+i) % nProcs;
-              fprintf(stderr, "[%d] Writing src: %d \n", procId, src);
+//              fprintf(stderr, "[%d] Writing src: %d \n", procId, src);
               fullGrpAndLETRequestStatistics[src] = make_uint2(src+1,src);
       }
     }

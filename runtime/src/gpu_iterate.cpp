@@ -445,8 +445,8 @@ bool octree::iterate_once(IterationData &idata) {
     double t1 = 0;
 
 //if(t_current < 1) //Clear startup timings
-if(0)
-//if(iter < 32)	
+//if(0)
+if(iter < 32)
 {
 	idata.totalGPUGravTimeLocal = 0;
 	idata.totalGPUGravTimeLET = 0;
@@ -728,7 +728,7 @@ if(0)
     }
 
 
-    //if(iter > 64) return true;
+    if(iter > 64) return true;
 
     if(t_current >= tEnd)
     {
@@ -767,13 +767,45 @@ void octree::iterate_setup(IterationData &idata) {
   CU_SAFE_CALL(cudaEventCreate(&startRemoteGrav));
   CU_SAFE_CALL(cudaEventCreate(&endRemoteGrav));
 
+  devContext.writeLogEvent("Starting execution \n");
+  
+  MPI_Barrier(MPI_COMM_WORLD);
+  if (procId == 0)
+  {
+	  fprintf(stderr, " === 1 === \n");
+  }
+  MPI_Barrier(MPI_COMM_WORLD);
 
   //Start construction of the tree
   sort_bodies(localTree, true);
+  MPI_Barrier(MPI_COMM_WORLD);
+  if (procId == 0)
+  {
+	  fprintf(stderr, " === 10 === \n");
+  }
+  MPI_Barrier(MPI_COMM_WORLD);
   build(localTree);
+  MPI_Barrier(MPI_COMM_WORLD);
+  if (procId == 0)
+  {
+	  fprintf(stderr, " === 20 === \n");
+  }
+  MPI_Barrier(MPI_COMM_WORLD);
   allocateTreePropMemory(localTree);
+  MPI_Barrier(MPI_COMM_WORLD);
+  if (procId == 0)
+  {
+	  fprintf(stderr, " === 30 === \n");
+  }
+  MPI_Barrier(MPI_COMM_WORLD);
   compute_properties(localTree);
 
+  MPI_Barrier(MPI_COMM_WORLD);
+  if (procId == 0)
+  {
+	  fprintf(stderr, " === 2 === \n");
+  }
+  MPI_Barrier(MPI_COMM_WORLD);
 
   letRunning = false;
      
@@ -784,9 +816,15 @@ void octree::iterate_setup(IterationData &idata) {
   //predict localtree
   predict(this->localTree);
 
+  MPI_Barrier(MPI_COMM_WORLD);
+  if (procId == 0)
+  {
+	  fprintf(stderr, " === 200 === \n");
+  }
+  MPI_Barrier(MPI_COMM_WORLD);
   double notUsed = 0;
   if(nProcs > 1)
-    parallelDataSummary(localTree, 1, 1, notUsed, notUsed); //1 for all process, equal part distribution
+    parallelDataSummary(localTree, 30, 30, notUsed, notUsed); //1 for all process, equal part distribution
 
   //Start construction of the tree
   sort_bodies(localTree, true);
@@ -901,12 +939,21 @@ void octree::iterate_setup(IterationData &idata) {
 
 void octree::iterate_teardown(IterationData &idata) {
   double totalTime = get_time() - idata.startTime;
-  LOGF(stderr,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\n",
-                  procId, totalTime, idata.totalGravTime,
-                  (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
-                  idata.totalLETCommTime,
-                  idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
-                  idata.totalDomUp, idata.totalDomEx);
+  if (procId == 0)
+  {
+	  LOGF(stderr,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\n",
+			  procId, totalTime, idata.totalGravTime,
+			  (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
+			  idata.totalLETCommTime,
+			  idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
+			  idata.totalDomUp, idata.totalDomEx);
+	  LOGF(stdout,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\n",
+			  procId, totalTime, idata.totalGravTime,
+			  (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
+			  idata.totalLETCommTime,
+			  idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
+			  idata.totalDomUp, idata.totalDomEx);
+  }	
   
   char buff[16384];
   sprintf(buff,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\n",
@@ -943,12 +990,51 @@ void octree::iterate_teardown(IterationData &idata) {
 
 void octree::iterate() {
   IterationData idata;
+  MPI_Barrier(MPI_COMM_WORLD);
+  if (procId == 0)
+  {
+	  fprintf(stderr, " begin -- iterate setup \n");
+  }
+  MPI_Barrier(MPI_COMM_WORLD);
   iterate_setup(idata);
+  MPI_Barrier(MPI_COMM_WORLD);
+  if (procId == 0)
+  {
+	  fprintf(stderr, " end -- iterate setup \n");
+  }
+  MPI_Barrier(MPI_COMM_WORLD);
 
   for(int i=0; i < 10000000; i++) //Large number, limit
   {
     if (true == iterate_once(idata))
+    {
       break;    
+    }
+  double totalTime = get_time() - idata.startTime;
+  if (procId == 0)
+  {
+	  LOGF(stderr,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\n",
+			  procId, totalTime, idata.totalGravTime,
+			  (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
+			  idata.totalLETCommTime,
+			  idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
+			  idata.totalDomUp, idata.totalDomEx);
+	  LOGF(stdout,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\n",
+			  procId, totalTime, idata.totalGravTime,
+			  (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
+			  idata.totalLETCommTime,
+			  idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
+			  idata.totalDomUp, idata.totalDomEx);
+  }	
+  char buff[16384];
+  sprintf(buff,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\n",
+                  procId, totalTime, idata.totalGravTime,
+                  (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
+                  idata.totalLETCommTime,
+                  idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
+                  idata.totalDomUp, idata.totalDomEx);
+  devContext.writeLogEvent(buff);
+
   } //end for i
   
   iterate_teardown(idata);
@@ -1728,10 +1814,17 @@ double octree::compute_energies(tree_structure &tree)
   
   if(mpiGetRank() == 0)
   {
+#if 0
   LOG("iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n",
 		  iter, this->t_current, Etot, Ekin, Epot, de, de_max, dde, dde_max, get_time() - tinit);  
   LOGF(stderr, "iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n", 
 		  iter, this->t_current, Etot, Ekin, Epot, de, de_max, dde, dde_max, get_time() - tinit);          
+#else
+  printf("iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n",
+		  iter, this->t_current, Etot, Ekin, Epot, de, de_max, dde, dde_max, get_time() - tinit);  
+  fprintf(stderr, "iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n", 
+		  iter, this->t_current, Etot, Ekin, Epot, de, de_max, dde, dde_max, get_time() - tinit);          
+#endif
   }
 
   return de;

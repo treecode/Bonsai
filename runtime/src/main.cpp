@@ -988,7 +988,7 @@ int main(int argc, char** argv)
   int nProcs = tree->mpiGetNProcs();
 
 #ifdef USE_MPI
-#if 0
+#if 1
   omp_set_num_threads(16);
 #pragma omp parallel
   {
@@ -1004,8 +1004,8 @@ int main(int argc, char** argv)
     for (i = 0; i < CPU_SETSIZE; i++)
       if (CPU_ISSET(i, &cpuset))
         set = i;
-    fprintf(stderr,"[Proc: %d ] Thread %d bound to: %d Total cores: %d\n",
-        procId, tid,  set, num_cores);
+//    fprintf(stderr,"[Proc: %d ] Thread %d bound to: %d Total cores: %d\n",
+//        procId, tid,  set, num_cores);
   }
 #endif
 
@@ -1198,6 +1198,8 @@ int main(int argc, char** argv)
   else
     assert(0);
 
+  MPI_Barrier(MPI_COMM_WORLD);
+
 
 #ifdef TIPSYOUTPUT
   LOGF(stderr, " t_current = %g\n", tree->get_t_current());
@@ -1304,12 +1306,27 @@ int main(int argc, char** argv)
   tree->localTree.bodies_Pvel.h2d();
   tree->localTree.bodies_ids.h2d();
 
+  //fprintf(stderr,"Send data to device proc: %d \n", procId);
+//  tree->devContext.writeLogEvent("Send data to device\n");
+
+
 #if USE_HASH_TABLE_DOMAIN_DECOMP
 
 #else
 #ifdef USE_MPI
   //Use sampling particles, determine frequency
+  MPI_Barrier(MPI_COMM_WORLD);
+  if (procId == 0)
+  {
+	  fprintf(stderr,"Send data to device proc: %d \n", procId);
+	  fprintf(stderr, "ready to send ptcl \n");
+  }
   tree->determine_sample_freq(tree->localTree.n); //Determine initial frequency
+  if (procId == 0)
+  {
+	  fprintf(stderr, "done!!! sending ptcl \n");
+  }
+  MPI_Barrier(MPI_COMM_WORLD);
 #endif
 #endif
 
@@ -1376,6 +1393,10 @@ int main(int argc, char** argv)
   initAppRenderer(argc, argv, tree, idata, displayFPS);
   LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
 #else
+  MPI_Barrier(MPI_COMM_WORLD);
+  if (procId==0)
+	  fprintf(stderr, " Starting iterating\n");
+  MPI_Barrier(MPI_COMM_WORLD);
   tree->iterate(); 
 
   LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);

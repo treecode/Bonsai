@@ -1,0 +1,4 @@
+These are job script generators that we used to run jobs on titan
+runMWStrong.py requires an input files that can be downloaded from
+http://castle.strw.leideuniv.nl/WPD09_test3_1B.tipsy [37GB]
+

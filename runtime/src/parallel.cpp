@@ -442,6 +442,7 @@ void octree::mpiInit(int argc,char *argv[], int &procId, int &nProcs)
 #ifdef PRINT_MPI_DEBUG
   LOGF(stderr, "Proc id: %d @ %s , total processes: %d (mpiInit) \n", procId, processor_name, nProcs);
 #endif
+  fprintf(stderr, "Proc id: %d @ %s , total processes: %d (mpiInit) \n", procId, processor_name, nProcs);
 
   //Allocate memory for the used buffers
   //    domainRLow  = new double4[nProcs];
@@ -683,7 +684,7 @@ void octree::computeSampleRateSFC(float lastExecTime, int &nSamples, int &sample
     {
 #define SAMPLING_LOWER_LIMIT_FACTOR  (1.9)
 
-      double nrate2 = (double)localTree.n / (double) nTotalFreq;
+      double nrate2 = (double)localTree.n / (double) nTotalFreq_ull;
       nrate2       /= SAMPLING_LOWER_LIMIT_FACTOR;
 
       if(nrate < nrate2)
@@ -700,16 +701,18 @@ void octree::computeSampleRateSFC(float lastExecTime, int &nSamples, int &sample
   }
   else
   {
-    nrate = (double)localTree.n / (double)nTotalFreq; //Equal number of particles
+    nrate = (double)localTree.n / (double)nTotalFreq_ull; //Equal number of particles
   }
 
-  int    nsamp  = (int)(nTotalFreq*0.001f) + 1;  //Total number of sample particles, global
+  int    nsamp  = (int)(nTotalFreq_ull*0.001f/4) + 1;  //Total number of sample particles, global
   nSamples      = (int)(nsamp*nrate) + 1;
   sampleRate    = localTree.n / nSamples;
 
-  LOGF(stderr, "NSAMP [%d]: sample: %d nrate: %f final sampleRate: %d localTree.n: %d\tprevious: %d timeLocal: %f prevTimeLocal: %f  Took: %lg\n",
+  if (procId == 0)
+  fprintf(stderr, "NSAMP [%d]: sample: %d nrate: %f final sampleRate: %d localTree.n: %d\tprevious: %d timeLocal: %f prevTimeLocal: %f  Took: %lg\n",
       procId, nSamples, nrate, sampleRate, localTree.n, prevSampFreq,
       timeLocal, prevDurStep,get_time()-t00);
+  assert(sampleRate > 1);
 
   prevDurStep  = timeLocal;
   prevSampFreq = sampleRate;
@@ -735,8 +738,9 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
     //std::sort(allHashes, allHashes+totalNumberOfHashes, cmp_ph_key());
     double t00 = get_time();
 
-#if 0
-    std::stable_sort(globalSamples, globalSamples+totalCount, cmp_ph_key());
+#if 0 /* jb2404 */
+    //std::stable_sort(globalSamples, globalSamples+totalCount, cmp_ph_key());
+    __gnu_parallel::stable_sort(globalSamples, globalSamples+totalCount, cmp_ph_key());
 #else
 #if 0
     {
@@ -813,6 +817,13 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
     for(int i=1; i < nProcs; i++)
     {
       int idx = (size_t(i)*size_t(totalCount))/size_t(nProcs);
+
+      //jb2404
+      if(iter == 0){
+      if((i%1000) == 0) fprintf(stderr, " Boundary %d taken from : %d \n" ,i, idx);
+      if(i >= nProcs-10) fprintf(stderr, " Boundary %d taken from : %d \n" ,i, idx);
+      }
+
       parallelBoundaries[procIdx++] = globalSamples[idx];
     }
 #if 0
@@ -1290,7 +1301,7 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
   int memOffset2 = validList.cmalloc_copy(localTree.generalBuffer1,
       localTree.n, memOffset1);
 
-https://github.com/egaburov/fvmhd3d/blob/master/MPI/myMPI.h
+//https://github.com/egaburov/fvmhd3d/blob/master/MPI/myMPI.h
 
   uint4 lowerBoundary = boundaries[this->procId];
   uint4 upperBoundary = boundaries[this->procId+1];
@@ -1515,6 +1526,112 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
   array2Send.reserve((int)(nToSend*1.5));
 
 
+
+  static int firstSort = 1;
+if(firstSort)
+{
+  std::vector<int> offsets(nProcs+1);
+  std::vector<int> items(nProcs+1);
+
+  int location       = 0;
+  offsets[location]  = 0;
+
+  for(int i=0; i < nToSend; i++)
+  {
+    uint4 key  = particlesToSend[i].key;
+
+    bool assigned = false;
+    while(!assigned)
+    {
+      uint4 lowerBoundary = tree.parallelBoundaries[location];
+      uint4 upperBoundary = tree.parallelBoundaries[location+1];
+
+      int bottom = cmp_uint4(key, lowerBoundary);
+      int top    = cmp_uint4(key, upperBoundary);
+
+      assert(bottom >= 0);
+
+      if(top < 0)
+      {
+        //is in box
+        assigned = true;
+      }
+      else
+      {
+        //outside box
+        offsets[++location] = i;
+        assert(location < nProcs);
+      }
+    }//while
+  }//for
+
+  //Fill remaining processes
+  while(location <= nProcs)
+    offsets[++location] = nToSend;
+
+  //Fill items
+  for(int ib=0; ib < nProcs; ib++)
+  {
+    items[ib] = offsets[ib+1]-offsets[ib];
+  }
+
+  assert(items[procId] == 0);
+
+  for(int ib =0; ib < nProcs; ib++)
+  {
+    nparticles[ib] = items[ib];
+    nsendbytes[ib] = nparticles[ib]*sizeof(bodyStruct);
+    nsendDispls[ib] = offsets[ib]*sizeof(bodyStruct);
+  }
+
+//  char buff[512];
+//  sprintf(buff, "Proc: ");
+//  for(int i=0; i < nProcs; i++)
+//  {
+//    sprintf(buff, "%s [%d, %d] ", buff, nparticles[i], nsendbytes[i]);
+//  }
+//  LOGF(stderr,"%s \n", buff);
+
+  array2Send.clear();
+  array2Send.insert(array2Send.end(), particlesToSend, particlesToSend+nToSend);
+
+#if 1
+  for(int ib=0; ib < nProcs; ib++)
+  {
+    uint4 lowerBoundary = tree.parallelBoundaries[ib];
+    uint4 upperBoundary = tree.parallelBoundaries[ib+1];
+
+    for(int i= offsets[ib]; i <  offsets[ib+1]; i++)
+    {
+      uint4 key  = particlesToSend[i].key;
+      int bottom = cmp_uint4(key, lowerBoundary);
+      int top    = cmp_uint4(key, upperBoundary);
+
+      if(bottom >= 0 && top < 0)
+      {
+        //Inside
+      }
+      else
+      {
+        assert(!"Particle not in the box");
+      }
+    }//for i
+  }//for ib
+#endif
+
+
+  //LOGF(stderr,  "EXCHANGE reorder iter: %d  took: %lg \tItems: %d Total-n: %d\n",
+if(iter == 0 && procId == 0)
+  fprintf(stderr,  "EXCHANGE reorder iter: %d  took: %lg \tItems: %d Total-n: %d\n",
+      iter, get_time()-t1, nToSend, tree.n);
+
+
+firstSort = 0;
+}
+else
+
+
+ {
   //Sort the statistics, causing the processes with which we interact most to be on top
   std::sort(fullGrpAndLETRequestStatistics, fullGrpAndLETRequestStatistics+nProcs, cmp_uint2_reverse());
 
@@ -1564,6 +1681,8 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
   }
   LOGF(stderr,  "EXCHANGE reorder iter: %d  took: %lg \tItems: %d Total-n: %d\n",
       iter, get_time()-t1, nToSend, tree.n);
+
+ }
   t1 = get_time();
 #if 0
   MPI_Alltoall(nparticles, 1, MPI_INT, nreceive, 1, MPI_INT, MPI_COMM_WORLD);
@@ -1675,12 +1794,21 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
     const int scount = nsendbytes[dst];
     const int rcount = nreceive[src]*sizeof(bodyStruct);
 
+#if 1
     if (scount > 0) MPI_Isend(&array2Send[nsendDispls[dst]/sizeof(bodyStruct)], scount, MPI_BYTE, dst, 1, MPI_COMM_WORLD, &req[nreq++]);
     if(rcount > 0)
     {
       MPI_Irecv(&recv_buffer3[recvOffset], rcount, MPI_BYTE, src, 1, MPI_COMM_WORLD, &req[nreq++]);
       recvOffset += nreceive[src];
     }
+#else
+
+	MPI_Status stat;
+	MPI_Sendrecv(&array2Send[nsendDispls[dst]/sizeof(bodyStruct)],
+		      scount, MPI_BYTE, dst, 1,
+			&recv_buffer3[recvOffset], rcount, MPI_BYTE, src, 1, MPI_COMM_WORLD, &stat);
+      recvOffset += nreceive[src];
+#endif	
   }
 
   double t94 = get_time();
@@ -1738,6 +1866,13 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
   //Compute the new number of particles:
   int newN = tree.n + recvCount - nToSend;
 
+#if 1
+  if(iter < 1){ /* jb2404 */
+  fprintf(stderr, "Proc: %d Exchange, received %d \tSend: %d newN: %d\n",
+		        procId, recvCount, nToSend, newN); 
+	}
+#endif
+
   execStream->sync();   //make certain that the particle movement on the device
   //is complete before we resize
 
@@ -1780,6 +1915,8 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
   int memOffset1 = bodyBuffer.cmalloc_copy(localTree.generalBuffer1,
       stepSize, 0);
 
+//  fprintf(stderr, "Exchange, received %d \tSend: %d newN: %d\tItems that can be insert in one step: %d\n",
+//      recvCount, nToSend, newN, stepSize);
   LOGF(stderr, "Exchange, received %d \tSend: %d newN: %d\tItems that can be insert in one step: %d\n",
       recvCount, nToSend, newN, stepSize);
 
@@ -3119,7 +3256,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
   int nQuickCheckSends          = 0;
 
 
-  omp_set_num_threads(4);
+  omp_set_num_threads(16);
 
   letObject *computedLETs = new letObject[nProcs-1];
 
@@ -3887,6 +4024,7 @@ LOGF(stderr,"Prep took: %lg  Items: %d \n", tbla2-tbla, topLevel.size());
 #endif
 
 
+#if 1
         int temp[nProcs];
         int newIdx = 0;
         for(int x=0; x<myComm->n_proc_i; x++)
@@ -3901,6 +4039,7 @@ LOGF(stderr,"Prep took: %lg  Items: %d \n", tbla2-tbla, topLevel.size());
           }
         }
         memcpy(quickCheckRecvSizes, temp, sizeof(int)*nProcs);
+#endif
       }
 
       LOGF(stderr, "[%d] Completed_alltoall 2D data communication! Iter: %d Took: %lg ( %lg )\tSize: %f MB \n",
@@ -4978,10 +5117,14 @@ void octree::determine_sample_freq(int numberOfParticles)
 {
   //Sum the number of particles on all processes
 #ifdef USE_MPI
-  int tmp;
-  MPI_Allreduce(&numberOfParticles,&tmp,1, MPI_INT, MPI_SUM,MPI_COMM_WORLD);
+  //int tmp;
+  //MPI_Allreduce(&numberOfParticles,&tmp,1, MPI_INT, MPI_SUM,MPI_COMM_WORLD);
+  //nTotalFreq = tmp;
 
-  nTotalFreq = tmp;
+	unsigned long long tmp;
+	unsigned long long tmp2 = numberOfParticles;
+  MPI_Allreduce(&tmp2,&tmp,1, MPI_UNSIGNED_LONG_LONG, MPI_SUM,MPI_COMM_WORLD);
+  nTotalFreq_ull = tmp;
 #else
   nTotalFreq = numberOfParticles;
 #endif
@@ -4989,11 +5132,11 @@ void octree::determine_sample_freq(int numberOfParticles)
 
 #ifdef PRINT_MPI_DEBUG
   if(procId == 0)
-    LOG("Total number of particles: %d\n", nTotalFreq);
+    LOG("Total number of particles: %llu\n", nTotalFreq_ull);
 #endif
 
   int maxsample = (int)(NMAXSAMPLE*0.8); // 0.8 is safety factor
-  sampleFreq = (nTotalFreq+maxsample-1)/maxsample;
+  sampleFreq = (nTotalFreq_ull+(unsigned long long)maxsample-1)/ (unsigned long long)maxsample;
 
   if(procId == 0)  LOGF(stderr,"Sample Frequency: %d \n", sampleFreq);
 
@@ -5764,7 +5907,7 @@ void octree::gpu_updateDomainDistribution(double timeLocal)
   nrate = (double)localTree.n / (double)nTotalFreq;
 #endif
 
-  int    nsamp    = (int)(nTotalFreq *0.001f) + 1;  //Total number of sample particles, global
+  int    nsamp    = (int)(nTotalFreq *0.001f/4.0) + 1;  //Total number of sample particles, global
   int nsamp_local = (int)(nsamp*nrate) + 1;
   int nSamples    = nsamp_local;
 

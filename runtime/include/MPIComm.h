@@ -37,6 +37,10 @@ MPI_Datatype MPIComm_datatype<MYDATA>()
 #define MPICOMMDEBUG
 #endif
 
+#if 0
+#define USE_ALL2ALLV
+#endif
+
 void MPIComm_free_type();
 struct MPIComm
 {
@@ -93,6 +97,25 @@ struct MPIComm
     MPI_Comm_free(&MPI_COMM_J);
     MPIComm_free_type();
   }
+
+  template<typename T>
+    void all2all(
+        const int nproc, const int color,
+	T sbuf[], const int sendcnts[], const int sdispl[],
+	T rbuf[],const  int recvcnts[], const int rdispl[],
+	const MPI_Comm comm)
+    {
+	for (int dist = 0; dist < nproc; dist++) {
+		const int src = (nproc + color - dist) % nproc;
+		const int dst = (nproc + color + dist) % nproc;
+		const int scount = sendcnts[dst];
+		const int rcount = recvcnts[src];
+		MPI_Status stat;
+	MPI_Sendrecv(&sbuf[sdispl[dst]],
+	      scount, MPIComm_datatype<T>(), dst, 1,
+		&rbuf[rdispl[src]], rcount, MPIComm_datatype<T>(), src, 1, comm, &stat);
+	}
+    }
 
   template<typename T>
     void sort_array(std::vector<T> &p, int sub_counts[], int scounts[])
@@ -157,7 +180,11 @@ struct MPIComm
       //// alltoallv within j-comm ////
       std::vector<T> p_new(rdispls_j[n_proc_j]); 
 	double t2 = get_time();
+#ifdef USE_ALL2ALLV
       MPI_Alltoallv(&p[0], &scounts_j[0], &sdispls_j[0], MPIComm_datatype<T>(), &p_new[0], &rcounts_j[0], &rdispls_j[0], MPIComm_datatype<T>(), MPI_COMM_J);
+#else
+      all2all<T>(n_proc_j,i_color,&p[0], &scounts_j[0], &sdispls_j[0],  &p_new[0], &rcounts_j[0], &rdispls_j[0],  MPI_COMM_J);
+#endif
 #if 0
       if(myid==0) cout << i_color << " " << j_color << "alltoallv comm-j np=" << p.size()<< endl;
 #endif
@@ -193,13 +220,19 @@ struct MPIComm
 #endif
       p.resize(rdispls_i[n_proc_i]);
 double t6 = get_time();
+#ifdef USE_ALL2ALLV
       MPI_Alltoallv(&p_new[0], &scounts_i[0], &sdispls_i[0], MPIComm_datatype<T>(), 
           &p[0], &rcounts_i[0], &rdispls_i[0], MPIComm_datatype<T>(), MPI_COMM_I);
+#else
+      all2all<T>(n_proc_i,j_color,&p_new[0], &scounts_i[0], &sdispls_i[0],
+          &p[0], &rcounts_i[0], &rdispls_i[0], MPI_COMM_I);
+#endif
 #if 0
       if(myid==0) cout << "alltoallv in comm-i" << endl;
       p.swap(p_new2);
 #endif
       double t7 = get_time();
+      if(myid == 0)
 	fprintf(stderr, "Proc: %d  a2a: %lg offsets: %lg a2av: %lg sort: %lg  a2a: %lg res: %lg a2av: %lg Total: %lg \n",
 		myid, t1-t0, t2-t1,t3-t2, t4-t3, t5-t4, t6-t5, t7-t6, t7-t0);	 
     }
@@ -236,7 +269,11 @@ double t6 = get_time();
       }
       //MPI_Barrier(MPI_COMM_WORLD); //// for test 
       std::vector<T> p_new(rdispls[n_proc]);
+#ifdef USE_ALL2ALLV
       MPI_Alltoallv(&p[0], scounts, &sdispls[0], MPIComm_datatype<T>(), &p_new[0], &rcounts[0], &rdispls[0], MPIComm_datatype<T>(), MPI_COMM_WORLD);
+#else
+      all2all<T>(n_proc,myid,&p[0], scounts, &sdispls[0],  &p_new[0], &rcounts[0], &rdispls[0], MPI_COMM_WORLD);
+#endif
       p.swap(p_new);
     }
 
