@@ -1,4 +1,4 @@
-PROJECT(bonsai2)
+
 
 CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
 
@@ -16,6 +16,17 @@ option(USE_MPI
   "On to build support for MPI"
   OFF
   )
+
+option(USE_GALACTICS
+  "Include John Dubinsky galatics IC generator"
+  OFF
+  )
+
+option(USE_GALACTICS_IFORT
+  "Set to ON if galactics is compipled with ifort"
+  OFF
+)
+
 
 option(USE_OPENGL
   "On to build support for OpenGL Rendering"
@@ -267,7 +278,16 @@ cuda_add_executable(${BINARY_NAME}
   OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING} ${KEEP}
   )
 
-target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES})
+if (USE_GALACTICS)
+  add_definitions("-DGALACTICS")
+  if (USE_GALACTICS_IFORT)
+    target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES} -L./ -lgengalaxy -lifcore)
+  else(USE_GALACTICS_IFORT)
+    target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES} -L./ -lgengalaxy -lgfortran)
+  endif(USE_GALACTICS_IFORT)
+else(USE_GALACTICS)
+  target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES})
+endif(USE_GALACTICS)
 
 #copy test data file
 file(COPY ${CMAKE_SOURCE_DIR}/model3_child_compact.tipsy DESTINATION ${CMAKE_BINARY_DIR})

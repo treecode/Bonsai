@@ -37,6 +37,9 @@ http://github.com/treecode/Bonsai
 #include "renderloop.h"
 #include "plummer.h"
 #include "disk_shuffle.h"
+#ifdef GALACTICS
+#include "galactics.h"
+#endif
 
 
 #if ENABLE_LOG
@@ -757,8 +760,9 @@ int main(int argc, char** argv)
 	dTstartGlow = 1.0;
 #endif
 
-  int nPlummer = -1;
-  int nSphere  = -1;
+  int nPlummer  = -1;
+  int nMilkyWay = -1;
+  int nSphere   = -1;
 	/************** beg - command line arguments ********/
 #if 1
 	{
@@ -801,6 +805,9 @@ int main(int argc, char** argv)
 
 
 		ADDUSAGE("     --plummer  #      use plummer model with # particles per proc");
+#ifdef GALACTICS
+		ADDUSAGE("     --milkyway #      use Milky Way model with # particles per proc");
+#endif
 		ADDUSAGE("     --sphere   #      use spherical model with # particles per proc");
     ADDUSAGE("     --diskmode        use diskmode to read same input file all MPI taks and randomly shuffle its positions");
 		ADDUSAGE(" ");
@@ -815,6 +822,9 @@ int main(int argc, char** argv)
 		opt.setOption( "theta",   'o' );
 		opt.setOption( "rebuild", 'r' );
     opt.setOption( "plummer");
+#ifdef GALACTICS
+    opt.setOption( "milkyway");
+#endif
     opt.setOption( "sphere");
     opt.setOption( "dev" );
     opt.setOption( "renderdev" );
@@ -864,6 +874,7 @@ int main(int argc, char** argv)
     char *optarg = NULL;
     if ((optarg = opt.getValue("infile")))       fileName           = string(optarg);
     if ((optarg = opt.getValue("plummer")))      nPlummer           = atoi(optarg);
+    if ((optarg = opt.getValue("milkyway")))     nMilkyWay          = atoi(optarg);
     if ((optarg = opt.getValue("sphere")))       nSphere            = atoi(optarg);
     if ((optarg = opt.getValue("logfile")))      logFileName        = string(optarg);
     if ((optarg = opt.getValue("dev")))          devID              = atoi  (optarg);
@@ -886,7 +897,7 @@ int main(int argc, char** argv)
     if ((optarg = opt.getValue("dTglow")))	 dTstartGlow  = (float)atof(optarg);
     dTstartGlow = std::max(dTstartGlow, 1.0f);
 #endif
-    if (fileName.empty() && nPlummer == -1 && nSphere == -1)
+    if (fileName.empty() && nPlummer == -1 && nSphere == -1 && nMilkyWay == -1)
     {
       opt.printUsage();
       exit(0);
@@ -910,40 +921,7 @@ int main(int argc, char** argv)
 
   LOGF(stderr, "Rebuild tree every %d timestep\n", rebuild_tree_rate);
 #endif
-  //NOte cant use LOGF here since MPI isnt initialized yet
-  cerr << "[INIT]\tUsed settings: \n";
-  cerr << "[INIT]\tInput filename " << fileName << endl;
-  cerr << "[INIT]\tLog filename " << logFileName << endl;
-  cerr << "[INIT]\tTheta: \t\t"             << theta        << "\t\teps: \t\t"          << eps << endl;
-  cerr << "[INIT]\tTimestep: \t"          << timeStep     << "\t\ttEnd: \t\t"         << tEnd << endl;
-  cerr << "[INIT]\tsnapshotFile: \t"      << snapshotFile << "\tsnapshotIter: \t" << snapshotIter << endl;
-  cerr << "[INIT]\tInput file: \t"        << fileName     << "\t\tdevID: \t\t"        << devID << endl;
-  cerr << "[INIT]\tRemove dist: \t"   << remoDistance << endl;
-  cerr << "[INIT]\tSnapshot Addition: \t"  << snapShotAdd << endl;
-  cerr << "[INIT]\tRebuild tree every " << rebuild_tree_rate << " timestep\n";
 
-
-  if( reduce_bodies_factor > 1 )
-    cout << "[INIT]\tReduce number of non-dust bodies by " << reduce_bodies_factor << " \n";
-  if( reduce_dust_factor > 1 )
-    cout << "[INIT]\tReduce number of dust bodies by " << reduce_dust_factor << " \n";
-
-#if ENABLE_LOG
-  if (ENABLE_RUNTIME_LOG)
-    cerr << "[INIT]\tRuntime logging is ENABLED \n";
-  else
-    cerr << "[INIT]\tRuntime logging is DISABLED \n";
-#endif
-  cerr << "[INIT]\tDirect gravitation is " << (direct ? "ENABLED" : "DISABLED") << endl;
-#if USE_OPENGL
-  cerr << "[INIT]\tTglow = " << TstartGlow << endl;
-  cerr << "[INIT]\tdTglow = " << dTstartGlow << endl;
-#endif
-#ifdef USE_MPI                
-  cerr << "[INIT]\tCode is built WITH MPI Support \n";
-#else
-  cerr << "[INIT]\tCode is built WITHOUT MPI Support \n";
-#endif
 
   int NTotal, NFirst, NSecond, NThird;
   NTotal = NFirst = NSecond = NThird = 0;
@@ -987,6 +965,44 @@ int main(int argc, char** argv)
   int procId = tree->mpiGetRank();
   int nProcs = tree->mpiGetNProcs();
 
+  if (procId == 0)
+  {
+    //NOte cant use LOGF here since MPI isnt initialized yet
+    cerr << "[INIT]\tUsed settings: \n";
+    cerr << "[INIT]\tInput filename " << fileName << endl;
+    cerr << "[INIT]\tLog filename " << logFileName << endl;
+    cerr << "[INIT]\tTheta: \t\t"             << theta        << "\t\teps: \t\t"          << eps << endl;
+    cerr << "[INIT]\tTimestep: \t"          << timeStep     << "\t\ttEnd: \t\t"         << tEnd << endl;
+    cerr << "[INIT]\tsnapshotFile: \t"      << snapshotFile << "\tsnapshotIter: \t" << snapshotIter << endl;
+    cerr << "[INIT]\tInput file: \t"        << fileName     << "\t\tdevID: \t\t"        << devID << endl;
+    cerr << "[INIT]\tRemove dist: \t"   << remoDistance << endl;
+    cerr << "[INIT]\tSnapshot Addition: \t"  << snapShotAdd << endl;
+    cerr << "[INIT]\tRebuild tree every " << rebuild_tree_rate << " timestep\n";
+
+
+    if( reduce_bodies_factor > 1 )
+      cout << "[INIT]\tReduce number of non-dust bodies by " << reduce_bodies_factor << " \n";
+    if( reduce_dust_factor > 1 )
+      cout << "[INIT]\tReduce number of dust bodies by " << reduce_dust_factor << " \n";
+
+#if ENABLE_LOG
+    if (ENABLE_RUNTIME_LOG)
+      cerr << "[INIT]\tRuntime logging is ENABLED \n";
+    else
+      cerr << "[INIT]\tRuntime logging is DISABLED \n";
+#endif
+    cerr << "[INIT]\tDirect gravitation is " << (direct ? "ENABLED" : "DISABLED") << endl;
+#if USE_OPENGL
+    cerr << "[INIT]\tTglow = " << TstartGlow << endl;
+    cerr << "[INIT]\tdTglow = " << dTstartGlow << endl;
+#endif
+#ifdef USE_MPI                
+    cerr << "[INIT]\tCode is built WITH MPI Support \n";
+#else
+    cerr << "[INIT]\tCode is built WITHOUT MPI Support \n";
+#endif
+  }
+
 #ifdef USE_MPI
 #if 1
   omp_set_num_threads(16);
@@ -1004,8 +1020,8 @@ int main(int argc, char** argv)
     for (i = 0; i < CPU_SETSIZE; i++)
       if (CPU_ISSET(i, &cpuset))
         set = i;
-//    fprintf(stderr,"[Proc: %d ] Thread %d bound to: %d Total cores: %d\n",
-//        procId, tid,  set, num_cores);
+    //    fprintf(stderr,"[Proc: %d ] Thread %d bound to: %d Total cores: %d\n",
+    //        procId, tid,  set, num_cores);
   }
 #endif
 
@@ -1083,7 +1099,7 @@ int main(int argc, char** argv)
 
   tree->set_context(logFile, false); //Do logging to file and enable timing (false = enabled)
 
-  if (nPlummer == -1 && nSphere == -1 && !diskmode)
+  if (nPlummer == -1 && nSphere == -1 && !diskmode && nMilkyWay == -1)
   {
     if(procId == 0)
     {
@@ -1104,6 +1120,56 @@ int main(int argc, char** argv)
     {
       tree->ICRecv(0, bodyPositions, bodyVelocities,  bodyIDs);
     }
+  }
+  else if(nMilkyWay >= 0)
+  {
+#ifdef GALACTICS
+    if (procId == 0) printf("Using MilkyWay model with n= %d per proc \n", nMilkyWay);
+    assert(nMilkyWay > 0);
+
+    const float fdisk  = 2;
+    const float fbulge = 0.5;
+    const float fhalo  = 1;
+
+    const float fsum = fdisk + fhalo + fbulge;
+
+    const int ndisk  = (int)(nMilkyWay * fdisk/fsum);
+    const int nbulge = (int)(nMilkyWay * fbulge/fsum);
+    const int nhalo  = (int)(nMilkyWay * fhalo/fsum);
+
+    assert(ndisk  > 0);
+    assert(nbulge > 0);
+    assert(nhalo  > 0);
+
+    const Galactics g(procId, ndisk, nbulge, nhalo, 4);
+    if (procId == 0)
+      printf("  ndisk= %d  nbulge= %d  nhalo= %d :: ntotal= %d\n",
+          g.get_ndisk(), g.get_nbulge(), g.get_nhalo(), g.get_ntot());
+
+    const int ntot = g.get_ntot();
+    bodyPositions.resize(ntot);
+    bodyVelocities.resize(ntot);
+    bodyIDs.resize(ntot);
+    for (int i= 0; i < ntot; i++)
+    {
+      assert(!std::isnan(g[i].x));
+      assert(!std::isnan(g[i].y));
+      assert(!std::isnan(g[i].z));
+      assert(g[i].mass > 0.0);
+      bodyIDs[i] = g[i].id;
+
+      bodyPositions[i].x = g[i].x;
+      bodyPositions[i].y = g[i].y;
+      bodyPositions[i].z = g[i].z;
+      bodyPositions[i].w = g[i].mass * 1.0/(double)nProcs;
+
+      bodyVelocities[i].x = g[i].vx;
+      bodyVelocities[i].y = g[i].vy;
+      bodyVelocities[i].z = g[i].vz;
+    }
+#else
+    assert(0);
+#endif
   }
   else if(nPlummer >= 0)
   {
@@ -1307,7 +1373,7 @@ int main(int argc, char** argv)
   tree->localTree.bodies_ids.h2d();
 
   //fprintf(stderr,"Send data to device proc: %d \n", procId);
-//  tree->devContext.writeLogEvent("Send data to device\n");
+  //  tree->devContext.writeLogEvent("Send data to device\n");
 
 
 #if USE_HASH_TABLE_DOMAIN_DECOMP
@@ -1318,13 +1384,13 @@ int main(int argc, char** argv)
   MPI_Barrier(MPI_COMM_WORLD);
   if (procId == 0)
   {
-	  fprintf(stderr,"Send data to device proc: %d \n", procId);
-	  fprintf(stderr, "ready to send ptcl \n");
+    fprintf(stderr,"Send data to device proc: %d \n", procId);
+    fprintf(stderr, "ready to send ptcl \n");
   }
   tree->determine_sample_freq(tree->localTree.n); //Determine initial frequency
   if (procId == 0)
   {
-	  fprintf(stderr, "done!!! sending ptcl \n");
+    fprintf(stderr, "done!!! sending ptcl \n");
   }
   MPI_Barrier(MPI_COMM_WORLD);
 #endif
@@ -1395,7 +1461,7 @@ int main(int argc, char** argv)
 #else
   MPI_Barrier(MPI_COMM_WORLD);
   if (procId==0)
-	  fprintf(stderr, " Starting iterating\n");
+    fprintf(stderr, " Starting iterating\n");
   MPI_Barrier(MPI_COMM_WORLD);
   tree->iterate(); 
 
