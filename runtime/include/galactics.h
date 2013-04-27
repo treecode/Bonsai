@@ -60,7 +60,7 @@ struct Galactics
     if (ftruncate(shmfd,nByteMap))
     {
       fprintf(stderr, "procId= %d :: creator:ftruncate failed \n", procId);
-      perror("craetor:ftruncate");
+      perror("creator:ftruncate");
       exit(EXIT_FAILURE);
     }
 
@@ -136,7 +136,7 @@ struct Galactics
       }
       if (procId == 0)
         fprintf(stderr,"\n parent :: Galaxy generation complete \n");
-      Particle *ptcl_list = (Particle*)data_ptr;
+      const Particle *ptcl_list = (Particle*)data_ptr;
 
       /* collect the results from child processes */
 
