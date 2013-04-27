@@ -155,7 +155,7 @@ struct Galactics
         assert(!std::isnan(ptcl[i].vx));
         assert(!std::isnan(ptcl[i].vy));
         assert(!std::isnan(ptcl[i].vz));
-        ptcl[i].mass *= 1.0/mscale;
+        ptcl[i].mass *= mscale;
       }
     }
 
