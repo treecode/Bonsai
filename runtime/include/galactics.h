@@ -38,7 +38,7 @@ struct Galactics
   int get_ntot() const { return ndisk+nbulge+nhalo; }
   const Particle& operator[](const int i) const {return ptcl[i];}
 
-  Galactics(const int procId, const int _ndisk, int _nbulge, int _nhalo, const int NCHILD = 4) : 
+  Galactics(const int procId, const int nProc, const int _ndisk, int _nbulge, int _nhalo, const int NCHILD = 4) : 
     ndisk(_ndisk/NCHILD), nbulge(_nbulge/NCHILD), nhalo(_nhalo/NCHILD), childId(0)
   {
     const int nptcl = ndisk + nbulge + nhalo;
@@ -114,9 +114,10 @@ struct Galactics
       /* generate galaxy */
 
       const int verbose = (childId == 0) && (procId == 0);
-      gen_disk (ndisk,  NCHILD*procId+childId, (float*)&data[0           ], verbose);
-      gen_bulge(nbulge, NCHILD*procId+childId, (float*)&data[ndisk       ], verbose);
-      gen_halo (nhalo,  NCHILD*procId+childId, (float*)&data[ndisk+nbulge], verbose);
+      const int stride = nProc * NCHILD;
+      gen_disk (ndisk,  0*stride + NCHILD*procId+childId, (float*)&data[0           ], verbose);
+      gen_bulge(nbulge, 1*stride + NCHILD*procId+childId, (float*)&data[ndisk       ], verbose);
+      gen_halo (nhalo,  2*stride + NCHILD*procId+childId, (float*)&data[ndisk+nbulge], verbose);
 
       exit(EXIT_SUCCESS);
     }

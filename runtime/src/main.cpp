@@ -1141,7 +1141,7 @@ int main(int argc, char** argv)
     assert(nbulge > 0);
     assert(nhalo  > 0);
 
-    const Galactics g(procId, ndisk, nbulge, nhalo, 4);
+    const Galactics g(procId, nProcs, ndisk, nbulge, nhalo, 4);
     if (procId == 0)
       printf("  ndisk= %d  nbulge= %d  nhalo= %d :: ntotal= %d\n",
           g.get_ndisk(), g.get_nbulge(), g.get_nhalo(), g.get_ntot());
