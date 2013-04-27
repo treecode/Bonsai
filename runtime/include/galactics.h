@@ -114,8 +114,8 @@ struct Galactics
       /* generate galaxy */
 
       const int verbose = (childId == 0) && (procId == 0);
-      const long long a = procId;
-      const long long b = childId;
+      const int a = procId;
+      const int b = childId;
       gen_disk (ndisk,  131072*a+34*b, (float*)&data[0           ], verbose);
       gen_bulge(nbulge, 262144*a+67*b, (float*)&data[ndisk       ], verbose);
       gen_halo (nhalo,  524288*a+97*b, (float*)&data[ndisk+nbulge], verbose);
