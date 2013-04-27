@@ -15,7 +15,7 @@ To generate MilkyWay galaxy you need galactics.parallel fork of John Dubinsky ga
 1) tar xzf galactics.parallel.tar.gz
 2) cd galactic.parallel/src
 3) make -f Makefile.[ifort/gnu]  use ifort if you have Intel Fortran compiler (3x faster than gfortran), otherwise use Makefile.gnu
-4) cp libgengalaxy.o ../../
+4) cp libgengalaxy.a ../../
 5) cd ../../
 6) cmake -DCMAKE_CXX_COMPILER=cc -D
 7) ccmake .
