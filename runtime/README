@@ -30,6 +30,10 @@ To run galactic, you need DF data, these are located in galactics_df_mw. Copy th
 3) gzip -vd *.gz
 4) mpirun -np 4 path_to_bonsai/runtime/bonsai2_slowdust --milkyway 500000   -o 0.4 -T 10 -r 1 --eps 0.1  -t 0.001 2>&1 | tee log_MWa 
 
+Units:
+  basic: distance  = 1 kpc, speed= 100 km/s
+  derived: mass= distance*speed^2/G= 2.324876e9 Msun, time= sqrt(distance^3/G/mass) = 9.778145 Myr
+
 enjoy the results!
 
 
