@@ -728,7 +728,7 @@ if(iter < 32)
     }
 
 
-//    if(iter > 64) return true;
+    if(iter > 64) return true;
 
     if(t_current >= tEnd)
     {
