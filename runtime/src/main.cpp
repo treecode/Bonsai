@@ -1181,6 +1181,10 @@ int main(int argc, char** argv)
       bodyPositions[i].y = g[i].y;
       bodyPositions[i].z = g[i].z;
       bodyPositions[i].w = g[i].mass * 1.0/(double)nProcs;
+      
+      assert(!std::isnan(g[i].vx));
+      assert(!std::isnan(g[i].vy));
+      assert(!std::isnan(g[i].vz));
 
       bodyVelocities[i].x = g[i].vx;
       bodyVelocities[i].y = g[i].vy;
