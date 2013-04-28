@@ -693,12 +693,12 @@ if(iter < 32)
 
     if(snapshotIter > 0)
     {
-      int time = (int)t_current;
+      float time = t_current;
       if((time >= nextSnapTime))
       {
         nextSnapTime += snapshotIter;
         string fileName; fileName.resize(256);
-        sprintf(&fileName[0], "%s_%06d", snapshotFile.c_str(), time + snapShotAdd);
+        sprintf(&fileName[0], "%s_%010.4f", snapshotFile.c_str(), time + snapShotAdd);
         
         #ifdef USE_DUST
           //We move the dust data into the position data (on the device :) )
@@ -718,7 +718,7 @@ if(iter < 32)
         }
         else
         {
-          sprintf(&fileName[0], "%s_%06d-%d", snapshotFile.c_str(), time + snapShotAdd, procId);
+          sprintf(&fileName[0], "%s_%010.4f-%d", snapshotFile.c_str(), time + snapShotAdd, procId);
           write_snapshot_per_process(&localTree.bodies_pos[0], &localTree.bodies_vel[0],
                                      &localTree.bodies_ids[0], localTree.n + localTree.n_dust,
                                      fileName.c_str(), t_current) ;
@@ -728,13 +728,13 @@ if(iter < 32)
     }
 
 
-    if(iter > 64) return true;
+    if (iter >= iterEnd) return true;
 
     if(t_current >= tEnd)
     {
       compute_energies(this->localTree);
       double totalTime = get_time() - idata.startTime;
-      LOG("Finished: %f > %d \tLoop alone took: %f\n", t_current, tEnd, totalTime);
+      LOG("Finished: %f > %f \tLoop alone took: %f\n", t_current, tEnd, totalTime);
      
       my_dev::base_mem::printMemUsage();
 
@@ -891,7 +891,7 @@ void octree::iterate_setup(IterationData &idata) {
   //Print time 0 snapshot
   if(snapshotIter > 0 )
   {
-      int time = (int)t_current;
+      float time = t_current;
       
       //We always snapshot the state at the current time, so we have the start
       //of the simulation included in our snapshots. This also allows us to
@@ -904,7 +904,7 @@ void octree::iterate_setup(IterationData &idata) {
         nextSnapTime += snapshotIter;       
         
         string fileName; fileName.resize(256);
-        sprintf(&fileName[0], "%s_%06d", snapshotFile.c_str(), time + snapShotAdd);
+        sprintf(&fileName[0], "%s_%010.4f", snapshotFile.c_str(), time + snapShotAdd);
         
         #ifdef USE_DUST
           //We move the dust data into the position data (on the device :) )
@@ -924,7 +924,7 @@ void octree::iterate_setup(IterationData &idata) {
         }
         else
         {
-          sprintf(&fileName[0], "%s_%06d-%d", snapshotFile.c_str(), time + snapShotAdd, procId);
+          sprintf(&fileName[0], "%s_%010.4f-%d", snapshotFile.c_str(), time + snapShotAdd, procId);
           write_snapshot_per_process(&localTree.bodies_pos[0], &localTree.bodies_vel[0],
                                      &localTree.bodies_ids[0], localTree.n + localTree.n_dust,
                                      fileName.c_str(), t_current) ;

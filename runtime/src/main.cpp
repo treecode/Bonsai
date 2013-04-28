@@ -731,14 +731,15 @@ int main(int argc, char** argv)
   float eps      = 0.05f;
   float theta    = 0.75f;
   float timeStep = 1.0f / 16.0f;
-  float  tEnd      = 1;
+  float tEnd     = 1;
+  int   iterEnd  = (1 << 30);
   devID      = 0;
   renderDevID = 0;
 
   string fileName       =  "";
   string logFileName    = "gpuLog.log";
   string snapshotFile   = "snapshot_";
-  int snapshotIter      = -1;
+  float snapshotIter     = -1;
   float  remoDistance   = -1.0;
   int    snapShotAdd    =  0;
   int rebuild_tree_rate = 2;
@@ -761,8 +762,9 @@ int main(int argc, char** argv)
 #endif
 
   int nPlummer  = -1;
-  int nMilkyWay = -1;
   int nSphere   = -1;
+  int nMilkyWay = -1;
+  int nMWfork   =  4;
 	/************** beg - command line arguments ********/
 #if 1
 	{
@@ -780,6 +782,7 @@ int main(int argc, char** argv)
 		ADDUSAGE("     --renderdev #      Rendering Device ID [" << renderDevID << "]");
 		ADDUSAGE(" -t  --dt #             time step [" << timeStep << "]");
 		ADDUSAGE(" -T  --tend #           N-body end time [" << tEnd << "]");
+		ADDUSAGE(" -I  --iend #           N-body end iteration [" << iterEnd << "]");
 		ADDUSAGE(" -e  --eps #            softening (will be squared) [" << eps << "]");
 		ADDUSAGE(" -o  --theta #          opening angle (theta) [" <<theta << "]");
 		ADDUSAGE("     --snapname #       snapshot base name (N-body time is appended in 000000 format) [" << snapshotFile << "]");
@@ -807,6 +810,7 @@ int main(int argc, char** argv)
 		ADDUSAGE("     --plummer  #      use plummer model with # particles per proc");
 #ifdef GALACTICS
 		ADDUSAGE("     --milkyway #      use Milky Way model with # particles per proc");
+		ADDUSAGE("     --mwfork   #      fork Milky Way generator into # processes [" << nMWfork << "]");
 #endif
 		ADDUSAGE("     --sphere   #      use spherical model with # particles per proc");
     ADDUSAGE("     --diskmode        use diskmode to read same input file all MPI taks and randomly shuffle its positions");
@@ -818,12 +822,14 @@ int main(int argc, char** argv)
 		opt.setOption( "infile",  'i');
 		opt.setOption( "dt",      't' );
 		opt.setOption( "tend",    'T' );
+		opt.setOption( "iend",    'I' );
 		opt.setOption( "eps",     'e' );
 		opt.setOption( "theta",   'o' );
 		opt.setOption( "rebuild", 'r' );
     opt.setOption( "plummer");
 #ifdef GALACTICS
     opt.setOption( "milkyway");
+    opt.setOption( "mwfork");
 #endif
     opt.setOption( "sphere");
     opt.setOption( "dev" );
@@ -875,6 +881,7 @@ int main(int argc, char** argv)
     if ((optarg = opt.getValue("infile")))       fileName           = string(optarg);
     if ((optarg = opt.getValue("plummer")))      nPlummer           = atoi(optarg);
     if ((optarg = opt.getValue("milkyway")))     nMilkyWay          = atoi(optarg);
+    if ((optarg = opt.getValue("mwfork")))       nMWfork            = atoi(optarg);
     if ((optarg = opt.getValue("sphere")))       nSphere            = atoi(optarg);
     if ((optarg = opt.getValue("logfile")))      logFileName        = string(optarg);
     if ((optarg = opt.getValue("dev")))          devID              = atoi  (optarg);
@@ -882,10 +889,11 @@ int main(int argc, char** argv)
     if ((optarg = opt.getValue("renderdev")))    renderDevID        = atoi  (optarg);
     if ((optarg = opt.getValue("dt")))           timeStep           = (float) atof  (optarg);
     if ((optarg = opt.getValue("tend")))         tEnd               = (float) atof  (optarg);
+    if ((optarg = opt.getValue("iend")))         iterEnd            = atoi  (optarg);
     if ((optarg = opt.getValue("eps")))          eps                = (float) atof  (optarg);
     if ((optarg = opt.getValue("theta")))        theta              = (float) atof  (optarg);
     if ((optarg = opt.getValue("snapname")))     snapshotFile       = string(optarg);
-    if ((optarg = opt.getValue("snapiter")))     snapshotIter       = atoi  (optarg);
+    if ((optarg = opt.getValue("snapiter")))     snapshotIter       = (float) atof  (optarg);
     if ((optarg = opt.getValue("rmdist")))       remoDistance       = (float) atof  (optarg);
     if ((optarg = opt.getValue("valueadd")))     snapShotAdd        = atoi  (optarg);
     if ((optarg = opt.getValue("rebuild")))      rebuild_tree_rate  = atoi  (optarg);
@@ -957,7 +965,7 @@ int main(int argc, char** argv)
 
 
   //Creat the octree class and set the properties
-  octree *tree = new octree(argv, devID, theta, eps, snapshotFile, snapshotIter,  timeStep, (int)tEnd, (int)remoDistance, snapShotAdd, rebuild_tree_rate, direct);
+  octree *tree = new octree(argv, devID, theta, eps, snapshotFile, snapshotIter,  timeStep, tEnd, iterEnd, (int)remoDistance, snapShotAdd, rebuild_tree_rate, direct);
 
   double tStartup = tree->get_time();
 
@@ -973,6 +981,7 @@ int main(int argc, char** argv)
     cerr << "[INIT]\tLog filename " << logFileName << endl;
     cerr << "[INIT]\tTheta: \t\t"             << theta        << "\t\teps: \t\t"          << eps << endl;
     cerr << "[INIT]\tTimestep: \t"          << timeStep     << "\t\ttEnd: \t\t"         << tEnd << endl;
+    cerr << "[INIT]\titerEnd: \t" << iterEnd << endl;
     cerr << "[INIT]\tsnapshotFile: \t"      << snapshotFile << "\tsnapshotIter: \t" << snapshotIter << endl;
     cerr << "[INIT]\tInput file: \t"        << fileName     << "\t\tdevID: \t\t"        << devID << endl;
     cerr << "[INIT]\tRemove dist: \t"   << remoDistance << endl;
@@ -1005,7 +1014,7 @@ int main(int argc, char** argv)
 
 #ifdef USE_MPI
 #if 1
-  omp_set_num_threads(16);
+  omp_set_num_threads(nthreads_per_proc);
 #pragma omp parallel
   {
     int tid = omp_get_thread_num();
@@ -1124,12 +1133,20 @@ int main(int argc, char** argv)
   else if(nMilkyWay >= 0)
   {
 #ifdef GALACTICS
-    if (procId == 0) printf("Using MilkyWay model with n= %d per proc \n", nMilkyWay);
+    if (procId == 0) printf("Using MilkyWay model with n= %d per proc, forked %d times \n", nMilkyWay, nMWfork);
     assert(nMilkyWay > 0);
+    assert(nMWfork > 0);
+ 
 
-    const float fdisk  = 2;
-    const float fbulge = 0.5;
-    const float fhalo  = 1;
+#if 0 /* in this setup all particles will be of equal mass (exact number are galactic-depednant)  */
+    const float fdisk  = 15.1; 
+    const float fbulge = 5.1;   
+    const float fhalo  = 242.31; 
+#else  /* here, bulge & mw particles have the same mass, but halo particles is 32x heavier */
+    const float fdisk  = 15.1; 
+    const float fbulge = 5.1; 
+    const float fhalo  = 7.5; 
+#endif
 
     const float fsum = fdisk + fhalo + fbulge;
 
@@ -1141,10 +1158,12 @@ int main(int argc, char** argv)
     assert(nbulge > 0);
     assert(nhalo  > 0);
 
-    const Galactics g(procId, nProcs, ndisk, nbulge, nhalo, 4);
+    const double t0 = tree->get_time();
+    const Galactics g(procId, nProcs, ndisk, nbulge, nhalo, nMWfork);
+    const double dt = tree->get_time() - t0;
     if (procId == 0)
-      printf("  ndisk= %d  nbulge= %d  nhalo= %d :: ntotal= %d\n",
-          g.get_ndisk(), g.get_nbulge(), g.get_nhalo(), g.get_ntot());
+      printf("  ndisk= %d  nbulge= %d  nhalo= %d :: ntotal= %d in %g sec\n",
+          g.get_ndisk(), g.get_nbulge(), g.get_nhalo(), g.get_ntot(), dt);
 
     const int ntot = g.get_ntot();
     bodyPositions.resize(ntot);

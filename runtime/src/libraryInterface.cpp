@@ -33,7 +33,7 @@ float octree::getTheta()
 
 void octree::setTEnd(float tEndx)
 {
-    tEnd = (int)tEndx;  
+    tEnd = tEndx;  
 }
 
 float octree::getTEnd()

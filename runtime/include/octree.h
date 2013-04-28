@@ -377,9 +377,9 @@ protected:
    //Simulation properties
   int           iter;
   float         t_current, t_previous;
-  int           snapshotIter;   
+  float         snapshotIter;   
   string        snapshotFile;
-  int           nextSnapTime;
+  float         nextSnapTime;
 
   int   NTotal, NFirst, NSecond, NThird, snapShotAdd;
   
@@ -390,7 +390,8 @@ protected:
   int   dt_limit;
   float eta;
   float timeStep;
-  int   tEnd;
+  float tEnd;
+  int   iterEnd;
   float theta;
 
   bool  useDirectGravity;
@@ -885,7 +886,8 @@ public:
 	}
 
   octree(char **argv, const int device = 0, const float _theta = 0.75, const float eps = 0.05,
-         string snapF = "", int snapI = -1,  float tempTimeStep = 1.0 / 16.0, int tempTend = 1000,
+         string snapF = "", float snapI = -1,  float tempTimeStep = 1.0 / 16.0, float tempTend = 1000,
+         int _iterEnd = (1<<30),
          int maxDistT = -1, int snapAdd = 0, const int _rebuild = 2,
          bool direct = false)
   : rebuild_tree_rate(_rebuild), procId(0), nProcs(1), thisPartLETExTime(0), useDirectGravity(direct)
@@ -931,6 +933,7 @@ public:
 
     timeStep = tempTimeStep;
     tEnd     = tempTend;
+    iterEnd  = _iterEnd;
 
     removeDistance = (float)maxDistT;
     snapShotAdd    = snapAdd;

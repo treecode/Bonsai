@@ -4020,7 +4020,7 @@ double tbla = get_time();
         for (size_t i = 0; i < topLevel.size(); i++)
           ((v4sf*)recvAllToAllBuffer)[i] = topLevel[i];
 double tbla2  = get_time();
-LOGF(stderr,"Prep took: %lg  Items: %d \n", tbla2-tbla, topLevel.size());
+LOGF(stderr,"Prep took: %lg  Items: %d \n", tbla2-tbla, (int)topLevel.size());
 #endif
 
 
@@ -4074,7 +4074,7 @@ LOGF(stderr,"Prep took: %lg  Items: %d \n", tbla2-tbla, topLevel.size());
             int topStart = host_float_as_int(treeBuffers[nReceived][0].z);
             int topEnd   = host_float_as_int(treeBuffers[nReceived][0].w);
 
-	    LOGF(stderr, "Received from: %d  start: %d end: %d  offset: %d  offset old: %d\n",
+	    LOGF(stderr, "Received from: %d  start: %d end: %d  offset: %d  offset old: %lu\n",
                  i, topStart, topEnd, offset, quickCheckRecvOffset[i] / sizeof(real4));
 
             topNodeOnTheFlyCount += (topEnd-topStart);
