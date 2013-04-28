@@ -31,7 +31,7 @@ def makeJob(n):
     fileOut.write("/lustre/widow2/scratch/jbedorf/BonsaiGitStrong/runtime/bonsai2_slowdust_run ");
     fileOut.write("-i  /tmp/work/jbedorf/1BTest/IC/WPD09_test3_1B.tipsy ")
     nptcl = 16000000*64/n
-    fileOut.write("-T 2 -r 1 -o 0.4 -t 0.000001 -e 0.01 --prepend-rank --plummer   "+str(nptcl)+"\n")
+    fileOut.write("-I 64 -T 2 -r 1 -o 0.4 -t 0.000001 -e 0.01 --prepend-rank --plummer   "+str(nptcl)+"\n")
 
     fileOut.close()
 

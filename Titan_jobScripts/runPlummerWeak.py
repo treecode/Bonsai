@@ -29,7 +29,7 @@ def makeJob(n):
     fileOut.write("aprun -n${PBS_NUM_NODES} -d16 -cc 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15  -N 1 ");
     fileOut.write("/tmp/work/jbedorf/BonsaiNew/runtime/bonsai2_jb_final ")
     fileOut.write("-i  /tmp/work/jbedorf/1BTest/IC/WPD09_test3_1B.tipsy ")
-    fileOut.write(" --plummer 16000000 -T 2 -r 1 -o 0.4 -t 0.000001 -e 0.01 --prepend-rank \n")
+    fileOut.write(" --plummer 16000000 -I 64 -T 2 -r 1 -o 0.4 -t 0.000001 -e 0.01 --prepend-rank \n")
 
     fileOut.close()
 
