@@ -1189,6 +1189,7 @@ int main(int argc, char** argv)
       bodyVelocities[i].x = g[i].vx;
       bodyVelocities[i].y = g[i].vy;
       bodyVelocities[i].z = g[i].vz;
+      bodyVelocities[i].w = 0.0;
     }
 #else
     assert(0);
