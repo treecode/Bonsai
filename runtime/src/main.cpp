@@ -1014,7 +1014,7 @@ int main(int argc, char** argv)
 
 #ifdef USE_MPI
 #if 1
-  omp_set_num_threads(nthreads_per_proc);
+  omp_set_num_threads(16);
 #pragma omp parallel
   {
     int tid = omp_get_thread_num();
