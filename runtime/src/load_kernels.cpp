@@ -300,8 +300,9 @@ void octree::load_kernels() {
   getNActive.create("get_nactive", (const void*)&get_nactive);
   approxGrav.create("dev_approximate_gravity", (const void*)&dev_approximate_gravity);
 
-#if 0  /* preferL1 equal egaburov */
+#ifdef KEPLER /* preferL1 equal egaburov */
   cudaFuncSetCacheConfig((const void*)&dev_approximate_gravity, cudaFuncCachePreferL1);
+  cudaFuncSetCacheConfig((const void*)&dev_approximate_gravity_let, cudaFuncCachePreferL1);
 #if 0
 #if 1
   cudaDeviceSetSharedMemConfig(cudaSharedMemBankSizeFourByte);

@@ -127,6 +127,7 @@ if (COMPILE_SM30)
     ${CUFILES}
     CUDAkernels/dev_approximate_gravity_warp_new.cu  
     )
+  add_definitions("-DKEPLER")
   set(GENCODE -gencode arch=compute_35,code=sm_35 -gencode arch=compute_35,code=compute_35 -Xptxas=-v -ftz=true)
 
 else (COMPILE_SM30)
