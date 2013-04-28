@@ -781,7 +781,7 @@ public:
 
   void sendCurrentInfoGrpTree();
 
-  void computeSampleRateSFC(float lastExecTime, int &nSamples, int &sampleRate);
+  void computeSampleRateSFC(float lastExecTime, int &nSamples, float &sampleRate);
 
   void exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSamples,
                                            uint4 *globalSamples, int  *nReceiveCnts, int *nReceiveDpls,
