@@ -866,6 +866,7 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
   delete[] globalSamples;
   {
     const int nkeys = localTree.n;
+    assert(nkeys > 0);
     std::vector<DD2D::Key> keys(nkeys);
 #pragma omp parallel for
     for (int i = 0; i < nkeys; i++)
@@ -877,10 +878,11 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
             (static_cast<unsigned long long>(key.x) << 32) );
     }
 
-    const int nsamples = localTree.n / 10;
+    const int nsamples = 1000;
 
+    MPI_Finalize();
+    exit(0);
     const DD2D dd(procId, myComm->n_proc_i, nProcs, &keys[0], nkeys, nsamples, MPI_COMM_WORLD);
-    assert(0);
 
     for (int p = 0; p < nProcs; p++)
     {
