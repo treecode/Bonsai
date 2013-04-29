@@ -67,11 +67,11 @@ struct DD2D
   void sampleKeys(const int nsamples, const int keybeg, std::vector<Key> &key_samples)
   {
     assert(nsamples > 0);
-    const int stride = nkeys/nsamples;
-    assert(stride > 0);
-    key_samples.reserve(nkeys*2/stride);
-    for (int i = keybeg; i < nkeys; i += stride)
-      key_samples.push_back(keys[i]);
+    const double stride = (double)nkeys/(double)nsamples;
+    assert(stride > 0.0);
+    key_samples.reserve(nkeys);
+    for (double i = (double)keybeg; i < (double)nkeys; i += stride)
+      key_samples.push_back(keys[(int)i]);
   }
 
   void chopSortedKeys(const unsigned long long np, const Key &minkey, const std::vector<Key> &keys2chop, std::vector<Key> &boundaries)
