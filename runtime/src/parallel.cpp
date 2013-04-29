@@ -656,7 +656,7 @@ void octree::sendCurrentRadiusAndSampleInfo(real4 &rmin, real4 &rmax, int nsampl
   }
 }
 
-void octree::computeSampleRateSFC(float lastExecTime, int &nSamples, int &sampleRate)
+void octree::computeSampleRateSFC(float lastExecTime, int &nSamples, float &sampleRate)
 {
 #ifdef USE_MPI
   double t00 = get_time();
@@ -707,7 +707,7 @@ void octree::computeSampleRateSFC(float lastExecTime, int &nSamples, int &sample
 
   int    nsamp  = (int)(nTotalFreq_ull*0.001f/4) + 1;  //Total number of sample particles, global
   nSamples      = (int)(nsamp*nrate) + 1;
-  sampleRate    = localTree.n / nSamples;
+  sampleRate    = localTree.n / (float)nSamples;
 
   if (procId == 0)
   fprintf(stderr, "NSAMP [%d]: sample: %d nrate: %f final sampleRate: %d localTree.n: %d\tprevious: %d timeLocal: %f prevTimeLocal: %f  Took: %lg\n",
