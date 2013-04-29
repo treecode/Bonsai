@@ -879,8 +879,12 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
 
     const int npx = myComm->n_proc_i;  /* number of procs doing domain decomposition */
 
+#if 0  /* evghenii: somehow, this choice increases imballance. don't get why ... */
     const int nmean = nTotalFreq_ull/nProcs;
     const int nsamples_glb = nmean / 10;
+#else
+    const int nsamples_glb = nkeys_loc / 10;
+#endif
 
     /*** sample keys ***/
 
