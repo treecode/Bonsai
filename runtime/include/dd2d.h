@@ -103,7 +103,7 @@ struct DD2D
     keys.resize(np);
     const int sample_size = key_sample.size();
 
-#if 0  /* naive */
+#if 1  /* naive */
     for (int p = 0; p < np; p++)
       keys[p].reserve(1024);
 
@@ -114,12 +114,13 @@ struct DD2D
       keys[p].push_back(key);
     }
 #else  /* with sorted keys */
-    std::vector<int> firstKey(nProc+1);
+    std::vector<int> firstKey(np+1);
 
     int location       = 0;
     firstKey[location] = 0;
 
     __gnu_parallel::sort(key_sample.begin(), key_sample.end(), Key());
+
     for (int i = 0; i < sample_size; i++)
     {
       const Key key = key_sample[i];
@@ -139,18 +140,26 @@ struct DD2D
         else
         {
           firstKey[++location] = i;    /* outside the box */
-          assert(location < nProc);
+          assert(location < np);
         }
       }
     }
 
     //Fill remaining processes
-    while(location <= nProc)
+    while(location < np)
       firstKey[++location] = sample_size;
 
-    for (int p = 0; p < nProc; p++)
+    for (int p = 0; p < np; p++)
       if (firstKey[p+1] > firstKey[p])
         keys[p].insert(keys[p].begin(), key_sample.begin()+firstKey[p], key_sample.begin()+firstKey[p+1]);
+#endif
+
+#if 1
+    for (int p = 0; p < np; p++)
+    {
+      fprintf(stderr, " dd2d:: procId= %d  sends to %d a total of %d keys out of %d\n",
+          procId, p, (int)keys[p].size(), sample_size);
+    }
 #endif
 
   }
