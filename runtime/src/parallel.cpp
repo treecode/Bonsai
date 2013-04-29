@@ -727,7 +727,7 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
 {
 #ifdef USE_MPI
 
-#if 1 /* evghenii: disable 1D to nable 2D domain decomposition below */
+#if 0 /* evghenii: disable 1D to nable 2D domain decomposition below */
   {
     //Send actual data
     MPI_Gatherv(&sampleKeys[0],    nSamples*sizeof(uint4), MPI_BYTE,
@@ -877,9 +877,10 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
             (static_cast<unsigned long long>(key.x) << 32) );
     }
 
-    const int nsamples = localTree.n / 0.1;
+    const int nsamples = localTree.n / 10;
 
     const DD2D dd(procId, myComm->n_proc_i, nProcs, &keys[0], nkeys, nsamples, MPI_COMM_WORLD);
+    assert(0);
 
     for (int p = 0; p < nProcs; p++)
     {

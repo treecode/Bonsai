@@ -734,7 +734,7 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
   build_key_list.execute(execStream->s());
 
 #if 1  /* added by evghenii, needed for 2D domain decomposition in parallel.cpp */
-   tree.bodies_key.d2h(false,execStream->s());
+   tree.bodies_key.d2h(true,execStream->s());
 #endif
 
   int nSamples   = 0;
