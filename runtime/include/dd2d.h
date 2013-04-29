@@ -31,8 +31,7 @@ struct DD2D
   private:
 
   const int procId, npx, nProc;
-  const Key *keys;
-  const int nkeys;
+  const std::vector<Key> &key_sample;
   const MPI_Comm mpi_comm;
 
   std::vector<Key> boundaries;
@@ -62,16 +61,6 @@ struct DD2D
     MPI_Gatherv(
         (void*)&keys2send[0], keys_size, MPI_FLOAT,
         (void*)&keys2recv[keys2recv_size], &keys_sizes[0], &keys_displ[0], MPI_FLOAT, root, mpi_comm);
-  }
- 
-  void sampleKeys(const int nsamples, const int keybeg, std::vector<Key> &key_samples)
-  {
-    assert(nsamples > 0);
-
-    const double stride = std::max((double)nkeys/(double)nsamples, 1.0);
-    key_samples.reserve(nkeys);
-    for (double i = (double)keybeg; i < (double)nkeys; i += stride)
-      key_samples.push_back(keys[(int)i]);
   }
 
   void chopSortedKeys(const unsigned long long np, const Key &minkey, const std::vector<Key> &keys2chop, std::vector<Key> &boundaries)
@@ -168,8 +157,8 @@ struct DD2D
 
   public:
 
-  DD2D(const int _procId, const int _npx, const int _nProc, const Key *_keys, const int _nkeys, const int nsamples_tot, const MPI_Comm &_mpi_comm) :
-    procId(_procId), npx(_npx), nProc(_nProc), keys(_keys), nkeys(_nkeys), mpi_comm(_mpi_comm)
+  DD2D(const int _procId, const int _npx, const int _nProc, const std::vector<Key> &_key_sample, const MPI_Comm &_mpi_comm) :
+    procId(_procId), npx(_npx), nProc(_nProc), key_sample(_key_sample), mpi_comm(_mpi_comm)
   {
     assert(nProc % npx == 0);
     const int npy = nProc / npx;
@@ -181,7 +170,9 @@ struct DD2D
      */
 
     std::vector<Key> keys1d_send;
-    sampleKeys(nsamples_tot/nProc, 0, keys1d_send);
+    const int sample_size = key_sample.size();
+    for (int i = 0; i < sample_size; i += npy)
+      keys1d_send.push_back(key_sample[i]);
 
     /* gather keys to proc 0 */
 
@@ -219,13 +210,10 @@ struct DD2D
      * local sampling rate becomes nsamples_loc = (nsamples_tot / nProc) * npx  
      */
 
-    std::vector<Key> keys2d_sample;
-    sampleKeys(nsamples_tot/npy, 0, keys2d_sample);
-
-    /* assign each of the samples keys to appropriate proc */
+    /* assign each of the sampled keys to appropriate proc */
 
     std::vector< std::vector<Key> > keys2d_send;
-    assignKeysToProc(keys2d_sample, boundaries1d, keys2d_send);
+    assignKeysToProc(key_sample, boundaries1d, keys2d_send);
 
     /* gather keys from remote procs to the first npx sorting procs */
 

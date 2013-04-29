@@ -864,30 +864,51 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
    * blow up :)
    */
   if (procId == 0)
-  delete[] globalSamples;
+    delete[] globalSamples;
+
   {
-    const int nkeys = localTree.n;
-    assert(nkeys > 0);
-    std::vector<DD2D::Key> keys(nkeys);
-#pragma omp parallel for
-    for (int i = 0; i < nkeys; i++)
-    {
-      const uint4 key = localTree.bodies_key[i];
-      keys[i] = 
-        DD2D::Key(
-            (static_cast<unsigned long long>(key.y) ) | 
-            (static_cast<unsigned long long>(key.x) << 32) );
-    }
+    const double t0 = get_time();
+
+    const int nkeys_loc = localTree.n;
+    assert(nkeys_loc > 0);
+
+    std::vector<DD2D::Key> key_sample;
+    key_sample.reserve(nkeys_loc);
+
+    /**** sample keys ****/
+
+    const int npx = myComm->n_proc_i;  /* number of procs doing domain decomposition */
 #if 0
-//    __gnu_parallel::random_shuffle(keys.begin(), keys.end());
     const int nmean = nTotalFreq_ull/nProcs;
     const int nsamples = nmean / 100;
 #else
-    const int nsamples = nkeys / 100;
+    const int nsamples_glb = nkeys_loc / 10;
 #endif
 
-    const DD2D dd(procId, myComm->n_proc_i, nProcs, &keys[0], nkeys, nsamples, MPI_COMM_WORLD);
+    /*** sample keys ***/
+    const int nsamples_loc = nsamples_glb / npx;
+    const double stride = std::max((double)nkeys_loc/(double)nsamples_loc, 1.0);
+    for (double i = 0; i < (double)nkeys_loc; i += stride)
+    {
+      const uint4 key = localTree.bodies_key[(int)i];
+      key_sample.push_back(DD2D::Key(
+            (static_cast<unsigned long long>(key.y) ) | 
+            (static_cast<unsigned long long>(key.x) << 32) 
+            ));
+    }
 
+#if 0  /* sanity check */
+    {
+      int nkeys_loc = key_sample.size();
+      int nkeys_glb = 0;
+      MPI_Allreduce(&nkeys_loc, &nkeys_glb, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+      assert(nkeys_glb <= nsamples_glb*npx);
+    }
+#endif
+
+    const DD2D dd(procId, npx, nProcs, key_sample, MPI_COMM_WORLD);
+
+    /* distribute keys */
     for (int p = 0; p < nProcs; p++)
     {
       const DD2D::Key key = dd.keybeg(p);
@@ -897,6 +918,10 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
           0,0};
     }
     parallelBoundaries[nProcs] = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
+
+    const double dt = get_time() - t0;
+    if (procId == 0)
+      fprintf(stderr, " it took %g sec to complete 2D domain decomposition\n", dt);
   }
 #endif
 
