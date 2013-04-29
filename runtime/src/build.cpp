@@ -733,6 +733,10 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
   build_key_list.setWork(tree.n, 128); //128 threads per block
   build_key_list.execute(execStream->s());
 
+#if 1  /* added by evghenii, needed for 2D domain decomposition in parallel.cpp */
+   tree.bodies_key.d2h(false,execStream->s());
+#endif
+
   int nSamples   = 0;
   int sampleRate = 0;
   computeSampleRateSFC(lastExecTime, nSamples, sampleRate);
@@ -807,6 +811,7 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
    extractSampleParticlesSFC.set_arg<cl_mem>(4,  sampleKeys.p());
    extractSampleParticlesSFC.setWork(nSamples, 256);
    extractSampleParticlesSFC.execute(execStream->s());
+
    sampleKeys.d2h(false,execStream->s());
 
    //Sync the boundary and number of sample particles over the various processes

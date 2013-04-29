@@ -2,6 +2,7 @@
 #include <xmmintrin.h>
 #include "radix.h"
 #include <parallel/algorithm>
+#include "dd2d.h"
 
 
 typedef float  _v4sf  __attribute__((vector_size(16)));
@@ -725,132 +726,171 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
     int    totalCount,   uint4 *parallelBoundaries)
 {
 #ifdef USE_MPI
-  //Send actual data
-  MPI_Gatherv(&sampleKeys[0],    nSamples*sizeof(uint4), MPI_BYTE,
-      &globalSamples[0], nReceiveCnts, nReceiveDpls, MPI_BYTE,
-      0, MPI_COMM_WORLD);
 
-
-  if(procId == 0)
+#if 1 /* evghenii: disable 1D to nable 2D domain decomposition below */
   {
-    //Sort the keys. Use stable_sort (merge sort) since the separate blocks are already
-    //sorted. This is faster than std::sort (quicksort)
-    //std::sort(allHashes, allHashes+totalNumberOfHashes, cmp_ph_key());
-    double t00 = get_time();
+    //Send actual data
+    MPI_Gatherv(&sampleKeys[0],    nSamples*sizeof(uint4), MPI_BYTE,
+        &globalSamples[0], nReceiveCnts, nReceiveDpls, MPI_BYTE,
+        0, MPI_COMM_WORLD);
+
+
+    if(procId == 0)
+    {
+      //Sort the keys. Use stable_sort (merge sort) since the separate blocks are already
+      //sorted. This is faster than std::sort (quicksort)
+      //std::sort(allHashes, allHashes+totalNumberOfHashes, cmp_ph_key());
+      double t00 = get_time();
 
 #if 0 /* jb2404 */
-    //std::stable_sort(globalSamples, globalSamples+totalCount, cmp_ph_key());
-    __gnu_parallel::stable_sort(globalSamples, globalSamples+totalCount, cmp_ph_key());
+      //std::stable_sort(globalSamples, globalSamples+totalCount, cmp_ph_key());
+      __gnu_parallel::stable_sort(globalSamples, globalSamples+totalCount, cmp_ph_key());
 #else
 #if 0
-    {
-      const int BITS = 32*2;  /*  32*1 = 32 bit sort, 32*2 = 64 bit sort, 32*3 = 96 bit sort */
-      typedef RadixSort<BITS> Radix;
-      LOGF(stderr,"Boundary :: using %d-bit RadixSort\n", BITS);
+      {
+        const int BITS = 32*2;  /*  32*1 = 32 bit sort, 32*2 = 64 bit sort, 32*3 = 96 bit sort */
+        typedef RadixSort<BITS> Radix;
+        LOGF(stderr,"Boundary :: using %d-bit RadixSort\n", BITS);
 
-      Radix radix(totalCount);
+        Radix radix(totalCount);
 #if 0
-      typedef typename Radix::key_t key_t;
+        typedef typename Radix::key_t key_t;
 #endif
 
-      Radix::key_t *keys;
-      posix_memalign((void**)&keys, 64, totalCount*sizeof(Radix::key_t));
+        Radix::key_t *keys;
+        posix_memalign((void**)&keys, 64, totalCount*sizeof(Radix::key_t));
 
 #pragma omp parallel for
-      for (int i = 0; i < totalCount; i++)
-        keys[i] = Radix::key_t(globalSamples[i]);
+        for (int i = 0; i < totalCount; i++)
+          keys[i] = Radix::key_t(globalSamples[i]);
 
-      radix.sort(keys);
+        radix.sort(keys);
 
 #pragma omp parallel for
-      for (int i = 0; i < totalCount; i++)
-        globalSamples[i] = keys[i].get_uint4();
+        for (int i = 0; i < totalCount; i++)
+          globalSamples[i] = keys[i].get_uint4();
 
-      free(keys);
+        free(keys);
 
-    }
+      }
 #else
-    {
-      LOGF(stderr,"Boundary :: using %d-bit RadixSort\n", 64);
-      unsigned long long *keys;
-      posix_memalign((void**)&keys, 64, totalCount*sizeof(unsigned long long));
-      
-#pragma omp parallel for
-      for (int i = 0; i < totalCount; i++)
       {
-        const uint4 key = globalSamples[i];
-        keys[i] = 
-          static_cast<unsigned long long>(key.y) | (static_cast<unsigned long long>(key.x) << 32);
-      }
+        LOGF(stderr,"Boundary :: using %d-bit RadixSort\n", 64);
+        unsigned long long *keys;
+        posix_memalign((void**)&keys, 64, totalCount*sizeof(unsigned long long));
+
+#pragma omp parallel for
+        for (int i = 0; i < totalCount; i++)
+        {
+          const uint4 key = globalSamples[i];
+          keys[i] = 
+            static_cast<unsigned long long>(key.y) | (static_cast<unsigned long long>(key.x) << 32);
+        }
 
 #if 0
-      RadixSort64 r(totalCount);
-      r.sort(keys);
+        RadixSort64 r(totalCount);
+        r.sort(keys);
 #else
-      __gnu_parallel::sort(keys, keys+totalCount);
+        __gnu_parallel::sort(keys, keys+totalCount);
 #endif
 #pragma omp parallel for
-      for (int i = 0; i < totalCount; i++)
+        for (int i = 0; i < totalCount; i++)
+        {
+          const unsigned long long key = keys[i];
+          globalSamples[i] = (uint4){
+            (uint)((key >> 32) & 0x00000000FFFFFFFF),
+              (uint)((key      ) & 0x00000000FFFFFFFF),
+              0,0};
+        }
+        free(keys);
+      }
+#endif
+
+#endif
+      LOGF(stderr,"Boundary took: %lg  Items: %d\n", get_time()-t00, totalCount);
+
+
+      //Split the samples in equal parts to get the boundaries
+
+
+      int procIdx   = 1;
+
+      globalSamples[totalCount] = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
+      parallelBoundaries[0]     = make_uint4(0x0, 0x0, 0x0, 0x0);
+      //Chop in equal sized parts
+      for(int i=1; i < nProcs; i++)
       {
-        const unsigned long long key = keys[i];
-        globalSamples[i] = (uint4){
-          (uint)((key >> 32) & 0x00000000FFFFFFFF),
-          (uint)((key      ) & 0x00000000FFFFFFFF),
-          0,0};
+        int idx = (size_t(i)*size_t(totalCount))/size_t(nProcs);
+
+        //jb2404
+        if(iter == 0){
+          if((i%1000) == 0) fprintf(stderr, " Boundary %d taken from : %d \n" ,i, idx);
+          if(i >= nProcs-10) fprintf(stderr, " Boundary %d taken from : %d \n" ,i, idx);
+        }
+
+        parallelBoundaries[procIdx++] = globalSamples[idx];
       }
-      free(keys);
-    }
-#endif
-
-#endif
-    LOGF(stderr,"Boundary took: %lg  Items: %d\n", get_time()-t00, totalCount);
-
-
-    //Split the samples in equal parts to get the boundaries
-
-
-    int procIdx   = 1;
-
-    globalSamples[totalCount] = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
-    parallelBoundaries[0]     = make_uint4(0x0, 0x0, 0x0, 0x0);
-    //Chop in equal sized parts
-    for(int i=1; i < nProcs; i++)
-    {
-      int idx = (size_t(i)*size_t(totalCount))/size_t(nProcs);
-
-      //jb2404
-      if(iter == 0){
-      if((i%1000) == 0) fprintf(stderr, " Boundary %d taken from : %d \n" ,i, idx);
-      if(i >= nProcs-10) fprintf(stderr, " Boundary %d taken from : %d \n" ,i, idx);
-      }
-
-      parallelBoundaries[procIdx++] = globalSamples[idx];
-    }
 #if 0
-    int perProc = totalCount / nProcs;
-    int tempSum   = 0;
-    for(int i=0; i < totalCount; i++)
-    {
-      tempSum += 1;
-      if(tempSum >= perProc)
+      int perProc = totalCount / nProcs;
+      int tempSum   = 0;
+      for(int i=0; i < totalCount; i++)
       {
-        //LOGF(stderr, "Boundary at: %d\t%d %d %d %d \t %d \n",
-        //              i, globalSamples[i+1].x,globalSamples[i+1].y,globalSamples[i+1].z,globalSamples[i+1].w, tempSum);
-        tempSum = 0;
-        parallelBoundaries[procIdx++] = globalSamples[i+1];
-      }
-    }//for totalNumberOfHashes
+        tempSum += 1;
+        if(tempSum >= perProc)
+        {
+          //LOGF(stderr, "Boundary at: %d\t%d %d %d %d \t %d \n",
+          //              i, globalSamples[i+1].x,globalSamples[i+1].y,globalSamples[i+1].z,globalSamples[i+1].w, tempSum);
+          tempSum = 0;
+          parallelBoundaries[procIdx++] = globalSamples[i+1];
+        }
+      }//for totalNumberOfHashes
 #endif
 
 
-    //Force final boundary to be the highest possible key value
-    parallelBoundaries[nProcs]  = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
+      //Force final boundary to be the highest possible key value
+      parallelBoundaries[nProcs]  = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
 
-    delete[] globalSamples;
+      delete[] globalSamples;
+    }
+
+    //Send the boundaries to all processes
+    MPI_Bcast(&parallelBoundaries[0], sizeof(uint4)*(nProcs+1), MPI_BYTE, 0, MPI_COMM_WORLD);
   }
 
-  //Send the boundaries to all processes
-  MPI_Bcast(&parallelBoundaries[0], sizeof(uint4)*(nProcs+1), MPI_BYTE, 0, MPI_COMM_WORLD);
+#else
+  /* evghenii: 2d sampling comes here, 
+   * make sure that locakTree.bodies_key.d2h in src/build.cpp.
+   * if you don't see my comment there, don't use this version. it will be
+   * blow up :)
+   */
+  delete[] globalSamples;
+  {
+    const int nkeys = localTree.n;
+    std::vector<DD2D::Key> keys(nkeys);
+#pragma omp parallel for
+    for (int i = 0; i < nkeys; i++)
+    {
+      const uint4 key = localTree.bodies_key[i];
+      keys[i] = 
+        DD2D::Key(
+            (static_cast<unsigned long long>(key.y) ) | 
+            (static_cast<unsigned long long>(key.x) << 32) );
+    }
+
+    const int nsamples = localTree.n / 0.1;
+
+    const DD2D dd(procId, myComm->n_proc_i, nProcs, &keys[0], nkeys, nsamples, MPI_COMM_WORLD);
+
+    for (int p = 0; p < nProcs; p++)
+    {
+      const DD2D::Key key = dd.keybeg(p);
+      parallelBoundaries[p] = (uint4){
+        (uint)((key.key >> 32) & 0x00000000FFFFFFFF),
+          (uint)((key.key      ) & 0x00000000FFFFFFFF),
+          0,0};
+    }
+  }
+#endif
 
   if(procId == -1)
   {
@@ -1301,7 +1341,7 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
   int memOffset2 = validList.cmalloc_copy(localTree.generalBuffer1,
       localTree.n, memOffset1);
 
-//https://github.com/egaburov/fvmhd3d/blob/master/MPI/myMPI.h
+  //https://github.com/egaburov/fvmhd3d/blob/master/MPI/myMPI.h
 
   uint4 lowerBoundary = boundaries[this->procId];
   uint4 upperBoundary = boundaries[this->procId+1];
@@ -1528,161 +1568,161 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
 
 
   static int firstSort = 1;
-if(firstSort)
-{
-  std::vector<int> offsets(nProcs+1);
-  std::vector<int> items(nProcs+1);
-
-  int location       = 0;
-  offsets[location]  = 0;
-
-  for(int i=0; i < nToSend; i++)
+  if(firstSort)
   {
-    uint4 key  = particlesToSend[i].key;
+    std::vector<int> offsets(nProcs+1);
+    std::vector<int> items(nProcs+1);
 
-    bool assigned = false;
-    while(!assigned)
-    {
-      uint4 lowerBoundary = tree.parallelBoundaries[location];
-      uint4 upperBoundary = tree.parallelBoundaries[location+1];
+    int location       = 0;
+    offsets[location]  = 0;
 
-      int bottom = cmp_uint4(key, lowerBoundary);
-      int top    = cmp_uint4(key, upperBoundary);
-
-      assert(bottom >= 0);
-
-      if(top < 0)
-      {
-        //is in box
-        assigned = true;
-      }
-      else
-      {
-        //outside box
-        offsets[++location] = i;
-        assert(location < nProcs);
-      }
-    }//while
-  }//for
-
-  //Fill remaining processes
-  while(location <= nProcs)
-    offsets[++location] = nToSend;
-
-  //Fill items
-  for(int ib=0; ib < nProcs; ib++)
-  {
-    items[ib] = offsets[ib+1]-offsets[ib];
-  }
-
-  assert(items[procId] == 0);
-
-  for(int ib =0; ib < nProcs; ib++)
-  {
-    nparticles[ib] = items[ib];
-    nsendbytes[ib] = nparticles[ib]*sizeof(bodyStruct);
-    nsendDispls[ib] = offsets[ib]*sizeof(bodyStruct);
-  }
-
-//  char buff[512];
-//  sprintf(buff, "Proc: ");
-//  for(int i=0; i < nProcs; i++)
-//  {
-//    sprintf(buff, "%s [%d, %d] ", buff, nparticles[i], nsendbytes[i]);
-//  }
-//  LOGF(stderr,"%s \n", buff);
-
-  array2Send.clear();
-  array2Send.insert(array2Send.end(), particlesToSend, particlesToSend+nToSend);
-
-#if 1
-  for(int ib=0; ib < nProcs; ib++)
-  {
-    uint4 lowerBoundary = tree.parallelBoundaries[ib];
-    uint4 upperBoundary = tree.parallelBoundaries[ib+1];
-
-    for(int i= offsets[ib]; i <  offsets[ib+1]; i++)
+    for(int i=0; i < nToSend; i++)
     {
       uint4 key  = particlesToSend[i].key;
-      int bottom = cmp_uint4(key, lowerBoundary);
-      int top    = cmp_uint4(key, upperBoundary);
 
-      if(bottom >= 0 && top < 0)
+      bool assigned = false;
+      while(!assigned)
       {
-        //Inside
-      }
-      else
+        uint4 lowerBoundary = tree.parallelBoundaries[location];
+        uint4 upperBoundary = tree.parallelBoundaries[location+1];
+
+        int bottom = cmp_uint4(key, lowerBoundary);
+        int top    = cmp_uint4(key, upperBoundary);
+
+        assert(bottom >= 0);
+
+        if(top < 0)
+        {
+          //is in box
+          assigned = true;
+        }
+        else
+        {
+          //outside box
+          offsets[++location] = i;
+          assert(location < nProcs);
+        }
+      }//while
+    }//for
+
+    //Fill remaining processes
+    while(location <= nProcs)
+      offsets[++location] = nToSend;
+
+    //Fill items
+    for(int ib=0; ib < nProcs; ib++)
+    {
+      items[ib] = offsets[ib+1]-offsets[ib];
+    }
+
+    assert(items[procId] == 0);
+
+    for(int ib =0; ib < nProcs; ib++)
+    {
+      nparticles[ib] = items[ib];
+      nsendbytes[ib] = nparticles[ib]*sizeof(bodyStruct);
+      nsendDispls[ib] = offsets[ib]*sizeof(bodyStruct);
+    }
+
+    //  char buff[512];
+    //  sprintf(buff, "Proc: ");
+    //  for(int i=0; i < nProcs; i++)
+    //  {
+    //    sprintf(buff, "%s [%d, %d] ", buff, nparticles[i], nsendbytes[i]);
+    //  }
+    //  LOGF(stderr,"%s \n", buff);
+
+    array2Send.clear();
+    array2Send.insert(array2Send.end(), particlesToSend, particlesToSend+nToSend);
+
+#if 1
+    for(int ib=0; ib < nProcs; ib++)
+    {
+      uint4 lowerBoundary = tree.parallelBoundaries[ib];
+      uint4 upperBoundary = tree.parallelBoundaries[ib+1];
+
+      for(int i= offsets[ib]; i <  offsets[ib+1]; i++)
       {
-        assert(!"Particle not in the box");
-      }
-    }//for i
-  }//for ib
+        uint4 key  = particlesToSend[i].key;
+        int bottom = cmp_uint4(key, lowerBoundary);
+        int top    = cmp_uint4(key, upperBoundary);
+
+        if(bottom >= 0 && top < 0)
+        {
+          //Inside
+        }
+        else
+        {
+          assert(!"Particle not in the box");
+        }
+      }//for i
+    }//for ib
 #endif
 
 
-  //LOGF(stderr,  "EXCHANGE reorder iter: %d  took: %lg \tItems: %d Total-n: %d\n",
-if(iter == 0 && procId == 0)
-  fprintf(stderr,  "EXCHANGE reorder iter: %d  took: %lg \tItems: %d Total-n: %d\n",
-      iter, get_time()-t1, nToSend, tree.n);
+    //LOGF(stderr,  "EXCHANGE reorder iter: %d  took: %lg \tItems: %d Total-n: %d\n",
+    if(iter == 0 && procId == 0)
+      fprintf(stderr,  "EXCHANGE reorder iter: %d  took: %lg \tItems: %d Total-n: %d\n",
+          iter, get_time()-t1, nToSend, tree.n);
 
 
-firstSort = 0;
-}
-else
-
-
- {
-  //Sort the statistics, causing the processes with which we interact most to be on top
-  std::sort(fullGrpAndLETRequestStatistics, fullGrpAndLETRequestStatistics+nProcs, cmp_uint2_reverse());
-
-
-  for(int ib=0;ib<nproc;ib++)
-  {
-    //    int ibox          = (ib+myid)%nproc;
-    int ibox = fullGrpAndLETRequestStatistics[ib].y;
-
-    firstloc[ibox]    = iloc;      //Index of the first particle send to proc: ibox
-    nsendDispls[ibox] = iloc*sizeof(bodyStruct);
-
-    for(int i=iloc; i<nbody;i++)
-    {
-      uint4 lowerBoundary = tree.parallelBoundaries[ibox];
-      uint4 upperBoundary = tree.parallelBoundaries[ibox+1];
-
-      uint4 key  = particlesToSend[i].key;
-      int bottom = cmp_uint4(key, lowerBoundary);
-      int top    = cmp_uint4(key, upperBoundary);
-
-
-      if(bottom >= 0 && top < 0)
-      {
-        //Reorder the particle information
-        tmpp                  = particlesToSend[iloc];
-        particlesToSend[iloc] = particlesToSend[i];
-        particlesToSend[i]    = tmpp;
-
-        //Put the particle in the array of to send particles
-        array2Send.push_back(particlesToSend[iloc]);
-
-        iloc++;
-      }// end if
-    }//for i=iloc
-    nparticles[ibox] = iloc-firstloc[ibox];//Number of particles that has to be send to proc: ibox
-    nsendbytes[ibox] = nparticles[ibox]*sizeof(bodyStruct);
-  } // for(int ib=0;ib<nproc;ib++)
-
-
-  //   printf("Required search time: %lg ,proc: %d found in our own box: %d n: %d  to others: %ld \n",
-  //          get_time()-t1, myid, nparticles[myid], tree.n, array2Send.size());
-  if(iloc < nbody)
-  {
-    LOGF(stderr, "Exchange_particle error: A particle could not be assigned to a box: iloc: %d total: %d \n", iloc,nbody);
-    exit(0);
+    firstSort = 0;
   }
-  LOGF(stderr,  "EXCHANGE reorder iter: %d  took: %lg \tItems: %d Total-n: %d\n",
-      iter, get_time()-t1, nToSend, tree.n);
+  else
 
- }
+
+  {
+    //Sort the statistics, causing the processes with which we interact most to be on top
+    std::sort(fullGrpAndLETRequestStatistics, fullGrpAndLETRequestStatistics+nProcs, cmp_uint2_reverse());
+
+
+    for(int ib=0;ib<nproc;ib++)
+    {
+      //    int ibox          = (ib+myid)%nproc;
+      int ibox = fullGrpAndLETRequestStatistics[ib].y;
+
+      firstloc[ibox]    = iloc;      //Index of the first particle send to proc: ibox
+      nsendDispls[ibox] = iloc*sizeof(bodyStruct);
+
+      for(int i=iloc; i<nbody;i++)
+      {
+        uint4 lowerBoundary = tree.parallelBoundaries[ibox];
+        uint4 upperBoundary = tree.parallelBoundaries[ibox+1];
+
+        uint4 key  = particlesToSend[i].key;
+        int bottom = cmp_uint4(key, lowerBoundary);
+        int top    = cmp_uint4(key, upperBoundary);
+
+
+        if(bottom >= 0 && top < 0)
+        {
+          //Reorder the particle information
+          tmpp                  = particlesToSend[iloc];
+          particlesToSend[iloc] = particlesToSend[i];
+          particlesToSend[i]    = tmpp;
+
+          //Put the particle in the array of to send particles
+          array2Send.push_back(particlesToSend[iloc]);
+
+          iloc++;
+        }// end if
+      }//for i=iloc
+      nparticles[ibox] = iloc-firstloc[ibox];//Number of particles that has to be send to proc: ibox
+      nsendbytes[ibox] = nparticles[ibox]*sizeof(bodyStruct);
+    } // for(int ib=0;ib<nproc;ib++)
+
+
+    //   printf("Required search time: %lg ,proc: %d found in our own box: %d n: %d  to others: %ld \n",
+    //          get_time()-t1, myid, nparticles[myid], tree.n, array2Send.size());
+    if(iloc < nbody)
+    {
+      LOGF(stderr, "Exchange_particle error: A particle could not be assigned to a box: iloc: %d total: %d \n", iloc,nbody);
+      exit(0);
+    }
+    LOGF(stderr,  "EXCHANGE reorder iter: %d  took: %lg \tItems: %d Total-n: %d\n",
+        iter, get_time()-t1, nToSend, tree.n);
+
+  }
   t1 = get_time();
 #if 0
   MPI_Alltoall(nparticles, 1, MPI_INT, nreceive, 1, MPI_INT, MPI_COMM_WORLD);
@@ -1803,11 +1843,11 @@ else
     }
 #else
 
-	MPI_Status stat;
-	MPI_Sendrecv(&array2Send[nsendDispls[dst]/sizeof(bodyStruct)],
-		      scount, MPI_BYTE, dst, 1,
-			&recv_buffer3[recvOffset], rcount, MPI_BYTE, src, 1, MPI_COMM_WORLD, &stat);
-      recvOffset += nreceive[src];
+    MPI_Status stat;
+    MPI_Sendrecv(&array2Send[nsendDispls[dst]/sizeof(bodyStruct)],
+        scount, MPI_BYTE, dst, 1,
+        &recv_buffer3[recvOffset], rcount, MPI_BYTE, src, 1, MPI_COMM_WORLD, &stat);
+    recvOffset += nreceive[src];
 #endif	
   }
 
@@ -1868,9 +1908,9 @@ else
 
 #if 1
   if(iter < 1){ /* jb2404 */
-  fprintf(stderr, "Proc: %d Exchange, received %d \tSend: %d newN: %d\n",
-		        procId, recvCount, nToSend, newN); 
-	}
+    fprintf(stderr, "Proc: %d Exchange, received %d \tSend: %d newN: %d\n",
+        procId, recvCount, nToSend, newN); 
+  }
 #endif
 
   execStream->sync();   //make certain that the particle movement on the device
@@ -1915,8 +1955,8 @@ else
   int memOffset1 = bodyBuffer.cmalloc_copy(localTree.generalBuffer1,
       stepSize, 0);
 
-//  fprintf(stderr, "Exchange, received %d \tSend: %d newN: %d\tItems that can be insert in one step: %d\n",
-//      recvCount, nToSend, newN, stepSize);
+  //  fprintf(stderr, "Exchange, received %d \tSend: %d newN: %d\tItems that can be insert in one step: %d\n",
+  //      recvCount, nToSend, newN, stepSize);
   LOGF(stderr, "Exchange, received %d \tSend: %d newN: %d\tItems that can be insert in one step: %d\n",
       recvCount, nToSend, newN, stepSize);
 
@@ -3388,8 +3428,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             resultOfQuickCheck[ibox] = maxLevel;
 
             //#define MAXLEVELSIZE_ALLGATHER 2048
-            #define MAXLEVELSIZE_ALLGATHER -1
-            #if 0
+#define MAXLEVELSIZE_ALLGATHER -1
+#if 0
             if(maxLevel >= 0)
             {
               if((topLevelTreesSizeOffset[maxLevel].x * sizeof(real4)) > MAXLEVELSIZE_ALLGATHER)
@@ -3399,7 +3439,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                 maxLevel = -1;
               }
             }
-            #endif
+#endif
 
             if(maxLevel >= 0)
             {
@@ -3549,7 +3589,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         if (ENABLE_RUNTIME_LOG)
         {
           fprintf(stderr,"Proc: %d LET getLetOp count&fill [%d,%d]: Full: %d Dest: %d Total : %lg (#P: %d \t#N: %d) nNodes= %d  nGroups= %d \tsince start: %lg \n", procId, procId, tid, doFullGrp, ibox, get_time()-tz,countParticles, countNodes,
-             tree.n_nodes, endGrp, get_time()-t0);
+              tree.n_nodes, endGrp, get_time()-t0);
         }
 
 
@@ -3690,121 +3730,121 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       //Send the sizes
 
 #if MAXLEVELSIZE_ALLGATHER > 0
-    //Combined all_gatherv and alltoall
-    //First determine the maximum level
+      //Combined all_gatherv and alltoall
+      //First determine the maximum level
 
-    int allGatherLevel = 0;
-    for(int level=0; level < nTopLevelTrees; level++)
-    {
-      if((topLevelTreesSizeOffset[level].x * sizeof(real4)) > MAXLEVELSIZE_ALLGATHER)
-        break;
-      allGatherLevel++;
-    }
-
-    int allGatherLevelSize   = topLevelTreesSizeOffset[allGatherLevel].x*sizeof(real4);
-    int allGatherLevelOffset = topLevelTreesSizeOffset[allGatherLevel].y*sizeof(real4);
-
-    //Build up the data we are going to send/receive
-    //To each process we send a copy of the tree at level 'allGatherLevel'
-    //using all_gatherv
-    //We indicate if that is sufficient, if not we indicate if we do an alltoallv send
-    //or an getLET send.
-
-    std::vector<int4> summaryOfDataToSend(nProcs);
-    std::vector<int4> summaryOfDataToReceive(nProcs);
-
-   // std::vector<int4> all2allVSizes  (nProcs);
-   // std::vector<int4> all2allVOffsets(nProcs);
-
-    resultOfQuickCheck[procId]    = -1; //Mark ourself
-    quickCheckSendSizes[procId]   =  0;
-    quickCheckSendOffset[procId]  =  0;
-
-    for(int proc = 0; proc < nProcs; proc++)
-    {
-      if(resultOfQuickCheck[proc] >= 0 && resultOfQuickCheck[proc] <= allGatherLevel)
-      {//Send using allGather
-        summaryOfDataToSend[proc].x = 1; //It needs the top level
-        summaryOfDataToSend[proc].y = allGatherLevelSize; //Size of the top level
-        summaryOfDataToSend[proc].z = 0; //Not used
-
-        //Set quickCheckSize to zero since it will not do an all2all
-        quickCheckSendSizes[proc]   =  0;
-        quickCheckSendOffset[proc]  =  0;
+      int allGatherLevel = 0;
+      for(int level=0; level < nTopLevelTrees; level++)
+      {
+        if((topLevelTreesSizeOffset[level].x * sizeof(real4)) > MAXLEVELSIZE_ALLGATHER)
+          break;
+        allGatherLevel++;
       }
-      else if(resultOfQuickCheck[proc] >= 0)
-      {//Send using alltoall
-        summaryOfDataToSend[proc].x = 2; //It needs the top level
-        summaryOfDataToSend[proc].y = allGatherLevelSize; //Size of the top level
-        summaryOfDataToSend[proc].z = sizeof(real4)*topLevelTreesSizeOffset[resultOfQuickCheck[proc]].x; //alltoall size
-        
-         
-        quickCheckSendSizes[proc]   =  sizeof(real4)*topLevelTreesSizeOffset[resultOfQuickCheck[proc]].x;
-        quickCheckSendOffset[proc]  =  sizeof(real4)*topLevelTreesSizeOffset[resultOfQuickCheck[proc]].y;        
+
+      int allGatherLevelSize   = topLevelTreesSizeOffset[allGatherLevel].x*sizeof(real4);
+      int allGatherLevelOffset = topLevelTreesSizeOffset[allGatherLevel].y*sizeof(real4);
+
+      //Build up the data we are going to send/receive
+      //To each process we send a copy of the tree at level 'allGatherLevel'
+      //using all_gatherv
+      //We indicate if that is sufficient, if not we indicate if we do an alltoallv send
+      //or an getLET send.
+
+      std::vector<int4> summaryOfDataToSend(nProcs);
+      std::vector<int4> summaryOfDataToReceive(nProcs);
+
+      // std::vector<int4> all2allVSizes  (nProcs);
+      // std::vector<int4> all2allVOffsets(nProcs);
+
+      resultOfQuickCheck[procId]    = -1; //Mark ourself
+      quickCheckSendSizes[procId]   =  0;
+      quickCheckSendOffset[procId]  =  0;
+
+      for(int proc = 0; proc < nProcs; proc++)
+      {
+        if(resultOfQuickCheck[proc] >= 0 && resultOfQuickCheck[proc] <= allGatherLevel)
+        {//Send using allGather
+          summaryOfDataToSend[proc].x = 1; //It needs the top level
+          summaryOfDataToSend[proc].y = allGatherLevelSize; //Size of the top level
+          summaryOfDataToSend[proc].z = 0; //Not used
+
+          //Set quickCheckSize to zero since it will not do an all2all
+          quickCheckSendSizes[proc]   =  0;
+          quickCheckSendOffset[proc]  =  0;
+        }
+        else if(resultOfQuickCheck[proc] >= 0)
+        {//Send using alltoall
+          summaryOfDataToSend[proc].x = 2; //It needs the top level
+          summaryOfDataToSend[proc].y = allGatherLevelSize; //Size of the top level
+          summaryOfDataToSend[proc].z = sizeof(real4)*topLevelTreesSizeOffset[resultOfQuickCheck[proc]].x; //alltoall size
+
+
+          quickCheckSendSizes[proc]   =  sizeof(real4)*topLevelTreesSizeOffset[resultOfQuickCheck[proc]].x;
+          quickCheckSendOffset[proc]  =  sizeof(real4)*topLevelTreesSizeOffset[resultOfQuickCheck[proc]].y;        
+        }
+        else
+        { //Send with getLET
+          summaryOfDataToSend[proc].x = 3; //It needs the top level
+          summaryOfDataToSend[proc].y = allGatherLevelSize; //Size of the top level
+
+          quickCheckSendSizes[proc]   =  0;
+          quickCheckSendOffset[proc]  =  0;        
+        }
+      }//for each process
+
+      LOGF(stderr, "Going to do the all to all size communication! Iter: %d Since begin: %lg \n", iter, get_time()-tStart);
+      double t100 = get_time();
+      MPI_Alltoall(
+          &summaryOfDataToSend[0],    sizeof(int4), MPI_BYTE,
+          &summaryOfDataToReceive[0], sizeof(int4), MPI_BYTE,
+          MPI_COMM_WORLD);
+
+      LOGF(stderr, "Completed_alltoall size comm! Iter: %d Took: %lg ( %lg )\n", iter, get_time()-t100, get_time()-t0);
+
+      //Count the number of incomming data items
+      //First the allgather, size and offsets
+      int allGatherOffset = 0;
+      int allToAllOffset  = 0;
+      std::vector<int> allGatherSizes(nProcs);  //Sizes to receive
+      std::vector<int> allGatherOffsets(nProcs); //offsets
+      std::vector<int> allGatherUses   (nProcs);  //Indicate if we use this (1) or not (-1)
+
+      //We could reduce memory use by putting the non-used data in a seperate buffer, for now just
+      //put it in a lineair array
+      for(int proc = 0; proc < nProcs; proc++)
+      {
+        allGatherSizes[proc]   = summaryOfDataToReceive[proc].y;
+        allGatherOffsets[proc] = allGatherOffset;
+        allGatherOffset       += summaryOfDataToReceive[proc].y;
+
+        if(summaryOfDataToReceive[proc].x == 1)
+          allGatherUses[proc] = 1;
+        else
+          allGatherUses[proc] = -1;
+
+        //Sum the alltoall size to be able to alloc
+        if(summaryOfDataToReceive[proc].x == 2)
+          allToAllOffset += summaryOfDataToReceive[proc].z;
       }
-      else
-      { //Send with getLET
-        summaryOfDataToSend[proc].x = 3; //It needs the top level
-        summaryOfDataToSend[proc].y = allGatherLevelSize; //Size of the top level
-        
-        quickCheckSendSizes[proc]   =  0;
-        quickCheckSendOffset[proc]  =  0;        
-      }
-    }//for each process
 
-    LOGF(stderr, "Going to do the all to all size communication! Iter: %d Since begin: %lg \n", iter, get_time()-tStart);
-    double t100 = get_time();
-    MPI_Alltoall(
-                  &summaryOfDataToSend[0],    sizeof(int4), MPI_BYTE,
-                  &summaryOfDataToReceive[0], sizeof(int4), MPI_BYTE,
-                  MPI_COMM_WORLD);
+      recvAllGatherVBuffer =  new real4[allGatherOffset / sizeof(real4)];
+      recvAllToAllBuffer   =  new real4[allToAllOffset  / sizeof(real4)];
 
-    LOGF(stderr, "Completed_alltoall size comm! Iter: %d Took: %lg ( %lg )\n", iter, get_time()-t100, get_time()-t0);
+      double tGatherStart = get_time();
 
-    //Count the number of incomming data items
-    //First the allgather, size and offsets
-    int allGatherOffset = 0;
-    int allToAllOffset  = 0;
-    std::vector<int> allGatherSizes(nProcs);  //Sizes to receive
-    std::vector<int> allGatherOffsets(nProcs); //offsets
-    std::vector<int> allGatherUses   (nProcs);  //Indicate if we use this (1) or not (-1)
+      MPI_Allgatherv(&(topLevelTrees[allGatherLevelOffset / sizeof(real4)]),    //Begin of array
+          allGatherLevelSize,                      //Number of top-nodes
+          MPI_BYTE,
+          recvAllGatherVBuffer,               //Receive buffer
+          &allGatherSizes[0],      //Array with size per node
+          &allGatherOffsets[0],    //Array with offset per node
+          MPI_BYTE, MPI_COMM_WORLD);
 
-    //We could reduce memory use by putting the non-used data in a seperate buffer, for now just
-    //put it in a lineair array
-    for(int proc = 0; proc < nProcs; proc++)
-    {
-      allGatherSizes[proc]   = summaryOfDataToReceive[proc].y;
-      allGatherOffsets[proc] = allGatherOffset;
-      allGatherOffset       += summaryOfDataToReceive[proc].y;
+      double tGatherEnd = get_time();
 
-      if(summaryOfDataToReceive[proc].x == 1)
-        allGatherUses[proc] = 1;
-      else
-        allGatherUses[proc] = -1;
-        
-      //Sum the alltoall size to be able to alloc
-      if(summaryOfDataToReceive[proc].x == 2)
-        allToAllOffset += summaryOfDataToReceive[proc].z;
-    }
+      LOGF(stderr, "All_GatherV took: %lg ( %lg ) Size: %lg  \n", 
+          tGatherEnd-tGatherStart, get_time()-t0, (allGatherOffset  / sizeof(real4)*sizeof(real4))/(double)(1024*1024));
 
-    recvAllGatherVBuffer =  new real4[allGatherOffset / sizeof(real4)];
-    recvAllToAllBuffer   =  new real4[allToAllOffset  / sizeof(real4)];
-    
-    double tGatherStart = get_time();
-
-    MPI_Allgatherv(&(topLevelTrees[allGatherLevelOffset / sizeof(real4)]),    //Begin of array
-                   allGatherLevelSize,                      //Number of top-nodes
-                   MPI_BYTE,
-                   recvAllGatherVBuffer,               //Receive buffer
-                   &allGatherSizes[0],      //Array with size per node
-                   &allGatherOffsets[0],    //Array with offset per node
-                   MPI_BYTE, MPI_COMM_WORLD);
-
-    double tGatherEnd = get_time();
-    
-    LOGF(stderr, "All_GatherV took: %lg ( %lg ) Size: %lg  \n", 
-                  tGatherEnd-tGatherStart, get_time()-t0, (allGatherOffset  / sizeof(real4)*sizeof(real4))/(double)(1024*1024));
-    
       for(int i=0; i < nProcs; i++)
       {
         int offset   = allGatherOffsets[i] / sizeof(real4);
@@ -3817,11 +3857,11 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             i, p, n, topStart, topEnd);
       }
 
-      #pragma omp critical(updateReceivedProcessed)
+#pragma omp critical(updateReceivedProcessed)
       {
         //This is in a critical section since topNodeOnTheFlyCount is reset
         //by the GPU worker thread (thread == 0)
-	      int offset = 0;
+        int offset = 0;
         for(int i=0;  i < nProcs; i++)
         {
           if(allGatherUses[i] > 0)
@@ -3835,89 +3875,89 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             int topStart = host_float_as_int(treeBuffers[nReceived][0].z);
             int topEnd   = host_float_as_int(treeBuffers[nReceived][0].w);
 
-//          LOGF(stderr, "Received from: %d  start: %d end: %d P: %d N: %d\n",
- //                       i, topStart, topEnd, p, n);
+            //          LOGF(stderr, "Received from: %d  start: %d end: %d P: %d N: %d\n",
+            //                       i, topStart, topEnd, p, n);
 
             topNodeOnTheFlyCount        += (topEnd-topStart);
             treeBuffersSource[nReceived] = 1; //1 indicate quick check source
             nReceived++;
           }
         }
-      LOGF(stderr, "Received trees using quickcheck-agv: %d top-nodes: %d \n", nReceived, topNodeOnTheFlyCount);
-    }
-
-    //Receive data using alltoall
-    allToAllOffset  = 0;
-    std::vector<int> allToAllRecvSizes  (nProcs);  //Sizes to receive
-    std::vector<int> allToAllRecvOffsets(nProcs);  //offsets
-    std::vector<int> allToAllUses   (nProcs);  //Indicate if we use this (1) or not (-1)    
-    for(int proc = 0; proc < nProcs; proc++)
-    {
-      if(summaryOfDataToReceive[proc].x == 2)
-      {
-        allGatherUses[proc] = 1;
-        allToAllRecvSizes[proc]    = summaryOfDataToReceive[proc].z;
-        allToAllRecvOffsets[proc]  = allToAllOffset;
-        allToAllOffset            += summaryOfDataToReceive[proc].z;
-      }       
-      else
-      {
-        allGatherUses[proc]        = -1;
-        allToAllRecvSizes[proc]    = 0;
-        allToAllRecvOffsets[proc]  = 0;      
+        LOGF(stderr, "Received trees using quickcheck-agv: %d top-nodes: %d \n", nReceived, topNodeOnTheFlyCount);
       }
-    }    
 
-    LOGF(stderr, "Starting 1D alltoall \n");
-    double t110 = get_time();
-    MPI_Alltoallv(&topLevelTrees[0],   
-                  quickCheckSendSizes, quickCheckSendOffset, MPI_BYTE,
-                  &recvAllToAllBuffer[0],
-                  &allToAllRecvSizes[0], &allToAllRecvOffsets[0], MPI_BYTE,
-                  MPI_COMM_WORLD);
-    LOGF(stderr, "[%d] Completed_alltoall 1D data communication! Iter: %d Took: %lg ( %lg )\tSize: %lg MB \n",
-        procId, iter, get_time()-t110,  get_time()-t0, (allToAllOffset  / sizeof(real4)*sizeof(real4))/(double)(1024*1024));    
-    
-    #pragma omp critical(updateReceivedProcessed)
-    {
-      //This is in a critical section since topNodeOnTheFlyCount is reset
-      //by the GPU worker thread (thread == 0)
-      int offset    = 0;
-      int na2acount = 0;
-      int na2atopnode = 0;
-      for(int i=0;  i < nProcs; i++)
+      //Receive data using alltoall
+      allToAllOffset  = 0;
+      std::vector<int> allToAllRecvSizes  (nProcs);  //Sizes to receive
+      std::vector<int> allToAllRecvOffsets(nProcs);  //offsets
+      std::vector<int> allToAllUses   (nProcs);  //Indicate if we use this (1) or not (-1)    
+      for(int proc = 0; proc < nProcs; proc++)
       {
-        if(allGatherUses[i] > 0)
+        if(summaryOfDataToReceive[proc].x == 2)
         {
-          int items              = allToAllRecvSizes[i]  / sizeof(real4);
-          treeBuffers[nReceived] = &recvAllToAllBuffer[offset];
-          offset                += items;
+          allGatherUses[proc] = 1;
+          allToAllRecvSizes[proc]    = summaryOfDataToReceive[proc].z;
+          allToAllRecvOffsets[proc]  = allToAllOffset;
+          allToAllOffset            += summaryOfDataToReceive[proc].z;
+        }       
+        else
+        {
+          allGatherUses[proc]        = -1;
+          allToAllRecvSizes[proc]    = 0;
+          allToAllRecvOffsets[proc]  = 0;      
+        }
+      }    
 
-          //Increase the top-node count
-          int p        = host_float_as_int(treeBuffers[nReceived][0].x);
-          int n        = host_float_as_int(treeBuffers[nReceived][0].y);
-          int topStart = host_float_as_int(treeBuffers[nReceived][0].z);
-          int topEnd   = host_float_as_int(treeBuffers[nReceived][0].w);
+      LOGF(stderr, "Starting 1D alltoall \n");
+      double t110 = get_time();
+      MPI_Alltoallv(&topLevelTrees[0],   
+          quickCheckSendSizes, quickCheckSendOffset, MPI_BYTE,
+          &recvAllToAllBuffer[0],
+          &allToAllRecvSizes[0], &allToAllRecvOffsets[0], MPI_BYTE,
+          MPI_COMM_WORLD);
+      LOGF(stderr, "[%d] Completed_alltoall 1D data communication! Iter: %d Took: %lg ( %lg )\tSize: %lg MB \n",
+          procId, iter, get_time()-t110,  get_time()-t0, (allToAllOffset  / sizeof(real4)*sizeof(real4))/(double)(1024*1024));    
 
-   //       LOGF(stderr, "Received from: %d  start: %d end: %d P: %d N: %d\n",
-   //                     i, topStart, topEnd, p, n);
-                        
-          na2atopnode += (topEnd-topStart);                            
+#pragma omp critical(updateReceivedProcessed)
+      {
+        //This is in a critical section since topNodeOnTheFlyCount is reset
+        //by the GPU worker thread (thread == 0)
+        int offset    = 0;
+        int na2acount = 0;
+        int na2atopnode = 0;
+        for(int i=0;  i < nProcs; i++)
+        {
+          if(allGatherUses[i] > 0)
+          {
+            int items              = allToAllRecvSizes[i]  / sizeof(real4);
+            treeBuffers[nReceived] = &recvAllToAllBuffer[offset];
+            offset                += items;
 
-          topNodeOnTheFlyCount        += (topEnd-topStart);
-          treeBuffersSource[nReceived] = 1; //1 indicate quick check source
-          nReceived++;
-          na2acount++;
+            //Increase the top-node count
+            int p        = host_float_as_int(treeBuffers[nReceived][0].x);
+            int n        = host_float_as_int(treeBuffers[nReceived][0].y);
+            int topStart = host_float_as_int(treeBuffers[nReceived][0].z);
+            int topEnd   = host_float_as_int(treeBuffers[nReceived][0].w);
+
+            //       LOGF(stderr, "Received from: %d  start: %d end: %d P: %d N: %d\n",
+            //                     i, topStart, topEnd, p, n);
+
+            na2atopnode += (topEnd-topStart);                            
+
+            topNodeOnTheFlyCount        += (topEnd-topStart);
+            treeBuffersSource[nReceived] = 1; //1 indicate quick check source
+            nReceived++;
+            na2acount++;
+          }
+        }
+        if (ENABLE_RUNTIME_LOG)
+        {
+          fprintf(stderr,"Proc: %d Received trees using quickcheck-a2a: %d top-nodes: %d \n", procId, na2acount, na2atopnode);
         }
       }
-      if (ENABLE_RUNTIME_LOG)
-      {
-        fprintf(stderr,"Proc: %d Received trees using quickcheck-a2a: %d top-nodes: %d \n", procId, na2acount, na2atopnode);
-      }
-      }
 
 
-      #else
+#else
 
 
 
@@ -3982,23 +4022,23 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 #else
       {
 
-	#if 1  /* use this if data is aligned */
-		typedef v4sf vec4;
-	#else  /* otherwise use this to avoid segfault on the unaligned data */
-		typedef float4 vec4;
-	#endif
+#if 1  /* use this if data is aligned */
+        typedef v4sf vec4;
+#else  /* otherwise use this to avoid segfault on the unaligned data */
+        typedef float4 vec4;
+#endif
 
-       std::vector<v4sf> topLevel;
+        std::vector<v4sf> topLevel;
         int nsendtotal = 0;
         for (int i= 0; i < nProcs; i++)
-		nsendtotal += quickCheckSendSizes[i]/sizeof(v4sf);
+          nsendtotal += quickCheckSendSizes[i]/sizeof(v4sf);
 
         topLevel.resize(nsendtotal);
         int cntr = 0;
         for (int i= 0; i < nProcs; i++)
         {
-	  assert(quickCheckSendSizes[i] % sizeof(vec4) == 0);
-	  assert(quickCheckSendOffset[i] % sizeof(vec4) == 0);
+          assert(quickCheckSendSizes[i] % sizeof(vec4) == 0);
+          assert(quickCheckSendOffset[i] % sizeof(vec4) == 0);
           const int nsend = quickCheckSendSizes [i]/sizeof(v4sf);
           const int displ = quickCheckSendOffset[i]/sizeof(v4sf);
           for (int j = 0; j < nsend; j++)
@@ -4006,21 +4046,21 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         }
 
         LOGF(stderr, "Starting 2D alltoall copy took: %lg \n", get_time()-t110);
-	mpiSync();
+        mpiSync();
 #if 0
         myComm->ugly_all2allv_char((float*)&topLevel[0],
             quickCheckSendSizes,
             (float*)&recvAllToAllBuffer[0]);
 #else
-double tbla = get_time();
+        double tbla = get_time();
         std::vector<int> scount_topLevel(nProcs);
         for (int i= 0; i < nProcs; i++)
           scount_topLevel[i] = quickCheckSendSizes[i]/sizeof(v4sf);
         myComm->all2allv_2D(topLevel, &scount_topLevel[0]);
         for (size_t i = 0; i < topLevel.size(); i++)
           ((v4sf*)recvAllToAllBuffer)[i] = topLevel[i];
-double tbla2  = get_time();
-LOGF(stderr,"Prep took: %lg  Items: %d \n", tbla2-tbla, (int)topLevel.size());
+        double tbla2  = get_time();
+        LOGF(stderr,"Prep took: %lg  Items: %d \n", tbla2-tbla, (int)topLevel.size());
 #endif
 
 
@@ -4051,15 +4091,15 @@ LOGF(stderr,"Prep took: %lg  Items: %d \n", tbla2-tbla, (int)topLevel.size());
       {
         //This is in a critical section since topNodeOnTheFlyCount is reset
         //by the GPU worker thread (thread == 0)
-	//
-//	char buff[4096];
-//	sprintf(buff, "Proc: %d Recv Ori: ", procId);
-	//
+        //
+        //	char buff[4096];
+        //	sprintf(buff, "Proc: %d Recv Ori: ", procId);
+        //
         int offset = 0;
         for(int i=0;  i < nProcs; i++)
         {
 
- //	  sprintf(buff,"%s [%d, %d ], ", buff,quickCheckRecvSizes[i], quickCheckRecvOffset[i]);
+          //	  sprintf(buff,"%s [%d, %d ], ", buff,quickCheckRecvSizes[i], quickCheckRecvOffset[i]);
 
           int items  = quickCheckRecvSizes[i]  / sizeof(real4);
           if(items > 0)
@@ -4074,15 +4114,15 @@ LOGF(stderr,"Prep took: %lg  Items: %d \n", tbla2-tbla, (int)topLevel.size());
             int topStart = host_float_as_int(treeBuffers[nReceived][0].z);
             int topEnd   = host_float_as_int(treeBuffers[nReceived][0].w);
 
-	    LOGF(stderr, "Received from: %d  start: %d end: %d  offset: %d  offset old: %lu\n",
-                 i, topStart, topEnd, offset, quickCheckRecvOffset[i] / sizeof(real4));
+            LOGF(stderr, "Received from: %d  start: %d end: %d  offset: %d  offset old: %lu\n",
+                i, topStart, topEnd, offset, quickCheckRecvOffset[i] / sizeof(real4));
 
             topNodeOnTheFlyCount += (topEnd-topStart);
             treeBuffersSource[nReceived] = 1; //1 indicate quick check source
             nReceived++;
           }
         }
-   //   LOGF(stderr,"%s\n", buff);
+        //   LOGF(stderr,"%s\n", buff);
       }
 
 
@@ -5121,8 +5161,8 @@ void octree::determine_sample_freq(int numberOfParticles)
   //MPI_Allreduce(&numberOfParticles,&tmp,1, MPI_INT, MPI_SUM,MPI_COMM_WORLD);
   //nTotalFreq = tmp;
 
-	unsigned long long tmp;
-	unsigned long long tmp2 = numberOfParticles;
+  unsigned long long tmp;
+  unsigned long long tmp2 = numberOfParticles;
   MPI_Allreduce(&tmp2,&tmp,1, MPI_UNSIGNED_LONG_LONG, MPI_SUM,MPI_COMM_WORLD);
   nTotalFreq_ull = tmp;
 #else
