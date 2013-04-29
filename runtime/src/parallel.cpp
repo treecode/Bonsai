@@ -878,9 +878,9 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
     /**** sample keys ****/
 
     const int npx = myComm->n_proc_i;  /* number of procs doing domain decomposition */
-#if 0
+#if 1
     const int nmean = nTotalFreq_ull/nProcs;
-    const int nsamples = nmean / 100;
+    const int nsamples_glb = nmean / 10;
 #else
     const int nsamples_glb = nkeys_loc / 10;
 #endif
