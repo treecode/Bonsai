@@ -78,24 +78,8 @@ struct DD2D
       assert(boundaries[i] < boundaries[i+1]);
   }
 
-  int findBox(const std::vector<Key> &keys, const Key key)
-  {
-    const int np = keys.size();
-    int p = 0;
-    while (keys[p+1] <= key) 
-    {
-      p++;
-      assert(p < np);
-    }
-    assert(p >= 0);
-    assert(p < npx);
-    assert(keys[p] <= key);
-    assert(key < keys[p+1]);
-    return p;
-  }
-
   void assignKeysToProc(
-      std::vector<Key> key_sample,   /* this is an intentonal vector-copy, because of data sorting below below */
+      const std::vector<Key> &key_sample,  
       const std::vector<Key> &boundaries,  
       std::vector< std::vector<Key> > &keys)
   {
@@ -103,23 +87,10 @@ struct DD2D
     keys.resize(np);
     const int sample_size = key_sample.size();
 
-#if 0  /* naive */
-    for (int p = 0; p < np; p++)
-      keys[p].reserve(1024);
-
-    for (int i = 0; i < sample_size; i++)
-    {
-      const Key key = key_sample[i];
-      const int p = findBox(boundaries, key);
-      keys[p].push_back(key);
-    }
-#else  /* with sorted keys */
     std::vector<int> firstKey(np+2);
 
     int location       = 0;
     firstKey[location] = 0;
-
-    __gnu_parallel::sort(key_sample.begin(), key_sample.end(), Key());
 
     for (int i = 0; i < sample_size; i++)
     {
@@ -152,7 +123,6 @@ struct DD2D
     for (int p = 0; p < np; p++)
       if (firstKey[p+1] > firstKey[p])
         keys[p].insert(keys[p].begin(), key_sample.begin()+firstKey[p], key_sample.begin()+firstKey[p+1]);
-#endif
 
 #if 0  /*** diagnostic ***/
     for (int p = 0; p < np; p++)
@@ -166,6 +136,8 @@ struct DD2D
 
   public:
 
+  /* sample_keys must be sorted by Key in an increaing order, otherwise
+   * assignKeyToProc will fail  */
   DD2D(const int _procId, const int _npx, const int _nProc, const std::vector<Key> &_key_sample, const MPI_Comm &_mpi_comm) :
     procId(_procId), npx(_npx), nProc(_nProc), key_sample(_key_sample), mpi_comm(_mpi_comm)
   {
