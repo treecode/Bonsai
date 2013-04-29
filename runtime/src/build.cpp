@@ -738,7 +738,7 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
 #endif
 
   int nSamples   = 0;
-  int sampleRate = 0;
+  float sampleRate = 0;
   computeSampleRateSFC(lastExecTime, nSamples, sampleRate);
 
 #if 0
@@ -806,7 +806,7 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
 
    extractSampleParticlesSFC.set_arg<int>(0,     &localTree.n);
    extractSampleParticlesSFC.set_arg<int>(1,     &nSamples);
-   extractSampleParticlesSFC.set_arg<int>(2,     &sampleRate);
+   extractSampleParticlesSFC.set_arg<float>(2,     &sampleRate);
    extractSampleParticlesSFC.set_arg<cl_mem>(3,  localTree.bodies_key.p());
    extractSampleParticlesSFC.set_arg<cl_mem>(4,  sampleKeys.p());
    extractSampleParticlesSFC.setWork(nSamples, 256);

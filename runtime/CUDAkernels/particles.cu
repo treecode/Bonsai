@@ -96,9 +96,9 @@ KERNEL_DECLARE(gpu_extractSampleParticles)(int    n_bodies,
   samplePosition[id] =  body_pos[idx];
 }
 
-KERNEL_DECLARE(gpu_extractSampleParticlesSFC)(int    n_bodies,
-                                              int    nSamples,
-                                              int    sample_freq,
+KERNEL_DECLARE(gpu_extractSampleParticlesSFC)(int     n_bodies,
+                                              int     nSamples,
+                                              float   sample_freq,
                                               uint4  *body_pos,
                                               uint4  *samplePosition
 ){
@@ -109,7 +109,7 @@ KERNEL_DECLARE(gpu_extractSampleParticlesSFC)(int    n_bodies,
 
   if(id >= nSamples) return;
 
-  int idx  = id*sample_freq;
+  int idx  = (int)(id*sample_freq);
   if  (idx >= n_bodies) return;
 
   samplePosition[id] =  body_pos[idx];
