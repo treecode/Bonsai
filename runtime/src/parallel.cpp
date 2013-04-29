@@ -863,6 +863,7 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
    * if you don't see my comment there, don't use this version. it will be
    * blow up :)
    */
+  if (procId == 0)
   delete[] globalSamples;
   {
     const int nkeys = localTree.n;
@@ -878,10 +879,8 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
             (static_cast<unsigned long long>(key.x) << 32) );
     }
 
-    const int nsamples = 1000;
+    const int nsamples = nkeys / 10;
 
-    MPI_Finalize();
-    exit(0);
     const DD2D dd(procId, myComm->n_proc_i, nProcs, &keys[0], nkeys, nsamples, MPI_COMM_WORLD);
 
     for (int p = 0; p < nProcs; p++)
@@ -892,6 +891,7 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
           (uint)((key.key      ) & 0x00000000FFFFFFFF),
           0,0};
     }
+    parallelBoundaries[nProcs] = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
   }
 #endif
 
@@ -899,7 +899,7 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
   {
     for(int i=0; i < nProcs; i++)
     {
-      LOGF(stderr, "Proc: %d Going from: >= %u %u %u  to < %u %u %u \n",i,
+      fprintf(stderr, "Proc: %d Going from: >= %u %u %u  to < %u %u %u \n",i,
           parallelBoundaries[i].x,   parallelBoundaries[i].y,   parallelBoundaries[i].z,
           parallelBoundaries[i+1].x, parallelBoundaries[i+1].y, parallelBoundaries[i+1].z);
     }
