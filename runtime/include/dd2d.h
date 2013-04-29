@@ -114,7 +114,7 @@ struct DD2D
       keys[p].push_back(key);
     }
 #else  /* with sorted keys */
-    std::vector<int> firstKey(np+1);
+    std::vector<int> firstKey(np+2);
 
     int location       = 0;
     firstKey[location] = 0;
@@ -146,7 +146,7 @@ struct DD2D
     }
 
     //Fill remaining processes
-    while(location < np)
+    while(location <= np)
       firstKey[++location] = sample_size;
 
     for (int p = 0; p < np; p++)
@@ -154,7 +154,7 @@ struct DD2D
         keys[p].insert(keys[p].begin(), key_sample.begin()+firstKey[p], key_sample.begin()+firstKey[p+1]);
 #endif
 
-#if 1
+#if 0  /*** diagnostic ***/
     for (int p = 0; p < np; p++)
     {
       fprintf(stderr, " dd2d:: procId= %d  sends to %d a total of %d keys out of %d\n",

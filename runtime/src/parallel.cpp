@@ -1603,8 +1603,8 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
   static int firstSort = 1;
   if(firstSort)
   {
-    std::vector<int> offsets(nProcs+1);
-    std::vector<int> items(nProcs+1);
+    std::vector<int> offsets(nProcs+2);
+    std::vector<int> items(nProcs+2);
 
     int location       = 0;
     offsets[location]  = 0;
