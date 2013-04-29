@@ -103,7 +103,7 @@ struct DD2D
     keys.resize(np);
     const int sample_size = key_sample.size();
 
-#if 1  /* naive */
+#if 0  /* naive */
     for (int p = 0; p < np; p++)
       keys[p].reserve(1024);
 
