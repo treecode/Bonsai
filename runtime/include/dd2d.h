@@ -95,8 +95,8 @@ struct DD2D
   }
 
   void assignKeysToProc(
-      std::vector<Key> key_sample, 
-      const std::vector<Key> &boundaries, 
+      std::vector<Key> key_sample,   /* this is an intentonal vector-copy, because of data sorting below below */
+      const std::vector<Key> &boundaries,  
       std::vector< std::vector<Key> > &keys)
   {
     const int np = boundaries.size();
