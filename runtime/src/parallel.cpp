@@ -883,6 +883,7 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
     const int nsamples_glb = nmean / 10;
 
     /*** sample keys ***/
+
     const int nsamples_loc = nsamples_glb / npx;
     const double stride = std::max((double)nkeys_loc/(double)nsamples_loc, 1.0);
     for (double i = 0; i < (double)nkeys_loc; i += stride)

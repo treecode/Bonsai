@@ -78,6 +78,7 @@ struct DD2D
       assert(boundaries[i] < boundaries[i+1]);
   }
 
+  /* key_sample must be sorted in an increasing Key order, otherwise it will fail */
   void assignKeysToProc(
       const std::vector<Key> &key_sample,  
       const std::vector<Key> &boundaries,  
