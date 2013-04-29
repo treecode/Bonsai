@@ -879,11 +879,10 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
             (static_cast<unsigned long long>(key.x) << 32) );
     }
 #if 0
-    __gnu_parallel::random_shuffle(keys.begin(), keys.end());
+//    __gnu_parallel::random_shuffle(keys.begin(), keys.end());
 
     const int nmean = nTotalFreq_ull/nProcs;
     const int nsamples = nmean / 100;
-    fprintf(stderr, "procId= %d :: nptcl= %llu nkeys= %d nmean= %d \n", procId, nTotalFreq_ull, nkeys, nmean);
 #else
     const int nsamples = nkeys / 100;
 #endif

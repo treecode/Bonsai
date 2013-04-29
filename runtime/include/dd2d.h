@@ -67,8 +67,7 @@ struct DD2D
   void sampleKeys(const int nsamples, const int keybeg, std::vector<Key> &key_samples)
   {
     assert(nsamples > 0);
-    const double stride = (double)nkeys/(double)nsamples;
-    assert(stride > 0.0);
+    const double stride = std::max((double)nkeys/(double)nsamples, 1.0);
     key_samples.reserve(nkeys);
     for (double i = (double)keybeg; i < (double)nkeys; i += stride)
       key_samples.push_back(keys[(int)i]);
@@ -218,7 +217,7 @@ struct DD2D
      * we can increase local sampling rate by npx 
      * local sampling rate becomes nsamples_loc = (nsamples_tot / nProc) * npx  
      */
-    
+
     std::vector<Key> keys2d_sample;
     sampleKeys(nsamples_tot/npy, 0, keys2d_sample);
 
