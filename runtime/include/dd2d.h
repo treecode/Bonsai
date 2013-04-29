@@ -69,6 +69,7 @@ struct DD2D
     assert(nsamples > 0);
     const int stride = nkeys/nsamples;
     assert(stride > 0);
+    key_samples.reserve(nkeys*2/stride);
     for (int i = keybeg; i < nkeys; i += stride)
       key_samples.push_back(keys[i]);
   }
