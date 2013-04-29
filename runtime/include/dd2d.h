@@ -67,6 +67,7 @@ struct DD2D
   void sampleKeys(const int nsamples, const int keybeg, std::vector<Key> &key_samples)
   {
     assert(nsamples > 0);
+
     const double stride = std::max((double)nkeys/(double)nsamples, 1.0);
     key_samples.reserve(nkeys);
     for (double i = (double)keybeg; i < (double)nkeys; i += stride)

@@ -880,7 +880,6 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
     }
 #if 0
 //    __gnu_parallel::random_shuffle(keys.begin(), keys.end());
-
     const int nmean = nTotalFreq_ull/nProcs;
     const int nsamples = nmean / 100;
 #else
