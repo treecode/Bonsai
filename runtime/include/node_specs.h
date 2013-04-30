@@ -33,7 +33,7 @@ typedef float4 real4;
 
 //Tree-walk and stack configuration
 //#define LMEM_STACK_SIZE            3072         //Number of storage places PER thread, MUST be power 2 !!!!
-#define LMEM_STACK_SIZE             2048         //Number of storage places PER thread, MUST be power 2 !!!!
+#define LMEM_STACK_SIZE             2048        //Number of storage places PER thread, MUST be power 2 !!!!
 #define LMEM_EXTRA_SIZE             2048
 #define CELL_LIST_MEM_PER_WARP     (LMEM_STACK_SIZE*32)
 #if ((CELL_LIST_MEM_PER_WARP-1) & CELL_LIST_MEM_PER_WARP) != 0

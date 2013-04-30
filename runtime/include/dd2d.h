@@ -1,6 +1,14 @@
 #pragma once
 
+#if 0
+#define PARALLELSORT
+#endif
+
+#ifdef PARALLELSORT
 #include <parallel/algorithm>
+#else
+#include <algorithm>
+#endif
 #include <cassert>
 #include <mpi.h>
 #include <vector>
@@ -166,7 +174,11 @@ struct DD2D
     std::vector<Key> boundaries1d(npx, Key::min());
     if (procId == 0)
     {
+#ifdef PARALLELSORT
       __gnu_parallel::sort(keys1d_recv.begin(), keys1d_recv.end(), Key());
+#else
+      std::sort(keys1d_recv.begin(), keys1d_recv.end(), Key());
+#endif
       chopSortedKeys(npx, Key::min(), keys1d_recv, boundaries1d);
     }
 
@@ -210,7 +222,11 @@ struct DD2D
     std::vector<Key> boundaries2d(npy);
     if (procId < npx)
     {
+#ifdef PARALLELSORT
       __gnu_parallel::sort(keys2d_recv.begin(), keys2d_recv.end(), Key());
+#else
+      std::sort(keys2d_recv.begin(), keys2d_recv.end(), Key());
+#endif
       const Key minkey = boundaries1d[procId];
       chopSortedKeys(npy, minkey, keys2d_recv, boundaries2d);
     }
