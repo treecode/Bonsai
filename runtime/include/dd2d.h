@@ -13,6 +13,21 @@
 #include <mpi.h>
 #include <vector>
 
+#include <sys/time.h>
+
+static double rtc(void)
+{
+  struct timeval Tvalue;
+  double etime;
+  struct timezone dummy;
+
+  //gettimeofday(&Tvalue,NULL);
+  gettimeofday(&Tvalue,&dummy);
+  etime =  (double) Tvalue.tv_sec +
+    1.e-6*((double) Tvalue.tv_usec);
+  return etime;
+}
+
 struct DD2D
 {
   struct Key
@@ -50,11 +65,64 @@ struct DD2D
   const Key& keyend(const int proc) const {return boundaries[proc+1];}
 
   private:
+  
+  void GatherAllKeys(const std::vector< std::vector<Key> > &keys2send, std::vector<Key> &keys2recv)
+  {
+    const int np = keys2send.size();
+#if 0
+    for (int root = 0; root < np; root++)
+    {
+      std::vector<int> keys_sizes(nProc);
+      int keys_size = keys2send[root].size() * Key::SIZEFLT;
+      MPI_Gather(&keys_size, 1, MPI_INT, &keys_sizes[0], 1, MPI_INT, root, mpi_comm);
 
-  void GatherKeys(const int root, const std::vector<Key> &keys2send, std::vector<Key> &keys2recv)
+      std::vector<int> keys_displ(nProc+1,0);
+      for (int i = 0; i < nProc; i++)
+        keys_displ[i+1] = keys_displ[i] + keys_sizes[i];
+
+      const int keys_recv = keys_displ[nProc] / Key::SIZEFLT;
+      assert(keys_recv * Key::SIZEFLT == keys_displ[nProc]);
+      const int keys2recv_size = keys2recv.size();
+      keys2recv.resize(keys2recv_size + keys_recv);
+      MPI_Gatherv(
+          (void*)&keys2send[root][0], keys_size, MPI_FLOAT,
+          (void*)&keys2recv[keys2recv_size], &keys_sizes[0], &keys_displ[0], MPI_FLOAT, root, mpi_comm);
+    } 
+#else
+    std::vector<int> keys2send_size(nProc,0), keys2recv_size(nProc), keys2recv_displ(nProc+1,0);
+
+    for (int p = 0; p < np; p++)
+      keys2send_size[p] = keys2send[p].size();
+    MPI_Alltoall(&keys2send_size[0], 1, MPI_INT, &keys2recv_size[0], 1, MPI_INT, mpi_comm);
+    
+    for (int p = 0; p < nProc; p++)
+      keys2recv_displ[p+1] = keys2recv_displ[p] + keys2recv_size[p];
+
+    keys2recv.resize(keys2recv_displ[nProc]);
+
+    std::vector<MPI_Request> req(nProc*2);
+
+    int nreq = 0;
+    for (int p = 0; p < nProc; p++)
+    {
+      const int nsend = keys2send_size[p];
+      const int nrecv = keys2recv_size[p];
+      if (p >= npx) assert(nsend == 0);
+      if (nsend > 0)
+        MPI_Isend((void*)&keys2send[p][0], nsend*Key::SIZEFLT, MPI_FLOAT, p, 1, mpi_comm, &req[nreq++]);
+      if (nrecv > 0)
+        MPI_Irecv((void*)&keys2recv[keys2recv_displ[p]], nrecv*Key::SIZEFLT, MPI_FLOAT, p, 1, mpi_comm, &req[nreq++]);
+    }
+    std::vector<MPI_Status> status(nProc*2);
+    MPI_Waitall(nreq, &req[0], &status[0]);
+#endif
+  }
+
+  void GatherKeys(const int root, std::vector<Key> &keys2send, std::vector<Key> &keys2recv)
   {
     std::vector<int> keys_sizes(nProc);
 
+#if 1
     int keys_size = keys2send.size() * Key::SIZEFLT;
     MPI_Gather(&keys_size, 1, MPI_INT, &keys_sizes[0], 1, MPI_INT, root, mpi_comm);
 
@@ -69,6 +137,31 @@ struct DD2D
     MPI_Gatherv(
         (void*)&keys2send[0], keys_size, MPI_FLOAT,
         (void*)&keys2recv[keys2recv_size], &keys_sizes[0], &keys_displ[0], MPI_FLOAT, root, mpi_comm);
+#else
+    if (procId != root) 
+    {
+      int keys_size = keys2send.size();
+      MPI_Send(       &keys_size,                           1, MPI_INT,   root, procId*2,     mpi_comm);
+      MPI_Send((void*)&keys2send[0], keys_size * Key::SIZEFLT, MPI_FLOAT, root, procId*2 + 1, mpi_comm);
+    } 
+    else 
+    {
+      keys2recv.insert(keys2recv.end(), keys2send.begin(), keys2send.end());
+      int keys_size = keys2recv.size();
+      for (int p = 0; p < nProc; p++) 
+        if (p != root)
+        {
+          MPI_Status status;
+          int nreceive;
+          MPI_Recv(&nreceive, 1, MPI_INT, p, p*2, mpi_comm, &status);
+          //          assert(status == MPI_SUCCESS);
+          keys2recv.resize(keys_size + nreceive);
+          MPI_Recv(&keys2recv[keys_size], nreceive*Key::SIZEFLT, MPI_FLOAT, p, p*2 + 1, mpi_comm, &status);
+          //          assert(status == MPI_SUCCESS);
+          keys_size += nreceive;
+        } 
+    }
+#endif
   }
 
   void chopSortedKeys(const unsigned long long np, const Key &minkey, const std::vector<Key> &keys2chop, std::vector<Key> &boundaries)
@@ -159,15 +252,22 @@ struct DD2D
      * each proc samples nsamples_tot/nProc keys
      */
 
+    const double t00 = rtc();
     std::vector<Key> keys1d_send;
     const int sample_size = key_sample.size();
     for (int i = 0; i < sample_size; i += npy)
       keys1d_send.push_back(key_sample[i]);
+    const double t10 = rtc();
+    fprintf(stderr, " procId: %d  step 1 dt=  %g\n", procId, t10-t00);
 
     /* gather keys to proc 0 */
 
     std::vector<Key> keys1d_recv;
     GatherKeys(0, keys1d_send, keys1d_recv);
+    if (procId == 0)
+      printf(">> gathered= %d keys \n", (int)keys1d_recv.size());
+    const double t20 = rtc();
+    fprintf(stderr, " procId: %d  step 2 dt=  %g\n", procId, t20-t10);
 
     /* compute npx boundaries, from nsamples_tot keys */
 
@@ -181,6 +281,8 @@ struct DD2D
 #endif
       chopSortedKeys(npx, Key::min(), keys1d_recv, boundaries1d);
     }
+    const double t30 = rtc();
+    fprintf(stderr, " procId: %d  step 3 dt=  %g\n", procId, t30-t20);
 
     /* boradcast 1d boundaries to all procs */
 
@@ -204,16 +306,31 @@ struct DD2D
      * local sampling rate becomes nsamples_loc = (nsamples_tot / nProc) * npx  
      */
 
+    const double t40 = rtc();
+    fprintf(stderr, " procId: %d  step 4 dt=  %g\n", procId, t40-t30);
     /* assign each of the sampled keys to appropriate proc */
 
     std::vector< std::vector<Key> > keys2d_send;
     assignKeysToProc(key_sample, boundaries1d, keys2d_send);
 
+    const double t50 = rtc();
+    fprintf(stderr, " procId: %d  step 5 dt=  %g\n", procId, t50-t40);
+
     /* gather keys from remote procs to the first npx sorting procs */
 
     std::vector<Key> keys2d_recv;
+#if 0
     for (int p = 0; p < npx; p++)
       GatherKeys(p, keys2d_send[p], keys2d_recv);
+#else
+    GatherAllKeys(keys2d_send, keys2d_recv);
+#endif
+
+    const double t60 = rtc();
+    fprintf(stderr, " procId: %d  step 6 dt=  %g\n", procId, t60-t50);
+
+    if (procId < npx)
+      printf(">> proc= %d gathered= %d keys \n", procId, (int)keys2d_recv.size());
 
     /* sanity test, only first npx must recieve data */
     if (procId >= npx) assert(keys2d_recv.empty());
@@ -231,6 +348,8 @@ struct DD2D
       chopSortedKeys(npy, minkey, keys2d_recv, boundaries2d);
     }
 
+    const double t70 = rtc();
+    fprintf(stderr, " procId: %d  step 7 dt=  %g\n", procId, t70-t60);
     /* gather 2d boundaries */
     /* there could be a better way to do the following two steps... */
 
@@ -255,6 +374,8 @@ struct DD2D
     /* then broadcast boundaries from proc 0 to all */
 
     MPI_Bcast(&boundaries[0], nProc*Key::SIZEFLT, MPI_FLOAT, 0, mpi_comm);
+    const double t80 = rtc();
+    fprintf(stderr, " procId: %d  step 8 dt=  %g\n", procId, t80-t70);
 
     /* sanity checks */
 
