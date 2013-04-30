@@ -861,7 +861,7 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
 
    exchangeSamplesAndUpdateBoundarySFC(&sampleKeys[0], nSamples,    &globalSamples[0],
                                         nReceiveCnts,  nReceiveDpls, totalCount,
-                                       &tree.parallelBoundaries[0]);
+                                       &tree.parallelBoundaries[0], lastExecTime);
 
 #if 0
    //Send actual data

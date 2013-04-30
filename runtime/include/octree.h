@@ -785,7 +785,7 @@ public:
 
   void exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSamples,
                                            uint4 *globalSamples, int  *nReceiveCnts, int *nReceiveDpls,
-                                           int    totalCount,   uint4 *parallelBoundaries);
+                                           int    totalCount,   uint4 *parallelBoundaries, float lastExectime);
 
   void essential_tree_exchangeV2(tree_structure &tree,
                                  tree_structure &remote,

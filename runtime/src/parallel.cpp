@@ -723,7 +723,7 @@ void octree::computeSampleRateSFC(float lastExecTime, int &nSamples, float &samp
 
 void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSamples,
     uint4 *globalSamples, int  *nReceiveCnts, int *nReceiveDpls,
-    int    totalCount,   uint4 *parallelBoundaries)
+    int    totalCount,   uint4 *parallelBoundaries, float lastExecTime)
 {
 #ifdef USE_MPI
 
@@ -883,12 +883,28 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
     const int nmean = nTotalFreq_ull/nProcs;
     const int nsamples_glb = nmean / 10;
 #else
-    const int nsamples_glb = nkeys_loc / 10;
+    const int nsamples_glb = nkeys_loc / 100;
 #endif
 
     /*** sample keys ***/
 
-    const int nsamples_loc = nsamples_glb / npx;
+    /* LB step */
+#if 1
+    const double f = 1.0;
+#else
+    static double prevDurStep = -1;
+    static int prevSampFreq = -1;
+    prevDurStep = (prevDurStep <= 0) ? lastExecTime : prevDurStep;
+
+    double timeLocal = (lastExecTime + prevDurStep) / 2;
+    double timeSum = 0.0;
+
+    MPI_Allreduce( &timeLocal, &timeSum, 1,MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+    const  double f = timeLocal / timeSum * nProcs;
+#endif
+
+    const int nsamples_loc = static_cast<int>(nsamples_glb / npx * f);
     const double stride = std::max((double)nkeys_loc/(double)nsamples_loc, 1.0);
     for (double i = 0; i < (double)nkeys_loc; i += stride)
     {
