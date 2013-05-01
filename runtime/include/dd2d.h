@@ -199,7 +199,7 @@ struct DD2D
         else
         {
           firstKey[++location] = i;    /* outside the box */
-          assert(location < np);
+          assert(location < np-1);
         }
       }
     }
