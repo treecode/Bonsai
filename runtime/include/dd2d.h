@@ -13,21 +13,6 @@
 #include <mpi.h>
 #include <vector>
 
-#include <sys/time.h>
-
-static double rtc(void)
-{
-  struct timeval Tvalue;
-  double etime;
-  struct timezone dummy;
-
-  //gettimeofday(&Tvalue,NULL);
-  gettimeofday(&Tvalue,&dummy);
-  etime =  (double) Tvalue.tv_sec +
-    1.e-6*((double) Tvalue.tv_usec);
-  return etime;
-}
-
 struct DD2D
 {
   struct Key
@@ -54,7 +39,8 @@ struct DD2D
   private:
 
   const int procId, npx, nProc;
-  const std::vector<Key> &key_sample;
+  const std::vector<Key> &key_sample1d;
+  const std::vector<Key> &key_sample2d;
   const MPI_Comm mpi_comm;
 
   std::vector<Key> boundaries;
@@ -118,7 +104,7 @@ struct DD2D
 #endif
   }
 
-  void GatherKeys(const int root, std::vector<Key> &keys2send, std::vector<Key> &keys2recv)
+  void GatherKeys(const int root, const std::vector<Key> &keys2send, std::vector<Key> &keys2recv)
   {
     std::vector<int> keys_sizes(nProc);
 
@@ -240,8 +226,8 @@ struct DD2D
 
   /* sample_keys must be sorted by Key in an increaing order, otherwise
    * assignKeyToProc will fail  */
-  DD2D(const int _procId, const int _npx, const int _nProc, const std::vector<Key> &_key_sample, const MPI_Comm &_mpi_comm) :
-    procId(_procId), npx(_npx), nProc(_nProc), key_sample(_key_sample), mpi_comm(_mpi_comm)
+  DD2D(const int _procId, const int _npx, const int _nProc, const std::vector<Key> &_key_sample1d, const std::vector<Key> &_key_sample2d, const MPI_Comm &_mpi_comm) :
+    procId(_procId), npx(_npx), nProc(_nProc), key_sample1d(_key_sample1d), key_sample2d(_key_sample2d),mpi_comm(_mpi_comm)
   {
     assert(nProc % npx == 0);
     const int npy = nProc / npx;
@@ -252,22 +238,12 @@ struct DD2D
      * each proc samples nsamples_tot/nProc keys
      */
 
-    const double t00 = rtc();
-    std::vector<Key> keys1d_send;
-    const int sample_size = key_sample.size();
-    for (int i = 0; i < sample_size; i += npy)
-      keys1d_send.push_back(key_sample[i]);
-    const double t10 = rtc();
-    fprintf(stderr, " procId: %d  step 1 dt=  %g\n", procId, t10-t00);
-
     /* gather keys to proc 0 */
 
     std::vector<Key> keys1d_recv;
-    GatherKeys(0, keys1d_send, keys1d_recv);
+    GatherKeys(0, key_sample1d, keys1d_recv);
     if (procId == 0)
-      printf(">> gathered= %d keys \n", (int)keys1d_recv.size());
-    const double t20 = rtc();
-    fprintf(stderr, " procId: %d  step 2 dt=  %g\n", procId, t20-t10);
+      fprintf(stderr, " dd2d:: 1st step gathered= %d keys \n", (int)keys1d_recv.size());
 
     /* compute npx boundaries, from nsamples_tot keys */
 
@@ -281,8 +257,6 @@ struct DD2D
 #endif
       chopSortedKeys(npx, Key::min(), keys1d_recv, boundaries1d);
     }
-    const double t30 = rtc();
-    fprintf(stderr, " procId: %d  step 3 dt=  %g\n", procId, t30-t20);
 
     /* boradcast 1d boundaries to all procs */
 
@@ -306,15 +280,10 @@ struct DD2D
      * local sampling rate becomes nsamples_loc = (nsamples_tot / nProc) * npx  
      */
 
-    const double t40 = rtc();
-    fprintf(stderr, " procId: %d  step 4 dt=  %g\n", procId, t40-t30);
     /* assign each of the sampled keys to appropriate proc */
 
     std::vector< std::vector<Key> > keys2d_send;
-    assignKeysToProc(key_sample, boundaries1d, keys2d_send);
-
-    const double t50 = rtc();
-    fprintf(stderr, " procId: %d  step 5 dt=  %g\n", procId, t50-t40);
+    assignKeysToProc(key_sample2d, boundaries1d, keys2d_send);
 
     /* gather keys from remote procs to the first npx sorting procs */
 
@@ -326,11 +295,9 @@ struct DD2D
     GatherAllKeys(keys2d_send, keys2d_recv);
 #endif
 
-    const double t60 = rtc();
-    fprintf(stderr, " procId: %d  step 6 dt=  %g\n", procId, t60-t50);
 
     if (procId < npx)
-      printf(">> proc= %d gathered= %d keys \n", procId, (int)keys2d_recv.size());
+      fprintf(stderr, "dd2d:: 2nd step proc= %d gathered= %d keys \n", procId, (int)keys2d_recv.size());
 
     /* sanity test, only first npx must recieve data */
     if (procId >= npx) assert(keys2d_recv.empty());
@@ -348,8 +315,6 @@ struct DD2D
       chopSortedKeys(npy, minkey, keys2d_recv, boundaries2d);
     }
 
-    const double t70 = rtc();
-    fprintf(stderr, " procId: %d  step 7 dt=  %g\n", procId, t70-t60);
     /* gather 2d boundaries */
     /* there could be a better way to do the following two steps... */
 
@@ -374,8 +339,6 @@ struct DD2D
     /* then broadcast boundaries from proc 0 to all */
 
     MPI_Bcast(&boundaries[0], nProc*Key::SIZEFLT, MPI_FLOAT, 0, mpi_comm);
-    const double t80 = rtc();
-    fprintf(stderr, " procId: %d  step 8 dt=  %g\n", procId, t80-t70);
 
     /* sanity checks */
 

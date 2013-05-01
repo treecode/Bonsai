@@ -872,24 +872,9 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
     const int nkeys_loc = localTree.n;
     assert(nkeys_loc > 0);
 
-    std::vector<DD2D::Key> key_sample;
-    key_sample.reserve(nkeys_loc);
-
-    /**** sample keys ****/
-
-    const int npx = myComm->n_proc_i;  /* number of procs doing domain decomposition */
-
-#if 0  /* evghenii: somehow, this choice increases imballance. don't get why ... */
-    const int nmean = nTotalFreq_ull/nProcs;
-    const int nsamples_glb = nmean / 10;
-#else
-    const int nsamples_glb = nkeys_loc / 100;
-#endif
-
-    /*** sample keys ***/
-
     /* LB step */
-#if 1
+
+#if 0
     const double f = 1.0;
 #else
     static double prevDurStep = -1;
@@ -901,30 +886,53 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
 
     MPI_Allreduce( &timeLocal, &timeSum, 1,MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
-    const  double f = timeLocal / timeSum * nProcs;
+#if 1
+    /* constrain LB to make maintain balanced memory use */
+    const double fmax = 1.0*1.3;
+    const double fmin = 1.0/1.3;
+#else
+    /* attempt to achieve perfect LB */
+    const double fmin = 0.0;
+    const double fmax = HUGE;
+#endif
+    const double f = std::max(std::min(fmax, timeLocal / timeSum * nProcs), fmin);
 #endif
 
-    const int nsamples_loc = static_cast<int>(nsamples_glb / npx * f);
-    const double stride = std::max((double)nkeys_loc/(double)nsamples_loc, 1.0);
-    for (double i = 0; i < (double)nkeys_loc; i += stride)
+    /*** particle sampling ***/
+
+    const int npx = myComm->n_proc_i;  /* number of procs doing domain decomposition */
+
+    const int nmean = nTotalFreq_ull/nProcs;
+    const int nsamples_glb = nmean / 100;
+
+    std::vector<DD2D::Key> key_sample1d, key_sample2d;
+    key_sample1d.reserve(nsamples_glb);
+    key_sample2d.reserve(nsamples_glb);
+
+    const double nsamples1d_glb = (f * nsamples_glb);
+    const double nsamples2d_glb = (f * nsamples_glb) * npx;
+
+    const double nTot = nTotalFreq_ull;
+    const double stride1d = std::max(nTot/nsamples1d_glb, 1.0);
+    const double stride2d = std::max(nTot/nsamples2d_glb, 1.0);
+    for (double i = 0; i < (double)nkeys_loc; i += stride1d)
     {
       const uint4 key = localTree.bodies_key[(int)i];
-      key_sample.push_back(DD2D::Key(
+      key_sample1d.push_back(DD2D::Key(
+            (static_cast<unsigned long long>(key.y) ) | 
+            (static_cast<unsigned long long>(key.x) << 32) 
+            ));
+    }
+    for (double i = 0; i < (double)nkeys_loc; i += stride2d)
+    {
+      const uint4 key = localTree.bodies_key[(int)i];
+      key_sample2d.push_back(DD2D::Key(
             (static_cast<unsigned long long>(key.y) ) | 
             (static_cast<unsigned long long>(key.x) << 32) 
             ));
     }
 
-#if 0  /* diagonostic, sanity check */
-    {
-      int nkeys_loc = key_sample.size();
-      int nkeys_glb = 0;
-      MPI_Allreduce(&nkeys_loc, &nkeys_glb, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-      assert(nkeys_glb <= nsamples_glb*npx);
-    }
-#endif
-
-    const DD2D dd(procId, npx, nProcs, key_sample, MPI_COMM_WORLD);
+    const DD2D dd(procId, npx, nProcs, key_sample1d, key_sample2d, MPI_COMM_WORLD);
 
     /* distribute keys */
     for (int p = 0; p < nProcs; p++)
