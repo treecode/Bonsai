@@ -894,17 +894,15 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
       { 
         const double mem_imballance = 0.3;
 
-#if 1
-        const double fac  = 1.0; 
-#else  /* this is equvilent to Eq.(5) in Ishiyama etal 2009 */
-        const double fac  = (double)nkeys_loc/(double)(nloc_mean);
+        double fac = 1.0;
+#if 1   /* this is equvilent to Eq.(5) in Ishiyama etal 2009 */
+        fac  = (double)nkeys_loc/(double)(nloc_mean);
 #endif
 
-        const double fmin = fac/(1.0+mem_imballance);
+        fmin = fac/(1.0+mem_imballance);
+        fmax = HUGE;
 #if 1  /* it looks like we must also have upper bound otherwise memory ballancing doesn't work */
-        const double fmax = fac*(1.0+mem_imballance);
-#else
-        const double fmax = HUGE;
+        fmax = fac*(1.0+mem_imballance);
 #endif
       }
 
