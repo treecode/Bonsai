@@ -38,7 +38,7 @@ struct DD2D
 
   private:
 
-  const int procId, npx, nProc;
+  const int procId, nPx, nProc;
   const std::vector<Key> &key_sample1d;
   const std::vector<Key> &key_sample2d;
   const MPI_Comm mpi_comm;
@@ -93,7 +93,7 @@ struct DD2D
     {
       const int nsend = keys2send_size[p];
       const int nrecv = keys2recv_size[p];
-      if (p >= npx) assert(nsend == 0);
+      if (p >= np) assert(nsend == 0);
       if (nsend > 0)
         MPI_Isend((void*)&keys2send[p][0], nsend*Key::SIZEFLT, MPI_FLOAT, p, 1, mpi_comm, &req[nreq++]);
       if (nrecv > 0)
@@ -227,10 +227,10 @@ struct DD2D
   /* sample_keys must be sorted by Key in an increaing order, otherwise
    * assignKeyToProc will fail  */
   DD2D(const int _procId, const int _npx, const int _nProc, const std::vector<Key> &_key_sample1d, const std::vector<Key> &_key_sample2d, const MPI_Comm &_mpi_comm) :
-    procId(_procId), npx(_npx), nProc(_nProc), key_sample1d(_key_sample1d), key_sample2d(_key_sample2d),mpi_comm(_mpi_comm)
+    procId(_procId), nPx(_npx), nProc(_nProc), key_sample1d(_key_sample1d), key_sample2d(_key_sample2d),mpi_comm(_mpi_comm)
   {
-    assert(nProc % npx == 0);
-    const int npy = nProc / npx;
+    assert(nProc % nPx == 0);
+    const int npy = nProc / nPx;
 
     /*** do first 1D domain decomposition ***/
 
@@ -247,7 +247,7 @@ struct DD2D
 
     /* compute npx boundaries, from nsamples_tot keys */
 
-    std::vector<Key> boundaries1d(npx, Key::min());
+    std::vector<Key> boundaries1d(nPx, Key::min());
     if (procId == 0)
     {
 #ifdef PARALLELSORT
@@ -255,12 +255,12 @@ struct DD2D
 #else
       std::sort(keys1d_recv.begin(), keys1d_recv.end(), Key());
 #endif
-      chopSortedKeys(npx, Key::min(), keys1d_recv, boundaries1d);
+      chopSortedKeys(nPx, Key::min(), keys1d_recv, boundaries1d);
     }
 
     /* boradcast 1d boundaries to all procs */
 
-    MPI_Bcast(&boundaries1d[0], npx*Key::SIZEFLT, MPI_FLOAT, 0, mpi_comm);
+    MPI_Bcast(&boundaries1d[0], nPx*Key::SIZEFLT, MPI_FLOAT, 0, mpi_comm);
     boundaries1d.push_back(Key::max());
 
     /*** proceed with 2D decomposition ***/
@@ -272,7 +272,7 @@ struct DD2D
 
     /* sanity test, make sure 1d boundaries are sorted */
 
-    for (int i = 0; i < npx; i++)
+    for (int i = 0; i < nPx; i++)
       assert(boundaries1d[i] < boundaries1d[i+1]);
 
     /* each proc resample local particle, however,
@@ -296,15 +296,15 @@ struct DD2D
 #endif
 
 
-    if (procId < npx)
+    if (procId < nPx)
       fprintf(stderr, "dd2d:: 2nd step proc= %d gathered= %d keys \n", procId, (int)keys2d_recv.size());
 
     /* sanity test, only first npx must recieve data */
-    if (procId >= npx) assert(keys2d_recv.empty());
+    if (procId >= nPx) assert(keys2d_recv.empty());
 
     /* each of npx sorting proc, generate 2d boundaries */
     std::vector<Key> boundaries2d(npy);
-    if (procId < npx)
+    if (procId < nPx)
     {
 #ifdef PARALLELSORT
       __gnu_parallel::sort(keys2d_recv.begin(), keys2d_recv.end(), Key());
@@ -323,17 +323,17 @@ struct DD2D
     boundaries[nProc] = Key::max();
 
     std::vector<int> boundaries_size(nProc,0), boundaries_displ(nProc+1, 0);
-    for (int i = 0; i < npx; i++)
+    for (int i = 0; i < nPx; i++)
     {
       boundaries_size [i  ] = npy * Key::SIZEFLT;
       boundaries_displ[i+1] = boundaries_displ[i] + boundaries_size[i];
     }
-    assert(boundaries_displ[npx] == nProc *Key::SIZEFLT);
-    for (int i = npx; i < nProc; i++)
-      boundaries_displ[i] = boundaries_displ[npx-1];
+    assert(boundaries_displ[nPx] == nProc *Key::SIZEFLT);
+    for (int i = nPx; i < nProc; i++)
+      boundaries_displ[i] = boundaries_displ[nPx-1];
 
     MPI_Gatherv(
-        (void*)&boundaries2d[0], procId < npx ? npy*Key::SIZEFLT : 0, MPI_FLOAT,
+        (void*)&boundaries2d[0], procId < nPx ? npy*Key::SIZEFLT : 0, MPI_FLOAT,
         (void*)&boundaries  [0], &boundaries_size[0], &boundaries_displ[0], MPI_FLOAT, 0, mpi_comm);
 
     /* then broadcast boundaries from proc 0 to all */
