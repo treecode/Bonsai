@@ -23,7 +23,7 @@ def makeJob(n):
     fileOut.write("module load git\n")
 
     fileOut.write("module swap PrgEnv-pgi PrgEnv-gnu\n")
-    fileOut.write("module intel\n")
+    fileOut.write("module module intel\n")
     fileOut.write("cd " + path +" \n")
     fileOut.write("export OMP_SET_NUM_THREADS=16\n")
     fileOut.write("date\n")
