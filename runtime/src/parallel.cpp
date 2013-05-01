@@ -871,39 +871,56 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
 
     const int nkeys_loc = localTree.n;
     assert(nkeys_loc > 0);
+    const int nloc_mean = nTotalFreq_ull/nProcs;
 
     /* LB step */
 
-#if 0
-    const double f = 1.0;
-#else
+#if 0  /* LB: don't use LB, equal number of particles/proc */
+
+    const double f = 1.0; 
+
+#else  /* LB: use LB */
+
     static double prevDurStep = -1;
     static int prevSampFreq = -1;
     prevDurStep = (prevDurStep <= 0) ? lastExecTime : prevDurStep;
 
-    double timeLocal = (lastExecTime + prevDurStep) / 2;
+    double timeLocal = (procId*procId+1); //(lastExecTime + prevDurStep) / 2;
     double timeSum = 0.0;
 
     MPI_Allreduce( &timeLocal, &timeSum, 1,MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
+#if 1   /* MEMB: constrain LB to maintain ballanced memory use */
+    const double mem_imballance = 0.3;
+
 #if 1
-    /* constrain LB to make maintain balanced memory use */
-    const double fmax = 1.0*1.3;
-    const double fmin = 1.0/1.3;
+    const double fac  = 1.0; 
+#else  /* this is equvilent to Eq.(5) in Ishiyama etal 2009 */
+    const double fac  = (double)nkeys_loc/(double)(nloc_mean);
+#endif
+
+    const double fmin = fac/(1.0+mem_imballance);
+#if 1  /* it looks like we must also have upper bound otherwise memory ballancing doesn't work */
+    const double fmax = fac*(1.0+mem_imballance);
 #else
-    /* attempt to achieve perfect LB */
-    const double fmin = 0.0;
     const double fmax = HUGE;
 #endif
+
+#else  /* MEMB: attempt to achieve perfect LB */
+
+    const double fmin = 0.0;
+    const double fmax = HUGE;
+#endif  /* MEMB: end memory balance */
+
     const double f = std::max(std::min(fmax, timeLocal / timeSum * nProcs), fmin);
-#endif
+
+#endif  /* LB: end LB */
 
     /*** particle sampling ***/
 
     const int npx = myComm->n_proc_i;  /* number of procs doing domain decomposition */
 
-    const int nmean = nTotalFreq_ull/nProcs;
-    const int nsamples_glb = nmean / 100;
+    const int nsamples_glb = nloc_mean / 100;
 
     std::vector<DD2D::Key> key_sample1d, key_sample2d;
     key_sample1d.reserve(nsamples_glb);
