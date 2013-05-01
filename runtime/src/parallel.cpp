@@ -875,7 +875,7 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
 
     /* LB step */
 
-    double f = 1.0;
+    double f_lb = 1.0;
 #if 1  /* LB: use load ballacing */
     {
       static double prevDurStep = -1;
@@ -908,7 +908,7 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
 
 #endif  /* MEMB: end memory balance */
 
-      f = std::max(std::min(fmax, timeLocal / timeSum * nProcs), fmin);
+      f_lb = std::max(std::min(fmax, timeLocal / timeSum * nProcs), fmin);
     }
 #endif  /* LB: end LB */
 
@@ -922,8 +922,8 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
     key_sample1d.reserve(nsamples_glb);
     key_sample2d.reserve(nsamples_glb);
 
-    const double nsamples1d_glb = (f * nsamples_glb);
-    const double nsamples2d_glb = (f * nsamples_glb) * npx;
+    const double nsamples1d_glb = (f_lb * nsamples_glb);
+    const double nsamples2d_glb = (f_lb * nsamples_glb) * npx;
 
     const double nTot = nTotalFreq_ull;
     const double stride1d = std::max(nTot/nsamples1d_glb, 1.0);
