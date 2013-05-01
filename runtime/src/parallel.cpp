@@ -875,45 +875,43 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
 
     /* LB step */
 
-#if 0  /* LB: don't use LB, equal number of particles/proc */
+    double f = 1.0;
+#if 1  /* LB: use load ballacing */
+    {
+      static double prevDurStep = -1;
+      static int prevSampFreq = -1;
+      prevDurStep = (prevDurStep <= 0) ? lastExecTime : prevDurStep;
 
-    const double f = 1.0; 
+      double timeLocal = (lastExecTime + prevDurStep) / 2;
+      double timeSum = 0.0;
 
-#else  /* LB: use LB */
+      MPI_Allreduce( &timeLocal, &timeSum, 1,MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
-    static double prevDurStep = -1;
-    static int prevSampFreq = -1;
-    prevDurStep = (prevDurStep <= 0) ? lastExecTime : prevDurStep;
+      double fmin = 0.0;
+      double fmax = HUGE;
 
-    double timeLocal = (procId*procId+1); //(lastExecTime + prevDurStep) / 2;
-    double timeSum = 0.0;
-
-    MPI_Allreduce( &timeLocal, &timeSum, 1,MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-
-#if 1   /* MEMB: constrain LB to maintain ballanced memory use */
-    const double mem_imballance = 0.3;
+#if 1  /* MEMB: constrain LB to maintain ballanced memory use */
+      { 
+        const double mem_imballance = 0.3;
 
 #if 1
-    const double fac  = 1.0; 
+        const double fac  = 1.0; 
 #else  /* this is equvilent to Eq.(5) in Ishiyama etal 2009 */
-    const double fac  = (double)nkeys_loc/(double)(nloc_mean);
+        const double fac  = (double)nkeys_loc/(double)(nloc_mean);
 #endif
 
-    const double fmin = fac/(1.0+mem_imballance);
+        const double fmin = fac/(1.0+mem_imballance);
 #if 1  /* it looks like we must also have upper bound otherwise memory ballancing doesn't work */
-    const double fmax = fac*(1.0+mem_imballance);
+        const double fmax = fac*(1.0+mem_imballance);
 #else
-    const double fmax = HUGE;
+        const double fmax = HUGE;
 #endif
+      }
 
-#else  /* MEMB: attempt to achieve perfect LB */
-
-    const double fmin = 0.0;
-    const double fmax = HUGE;
 #endif  /* MEMB: end memory balance */
 
-    const double f = std::max(std::min(fmax, timeLocal / timeSum * nProcs), fmin);
-
+      f = std::max(std::min(fmax, timeLocal / timeSum * nProcs), fmin);
+    }
 #endif  /* LB: end LB */
 
     /*** particle sampling ***/
