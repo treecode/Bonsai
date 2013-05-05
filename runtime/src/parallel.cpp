@@ -723,7 +723,7 @@ void octree::computeSampleRateSFC(float lastExecTime, int &nSamples, float &samp
 
 void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSamples,
     uint4 *globalSamples, int  *nReceiveCnts, int *nReceiveDpls,
-    int    totalCount,   uint4 *parallelBoundaries, float lastExecTime)
+    int    totalCount,   uint4 *parallelBoundaries)
 {
 #ifdef USE_MPI
 
@@ -871,81 +871,44 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
 
     const int nkeys_loc = localTree.n;
     assert(nkeys_loc > 0);
-    const int nloc_mean = nTotalFreq_ull/nProcs;
 
-    /* LB step */
+    std::vector<DD2D::Key> key_sample;
+    key_sample.reserve(nkeys_loc);
 
-    double f_lb = 1.0;
-#if 1  /* LB: use load ballacing */
-    {
-      static double prevDurStep = -1;
-      static int prevSampFreq = -1;
-      prevDurStep = (prevDurStep <= 0) ? lastExecTime : prevDurStep;
-
-      double timeLocal = (lastExecTime + prevDurStep) / 2;
-      double timeSum = 0.0;
-
-      MPI_Allreduce( &timeLocal, &timeSum, 1,MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-
-      double fmin = 0.0;
-      double fmax = HUGE;
-
-#if 1  /* MEMB: constrain LB to maintain ballanced memory use */
-      { 
-        const double mem_imballance = 0.3;
-
-        double fac = 1.0;
-#if 1   /* this is equvilent to Eq.(5) in Ishiyama etal 2009 */
-        fac  = (double)nkeys_loc/(double)(nloc_mean);
-#endif
-
-        fmin = fac/(1.0+mem_imballance);
-        fmax = HUGE;
-#if 1  /* it looks like we must also have upper bound otherwise memory ballancing doesn't work */
-        fmax = fac*(1.0+mem_imballance);
-#endif
-      }
-
-#endif  /* MEMB: end memory balance */
-
-      f_lb = std::max(std::min(fmax, timeLocal / timeSum * nProcs), fmin);
-    }
-#endif  /* LB: end LB */
-
-    /*** particle sampling ***/
+    /**** sample keys ****/
 
     const int npx = myComm->n_proc_i;  /* number of procs doing domain decomposition */
 
-    const int nsamples_glb = nloc_mean / 100;
+#if 0  /* evghenii: somehow, this choice increases imballance. don't get why ... */
+    const int nmean = nTotalFreq_ull/nProcs;
+    const int nsamples_glb = nmean / 10;
+#else
+    const int nsamples_glb = nkeys_loc / 50;
+#endif
 
-    std::vector<DD2D::Key> key_sample1d, key_sample2d;
-    key_sample1d.reserve(nsamples_glb);
-    key_sample2d.reserve(nsamples_glb);
+    /*** sample keys ***/
 
-    const double nsamples1d_glb = (f_lb * nsamples_glb);
-    const double nsamples2d_glb = (f_lb * nsamples_glb) * npx;
-
-    const double nTot = nTotalFreq_ull;
-    const double stride1d = std::max(nTot/nsamples1d_glb, 1.0);
-    const double stride2d = std::max(nTot/nsamples2d_glb, 1.0);
-    for (double i = 0; i < (double)nkeys_loc; i += stride1d)
+    const int nsamples_loc = nsamples_glb / npx;
+    const double stride = std::max((double)nkeys_loc/(double)nsamples_loc, 1.0);
+    for (double i = 0; i < (double)nkeys_loc; i += stride)
     {
       const uint4 key = localTree.bodies_key[(int)i];
-      key_sample1d.push_back(DD2D::Key(
-            (static_cast<unsigned long long>(key.y) ) | 
-            (static_cast<unsigned long long>(key.x) << 32) 
-            ));
-    }
-    for (double i = 0; i < (double)nkeys_loc; i += stride2d)
-    {
-      const uint4 key = localTree.bodies_key[(int)i];
-      key_sample2d.push_back(DD2D::Key(
+      key_sample.push_back(DD2D::Key(
             (static_cast<unsigned long long>(key.y) ) | 
             (static_cast<unsigned long long>(key.x) << 32) 
             ));
     }
 
-    const DD2D dd(procId, npx, nProcs, key_sample1d, key_sample2d, MPI_COMM_WORLD);
+#if 0  /* diagonostic, sanity check */
+    {
+      int nkeys_loc = key_sample.size();
+      int nkeys_glb = 0;
+      MPI_Allreduce(&nkeys_loc, &nkeys_glb, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+      assert(nkeys_glb <= nsamples_glb*npx);
+    }
+#endif
+
+    const DD2D dd(procId, npx, nProcs, key_sample, MPI_COMM_WORLD);
 
     /* distribute keys */
     for (int p = 0; p < nProcs; p++)
