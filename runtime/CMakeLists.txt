@@ -14,7 +14,7 @@ option(CUDA_DEVICE_DEBUGGING
 
 option(USE_MPI
   "On to build support for MPI"
-  OFF
+  ON
   )
 
 option(USE_GALACTICS
@@ -40,7 +40,7 @@ option(USE_THRUST
 
 option(USE_B40C
   "On to use B40C sorting"
-  OFF
+  ON
   )
   
 option(COMPILE_SM30
@@ -50,7 +50,7 @@ option(COMPILE_SM30
 
 option(USE_DUST
   "On to enable dust rendering"
-  ON
+  OFF
   )
  
 option(CUDA_KEEP_INTERMEDIATE_FILES
