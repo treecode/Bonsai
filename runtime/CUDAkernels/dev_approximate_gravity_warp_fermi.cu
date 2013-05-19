@@ -1005,7 +1005,7 @@ __launch_bounds__(NTHREAD)
 
   const int nWarps2 = blockDim2 - WARP_SIZE2;
   const int sh_offs = (shMemSize >> nWarps2) * warpId;
-  int *shmem = shmem_pool + sh_offs;
+  volatile int *shmem = shmem_pool + sh_offs;
 
   /*********** check if this block is linked to a leaf **********/
 
