@@ -30,20 +30,26 @@ inline float host_int_as_float(int val)
 void octree::makeLET()
 {
    //LET code test
-  double tTest = get_time();
+  double t00 = get_time();
 
 
   //Start copies, while grpTree info is exchanged
   localTree.boxSizeInfo.d2h  (localTree.n_nodes,   false, LETDataToHostStream->s());
   localTree.boxCenterInfo.d2h(localTree.n_nodes,   false, LETDataToHostStream->s());
-  localTree.multipole.d2h    (3*localTree.n_nodes, false, copyStream->s());
+  //localTree.multipole.d2h    (3*localTree.n_nodes, false, copyStream->s());
+  localTree.multipole.d2h    (3*localTree.n_nodes, false, LETDataToHostStream->s());
+  localTree.boxSizeInfo.waitForCopyEvent();
+  localTree.boxCenterInfo.waitForCopyEvent();
   
+  double t10 = get_time();
   //Exchange domain grpTrees, while memory copies take place
   this->sendCurrentInfoGrpTree();
 
-  localTree.boxSizeInfo.waitForCopyEvent();
-  localTree.boxCenterInfo.waitForCopyEvent();
+  double t20 = get_time();
 
+
+
+#if 0
   //Build the pre-processed array, while multipole-memory copy is (possibly) still going on
   nInfoStruct *nodeInfo = new nInfoStruct[localTree.n_nodes];
   nInfoStruct nInfo;
@@ -57,28 +63,20 @@ void octree::makeLET()
     nInfo.z     = 0;
     nodeInfo[i] = nInfo;
   }
-
+#endif
   localTree.multipole.waitForCopyEvent();
 
-//
-//  Hier gebleven
-//  Code schrijven die een extract maakt van de bovenste levels
-//  Kan dat niet op de GPU?
-//  Misschien wel, maar dan gekloot met offsets, sneller om zelfde te doen
-//  [info][particles][nodes start-level][nodes start-level+1]
-//
-//  Buffer nodig? Kunnen aantal nodes halen uit level list
-//  aantal particles niet
+  nInfoStruct *nodeInfo = NULL;
+  union{float f; int i;} u; //__float_as_int
 
   //The next piece of code, makes extracts from our tree-structure. This is done for the "copyTreeUpToLevel"
   //top levels. These small trees can then be send to other processors, that are far away. This should be
   //more efficient then making a tree for each of them.
 
-  //I make multiple copies depending on which level the tree has to go to. This to reduce
-  //data size that is being send around.
+  //Multiple copies are maded depending on which level the tree has to go to.
+  //This to reduce data size that is being send around.
 
-
-  double t00        = get_time();
+  double t30        = get_time();
   int startLevel    = this->localTree.startLevelMin;
   uint2 node_begend;
 
@@ -222,7 +220,9 @@ void octree::makeLET()
   }
 #endif
 
-  LOGF(stderr,"MakeLET Preparing top trees took: %lg Total: %lg \n", get_time() -t00, get_time()-tTest);
+  double t40 = get_time();
+  LOGF(stderr,"MakeLET Preparing data-copy: %lg  sendGroups: %lg Copy: %lg TreeCpy: %lg Total: %lg \n",
+               t10-t00, t20-t10, t30-t20, t40-t30, t40-t00);
 
 
  //End tree-extract
@@ -232,7 +232,7 @@ void octree::makeLET()
   essential_tree_exchangeV2(localTree, remoteTree, nodeInfo, topLevelsBuffer, treeSizeAndOffset, copyTreeUpToLevel);
 
   
-  delete[] nodeInfo;
+  //if(nodeInfo) delete[] nodeInfo;
 
   letRunning = false;
 }

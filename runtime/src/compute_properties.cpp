@@ -129,9 +129,9 @@ void octree::compute_properties(tree_structure &tree) {
     setPHGroupDataGetKey2.set_arg<cl_mem>(3, grpKeys.p());
     setPHGroupDataGetKey2.set_arg<float4>(4, &tree.corner);
     setPHGroupDataGetKey2.setWork(tree.n_groups, 128);
-    setPHGroupDataGetKey2.execute(LETDataToHostStream->s());
+    //    setPHGroupDataGetKey2.execute(LETDataToHostStream->s());
     //Copy the data back to the host when their compute-streams are complete
-    grpKeys.d2h(false, LETDataToHostStream->s());
+    //    grpKeys.d2h(false, LETDataToHostStream->s());
   }
 
   //Set the group properties
@@ -165,14 +165,14 @@ void octree::compute_properties(tree_structure &tree) {
 
   //This overlaps with setPHGroupData and is async, we can safely use the same memory
   //as the multipoleD buffer because of the sync afterwards.
-  if(nProcs > 1)
-  {
-    tree.groupCenterInfo.d2h(false, copyStream->s());
-    tree.groupSizeInfo.d2h  (false, copyStream->s());
-
-    //have to wait till this copy is complete until props can be computed
-    grpKeys.waitForCopyEvent();
-  }
+//  if(nProcs > 1)
+//  {
+//    tree.groupCenterInfo.d2h(false, copyStream->s());
+//    tree.groupSizeInfo.d2h  (false, copyStream->s());
+//
+//    //have to wait till this copy is complete until props can be computed
+//    grpKeys.waitForCopyEvent();
+//  }
 
   double tA = get_time();
 
@@ -247,7 +247,7 @@ void octree::compute_properties(tree_structure &tree) {
     if(nProcs > 1)
     {
       LOGF(stderr, "Starting all compute-properties kernels took; %lg  start: %lg \n", get_time()-tA, get_time()-t0);
-
+#if 0
       //Build the group tree
       double tlocal = get_time();
       //Reuse some already allocated memory
@@ -373,6 +373,9 @@ void octree::compute_properties(tree_structure &tree) {
       //Now if the GPU is not done yet with computing properties we could start sending around
       //the grpTree properties. However we can't use async communication for now. So postpone
       //that method.
+#endif
+      //Start copying the particle positions to the host, will overlap with compute properties
+      localTree.bodies_Ppos.d2h(tree.n, false, LETDataToHostStream->s());
     }
 
   //Keep this sync for now since otherwise we run the risk that memory objects are destroyed
