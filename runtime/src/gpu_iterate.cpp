@@ -745,6 +745,18 @@ if(iter < 32)
     return false;
 }
 
+void debugPrintProgress(int procId, int p)
+{
+#ifdef USE_MPI
+  MPI_Barrier(MPI_COMM_WORLD);
+  if (procId == 0)
+  {
+    fprintf(stderr, " === %d === \n", p);
+  }
+  MPI_Barrier(MPI_COMM_WORLD);
+#endif
+}
+
 void octree::iterate_setup(IterationData &idata) {
   real4 r_min, r_max;
   
@@ -769,44 +781,15 @@ void octree::iterate_setup(IterationData &idata) {
 
   devContext.writeLogEvent("Starting execution \n");
   
-  MPI_Barrier(MPI_COMM_WORLD);
-  if (procId == 0)
-  {
-	  fprintf(stderr, " === 1 === \n");
-  }
-  MPI_Barrier(MPI_COMM_WORLD);
-
   //Start construction of the tree
   sort_bodies(localTree, true);
-  MPI_Barrier(MPI_COMM_WORLD);
-  if (procId == 0)
-  {
-	  fprintf(stderr, " === 10 === \n");
-  }
-  MPI_Barrier(MPI_COMM_WORLD);
+  debugPrintProgress(procId,10);
   build(localTree);
-  MPI_Barrier(MPI_COMM_WORLD);
-  if (procId == 0)
-  {
-	  fprintf(stderr, " === 20 === \n");
-  }
-  MPI_Barrier(MPI_COMM_WORLD);
+  debugPrintProgress(procId,20);
   allocateTreePropMemory(localTree);
-  MPI_Barrier(MPI_COMM_WORLD);
-  if (procId == 0)
-  {
-	  fprintf(stderr, " === 30 === \n");
-  }
-  MPI_Barrier(MPI_COMM_WORLD);
+  debugPrintProgress(procId,30);
   compute_properties(localTree);
-
-  MPI_Barrier(MPI_COMM_WORLD);
-  if (procId == 0)
-  {
-	  fprintf(stderr, " === 2 === \n");
-  }
-  MPI_Barrier(MPI_COMM_WORLD);
-
+  debugPrintProgress(procId,2);
   letRunning = false;
      
   double t1;
@@ -815,13 +798,7 @@ void octree::iterate_setup(IterationData &idata) {
   //Will be at time 0
   //predict localtree
   predict(this->localTree);
-
-  MPI_Barrier(MPI_COMM_WORLD);
-  if (procId == 0)
-  {
-	  fprintf(stderr, " === 200 === \n");
-  }
-  MPI_Barrier(MPI_COMM_WORLD);
+  debugPrintProgress(procId,200);
   double notUsed = 0;
   if(nProcs > 1)
     parallelDataSummary(localTree, 30, 30, notUsed, notUsed); //1 for all process, equal part distribution
@@ -990,19 +967,7 @@ void octree::iterate_teardown(IterationData &idata) {
 
 void octree::iterate() {
   IterationData idata;
-  MPI_Barrier(MPI_COMM_WORLD);
-  if (procId == 0)
-  {
-	  fprintf(stderr, " begin -- iterate setup \n");
-  }
-  MPI_Barrier(MPI_COMM_WORLD);
   iterate_setup(idata);
-  MPI_Barrier(MPI_COMM_WORLD);
-  if (procId == 0)
-  {
-	  fprintf(stderr, " end -- iterate setup \n");
-  }
-  MPI_Barrier(MPI_COMM_WORLD);
 
   for(int i=0; i < 10000000; i++) //Large number, limit
   {

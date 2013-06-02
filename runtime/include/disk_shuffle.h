@@ -11,7 +11,7 @@ struct DiskShuffle
       sp.clear();
       dp.clear();
 
-      fread(&h, sizeof(h), 1, in);
+      size_t res = fread(&h, sizeof(h), 1, in);
 
       const float time = h.time;
       const int nstar = h.nstar;
@@ -20,12 +20,12 @@ struct DiskShuffle
       for(int i=0;i<ndark;i++)
       {
         dark_particle _dp;
-        fread(&_dp, sizeof(dark_particle), 1, in);  
+        res = fread(&_dp, sizeof(dark_particle), 1, in);
         dp.push_back(_dp);
       }
       for(int i=0;i<nstar;i++){     
         star_particle _sp;
-        fread(&_sp, sizeof(star_particle), 1, in);
+        res = fread(&_sp, sizeof(star_particle), 1, in);
         sp.push_back(_sp);
       }
     }

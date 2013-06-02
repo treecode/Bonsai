@@ -1288,7 +1288,7 @@ int main(int argc, char** argv)
   else
     assert(0);
 
-  MPI_Barrier(MPI_COMM_WORLD);
+  tree->mpiSync();
 
 
 #ifdef TIPSYOUTPUT
@@ -1343,32 +1343,6 @@ int main(int argc, char** argv)
 
   if(procId == 0)   LOGF(stderr, "Combined Mass: %f \tNTotal: %d \n", totalMass, NTotal);
 
-  /* //Domain setup
-     tree->createORB();
-
-  //First distribute the initial particle distribution
-  //over all available processes
-  if(tree->nProcs > 1)
-  {
-  tree->createDistribution(&bodyPositions[0], (int)bodyPositions.size());  
-  }
-
-  //Print the domain division
-  if(tree->nProcs > 1)
-  {
-  if(tree->procId == 0)
-  for(int i = 0;i< tree->nProcs;i++)     
-  {
-  LOGF(stderr,"Domain: %d\t%f %f %f \t %f %f %f \n",
-  i,
-  tree->domainRLow[i].x,  tree->domainRLow[i].y,  tree->domainRLow[i].z,
-  tree->domainRHigh[i].x, tree->domainRHigh[i].y, tree->domainRHigh[i].z);
-  }
-  }
-
-  tree->mpiSync();  */
-
-
   LOG("Starting! Bootup time: %lg \n", tree->get_time()-tStartup);
 
 
@@ -1400,52 +1374,12 @@ int main(int argc, char** argv)
   //  tree->devContext.writeLogEvent("Send data to device\n");
 
 
-#if USE_HASH_TABLE_DOMAIN_DECOMP
 
-#else
 #ifdef USE_MPI
   //Use sampling particles, determine frequency
-  MPI_Barrier(MPI_COMM_WORLD);
-  if (procId == 0)
-  {
-    fprintf(stderr,"Send data to device proc: %d \n", procId);
-    fprintf(stderr, "ready to send ptcl \n");
-  }
-  tree->determine_sample_freq(tree->localTree.n); //Determine initial frequency
-  if (procId == 0)
-  {
-    fprintf(stderr, "done!!! sending ptcl \n");
-  }
-  MPI_Barrier(MPI_COMM_WORLD);
-#endif
+  tree->mpiSumParticleCount(tree->localTree.n); //Determine initial frequency
 #endif
 
-  //Distribute the particles so each process has particles
-  //assigned to his domain
-  //  if(nProcs > 1)
-  if(0)
-  {    
-    double ttemp = tree->get_time();
-    LOG("Before exchange tree has : %d particles \n", tree->localTree.n);
-    while(tree->exchange_particles_with_overflow_check(tree->localTree));
-    LOG("After exchange tree has : %d particles \n", tree->localTree.n);
-    //Send the new and old particles to the device
-    tree->localTree.bodies_pos.h2d();
-    tree->localTree.bodies_vel.h2d();
-    tree->localTree.bodies_ids.h2d();
-    tree->localTree.bodies_acc0.h2d();
-    tree->localTree.bodies_acc1.h2d();
-    tree->localTree.bodies_time.h2d();
-
-    //This is only required the first time since we have no predict call before we build the tree
-    //Every next call this is not required since the predict call fills the predicted positions
-    tree->localTree.bodies_Ppos.copy(tree->localTree.bodies_pos,
-        tree->localTree.bodies_pos.get_size());
-    tree->localTree.bodies_Pvel.copy(tree->localTree.bodies_vel,
-        tree->localTree.bodies_vel.get_size());
-
-    LOG("Initial exchange Took in total: %lg sec\n", tree->get_time()-ttemp);
-  }
 
   //If required set the dust particles
 #ifdef USE_DUST
@@ -1483,10 +1417,10 @@ int main(int argc, char** argv)
   initAppRenderer(argc, argv, tree, idata, displayFPS);
   LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
 #else
-  MPI_Barrier(MPI_COMM_WORLD);
+  tree->mpiSync();
   if (procId==0)
     fprintf(stderr, " Starting iterating\n");
-  MPI_Barrier(MPI_COMM_WORLD);
+  tree->mpiSync();
   tree->iterate(); 
 
   LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
@@ -1499,13 +1433,13 @@ int main(int argc, char** argv)
 
   if(tree->procId == 0)
   {
-    LOGF(stderr, "TOTAL:   Time spent between the start of 'iterate' and the final time-step (very first step is not accounted)\n");
-    LOGF(stderr, "Grav:    Time spent to compute gravity, including communication (wall-clock time)\n");
-    LOGF(stderr, "GPUgrav: Time spent ON the GPU to compute local and LET gravity\n");
-    LOGF(stderr, "LET Com: Time spent in exchanging and building LET data\n");
-    LOGF(stderr, "Build:   Time spent in constructing the tree (incl sorting, making groups, etc.)\n");
-    LOGF(stderr, "Domain:  Time spent in computing new domain decomposition and exchanging particles between nodes.\n");
-    LOGF(stderr, "Wait:    Time spent in waiting on other processes after the gravity part.\n");
+    LOGF(stderr, "TOTAL:   Time spent between the start of 'iterate' and the final time-step (very first step is not accounted)\n",0);
+    LOGF(stderr, "Grav:    Time spent to compute gravity, including communication (wall-clock time)\n",0);
+    LOGF(stderr, "GPUgrav: Time spent ON the GPU to compute local and LET gravity\n",0);
+    LOGF(stderr, "LET Com: Time spent in exchanging and building LET data\n",0);
+    LOGF(stderr, "Build:   Time spent in constructing the tree (incl sorting, making groups, etc.)\n",0);
+    LOGF(stderr, "Domain:  Time spent in computing new domain decomposition and exchanging particles between nodes.\n",0);
+    LOGF(stderr, "Wait:    Time spent in waiting on other processes after the gravity part.\n",0);
   }
 
 

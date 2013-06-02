@@ -1,81 +1,6 @@
 #include "octree.h"
 
 
-static uint4 host_get_key(int4 crd)
-{
-  const int bits = 30;  //20 to make it same number as morton order
-  int i,xi, yi, zi;
-  int mask;
-  int key;
-
-  mask = crd.y;
-  crd.y = crd.z;
-  crd.z = mask;
-
-  //0= 000, 1=001, 2=011, 3=010, 4=110, 5=111, 6=101, 7=100
-  //000=0=0, 001=1=1, 011=3=2, 010=2=3, 110=6=4, 111=7=5, 101=5=6, 100=4=7
-  const int C[8] = {0, 1, 7, 6, 3, 2, 4, 5};
-
-  int temp;
-
-  mask = 1 << (bits - 1);
-  key  = 0;
-
-  uint4 key_new;
-
-  for(i = 0; i < bits; i++, mask >>= 1)
-  {
-    xi = (crd.x & mask) ? 1 : 0;
-    yi = (crd.y & mask) ? 1 : 0;
-    zi = (crd.z & mask) ? 1 : 0;
-
-    int index = (xi << 2) + (yi << 1) + zi;
-
-    if(index == 0)
-    {
-      temp = crd.z; crd.z = crd.y; crd.y = temp;
-    }
-    else  if(index == 1 || index == 5)
-    {
-      temp = crd.x; crd.x = crd.y; crd.y = temp;
-    }
-    else  if(index == 4 || index == 6)
-    {
-      crd.x = (crd.x) ^ (-1);
-      crd.z = (crd.z) ^ (-1);
-    }
-    else  if(index == 7 || index == 3)
-    {
-      temp = (crd.x) ^ (-1);
-      crd.x = (crd.y) ^ (-1);
-      crd.y = temp;
-    }
-    else
-    {
-      temp = (crd.z) ^ (-1);
-      crd.z = (crd.y) ^ (-1);
-      crd.y = temp;
-    }
-
-    key = (key << 3) + C[index];
-
-    if(i == 19)
-    {
-      key_new.y = key;
-      key = 0;
-    }
-    if(i == 9)
-    {
-      key_new.x = key;
-      key = 0;
-    }
-  } //end for
-
-   key_new.z = key;
-
-  return key_new;
-}
-
 
 void octree::compute_properties(tree_structure &tree) {
 
@@ -107,32 +32,10 @@ void octree::compute_properties(tree_structure &tree) {
       memBufOffset = nodeLowerBounds.cmalloc_copy(tree.generalBuffer1, tree.n_nodes, memBufOffset);
       memBufOffset = nodeUpperBounds.cmalloc_copy(tree.generalBuffer1, tree.n_nodes, memBufOffset);
 
-  my_dev::dev_mem<uint4>  grpKeys(devContext);
-  int grpKeysOffset = grpKeys.cmalloc_copy(tree.generalBuffer1, tree.n_groups, 0); //Overlaps with multipoleD
-  
+
   double t0 = get_time();
 
   this->resetCompact(); //Make sure compact has been reset, for setActiveGrp later on
-
-    //Get the keys of the groups. This is the key of the first body in the group. This is used over
-    //the group center since now we do not require a sort operation to construct the groups. Since
-    //the particles on one process are in the correct order
-    //TODO test overall performance (build and tree-walk) when using center+sort instead of first + nosort
-
-  if(nProcs > 1)
-  {
-    //Quickly compute the keys of the groups. Done in a separate kernel since it was (much)
-    //faster than combining it with the summary function
-    setPHGroupDataGetKey2.set_arg<int>(0,    &tree.n_groups);
-    setPHGroupDataGetKey2.set_arg<cl_mem>(1, tree.bodies_Ppos.p());
-    setPHGroupDataGetKey2.set_arg<cl_mem>(2, tree.group_list.p());
-    setPHGroupDataGetKey2.set_arg<cl_mem>(3, grpKeys.p());
-    setPHGroupDataGetKey2.set_arg<float4>(4, &tree.corner);
-    setPHGroupDataGetKey2.setWork(tree.n_groups, 128);
-    //    setPHGroupDataGetKey2.execute(LETDataToHostStream->s());
-    //Copy the data back to the host when their compute-streams are complete
-    //    grpKeys.d2h(false, LETDataToHostStream->s());
-  }
 
   //Set the group properties
   setPHGroupData.set_arg<int>(0,    &tree.n_groups);
@@ -161,18 +64,6 @@ void octree::compute_properties(tree_structure &tree) {
 //  this->resetCompact();
   LOG("t_previous: %lg t_current: %lg dt: %lg Active groups: %d (Total: %d)\n",
          t_previous, t_current, t_current-t_previous, tree.n_active_groups, tree.n_groups);
-
-
-  //This overlaps with setPHGroupData and is async, we can safely use the same memory
-  //as the multipoleD buffer because of the sync afterwards.
-//  if(nProcs > 1)
-//  {
-//    tree.groupCenterInfo.d2h(false, copyStream->s());
-//    tree.groupSizeInfo.d2h  (false, copyStream->s());
-//
-//    //have to wait till this copy is complete until props can be computed
-//    grpKeys.waitForCopyEvent();
-//  }
 
   double tA = get_time();
 
@@ -247,6 +138,218 @@ void octree::compute_properties(tree_structure &tree) {
     if(nProcs > 1)
     {
       LOGF(stderr, "Starting all compute-properties kernels took; %lg  start: %lg \n", get_time()-tA, get_time()-t0);
+
+      //Start copying the particle positions to the host, will overlap with compute properties
+      localTree.bodies_Ppos.d2h(tree.n, false, LETDataToHostStream->s());
+    }
+
+  //Keep this sync for now since otherwise we run the risk that memory objects are destroyed
+  //while still being in use (like multipoleD).
+  double t1 = get_time();
+  execStream->sync();
+  LOGF(stderr, "Compute properties took: %lg  wait: %lg \n", get_time()-t0, get_time()-t1);
+
+
+
+#if 0
+
+
+if(iter == 20)
+{
+   char fileName[256];
+    sprintf(fileName, "groups-%d.bin", mpiGetRank());
+    ofstream nodeFile;
+    nodeFile.open(fileName, ios::out | ios::binary);
+    if(nodeFile.is_open())
+    {
+      nodeFile.write((char*)&tree.n_groups, sizeof(int));
+
+      for(int i=0; i < tree.n_groups; i++)
+      {
+        nodeFile.write((char*)&tree.groupSizeInfo[i],  sizeof(real4)); //size
+        nodeFile.write((char*)&tree.groupCenterInfo[i], sizeof(real4)); //center
+      }
+    }
+  }
+
+ //Write the tree-structure
+ if(iter == 20)
+ {
+   tree.multipole.d2h();
+  tree.boxSizeInfo.d2h();
+  tree.boxCenterInfo.d2h();
+  tree.bodies_Ppos.d2h();
+
+    char fileName[256];
+    sprintf(fileName, "fullTreeStructure-%d.bin", mpiGetRank());
+    ofstream nodeFile;
+    //nodeFile.open(nodeFileName.c_str());
+    nodeFile.open(fileName, ios::out | ios::binary);
+    if(nodeFile.is_open())
+    {
+      uint2 node_begend;
+      int level_start = tree.startLevelMin;
+      node_begend.x   = tree.level_list[level_start].x;
+      node_begend.y   = tree.level_list[level_start].y;
+
+      nodeFile.write((char*)&node_begend.x, sizeof(int));
+      nodeFile.write((char*)&node_begend.y, sizeof(int));
+      nodeFile.write((char*)&tree.n_nodes, sizeof(int));
+      nodeFile.write((char*)&tree.n, sizeof(int));
+
+      for(int i=0; i < tree.n; i++)
+      {
+        nodeFile.write((char*)&tree.bodies_Ppos[i], sizeof(real4));
+      }
+
+      for(int i=0; i < tree.n_nodes; i++)
+      {
+        nodeFile.write((char*)&tree.multipole[3*i+0], sizeof(real4));
+        nodeFile.write((char*)&tree.multipole[3*i+1], sizeof(real4));
+        nodeFile.write((char*)&tree.multipole[3*i+2], sizeof(real4));;
+      }
+
+      for(int i=0; i < tree.n_nodes; i++)
+      {
+        nodeFile.write((char*)&tree.boxSizeInfo[i], sizeof(real4));
+      }
+      for(int i=0; i < tree.n_nodes; i++)
+      {
+        nodeFile.write((char*)&tree.boxCenterInfo[i], sizeof(real4));
+      }
+
+      nodeFile.close();
+    }
+}
+#endif
+
+} //compute_propertiesD
+
+
+
+
+#if 0
+  my_dev::dev_mem<uint4>  grpKeys(devContext);
+  int grpKeysOffset = grpKeys.cmalloc_copy(tree.generalBuffer1, tree.n_groups, 0); //Overlaps with multipoleD
+
+    //Get the keys of the groups. This is the key of the first body in the group. This is used over
+    //the group center since now we do not require a sort operation to construct the groups. Since
+    //the particles on one process are in the correct order
+    //TODO test overall performance (build and tree-walk) when using center+sort instead of first + nosort
+
+
+  if(nProcs > 1)
+  {
+    //Quickly compute the keys of the groups. Done in a separate kernel since it was (much)
+    //faster than combining it with the summary function
+    setPHGroupDataGetKey2.set_arg<int>(0,    &tree.n_groups);
+    setPHGroupDataGetKey2.set_arg<cl_mem>(1, tree.bodies_Ppos.p());
+    setPHGroupDataGetKey2.set_arg<cl_mem>(2, tree.group_list.p());
+    setPHGroupDataGetKey2.set_arg<cl_mem>(3, grpKeys.p());
+    setPHGroupDataGetKey2.set_arg<float4>(4, &tree.corner);
+    setPHGroupDataGetKey2.setWork(tree.n_groups, 128);
+    //    setPHGroupDataGetKey2.execute(LETDataToHostStream->s());
+    //Copy the data back to the host when their compute-streams are complete
+    //    grpKeys.d2h(false, LETDataToHostStream->s());
+  }
+
+
+  //This overlaps with setPHGroupData and is async, we can safely use the same memory
+  //as the multipoleD buffer because of the sync afterwards.
+//  if(nProcs > 1)
+//  {
+//    tree.groupCenterInfo.d2h(false, copyStream->s());
+//    tree.groupSizeInfo.d2h  (false, copyStream->s());
+//
+//    //have to wait till this copy is complete until props can be computed
+//    grpKeys.waitForCopyEvent();
+//  }
+
+
+
+#endif
+
+
+  //
+  //static uint4 host_get_key(int4 crd)
+  //{
+  //  const int bits = 30;  //20 to make it same number as morton order
+  //  int i,xi, yi, zi;
+  //  int mask;
+  //  int key;
+  //
+  //  mask = crd.y;
+  //  crd.y = crd.z;
+  //  crd.z = mask;
+  //
+  //  //0= 000, 1=001, 2=011, 3=010, 4=110, 5=111, 6=101, 7=100
+  //  //000=0=0, 001=1=1, 011=3=2, 010=2=3, 110=6=4, 111=7=5, 101=5=6, 100=4=7
+  //  const int C[8] = {0, 1, 7, 6, 3, 2, 4, 5};
+  //
+  //  int temp;
+  //
+  //  mask = 1 << (bits - 1);
+  //  key  = 0;
+  //
+  //  uint4 key_new;
+  //
+  //  for(i = 0; i < bits; i++, mask >>= 1)
+  //  {
+  //    xi = (crd.x & mask) ? 1 : 0;
+  //    yi = (crd.y & mask) ? 1 : 0;
+  //    zi = (crd.z & mask) ? 1 : 0;
+  //
+  //    int index = (xi << 2) + (yi << 1) + zi;
+  //
+  //    if(index == 0)
+  //    {
+  //      temp = crd.z; crd.z = crd.y; crd.y = temp;
+  //    }
+  //    else  if(index == 1 || index == 5)
+  //    {
+  //      temp = crd.x; crd.x = crd.y; crd.y = temp;
+  //    }
+  //    else  if(index == 4 || index == 6)
+  //    {
+  //      crd.x = (crd.x) ^ (-1);
+  //      crd.z = (crd.z) ^ (-1);
+  //    }
+  //    else  if(index == 7 || index == 3)
+  //    {
+  //      temp = (crd.x) ^ (-1);
+  //      crd.x = (crd.y) ^ (-1);
+  //      crd.y = temp;
+  //    }
+  //    else
+  //    {
+  //      temp = (crd.z) ^ (-1);
+  //      crd.z = (crd.y) ^ (-1);
+  //      crd.y = temp;
+  //    }
+  //
+  //    key = (key << 3) + C[index];
+  //
+  //    if(i == 19)
+  //    {
+  //      key_new.y = key;
+  //      key = 0;
+  //    }
+  //    if(i == 9)
+  //    {
+  //      key_new.x = key;
+  //      key = 0;
+  //    }
+  //  } //end for
+  //
+  //   key_new.z = key;
+  //
+  //  return key_new;
+  //}
+
+
+
+
+
 #if 0
       //Build the group tree
       double tlocal = get_time();
@@ -279,15 +382,15 @@ void octree::compute_properties(tree_structure &tree) {
       localTree.bodies_Ppos.d2h(tree.n, false, LETDataToHostStream->s());
 
       //Reorder the groupCenter and groupSize arrays after the ordering of the keys
-      for(int i=0; i < tree.n_groups; i++)	
-	{
-		tempGrpBuffer[i] 		= tree.groupCenterInfo[grpKeys[i].w];
-		tempGrpBuffer[i+tree.n_groups]  = tree.groupSizeInfo  [grpKeys[i].w];
-	}
-	memcpy(&tree.groupCenterInfo[0], &tempGrpBuffer[0], 		sizeof(real4)*tree.n_groups);
-	memcpy(&tree.groupSizeInfo[0],   &tempGrpBuffer[tree.n_groups], sizeof(real4)*tree.n_groups);
+      for(int i=0; i < tree.n_groups; i++)
+  {
+    tempGrpBuffer[i]    = tree.groupCenterInfo[grpKeys[i].w];
+    tempGrpBuffer[i+tree.n_groups]  = tree.groupSizeInfo  [grpKeys[i].w];
+  }
+  memcpy(&tree.groupCenterInfo[0], &tempGrpBuffer[0],     sizeof(real4)*tree.n_groups);
+  memcpy(&tree.groupSizeInfo[0],   &tempGrpBuffer[tree.n_groups], sizeof(real4)*tree.n_groups);
 
-	delete[] tempGrpBuffer;
+  delete[] tempGrpBuffer;
 
       //We make a copy of the topGroups before the rest of the groups
       //These will be send to far away processes instead of the full-tree
@@ -374,90 +477,6 @@ void octree::compute_properties(tree_structure &tree) {
       //the grpTree properties. However we can't use async communication for now. So postpone
       //that method.
 #endif
-      //Start copying the particle positions to the host, will overlap with compute properties
-      localTree.bodies_Ppos.d2h(tree.n, false, LETDataToHostStream->s());
-    }
-
-  //Keep this sync for now since otherwise we run the risk that memory objects are destroyed
-  //while still being in use (like multipoleD).
-  double t1 = get_time();
-  execStream->sync();
-  LOGF(stderr, "Compute properties took: %lg  wait: %lg \n", get_time()-t0, get_time()-t1);
-
-
-
-#if 0
-
-
-if(iter == 20)
-{
-   char fileName[256];
-    sprintf(fileName, "groups-%d.bin", mpiGetRank());
-    ofstream nodeFile;
-    nodeFile.open(fileName, ios::out | ios::binary);
-    if(nodeFile.is_open())
-    {
-      nodeFile.write((char*)&tree.n_groups, sizeof(int));
-      
-      for(int i=0; i < tree.n_groups; i++)
-      {
-        nodeFile.write((char*)&tree.groupSizeInfo[i],  sizeof(real4)); //size
-        nodeFile.write((char*)&tree.groupCenterInfo[i], sizeof(real4)); //center
-      }
-    }
-  }    
-
- //Write the tree-structure
- if(iter == 20)
- {
-   tree.multipole.d2h();
-  tree.boxSizeInfo.d2h();
-  tree.boxCenterInfo.d2h();
-  tree.bodies_Ppos.d2h();
-  
-    char fileName[256];
-    sprintf(fileName, "fullTreeStructure-%d.bin", mpiGetRank());
-    ofstream nodeFile;
-    //nodeFile.open(nodeFileName.c_str());
-    nodeFile.open(fileName, ios::out | ios::binary);
-    if(nodeFile.is_open())
-    {
-      uint2 node_begend;
-      int level_start = tree.startLevelMin;
-      node_begend.x   = tree.level_list[level_start].x;
-      node_begend.y   = tree.level_list[level_start].y;
-
-      nodeFile.write((char*)&node_begend.x, sizeof(int));
-      nodeFile.write((char*)&node_begend.y, sizeof(int));      
-      nodeFile.write((char*)&tree.n_nodes, sizeof(int));
-      nodeFile.write((char*)&tree.n, sizeof(int));
-      
-      for(int i=0; i < tree.n; i++)
-      {
-        nodeFile.write((char*)&tree.bodies_Ppos[i], sizeof(real4));
-      }
-
-      for(int i=0; i < tree.n_nodes; i++)
-      {
-        nodeFile.write((char*)&tree.multipole[3*i+0], sizeof(real4));
-        nodeFile.write((char*)&tree.multipole[3*i+1], sizeof(real4));
-        nodeFile.write((char*)&tree.multipole[3*i+2], sizeof(real4));;
-      }
-      
-      for(int i=0; i < tree.n_nodes; i++)
-      {
-        nodeFile.write((char*)&tree.boxSizeInfo[i], sizeof(real4));
-      }        
-      for(int i=0; i < tree.n_nodes; i++)
-      {
-        nodeFile.write((char*)&tree.boxCenterInfo[i], sizeof(real4));
-      }            
-      
-      nodeFile.close();
-    }
-}
-#endif
-
 
 #if 0
   //Test code to merge top nodes into a new tree-structure
@@ -748,15 +767,6 @@ if(iter == 20)
 
   }//end function/section
 #endif
-
-
-
-
-
-
-
-
-}
 
 
 

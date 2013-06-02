@@ -644,20 +644,16 @@ public:
 
   //Parallel version functions
   int procId, nProcs;   //Process ID in the mpi stack, number of processors in the commm world
-  int nx, ny, nz;       //The division parameters, number of procs in the x,y and z axis
-  int sampleFreq;       //Sample frequency for the division
-  int nTotalFreq_int;       //Total Number of particles over all processes
   unsigned long long  nTotalFreq_ull;       //Total Number of particles over all processes
-  
-  int prevSampFreq;     //Sample frequency of the previous step
+
+
   double prevDurStep;   //Duration of gravity time in previous step
   double thisPartLETExTime;     //The time it took to communicate with the neighbours during the last step
 
   double4 *currentRLow, *currentRHigh;  //Contains the actual domain distribution, to be used
                                         //during the LET-tree generatino
 
-  
-  real4 *localGrpTreeCntSize;
+//  real4 *localGrpTreeCntSize;
 
   real4 *globalGrpTreeCntSize;
 
@@ -704,7 +700,7 @@ public:
 
   //Functions for domain division
   void createORB();
-  void determine_sample_freq(int numberOfParticles);
+  void mpiSumParticleCount(int numberOfParticles);
 
   void sendCurrentRadiusInfo(real4 &rmin, real4 &rmax);
   void sendCurrentRadiusAndSampleInfo(real4 &rmin, real4 &rmax, int nsample, int *nSamples);
@@ -718,25 +714,13 @@ public:
                                                   my_dev::dev_mem<uint> &extractList, int nToSend);
   void gpuRedistributeParticles();
 
-  int  exchange_particles_with_overflow_check(tree_structure &localTree);
+//  int  exchange_particles_with_overflow_check(tree_structure &localTree);
   int gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
                                                   bodyStruct *particlesToSend,
                                                   my_dev::dev_mem<uint> &extractList, int nToSend);
 
-  template<class T>
-  int MP_exchange_particle_with_overflow_check(int ibox,
-                                              T *source_buffer,
-                                              vector<T> &recv_buffer,
-                                              int firstloc,
-                                              int nparticles,
-                                              int isource,
-                                              int &nsend,
-                                              unsigned int &recvCount);
 
    //Local Essential Tree related functions
-
-  real4* MP_exchange_bhlist(int ibox, int isource,
-                                int bufferSize, real4 *letDataBuffer);
 
 
   void ICRecv(int procId, vector<real4> &bodyPositions, vector<real4> &bodyVelocities,  vector<int> &bodiesIDs);
@@ -770,8 +754,7 @@ public:
   void parallelDataSummary(tree_structure &tree, float lastExecTime, float lastExecTime2, double &domUpdate, double &domExch);
 
 
-  void gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries, float lastExecTime, float lastExecTime2);
-  void gpuRedistributeParticles_SFC(uint4 *boundaries);
+   void gpuRedistributeParticles_SFC(uint4 *boundaries);
 
   void build_GroupTree(int n_bodies, uint4 *keys, uint2 *nodes, uint4 *node_keys, uint  *node_levels,
                        int &n_levels, int &n_nodes, int &startGrp, int &endGrp);
@@ -798,6 +781,23 @@ public:
       real4 **treeBuffers,  int* treeBuffersSource, int &topNodeOnTheFlyCount,
       int &recvTree, bool &mergeOwntree, int &procTrees, double &tStart);
 
+
+#if 0
+  template<class T>
+  int MP_exchange_particle_with_overflow_check(int ibox,
+                                              T *source_buffer,
+                                              vector<T> &recv_buffer,
+                                              int firstloc,
+                                              int nparticles,
+                                              int isource,
+                                              int &nsend,
+                                              unsigned int &recvCount);
+
+  real4* MP_exchange_bhlist(int ibox, int isource,
+                                int bufferSize, real4 *letDataBuffer);
+
+  void gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries, float lastExecTime, float lastExecTime2);
+
   void tree_walking_tree_stack_versionC13(
      real4 *multipoleS, nInfoStruct* nodeInfoS, //Local Tree
      real4* grpNodeSizeInfoS, real4* grpNodeCenterInfoS, //remote Tree
@@ -816,6 +816,8 @@ public:
                                 uint2 *curLevelStack,
                                 uint2 *nextLevelStack,
                                 int &DistanceCheck);
+#endif
+
   int recursiveBasedTopLEvelsCheckStart(tree_structure &tree,
                                         real4 *treeBuffer,
                                         real4 *grpCenter,
@@ -960,7 +962,6 @@ public:
     infoGrpTreeBuffer.resize(7*nProcs);
     exchangePartBuffer.resize(8*nProcs);
 
-    localGrpTreeCntSize = NULL;
     globalGrpTreeCntSize = NULL;
 
 
@@ -1020,7 +1021,6 @@ public:
     delete[] currentRHigh;
     delete[] curSysState;
 
-    if(localGrpTreeCntSize) free(localGrpTreeCntSize);
     if(globalGrpTreeCntSize) delete[] globalGrpTreeCntSize;
     if(globalGrpTreeCount) delete[] globalGrpTreeCount;
     if(globalGrpTreeOffsets) delete[] globalGrpTreeOffsets;
