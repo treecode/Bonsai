@@ -1,5 +1,7 @@
 #include "octree.h"
 
+//#define USE_MPI
+
 #ifdef USE_MPI
 #include <xmmintrin.h>
 #include "radix.h"
@@ -49,10 +51,10 @@ void MPIComm_free_type()
 
 #endif
 
-#if ENABLE_LOG
-extern bool ENABLE_RUNTIME_LOG;
-extern bool PREPEND_RANK;
-#endif
+//#if ENABLE_LOG
+//extern bool ENABLE_RUNTIME_LOG;
+//extern bool PREPEND_RANK;
+//#endif
 
 
 
@@ -2009,10 +2011,6 @@ void octree::sendCurrentInfoGrpTree()
   delete[] receiveOffsetsBytes;
 #endif
 
-
-#else
-  //TODO check if we need something here
-  //  curSysState[0] = curProcState;
 #endif
 }
 
@@ -2999,11 +2997,10 @@ int octree::recursiveBasedTopLEvelsCheckStart(tree_structure &tree,
 
 
 void octree::essential_tree_exchangeV2(tree_structure &tree,
-    tree_structure &remote,
-    nInfoStruct *nodeInfo,
-    vector<real4> &topLevelTrees,
-    vector<uint2> &topLevelTreesSizeOffset,
-    int     nTopLevelTrees)
+                                       tree_structure &remote,
+                                       vector<real4>  &topLevelTrees,
+                                       vector<uint2>  &topLevelTreesSizeOffset,
+                                       int            nTopLevelTrees)
 {
 #ifdef USE_MPI
   double t0         = get_time();
@@ -3021,7 +3018,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
   real4 **treeBuffers;
 
   //creates a new array of pointers to int objects, with space for the local tree
-  treeBuffers  = new real4*[mpiGetNProcs()];
+  treeBuffers            = new real4*[mpiGetNProcs()];
   int *treeBuffersSource = new int[nProcs];
 
   real4 *recvAllToAllBuffer = NULL;
@@ -3163,7 +3160,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
         if(doQuickLETCheck)
         {
-
           //Use this to 'disable' the Quick LET checks, with this disabled all
           //communication will be done as point to point
           //#define DO_NOT_DO_QUICK_LET_CHECK
@@ -3194,28 +3190,16 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                 grpCenter, grpSize, startGrp, endGrp, DistanceCheck);
             resultOfQuickCheck[ibox] = maxLevel;
 
-            //#define MAXLEVELSIZE_ALLGATHER 2048
-#define MAXLEVELSIZE_ALLGATHER -1
-#if 0
+            //#define MAXLEVELSIZE_ALLGATHER 2048 //use AllGather + alltoAllv combo
+#define MAXLEVELSIZE_ALLGATHER -1   //Use only alltoallv
             if(maxLevel >= 0)
             {
-              if((topLevelTreesSizeOffset[maxLevel].x * sizeof(real4)) > MAXLEVELSIZE_ALLGATHER)
-              {
-                LOGF(stderr, "NOT using : %d  %d \t size: %d \n", ibox, maxLevel, topLevelTreesSizeOffset[maxLevel].x * sizeof(real4));
-                resultOfQuickCheck[ibox] = -1;
-                maxLevel = -1;
-              }
-            }
-#endif
-
-            if(maxLevel >= 0)
-            {
-              quickCheckSendSizes[ibox]  = topLevelTreesSizeOffset[maxLevel].x; //Size
-              quickCheckSendOffset[ibox] = topLevelTreesSizeOffset[maxLevel].y; //Offset
+              quickCheckSendSizes[ibox]  = topLevelTreesSizeOffset[maxLevel].x; //Size and offset for the
+              quickCheckSendOffset[ibox] = topLevelTreesSizeOffset[maxLevel].y; //alltoallv exchange
 #pragma omp critical
               nQuickCheckSends++;
 
-  	      nLevelQuick[maxLevel]++;
+              nLevelQuick[maxLevel]++;
               //Store the statistics
               this->fullGrpAndLETRequestStatistics[ibox] = make_uint2(maxLevel, ibox);
             }
@@ -3224,17 +3208,13 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
               quickCheckSendSizes[ibox]   = 0;
               quickCheckSendOffset[ibox]  = 0;
             }
-
-            //Also set the size and offset for the alltoall call. It will be two calls
-            //first with integer size -> alltoall
-            //second with integer size and offsets and displacements -> alltoallV
-          }
+          }//if do fullGrp
 
 #pragma omp critical
           nCompletedQuickCheck++;
 
           continue;
-#else
+#else //#ifndef doGETLETQUICK
           {
             assert(startGrp == 0);
             const int nGroup = endGrp;
@@ -3262,7 +3242,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
               quickCheckSendSizes[ibox] = sizeTree;
 
 
-              /* if you use original 1D alltoallv you need to setsomething to this one
+              /* if you use original 1D alltoallv you need to set something to this one
                *
                *   quickCheckSendOffset[ibox]  = 0;
                *   JB: TODO I should look into this
@@ -3278,8 +3258,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             {
               quickCheckSendSizes[ibox] = 0;
               resultOfQuickCheck [ibox] = -1;
-            }
-          }
+            } //if (sizeTree != -1)
+          }//section getLETquick
 
 #pragma omp critical
           nCompletedQuickCheck++;
@@ -3298,7 +3278,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
           usleep(10);
         }
 
-        //If we arrive here, we did the quick tests, so now go checking if we need to do the full test
+        //If we arrive here, we did the quick tests, so now check if we need to do the full test
+        //for this process
         if(resultOfQuickCheck[ibox] >= 0)
         {
           //We can skip this process, its been taken care of during the quick check
@@ -3316,43 +3297,43 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         if (ENABLE_RUNTIME_LOG)
           fprintf(stderr,"Proc: %d starting getLetOp  Dest: %d \n", procId, ibox);
         int2  nExport = getLETopt(
-            &LETDataBuffer,
-            &nodeCenterInfo[0],
-            &nodeSizeInfo[0],
-            &multipole[0],
-            node_begend.x,
-            node_begend.y,
-            &bodies[0],
-            tree.n,
-            grpSize,
-            grpCenter,
-            startGrp,
-            endGrp,
-            tree.n_nodes, nflops);
+                                  &LETDataBuffer,
+                                  &nodeCenterInfo[0],
+                                  &nodeSizeInfo[0],
+                                  &multipole[0],
+                                  node_begend.x,
+                                  node_begend.y,
+                                  &bodies[0],
+                                  tree.n,
+                                  grpSize,
+                                  grpCenter,
+                                  startGrp,
+                                  endGrp,
+                                  tree.n_nodes, nflops);
 #else
         if (ENABLE_RUNTIME_LOG)
           fprintf(stderr,"Proc: %d starting getLet1  Dest: %d \n", procId, ibox);
         assert(startGrp == 0);
         int3  nExport = getLET1(
-            &LETDataBuffer,
-            &nodeCenterInfo[0],
-            &nodeSizeInfo[0],
-            &multipole[0],
-            node_begend.x,
-            node_begend.y,
-            &bodies[0],
-            tree.n,
-            grpSize,
-            grpCenter,
-            endGrp,
-            tree.n_nodes, nflops);
+                                &LETDataBuffer,
+                                &nodeCenterInfo[0],
+                                &nodeSizeInfo[0],
+                                &multipole[0],
+                                node_begend.x,
+                                node_begend.y,
+                                &bodies[0],
+                                tree.n,
+                                grpSize,
+                                grpCenter,
+                                endGrp,
+                                tree.n_nodes, nflops);
 #endif
 
         countParticles  = nExport.y;
         countNodes      = nExport.x;
         int bufferSize  = 1 + 1*countParticles + 5*countNodes;
-        //Test, use particles and node stats, but let particles count more heavy. Used during
-        //particle exchange / domain update to speedup particle-box assignment
+        //Use count of exported particles and nodes, but let particles count more heavy.
+        //Used during particle exchange / domain update to speedup particle-box assignment
         this->fullGrpAndLETRequestStatistics[ibox] = make_uint2(countParticles*10 + countNodes, ibox);
         if (ENABLE_RUNTIME_LOG)
         {
@@ -3418,7 +3399,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
           }// isFinished
         }//tid == 0
 
-      }//end while
+      }//end while that surrounds LET computations
 
       //All data that has to be send out is computed
       if(tid == 0)
@@ -3432,15 +3413,14 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             startGrav = true;
           }
 
-          //This determines if we interrupt the computation/waiting by starting a gravity kernel on the GPU
-          //Since the GPU is being idle
+          //This determines if we start with currently received data since the GPU is being idle
           if(gravStream->isFinished())
           {
             //Only start if there actually is new data
             if((nReceived - procTrees) > 0) startGrav = true;
           }
 
-          if(startGrav)
+          if(startGrav) //Only start if there is new data and GPU is idle
           {
             int recvTree      = 0;
             int topNodeCount  = 0;
@@ -3468,18 +3448,18 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
             totalLETExTime += thisPartLETExTime;
           }
-          else
+          else //if startGrav
           {
             usleep(10);
           }//if startGrav
         }//while 1
       }//if tid==0
-    }
+    }//if tid != 1
     else if(tid == 1)
     {
+      //MPI communication thread
 
-      //All to all part
-
+      //Do nothing untill we are finished with the quickLet computation
 #ifndef DO_NOT_DO_QUICK_LET_CHECK
       while(1)
       {
@@ -3743,7 +3723,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       {
         quickCheckSendSizes[i]  *= sizeof(real4);
         quickCheckSendOffset[i] *= sizeof(real4);
-
       }
 
       double t110 = get_time();
@@ -3797,6 +3776,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         LOGF(stderr,"Prep took: %lg  Items: %d \n", tbla2-tbla, (int)topLevel.size());
 #else
         //Combine the results of the various threads into one continuous array
+        //TODO This should also be done for 1D alltoallv
         double tbla = get_time();
         int nsend = 0;
         std::vector<int> sdispl(nProcs+1,0), scount(nProcs);
@@ -3823,8 +3803,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         for (size_t i = 0; i < data.size(); i++)
           ((v4sf*)recvAllToAllBuffer)[i] = data[i];
 #endif
-
-#if 1
         //Reorder the sizes / offsets into the same order as data has been received
         int temp[nProcs];
         int newIdx = 0;
@@ -3838,7 +3816,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
           }
         }
         memcpy(quickCheckRecvSizes, temp, sizeof(int)*nProcs);
-#endif
       }
 
       LOGF(stderr, "[%d] Completed_alltoall 2D data communication! Iter: %d Took: %lg ( %lg )\tSize: %f MB \n",
@@ -3850,24 +3827,14 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       {
         //This is in a critical section since topNodeOnTheFlyCount is reset
         //by the GPU worker thread (thread == 0)
-        //
-        //	char buff[4096];
-        //	sprintf(buff, "Proc: %d Recv Ori: ", procId);
-        //
         int offset = 0;
         for(int i=0;  i < nProcs; i++)
         {
-
-          //	  sprintf(buff,"%s [%d, %d ], ", buff,quickCheckRecvSizes[i], quickCheckRecvOffset[i]);
-
           int items  = quickCheckRecvSizes[i]  / sizeof(real4);
           if(items > 0)
           {
-            //int offset = quickCheckRecvOffset[i] / sizeof(real4);
-
             treeBuffers[nReceived] = &recvAllToAllBuffer[offset];
-
-            offset += items;
+            offset                += items;
 
             //Increase the top-node count
             int topStart = host_float_as_int(treeBuffers[nReceived][0].z);
@@ -3881,18 +3848,9 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             nReceived++;
           }
         }
-        //   LOGF(stderr,"%s\n", buff);
       }
 
       LOGF(stderr, "Received trees using quickcheck: %d top-nodes: %d Sendwith qcheck: %d\n", nReceived, topNodeOnTheFlyCount, nQuickCheckSends);
-
-//      char buffQ[512];
-//      sprintf(buffQ, "Send quickcheck levels. Max: %d Stats: ",  nTopLevelTrees);
-//        for(int i=0; i < nTopLevelTrees+2; i++)
-//          sprintf(buffQ, "%s [ %d , %d ]" , buffQ, i, nLevelQuick[i]);
-//      LOGF(stderr,"%s\n", buffQ);
-
-
 
 #endif //the alltoall only code
 #endif //#ifndef DO_NOT_DO_QUICK_LET_CHECK
@@ -3900,7 +3858,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
       while(1)
       {
-        //Sending part
+        //Sending part of the individual LETs
         int tempComputed = nComputedLETs;
 
         if(tempComputed > nSendOut)
@@ -3958,8 +3916,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
           }//if flag
 
           //TODO we could add an other probe here to keep, receiving data
-          //untill there is nothing more
-
+          //untill there is nothing more.
         }while(flag);
 
         //Exit if we have send and received all there is
@@ -3979,13 +3936,12 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             testFlag               = 0;
           }
         }//end for nSendOut
+
         //TODO only do this sleep if we did not send/receive something
-
         usleep(10);
-
       } //while (1) surrounding the thread-id==1 code
 
-      //Wait till all outgoing sends have completed
+      //Wait till all outgoing sends have been completed
       MPI_Status waitStatus;
       for(int i=0; i < nSendOut; i++)
       {
@@ -4311,8 +4267,8 @@ void octree::mergeAndLaunchLETStructures(
   int totalNodes        = nodeSumOffsets[PROCS];
 
   //To bind parts of the memory to different textures, the memory start address
-  //has to be aligned with XXX bytes, so nodeInformation*sizeof(real4) has to be
-  //increased by an offset, so that the node data starts at a XXX byte boundary
+  //has to be aligned with a certain amount of bytes, so nodeInformation*sizeof(real4) has to be
+  //increased by an offset, so that the node data starts at aligned byte boundary
   //this is already done on the sending process, but since we modify the structure
   //it has to be done again
   int nodeTextOffset = getTextureAllignmentOffset(totalNodes+totalTopNodes+topTree_n_nodes, sizeof(real4));
@@ -4378,7 +4334,7 @@ void octree::mergeAndLaunchLETStructures(
   //Copy all the 'normal' pieces of the different trees at the correct memory offsets
   for(int i=0; i < PROCS; i++)
   {
-    //Get the properties of the LET, TODO this should be changed in int_as_float instead of casts
+    //Get the properties of the LET
     int remoteP      = host_float_as_int(treeBuffers[i+procTrees][0].x);    //Number of particles
     int remoteN      = host_float_as_int(treeBuffers[i+procTrees][0].y);    //Number of nodes
     int remoteB      = host_float_as_int(treeBuffers[i+procTrees][0].z);    //Begin id of top nodes

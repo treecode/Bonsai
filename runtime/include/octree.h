@@ -772,7 +772,6 @@ public:
 
   void essential_tree_exchangeV2(tree_structure &tree,
                                  tree_structure &remote,
-                                 nInfoStruct *nodeInfo,
                                  vector<real4> &topLevelTrees,
                                  vector<uint2> &topLevelTreesSizeOffset,
                                  int     nTopLevelTrees);

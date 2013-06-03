@@ -66,7 +66,6 @@ void octree::makeLET()
 #endif
   localTree.multipole.waitForCopyEvent();
 
-  nInfoStruct *nodeInfo = NULL;
   union{float f; int i;} u; //__float_as_int
 
   //The next piece of code, makes extracts from our tree-structure. This is done for the "copyTreeUpToLevel"
@@ -229,10 +228,10 @@ void octree::makeLET()
 
 
   //Start LET kernels
-  essential_tree_exchangeV2(localTree, remoteTree, nodeInfo, topLevelsBuffer, treeSizeAndOffset, copyTreeUpToLevel);
-
-  
-  //if(nodeInfo) delete[] nodeInfo;
+  essential_tree_exchangeV2(localTree, remoteTree,
+                            topLevelsBuffer,
+                            treeSizeAndOffset,
+                            copyTreeUpToLevel);
 
   letRunning = false;
 }
