@@ -73,21 +73,21 @@ void inline mergeBoxesForGrpTree(float4 cntA, float4 sizeA, float4 cntB, float4 
   maxyA = cntA.y + sizeA.y;  maxyB = cntB.y + sizeB.y;
   maxzA = cntA.z + sizeA.z;  maxzB = cntB.z + sizeB.z;
 
-  float newMinx = fmin(minxA, minxB);
-  float newMiny = fmin(minyA, minyB);
-  float newMinz = fmin(minzA, minzB);
+  float newMinx = std::min(minxA, minxB);
+  float newMiny = std::min(minyA, minyB);
+  float newMinz = std::min(minzA, minzB);
 
-  float newMaxx = fmax(maxxA, maxxB);
-  float newMaxy = fmax(maxyA, maxyB);
-  float newMaxz = fmax(maxzA, maxzB);
+  float newMaxx = std::max(maxxA, maxxB);
+  float newMaxy = std::max(maxyA, maxyB);
+  float newMaxz = std::max(maxzA, maxzB);
 
   tempCnt.x = 0.5*(newMinx + newMaxx);
   tempCnt.y = 0.5*(newMiny + newMaxy);
   tempCnt.z = 0.5*(newMinz + newMaxz);
 
-  tempSize.x = fmax(fabs(tempCnt.x-newMinx), fabs(tempCnt.x-newMaxx));
-  tempSize.y = fmax(fabs(tempCnt.y-newMiny), fabs(tempCnt.y-newMaxy));
-  tempSize.z = fmax(fabs(tempCnt.z-newMinz), fabs(tempCnt.z-newMaxz));
+  tempSize.x = std::max(fabs(tempCnt.x-newMinx), fabs(tempCnt.x-newMaxx));
+  tempSize.y = std::max(fabs(tempCnt.y-newMiny), fabs(tempCnt.y-newMaxy));
+  tempSize.z = std::max(fabs(tempCnt.z-newMinz), fabs(tempCnt.z-newMaxz));
 
 //  tempSize.x *= 1.10;
 //  tempSize.y *= 1.10;
@@ -668,7 +668,7 @@ void octree::computeProps_TopLevelTree(
         if(fabs(mon.w) < 1e-10) s = 0;
 
         //Length of the box, note times 2 since we only computed half the distance before
-        double l = 2*fmax(boxSizeD.x, fmax(boxSizeD.y, boxSizeD.z));
+        double l = 2*std::max(boxSizeD.x, std::max(boxSizeD.y, boxSizeD.z));
 
         //Extra check, shouldn't be necessary, probably it is otherwise the test for leaf can fail
         //This actually IS important Otherwise 0.0 < 0 can fail, now it will be: -1e-12 < 0

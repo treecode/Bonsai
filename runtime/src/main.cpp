@@ -18,7 +18,22 @@ http://github.com/treecode/Bonsai
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
+#include <process.h>
 #define M_PI        3.14159265358979323846264338328
+
+#include <stdlib.h>
+#include <time.h>
+void srand48(const long seed)
+{
+  srand(seed);
+}
+//JB This is not a proper work around but just to get things compiled...
+double drand48()
+{
+  return double(rand())/RAND_MAX;
+}
+
+
 #endif
 
 
@@ -399,7 +414,7 @@ void read_generate_cube(vector<real4> &bodyPositions, vector<real4> &bodyVelocit
 
      
   //Read tipsy header  
-  NTotal        = pow(2, 22);
+  NTotal        = (int)std::pow(2.0, 22);
   NFirst        = NTotal;
   NSecond       = 0;
   NThird        = 0;
@@ -934,7 +949,7 @@ int main(int argc, char** argv)
 
   int pid = -1;
 #ifdef WIN32
-  pid = _getpid(void);
+  pid = _getpid();
 #else
   pid = (int)getpid();
 #endif

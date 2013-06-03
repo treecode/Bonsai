@@ -49,12 +49,19 @@ struct Plummer{
           continue;
         }
 				const double R = 1.0/sqrt( c );
+        #ifdef WIN32
+        if(R != R) //nan compared with nan is false
+        {
+          fprintf(stderr, "%d : Nan detected R [c=%e] NaN, continue\n", (int)i, c);
+          continue;
+        }
+        #else
         if(std::isnan(R))
         {
           fprintf(stderr, "%d : Nan detected R [c=%e] NaN, continue\n", (int)i, c);
           continue;
         }
-
+        #endif
 
 				if(R < 100.0) {
 					double Z = (1.0 - 2.0*X2)*R;

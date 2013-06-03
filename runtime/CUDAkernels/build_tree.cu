@@ -1101,8 +1101,8 @@ KERNEL_DECLARE(gpu_build_parallel_grps)(
     {
       //Set the key to invalid and in item w a value that marks it invalid
       //the .w item is redundant, and not used. Could be used for validation
-      parGrpBlockInfo[offset+bid] = (uint2){0, 0};
-      parGrpBlockKey [offset+bid] = (uint4){0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF,0};
+      parGrpBlockInfo[offset+bid] = make_uint2(0, 0);
+      parGrpBlockKey [offset+bid] = make_uint4(0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF,0);
     }
     return;
   }
@@ -1120,7 +1120,7 @@ KERNEL_DECLARE(gpu_build_parallel_grps)(
     uint4 key  = bodies_key[bi];
     key.w = bj-bi;
 
-    uint2 blockInfo = (uint2){bi, bj};
+    uint2 blockInfo = make_uint2(bi, bj);
 
     parGrpBlockInfo[offset+bid] = blockInfo;
     parGrpBlockKey [offset+bid] = key;
@@ -1138,7 +1138,7 @@ KERNEL_DECLARE(gpu_build_parallel_grps)(
     if(i + tid < nparticles)
     {
       //sets the key to FF to indicate the body is used
-      bodies_key[bi+i+tid] = (uint4){0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF};
+      bodies_key[bi+i+tid] = make_uint4(0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF);
     }
   } //for nparticles
 

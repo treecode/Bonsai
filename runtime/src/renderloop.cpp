@@ -430,7 +430,9 @@ public:
     m_simTime = GetTimer() - startTime;
 
     if (!iterationsRemaining)
-      printf("No iterations Remaining!\n");
+    {
+      //printf("No iterations Remaining!\n");
+    }
   }
 
   void drawStats(double fps)
@@ -1101,6 +1103,8 @@ public:
     
     m_cameraTrans = center + make_float3(0, 0, -distanceToCenter*0.2f);
 
+#if 0
+    /* JB This came with stereo, seems to break rotation */
     //ignore above and read what we have in the cameras.txt file - dirty SV TODO
     m_cameraTrans = m_camera[0].translate;
     m_cameraRot = m_camera[0].rotate;
@@ -1125,7 +1129,9 @@ public:
 //    printf("stereo params screenZ %f IOD %f %f \n",m_screenZ, m_IOD);
 
 
-    /* JB this was here, do we need it for screenshots? TODO
+    
+#else
+    /* JB this was original  */
     m_cameraTransLag = m_cameraTrans;
 
     glMatrixMode(GL_PROJECTION);
@@ -1134,7 +1140,7 @@ public:
                    (float) m_windowDims.x / (float) m_windowDims.y, 
                    0.0001 * distanceToCenter, 
                    4 * (radius + distanceToCenter));
-     */
+#endif
   }
 
   //float  frand() { return rand() / (float) RAND_MAX; }
