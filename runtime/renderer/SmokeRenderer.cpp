@@ -33,6 +33,8 @@
 #define USE_HALF_ANGLE 0
 #define MOTION_BLUR 0
 
+//#define NOCOPY
+
 extern int renderDevID;
 extern int devID;
 
@@ -174,9 +176,20 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
 	mParticleIndices.copy(GpuArray<uint>::HOST_TO_DEVICE);
 
 	cudaStreamCreate(&m_copyStreamPos);
-    	cudaStreamCreate(&m_copyStreamColor);
+  cudaStreamCreate(&m_copyStreamColor);
 
+  cudaStreamCreate(&m_copyStreamSortPos);
+  cudaStreamCreate(&m_copyStreamSortDepth);
+  cudaStreamCreate(&m_copyStreamSortIndices);
+
+  cudaDeviceEnablePeerAccess(devID, 0);
 	cudaSetDevice(devID);
+
+	cudaDeviceEnablePeerAccess( renderDevID, 0 );
+
+	//Allocate additional arrays
+  cudaMalloc( &mParticleDepths_devID, mMaxParticles*sizeof(float));
+  cudaMalloc( &mParticleIndices_devID, mMaxParticles*sizeof(uint));
 
 	printf("Vendor: %s\n", glGetString(GL_VENDOR));
 	printf("Renderer: %s\n", glGetString(GL_RENDERER));
@@ -209,6 +222,9 @@ SmokeRenderer::~SmokeRenderer()
 	glDeleteTextures(1, &m_noiseTex);
 	glDeleteTextures(1, &m_cubemapTex);
 
+	cudaSetDevice(renderDevID);
+
+	mParticlePos.free();
 	mParticleDepths.free();
 	mParticleIndices.free();
 }
@@ -332,14 +348,17 @@ void SmokeRenderer::setPositions(float *pos)
 #endif
 }
 
+
 void SmokeRenderer::setPositionsDevice(float *posD)
 {
 	cudaSetDevice(renderDevID);
 
+#ifndef NOCOPY
     mParticlePos.map();
 //  cudaMemcpy(mParticlePos.getDevicePtr(), posD, mNumParticles*4*sizeof(float), cudaMemcpyDeviceToDevice);
     cudaMemcpyPeerAsync(mParticlePos.getDevicePtr(), renderDevID, posD, devID, mNumParticles*4*sizeof(float), m_copyStreamPos);
     mParticlePos.unmap();
+#endif
 
 	cudaSetDevice(devID);
 }
@@ -378,28 +397,46 @@ void SmokeRenderer::setColorsDevice(float *colorD)
 		cutilSafeCall(cudaGLSetBufferObjectMapFlags(mColorVbo, cudaGLMapFlagsWriteDiscard));    // CUDA writes, GL consumes
 	}
 
-	
-	void *ptr;
-	cutilSafeCall(cudaGLMapBufferObject((void **) &ptr, mColorVbo));
-//	cudaMemcpy( ptr, colorD, mNumParticles * 4 * sizeof(float), cudaMemcpyDeviceToDevice );
-	cudaMemcpyPeerAsync( ptr, renderDevID, colorD, devID, mNumParticles * 4 * sizeof(float), m_copyStreamColor );
-	cutilSafeCall(cudaGLUnmapBufferObject(mColorVbo));
+#ifndef NOCOPY
+  void *ptr;
+  cutilSafeCall(cudaGLMapBufferObject((void **) &ptr, mColorVbo));
+  //cudaMemcpy( ptr, colorD, mNumParticles * 4 * sizeof(float), cudaMemcpyDeviceToDevice );
+  cudaMemcpyPeerAsync( ptr, renderDevID, colorD, devID, mNumParticles * 4 * sizeof(float), m_copyStreamColor );
+  cutilSafeCall(cudaGLUnmapBufferObject(mColorVbo));
+#endif
 
 	cudaSetDevice(devID);
 }
 
-void SmokeRenderer::depthSort()
+void SmokeRenderer::depthSort(float4 *posD)
 {
-	cudaSetDevice(renderDevID);
+  calcVectors();
+  float4 modelViewZ = make_float4(m_modelView._array[2], m_modelView._array[6], m_modelView._array[10], m_modelView._array[14]);
+  depthSortCUDA(posD, mParticleDepths_devID, (int *) mParticleIndices_devID, modelViewZ, mNumParticles);
+}
 
-    mParticleIndices.map();
-    mParticlePos.map();
 
-    float4 modelViewZ = make_float4(m_modelView._array[2], m_modelView._array[6], m_modelView._array[10], m_modelView._array[14]);
-    depthSortCUDA(mParticlePos.getDevicePtr(), mParticleDepths.getDevicePtr(), (int *) mParticleIndices.getDevicePtr(), modelViewZ, mNumParticles);
+void SmokeRenderer::depthSortCopy()
+{
+    cudaSetDevice(renderDevID);
 
-    mParticlePos.unmap();
-    mParticleIndices.unmap();
+#ifndef NOCOPY
+  mParticleIndices.map();
+
+  cudaMemcpyPeerAsync(mParticleDepths.getDevicePtr(), renderDevID, mParticleDepths_devID, devID, mNumParticles*sizeof(float), m_copyStreamSortDepth);
+  cudaMemcpyPeerAsync(mParticleIndices.getDevicePtr(), renderDevID, mParticleIndices_devID, devID, mNumParticles*sizeof(uint), m_copyStreamSortIndices);
+
+  mParticleIndices.unmap();
+#endif
+
+//    mParticleIndices.map();
+//    mParticlePos.map();
+//
+//    float4 modelViewZ = make_float4(m_modelView._array[2], m_modelView._array[6], m_modelView._array[10], m_modelView._array[14]);
+//    depthSortCUDA(mParticlePos.getDevicePtr(), mParticleDepths.getDevicePtr(), (int *) mParticleIndices.getDevicePtr(), modelViewZ, mNumParticles);
+//
+//    mParticlePos.unmap();
+//    mParticleIndices.unmap();
 
 	cudaSetDevice(devID);
 }
@@ -1094,7 +1131,7 @@ void SmokeRenderer::renderSprites(bool sort)
 	glColor4f(1.0, 1.0, 1.0, m_spriteAlpha);
     if (sort) {
 	    calcVectors();
-	    depthSort();
+	    depthSortCopy();
         glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	    drawPointSprites(m_particleProg, 0, mNumParticles, false, true);	
     } else {
@@ -1131,7 +1168,7 @@ void SmokeRenderer::render()
 
 	case VOLUMETRIC:
 		calcVectors();
-		depthSort();
+		depthSortCopy();
 		drawSlices();
 		compositeResult();
 		//drawBounds();

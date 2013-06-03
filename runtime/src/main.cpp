@@ -750,6 +750,7 @@ int main(int argc, char** argv)
   bool fullscreen = false;
   bool displayFPS = false;
   bool diskmode = false;
+  bool stereo   = false;
 
 #if ENABLE_LOG
   ENABLE_RUNTIME_LOG = false;
@@ -804,6 +805,7 @@ int main(int argc, char** argv)
     ADDUSAGE("     --displayfps       enable on-screen FPS display");
 		ADDUSAGE("     --Tglow  #         enable glow @ # Myr [" << TstartGlow << "]");
 		ADDUSAGE("     --dTglow  #        reach full brightness in @ # Myr [" << dTstartGlow << "]");
+		ADDUSAGE("     --stereo           enable stereo rendering");
 #endif
 
 
@@ -853,6 +855,7 @@ int main(int argc, char** argv)
     opt.setOption( "Tglow");
     opt.setOption( "dTglow");
     opt.setFlag("displayfps");
+    opt.setFlag("stereo");
 #endif
 
     opt.processCommandArgs( argc, argv );
@@ -872,6 +875,7 @@ int main(int argc, char** argv)
     if (opt.getFlag("direct")) direct = true;
     if (opt.getFlag("displayfps")) displayFPS = true;
     if (opt.getFlag("diskmode")) diskmode = true;
+    if(opt.getFlag("stereo"))   stereo = true;
 
 #if ENABLE_LOG
     if (opt.getFlag("log"))           ENABLE_RUNTIME_LOG = true;
@@ -916,27 +920,13 @@ int main(int argc, char** argv)
 #endif
   /************** end - command line arguments ********/
 
-#if 0
-  LOGF(stderr, "Used settings: \n");
-  LOGF(stderr, "Input filename %s \n", fileName.c_str());
-  LOGF(stderr, "Log filename %s \n", logFileName.c_str());
-  LOGF(stderr, "Theta: \t\t%f\t\teps: \t\t%f \n", theta, eps);
-
-  LOGF(stderr, "Timestep: \t%f\t\\ttEnd: \t\t%f \n", timeStep, tEnd);
-  LOGF(stderr, "snapshotFile: \t%s\t\tsnapshotIter: \t\t%d \n", snapshotFile.c_str(), snapshotIter);
-  LOGF(stderr, "devID: \t\t%d \t\t Remove dist: \t%f \n", devID, remoDistance);
-  LOGF(stderr, "Snapshot Addition: \t%d \n", snapShotAdd);
-
-  LOGF(stderr, "Rebuild tree every %d timestep\n", rebuild_tree_rate);
-#endif
-
 
   int NTotal, NFirst, NSecond, NThird;
   NTotal = NFirst = NSecond = NThird = 0;
 
 #ifdef USE_OPENGL
   // create OpenGL context first, and register for interop
-  initGL(argc, argv, fullScreenMode.c_str());
+  initGL(argc, argv, fullScreenMode.c_str(), stereo);
   cudaGLSetGLDevice(devID);
 #endif
 
@@ -1004,6 +994,7 @@ int main(int argc, char** argv)
 #if USE_OPENGL
     cerr << "[INIT]\tTglow = " << TstartGlow << endl;
     cerr << "[INIT]\tdTglow = " << dTstartGlow << endl;
+    cerr << "[INIT]\tstereo = " << stereo << endl;
 #endif
 #ifdef USE_MPI                
     cerr << "[INIT]\tCode is built WITH MPI Support \n";
@@ -1414,7 +1405,7 @@ int main(int argc, char** argv)
   //Start the integration
 #ifdef USE_OPENGL
   octree::IterationData idata;
-  initAppRenderer(argc, argv, tree, idata, displayFPS);
+  initAppRenderer(argc, argv, tree, idata, displayFPS, stereo);
   LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
 #else
   tree->mpiSync();

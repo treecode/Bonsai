@@ -35,6 +35,14 @@
 float TstartGlow;
 float dTstartGlow;
 
+#define DEG2RAD(a) ((a)/57.295)
+//for stereo
+enum EYE
+{
+  LEFT_EYE = 0,
+  RIGHT_EYE = 1
+};
+
 struct Rand48
 {
 	double drand()
@@ -309,6 +317,8 @@ public:
       m_renderingEnabled(true),
   	  m_displayBoxes(false), 
       m_displaySliders(false),
+      m_displayCursor(1),
+      m_cursorSize(0.5),
       m_enableGlow(true),
       m_displayLightBuffer(false),
       m_directGravitation(false),
@@ -316,6 +326,11 @@ public:
       m_octreeMaxDepth(3),
       m_flyMode(false),
 	    m_fov(60.0f),
+	    m_nearZ(0.2),
+	    m_screenZ(450.0),
+	    m_farZ(2000),
+	    m_IOD(4.0),
+	    m_stereoEnabled(false), //SV TODO Must be false, never make it true
       m_supernova(false),
       m_overBright(1.0f),
       m_params(m_renderer.getParams()),
@@ -330,6 +345,7 @@ public:
     m_cameraTransLag = m_cameraTrans;
     m_cameraRot = make_float3(0, 0, 0);
     m_cameraRotLag = m_cameraRot;
+    //m_cursorPos = make_float3(-41.043961, 37.102409,-42.675949);//the ogl cursor position, hardcoding it based on the treemin & max
             
     //float color[4] = { 0.8f, 0.7f, 0.95f, 0.5f};
 	  float color[4] = { 1.0f, 1.0f, 1.0f, 1.0f};
@@ -386,6 +402,9 @@ public:
   }
 
   void toggleRendering() { m_renderingEnabled = !m_renderingEnabled; }
+  void toggleStereo() {
+    m_stereoEnabled = !m_stereoEnabled;
+  }
   void togglePause() { m_paused = !m_paused; }
   void toggleBoxes() { m_displayBoxes = !m_displayBoxes; }
   void toggleSliders() { m_displaySliders = !m_displaySliders; }
@@ -466,6 +485,88 @@ public:
     glutSetWindowTitle(str);
   }
 
+  //calculate position of software 3D cursor, not so useful right now but helps for picking in future
+  void calculateCursorPos() {
+    //need modelview in double, so convert what we have in float
+    //idenity mat
+    GLdouble  mviewd[16] = {1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0};
+    //GLdouble  mviewd[16];
+    //for (int i=0;i<16;i++)
+    //  mviewd[i] = m_modelView[i];
+    GLdouble projPos[3];
+
+    if (m_stereoEnabled) { //STEREO get the position from both eyes and calculate midpoint
+      GLdouble posLeft[3], posRight[3];
+      //=== Get the left eye cursor position ===
+      gluProject(m_cursorPos[0], m_cursorPos[1], m_cursorPos[2],mviewd,m_projectionLeft,m_viewport,&projPos[0],&projPos[1],&projPos[2]);
+      //Unproject 3D Screen coordinates into wonderful world coordinates
+      //viewport[3]-y = conversion from upper left (0,0) to lower left (0,0)
+      gluUnProject(m_ox, m_viewport[3]-m_oy, projPos[2], mviewd, m_projectionLeft, m_viewport, &posLeft[0], &posLeft[1], &posLeft[2]);
+
+      //=== Get the right eye cursor position ===
+      gluProject(m_cursorPos[0], m_cursorPos[1], m_cursorPos[2],mviewd,m_projectionRight,m_viewport,&projPos[0],&projPos[1],&projPos[2]);
+      //Unproject 3D Screen coordinates into wonderful world coordinates
+      //viewport[3]-y = conversion from upper left (0,0) to lower left (0,0)
+      gluUnProject(m_ox, m_viewport[3]-m_oy, projPos[2], mviewd, m_projectionRight, m_viewport, &posRight[0], &posRight[1], &posRight[2]);
+
+      m_cursorPos[0] = 0.5*(posLeft[0] + posRight[0]);
+      m_cursorPos[1] = 0.5*(posLeft[1] + posRight[1]);
+      m_cursorPos[2] = 0.5*(posLeft[2] + posRight[2]);
+    }
+    else { //MONO
+      GLdouble pos[3];
+      //project to screen to get z
+      gluProject(m_cursorPos[0], m_cursorPos[1], m_cursorPos[2],mviewd,m_projection,m_viewport,&projPos[0],&projPos[1],&projPos[2]);
+      ////Unproject 3D Screen coordinates into wonderful world coordinates
+      ////viewport[3]-y = conversion from upper left (0,0) to lower left (0,0)
+      gluUnProject(m_ox, m_viewport[3]-m_oy, projPos[2], mviewd, m_projection, m_viewport, &pos[0], &pos[1], &pos[2]);
+      m_cursorPos[0] = pos[0];
+      m_cursorPos[1] = pos[1];
+      m_cursorPos[2] = pos[2];
+    }
+  }
+  //This is the main render routine that is called by display for each eye (in stereo case), assumes mview and proj are already setup
+  void mainRender(EYE whichEye)
+  {
+    //m_renderer.display(m_displayMode);
+    m_renderer.render();
+
+    if (m_displayBoxes) {
+      glEnable(GL_DEPTH_TEST);
+      displayOctree();
+    }
+    if (m_displayCursor) {
+
+      //JB Hack TODO, I disable cursor in non-stereo mode since doesnt seem to do anything
+      //in my non-stereo setup
+      if(m_stereoEnabled)
+      {
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+        glEnable(GL_BLEND);
+        glDisable(GL_DEPTH_TEST);
+        glEnable(GL_LIGHTING);
+        glEnable(GL_LIGHT0);
+        glPushMatrix();
+        {
+          glLoadIdentity();
+          glTranslatef(m_cursorPos[0],m_cursorPos[1],m_cursorPos[2]);
+          glutSolidSphere(m_cursorSize,40,40);
+        }
+        glPopMatrix();
+        glDisable(GL_LIGHTING);
+        glDisable(GL_LIGHT0);
+        glDisable(GL_BLEND);
+      }
+    }
+
+    if (m_displaySliders) {
+      m_params->Render(0, 0);
+    }
+    drawStats(fps);
+
+  } //end of mainRender
+
+
   void display() {
     double startTime = GetTimer();
     double getBodyDataTime = startTime;
@@ -491,10 +592,66 @@ public:
 	  m_cameraTransLag = m_cameraTrans;
 	  m_cameraRotLag = m_cameraRot;
 #endif
+
+    //Stereo setup +  get the left and right projection matrices and store it sv
+    float frustumShift = 0.0;
+    float top, right;
+    if (m_stereoEnabled) { //STEREO
+      float aspect = (float)m_windowDims.x/m_windowDims.y;
+      if (aspect > 1.0) {
+        top = m_nearZ * float(tan(DEG2RAD(m_fov)/2.0));
+        right = top * aspect;
+      } else {
+        right   = m_nearZ * float(tan(DEG2RAD(m_fov)/2.0));
+        top = right / aspect;
+      }
+
+      frustumShift = (m_IOD/2)*m_nearZ/m_screenZ;
+      //Get left projection matrix and store it
+      glMatrixMode(GL_PROJECTION);
+      glLoadIdentity();
+      glFrustum( -right+frustumShift, right+frustumShift, -top, top, m_nearZ, m_farZ);
+      glTranslatef(m_IOD/2, 0.0, 0.0);        //translate to cancel parallax
+        glGetDoublev(GL_PROJECTION_MATRIX, m_projectionLeft);
+
+      //Get right projection matrix and store it
+      glMatrixMode(GL_PROJECTION);
+      glLoadIdentity();
+      glFrustum( -right-frustumShift, right-frustumShift, -top, top, m_nearZ, m_farZ);
+      glTranslatef(-m_IOD/2, 0.0, 0.0);        //translate to cancel parallax
+        glGetDoublev(GL_PROJECTION_MATRIX, m_projectionRight);
+
+    }
+    else { //MONO
+      //Get the projection matrix and store it
+      glMatrixMode(GL_PROJECTION);
+      glLoadIdentity();
+      gluPerspective(m_fov,
+        (float) m_windowDims.x / (float) m_windowDims.y,
+        m_nearZ, m_farZ);
+        glGetDoublev(GL_PROJECTION_MATRIX, m_projection);
+
+    }
+
+
       // view transform
-      {
+      //{
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
+
+        //lighting for cursor
+        GLfloat mat_specular[] = { 1.0, 1.0, 1.0, 1.0 };
+        GLfloat mat_shininess[] = { 50.0 };
+        GLfloat light_position[] = { 0.0, 0.0, 1.0, 0.0 };
+        // glShadeModel (GL_SMOOTH);
+        glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
+        glMaterialfv(GL_FRONT, GL_SHININESS, mat_shininess);
+        glLightfv(GL_LIGHT0, GL_POSITION, light_position);
+        //end cursor lighting
+        glGetIntegerv( GL_VIEWPORT, m_viewport);
+        if (m_displayCursor) {
+          calculateCursorPos();
+        }
 
         if (m_flyMode) {
           glRotatef(m_cameraRotLag.z, 0.0, 0.0, 1.0);
@@ -528,21 +685,57 @@ public:
           m_renderer.setOverbright(m_overBright);
         }
 
-        //m_renderer.display(m_displayMode);
-        m_renderer.render();
+        //Start drawing
+        if (m_stereoEnabled) { //STEREO
+          //draw left
+          glDrawBuffer(GL_BACK_LEFT);                                   //draw into back left buffer
+          glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+          glMatrixMode(GL_PROJECTION);
+          glLoadMatrixd(m_projectionLeft);
+          glMatrixMode(GL_MODELVIEW);
+          glLoadMatrixf(m_modelView);
+          mainRender(LEFT_EYE);
 
-        if (m_displayBoxes) {
-          glEnable(GL_DEPTH_TEST);
-          displayOctree();  
-        }
-
-        if (m_displaySliders) {
-          m_params->Render(0, 0);
+          //draw right
+          glDrawBuffer(GL_BACK_RIGHT);                              //draw into back right buffer
+          glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+          glMatrixMode(GL_PROJECTION);
+          glLoadMatrixd(m_projectionRight);
+          glMatrixMode(GL_MODELVIEW);
+          glLoadMatrixf(m_modelView);
+          mainRender(RIGHT_EYE);
+        } //end of draw back right
+        else { //MONO
+          //draw left
+          glDrawBuffer(GL_BACK);                                   //draw into back left buffer
+          glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+          glMatrixMode(GL_PROJECTION);
+          glLoadMatrixd(m_projection);
+          glMatrixMode(GL_MODELVIEW);
+          glLoadMatrixf(m_modelView);
+          mainRender(LEFT_EYE);
         }
       }
-    }
+      else //rendering disabled just draw stats
+        drawStats(fps);
 
-    drawStats(fps);
+
+
+//        //m_renderer.display(m_displayMode);
+//        m_renderer.render();
+//
+//        if (m_displayBoxes) {
+//          glEnable(GL_DEPTH_TEST);
+//          displayOctree();
+//        }
+//
+//        if (m_displaySliders) {
+//          m_params->Render(0, 0);
+//        }
+//      }
+//    }
+//
+//    drawStats(fps);
   }
 
   void mouse(int button, int state, int x, int y)
@@ -570,6 +763,11 @@ public:
         m_buttonState = 3;
     }
 
+    m_ox = x;
+    m_oy = y;
+  }
+
+  void passiveMotion(int x, int y) {
     m_ox = x;
     m_oy = y;
   }
@@ -744,7 +942,28 @@ public:
     case '1':
       m_directGravitation = !m_directGravitation;
       m_tree->setUseDirectGravity(m_directGravitation);
+      break;
     case '0':
+      printf("==== SIM TIME %f\n",m_simTime);
+      break;
+    case '3': //toggle stereo
+      toggleStereo();
+      break;
+    case '4':
+      m_screenZ -= 25;
+      printf("SCREENZ %f\n",m_screenZ);
+      break;
+    case '5':
+      m_screenZ += 25;
+      printf("SCREENZ %f\n",m_screenZ);
+      break;
+    case '6':
+      m_IOD += 1;
+      printf("IOD %f\n",m_IOD);
+      break;
+    case '7':
+      m_IOD -= 1;
+      printf("IOD %f\n",m_IOD);
       break;
     case '9':
       m_displayBodiesSec = !m_displayBodiesSec;
@@ -881,7 +1100,33 @@ public:
     float distanceToCenter = radius / sinf(0.5f * fovRads);
     
     m_cameraTrans = center + make_float3(0, 0, -distanceToCenter*0.2f);
-	m_cameraTransLag = m_cameraTrans;
+
+    //ignore above and read what we have in the cameras.txt file - dirty SV TODO
+    m_cameraTrans = m_camera[0].translate;
+    m_cameraRot = m_camera[0].rotate;
+
+    m_cameraTransLag = m_cameraTrans;
+    m_nearZ = 0.0001 * distanceToCenter;
+    m_screenZ = distanceToCenter*0.6; //around 450 or so
+    m_IOD = m_screenZ/100.0; //around 4 or so
+    m_farZ = 4 * (radius + distanceToCenter);
+    //set the cursor position to the center of the scene
+    //m_cursorPos[0] = center.x;
+    //m_cursorPos[1] = center.y;
+    //m_cursorPos[2] = center.z;
+
+    m_cursorPos[0] = 0.0;
+    m_cursorPos[1] = 0.0;
+    m_cursorPos[2] = -m_screenZ;
+
+//    printf("NearZ %f farZ %f center %f %f %f radius %f distancetocenter %f\n",m_nearZ,m_farZ,center.x,center.y, center.z,radius, distanceToCenter);
+//    printf("Box min %f %f %f Box max %f %f %f \n",boxMin.x, boxMin.y, boxMin.z, boxMax.x, boxMax.y, boxMax.z);
+//    printf("camera trans %f %f %f \n",m_cameraTrans.x, m_cameraTrans.y, m_cameraTrans.z);
+//    printf("stereo params screenZ %f IOD %f %f \n",m_screenZ, m_IOD);
+
+
+    /* JB this was here, do we need it for screenshots? TODO
+    m_cameraTransLag = m_cameraTrans;
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
@@ -889,6 +1134,7 @@ public:
                    (float) m_windowDims.x / (float) m_windowDims.y, 
                    0.0001 * distanceToCenter, 
                    4 * (radius + distanceToCenter));
+     */
   }
 
   //float  frand() { return rand() / (float) RAND_MAX; }
@@ -1032,6 +1278,8 @@ public:
     m_renderer.setPositionsDevice((float*) m_tree->localTree.bodies_pos.d());   // use d2d copy
     //m_tree->localTree.bodies_pos.d2h(); m_renderer.setPositions((float *) &m_tree->localTree.bodies_pos[0]);
     
+    m_renderer.depthSort((float4*)m_tree->localTree.bodies_pos.d());
+
   }
 
 
@@ -1131,6 +1379,11 @@ public:
     addColorParam(m_colorParams, "dust color", dustColor);
     addColorParam(m_colorParams, "dark matter color", darkMatterColor);
     m_colorParams->AddParam(new Param<float>("camera roll", m_cameraRoll, -180.0f, 180.0f, 1, &m_cameraRoll));
+
+    m_colorParams->AddParam(new Param<float>("screen Z", m_screenZ, 100.0, 2000.0, 450.0, &m_screenZ)); //I know  the scene bounds
+    m_colorParams->AddParam(new Param<float>("iod", m_IOD, 1.0f, 20.0f, 4.0, &m_IOD));
+    m_colorParams->AddParam(new Param<float>("cursor size", m_cursorSize, 0.0, 5.0, 0.5, &m_cursorSize));
+
   }
 
   octree *m_tree;
@@ -1160,7 +1413,23 @@ public:
   float m_cameraRollHome;
   float m_cameraRoll;
   float m_modelView[16];
+
+  //SV TODO combine left and mono later
+  double m_projection[16]; //mono projection
+  double m_projectionLeft[16]; //left projection
+  double m_projectionRight[16]; //right projection
+  GLint m_viewport[4];//viewport dimensions+pos for 3d cursor & picking
+
   const float m_inertia;
+  double m_cursorPos[3]; //the sw cursor position
+  int m_displayCursor; //to show cursor
+  float m_cursorSize; //size of cursor
+  // stereo params
+  float m_IOD; //Interocular distance
+  float m_nearZ;
+  float m_farZ;
+  float m_screenZ;
+  bool m_stereoEnabled;
 
   bool m_paused;
   bool m_displayBoxes;
@@ -1486,7 +1755,11 @@ void motion(int x, int y)
   theDemo->motion(x, y);
   glutPostRedisplay();
 }
-
+void passiveMotion(int x, int y)
+{
+  theDemo->passiveMotion(x, y);
+  glutPostRedisplay();
+}
 // commented out to remove unused parameter warnings in Linux
 void key(unsigned char key, int /*x*/, int /*y*/)
 {
@@ -1496,7 +1769,7 @@ void key(unsigned char key, int /*x*/, int /*y*/)
   case '0':
     displayFps = !displayFps;
     break;
-  case '5':
+  case 'u':
     storeImage();
     break;
   default:
@@ -1521,12 +1794,18 @@ void idle(void)
     glutPostRedisplay();
 }
 
-void initGL(int argc, char** argv, const char *fullScreenMode)
+void initGL(int argc, char** argv, const char *fullScreenMode, bool &stereo)
 {  
   // First initialize OpenGL context, so we can properly set the GL for CUDA.
   // This is necessary in order to achieve optimal performance with OpenGL/CUDA interop.
   glutInit(&argc, argv);
-  glutInitDisplayMode(GLUT_RGBA | GLUT_DEPTH | GLUT_DOUBLE);
+
+  if (stereo) {
+    printf("===== Checking Stereo Pixel Format \n===========");
+    glutInitDisplayMode(GLUT_RGBA | GLUT_DEPTH | GLUT_STEREO |GLUT_DOUBLE);
+  }
+  else
+    glutInitDisplayMode(GLUT_RGBA | GLUT_DEPTH | GLUT_DOUBLE);
 
   if (fullScreenMode[0]) {
       printf("fullScreenMode: %s\n", fullScreenMode);
@@ -1542,6 +1821,16 @@ void initGL(int argc, char** argv, const char *fullScreenMode)
     glutCreateWindow("Bonsai Tree-code Gravitational N-body Simulation");
   }
 
+  //Make sure we got stereo if we asked for it, this must happen after glutCreateWindow
+  if (stereo) {
+    GLboolean bStereoEnabled = false;
+    glGetBooleanv(GL_STEREO, &bStereoEnabled);
+    if (bStereoEnabled)
+      printf("======= yay! STEREO ENABLED ========\n");
+    else //we asked for stereo but didnt get it, set the stereo to false
+      stereo = false;
+  }
+
   glutDisplayFunc(display);
   glutReshapeFunc(reshape);
   glutMouseFunc(mouse);
@@ -1552,7 +1841,11 @@ void initGL(int argc, char** argv, const char *fullScreenMode)
   glutIdleFunc(idle);
 
   glutIgnoreKeyRepeat(GL_TRUE);
+
+  //shalini
   glutSetCursor(GLUT_CURSOR_CROSSHAIR);
+  //glutSetCursor(GLUT_CURSOR_NONE);
+  //JB I turned cursor back on
 
   GLenum err = glewInit();
 
@@ -1589,9 +1882,11 @@ void initGL(int argc, char** argv, const char *fullScreenMode)
 
 
 void initAppRenderer(int argc, char** argv, octree *tree, 
-                     octree::IterationData &idata, bool showFPS) {
+                     octree::IterationData &idata, bool showFPS, bool stereo) {
   displayFps = showFPS;
   //initGL(argc, argv);
   theDemo = new BonsaiDemo(tree, idata);
+  if (stereo)
+    theDemo->toggleStereo(); //SV assuming stereo is set to disable by default.
   glutMainLoop();
 }

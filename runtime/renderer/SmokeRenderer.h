@@ -113,6 +113,8 @@ public:
     void render();
     void debugVectors();
     
+    void depthSort(float4 *posD);
+
     //By JB to modify particle count while running
     void setNumberOfParticles(uint n_particles); 
     int  getNumberOfParticles() {return this->mNumParticles; }
@@ -122,7 +124,7 @@ private:
     //void loadSmokeTextures(int nImages, int offset, char* sTexturePrefix);
 	GLuint createRainbowTexture();
 
-    void depthSort();
+    void depthSortCopy();
 
     void drawPoints(int start, int count, bool sorted);
     void drawPointSprites(GLSLProgram *prog, int start, int count, bool shadowed, bool sorted);
@@ -286,6 +288,14 @@ private:
 
     cudaStream_t        m_copyStreamPos;
     cudaStream_t        m_copyStreamColor;
+
+    cudaStream_t      m_copyStreamSortPos;
+    cudaStream_t      m_copyStreamSortDepth;
+    cudaStream_t      m_copyStreamSortIndices;
+
+    float4 *mParticlePos_devID;
+    float  *mParticleDepths_devID;
+    uint   *mParticleIndices_devID;
 };
 
 #endif
