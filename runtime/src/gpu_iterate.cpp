@@ -32,11 +32,9 @@ void octree::makeLET()
    //LET code test
   double t00 = get_time();
 
-
   //Start copies, while grpTree info is exchanged
-  localTree.boxSizeInfo.d2h  (localTree.n_nodes,   false, LETDataToHostStream->s());
-  localTree.boxCenterInfo.d2h(localTree.n_nodes,   false, LETDataToHostStream->s());
-  //localTree.multipole.d2h    (3*localTree.n_nodes, false, copyStream->s());
+  localTree.boxSizeInfo.d2h  (  localTree.n_nodes, false, LETDataToHostStream->s());
+  localTree.boxCenterInfo.d2h(  localTree.n_nodes, false, LETDataToHostStream->s());
   localTree.multipole.d2h    (3*localTree.n_nodes, false, LETDataToHostStream->s());
   localTree.boxSizeInfo.waitForCopyEvent();
   localTree.boxCenterInfo.waitForCopyEvent();
@@ -48,22 +46,6 @@ void octree::makeLET()
   double t20 = get_time();
 
 
-
-#if 0
-  //Build the pre-processed array, while multipole-memory copy is (possibly) still going on
-  nInfoStruct *nodeInfo = new nInfoStruct[localTree.n_nodes];
-  nInfoStruct nInfo;
-  union{float f; int i;} u; //__float_as_int
-  for(int i=0; i < localTree.n_nodes; i++)
-  {
-    nInfo.x     = localTree.boxCenterInfo[i].w;
-    u.f         = localTree.boxSizeInfo  [i].w;
-    nInfo.y     = u.i;
-
-    nInfo.z     = 0;
-    nodeInfo[i] = nInfo;
-  }
-#endif
   localTree.multipole.waitForCopyEvent();
 
   union{float f; int i;} u; //__float_as_int
@@ -72,7 +54,7 @@ void octree::makeLET()
   //top levels. These small trees can then be send to other processors, that are far away. This should be
   //more efficient then making a tree for each of them.
 
-  //Multiple copies are maded depending on which level the tree has to go to.
+  //Multiple copies are made depending on which level the tree has to go to.
   //This to reduce data size that is being send around.
 
   double t30        = get_time();
@@ -97,8 +79,6 @@ void octree::makeLET()
     {
       nParticles = NLEAF*nNodes;
     }
-   // nParticles            += getTextureAllignmentOffset(nParticles, sizeof(real4));
-   // nNodes                += getTextureAllignmentOffset(nNodes    , sizeof(real4));
     bufferUpToThisLevel   += 5*nNodes+nParticles+1;
 
     //Total buffer size this level would be all previous levels plus this one
@@ -172,12 +152,7 @@ void octree::makeLET()
         } //if(this->localTree.boxCenterInfo[j].w < 0)
       }//for node_begend
     }//for level
-
-    //Make the particles and nodes align on memory boundaries
-    //nParticles  += getTextureAllignmentOffset(nParticles, sizeof(real4));
-    //nNodes      += getTextureAllignmentOffset(nNodes    , sizeof(real4));
-
-//    LOGF(stderr,"Total particles: %d and nodes %d (%d) \n", nParticles,nNodes, nodeBuffer.size());
+    //    LOGF(stderr,"Total particles: %d and nodes %d (%d) \n", nParticles,nNodes, nodeBuffer.size());
 
     real4 *buffer = &topLevelsBuffer[nextLevelOffsset];
 
@@ -228,7 +203,8 @@ void octree::makeLET()
 
 
   //Start LET kernels
-  essential_tree_exchangeV2(localTree, remoteTree,
+  essential_tree_exchangeV2(localTree,
+                            remoteTree,
                             topLevelsBuffer,
                             treeSizeAndOffset,
                             copyTreeUpToLevel);
