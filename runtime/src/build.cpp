@@ -116,10 +116,10 @@ void octree::allocateParticleMemory(tree_structure &tree)
     tree.parallelBoundaries.cmalloc(mpiGetNProcs()+1, true);
     //Some default value for number of hashes, will be increased if required
     //should be ' n_bodies / NPARALLEL' for now just alloc 10%
-    int tempmem = n_bodies*0.1;
-    if(tempmem < 2048)
-      tempmem = 2048;
-    tree.parallelHashes.cmalloc(tempmem, true);
+//    int tempmem = n_bodies*0.1;
+//    if(tempmem < 2048)
+//      tempmem = 2048;
+//    tree.parallelHashes.cmalloc(tempmem, true);
   }
 
 }

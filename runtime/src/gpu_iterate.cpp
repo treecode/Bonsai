@@ -419,22 +419,23 @@ bool octree::addGalaxy(int galaxyID)
 bool octree::iterate_once(IterationData &idata) {
     double t1 = 0;
 
-//if(t_current < 1) //Clear startup timings
-//if(0)
-if(iter < 32)
-{
-	idata.totalGPUGravTimeLocal = 0;
-	idata.totalGPUGravTimeLET = 0;
-	idata.totalLETCommTime = 0;
-	idata.totalBuildTime = 0;
-	idata.totalDomTime = 0;
-	idata.lastWaitTime = 0;
-	idata.startTime = get_time();
-	idata.totalGravTime = 0;
-	idata.totalDomUp = 0;
-	idata.totalDomEx = 0;
-}
-
+    //if(t_current < 1) //Clear startup timings
+    //if(0)
+    if(iter < 32)
+    {
+      idata.totalGPUGravTimeLocal = 0;
+      idata.totalGPUGravTimeLET = 0;
+      idata.totalLETCommTime = 0;
+      idata.totalBuildTime = 0;
+      idata.totalDomTime = 0;
+      idata.lastWaitTime = 0;
+      idata.startTime = get_time();
+      idata.totalGravTime = 0;
+      idata.totalDomUp = 0;
+      idata.totalDomEx = 0;
+      idata.totalDomWait = 0;
+      idata.totalPredCor = 0;
+    }
 
 
     LOG("At the start of iterate:\n");
@@ -442,10 +443,14 @@ if(iter < 32)
     bool forceTreeRebuild = false;
     bool needDomainUpdate = true;
 
+    double tTempTime = get_time();
+
     //predict local tree
     devContext.startTiming(execStream->s());
     predict(this->localTree);
     devContext.stopTiming("Predict", 9, execStream->s());
+
+    idata.totalPredCor += get_time() - tTempTime;
 
     if(nProcs > 1)
     {
@@ -457,7 +462,8 @@ if(iter < 32)
         devContext.startTiming(execStream->s());
         parallelDataSummary(localTree, lastTotal, lastLocal, domUp, domEx);
         devContext.stopTiming("UpdateDomain", 6, execStream->s());
-        idata.lastDomTime   = get_time()-tZ;
+        double tZZ = get_time();
+        idata.lastDomTime   = tZZ-tZ;
         idata.totalDomTime += idata.lastDomTime;
 
         idata.totalDomUp += domUp;
@@ -466,6 +472,8 @@ if(iter < 32)
         devContext.startTiming(execStream->s());
         mpiSync();
         devContext.stopTiming("DomainUnbalance", 12, execStream->s());
+
+        idata.totalDomWait = get_time()-tZZ;
 
         needDomainUpdate    = false; //We did a boundary sync in the parallel decomposition part
         needDomainUpdate    = true; //TODO if I set it to false results degrade. Check why, for now just updte
@@ -586,6 +594,7 @@ if(iter < 32)
 
 
     //Compute the total number of interactions that occured
+    tTempTime = get_time();
 #if 1
    localTree.interactions.d2h();
 
@@ -602,6 +611,7 @@ if(iter < 32)
                    procId,iter, directSum ,apprSum, directSum / (float)localTree.n, apprSum / (float)localTree.n);
    devContext.writeLogEvent(buff2);
 #endif
+   LOGF(stderr,"Stats calculation took: %lg \n", get_time()-tTempTime);
 
 
     float ms=0, msLET=0;
@@ -639,10 +649,12 @@ if(iter < 32)
 //    lastTotal =  get_time() - t1;
 
     //Corrector
+    tTempTime = get_time();
     devContext.startTiming(execStream->s());
     correct(this->localTree);
     devContext.stopTiming("Correct", 8, execStream->s());
-    
+    idata.totalPredCor += get_time() - tTempTime;
+
 
     #ifdef USE_DUST
       //Correct
@@ -662,9 +674,11 @@ if(iter < 32)
     idata.Nact_since_last_tree_rebuild += this->localTree.n_active_particles;
 
     //Compute energies
+    tTempTime = get_time();
     devContext.startTiming(execStream->s());
     double de = compute_energies(this->localTree);
     devContext.stopTiming("Energy", 7, execStream->s());
+    idata.totalPredCor += get_time() - tTempTime;
 
     if(snapshotIter > 0)
     {
@@ -893,27 +907,27 @@ void octree::iterate_teardown(IterationData &idata) {
   double totalTime = get_time() - idata.startTime;
   if (procId == 0)
   {
-	  LOGF(stderr,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\n",
+	  LOGF(stderr,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\tdomWait: %g\ttPredCor: %g\n",
 			  procId, totalTime, idata.totalGravTime,
 			  (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
 			  idata.totalLETCommTime,
 			  idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
-			  idata.totalDomUp, idata.totalDomEx);
-	  LOGF(stdout,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\n",
+			  idata.totalDomUp, idata.totalDomEx, idata.totalDomWait, idata.totalPredCor);
+	  LOGF(stdout,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\tdomWait: %g\ttPredCor: %g\n",
 			  procId, totalTime, idata.totalGravTime,
 			  (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
 			  idata.totalLETCommTime,
 			  idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
-			  idata.totalDomUp, idata.totalDomEx);
+			  idata.totalDomUp, idata.totalDomEx, idata.totalDomWait, idata.totalPredCor);
   }	
   
   char buff[16384];
-  sprintf(buff,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\n",
+  sprintf(buff,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\tdomWait: %g\ttPredCor: %g\n",
                   procId, totalTime, idata.totalGravTime,
                   (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
                   idata.totalLETCommTime,
                   idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
-                  idata.totalDomUp, idata.totalDomEx);
+                  idata.totalDomUp, idata.totalDomEx, idata.totalDomWait, idata.totalPredCor);
   devContext.writeLogEvent(buff);
 
   if(execStream != NULL)
@@ -953,26 +967,26 @@ void octree::iterate() {
   double totalTime = get_time() - idata.startTime;
   if (procId == 0)
   {
-	  LOGF(stderr,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\n",
+	  LOGF(stderr,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\tdomWait: %g\ttPredCor: %g\n",
 			  procId, totalTime, idata.totalGravTime,
 			  (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
 			  idata.totalLETCommTime,
 			  idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
-			  idata.totalDomUp, idata.totalDomEx);
-	  LOGF(stdout,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\n",
+			  idata.totalDomUp, idata.totalDomEx, idata.totalDomWait, idata.totalPredCor);
+	  LOGF(stdout,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\tdomWait: %g\ttPredCor: %g\n",
 			  procId, totalTime, idata.totalGravTime,
 			  (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
 			  idata.totalLETCommTime,
 			  idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
-			  idata.totalDomUp, idata.totalDomEx);
+			  idata.totalDomUp, idata.totalDomEx, idata.totalDomWait, idata.totalPredCor);
   }	
   char buff[16384];
-  sprintf(buff,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\n",
+  sprintf(buff,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\tdomWait: %g\ttPredCor: %g\n",
                   procId, totalTime, idata.totalGravTime,
                   (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
                   idata.totalLETCommTime,
                   idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
-                  idata.totalDomUp, idata.totalDomEx);
+                  idata.totalDomUp, idata.totalDomEx, idata.totalDomWait, idata.totalPredCor);
   devContext.writeLogEvent(buff);
 
   } //end for i
