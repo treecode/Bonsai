@@ -473,7 +473,7 @@ bool octree::iterate_once(IterationData &idata) {
         mpiSync();
         devContext.stopTiming("DomainUnbalance", 12, execStream->s());
 
-        idata.totalDomWait = get_time()-tZZ;
+        idata.totalDomWait += get_time()-tZZ;
 
         needDomainUpdate    = false; //We did a boundary sync in the parallel decomposition part
         needDomainUpdate    = true; //TODO if I set it to false results degrade. Check why, for now just updte
