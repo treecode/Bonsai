@@ -1557,8 +1557,13 @@ fprintf(stderr, "m31: %f %f %f %f \n", specialParticles[1].x,
   specialParticles[1].y, specialParticles[1].z, specialParticles[1].w);  */
 
 
-  tree.bodies_acc0.copy(real4Buffer1, tree.n);
-  tree.bodies_time.copy(float2Buffer, float2Buffer.get_size()); 
+  //tree.bodies_acc0.copy(real4Buffer1, tree.n);
+  //tree.bodies_time.copy(float2Buffer, float2Buffer.get_size());
+  tree.bodies_acc0.copy_devonly(real4Buffer1, tree.n);
+  tree.bodies_time.copy_devonly(float2Buffer, float2Buffer.get_size());
+
+
+
   
 
   #ifdef DO_BLOCK_TIMESTEP

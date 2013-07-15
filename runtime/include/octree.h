@@ -785,6 +785,17 @@ public:
       real4 **treeBuffers,  int* treeBuffersSource, int &topNodeOnTheFlyCount,
       int &recvTree, bool &mergeOwntree, int &procTrees, double &tStart);
 
+  void checkGPUAndStartLETComputation(tree_structure &tree,
+      tree_structure &remote,
+      int            &topNodeOnTheFlyCount,
+      int            &nReceived,
+      int            &procTrees,
+      double         &tStart,
+      double         &totalLETExTime,
+      bool            mergeOwntree,
+      int            *treeBuffersSource,
+      real4         **treeBuffers);
+
 
 #if 0
   template<class T>

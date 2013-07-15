@@ -189,8 +189,10 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
     dataReorderR4.set_arg<cl_mem>(6,   tree.oriParticleOrder.p()); 
     dataReorderR4.execute(execStream->s());
     
-    tree.bodies_Ppos.copy(real4Buffer1,  tree.n);
-    tree.bodies_ids.copy (intBuffer1,    tree.n);   
+//    tree.bodies_Ppos.copy(real4Buffer1,  tree.n);
+//    tree.bodies_ids.copy (intBuffer1,    tree.n);
+    tree.bodies_Ppos.copy_devonly(real4Buffer1,  tree.n);
+    tree.bodies_ids.copy_devonly (intBuffer1,    tree.n);
   }
   else
   {
