@@ -723,8 +723,7 @@ public:
 
   int gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree,
                                                     bodyStruct *particlesToSend,
-                                                    std::vector<uint2> &domainKeys,
-                                                    std::vector<uint> &domainCounts,
+                                                    int *nparticles, int *nsendDispls, int *nreceive,
                                                     int nToSend);
 
   void gpuRedistributeParticles();

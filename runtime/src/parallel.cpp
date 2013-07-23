@@ -1264,10 +1264,10 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
   domainCheckSFCAndAssign.set_arg<int>(1,     &nProcs);
   domainCheckSFCAndAssign.set_arg<uint4>(2,   &lowerBoundary);
   domainCheckSFCAndAssign.set_arg<uint4>(3,   &upperBoundary);
-  domainCheckSFCAndAssign.set_arg<cl_mem>(4,  boundariesGPU.p());
-  domainCheckSFCAndAssign.set_arg<cl_mem>(5,  localTree.bodies_key.p());
-  domainCheckSFCAndAssign.set_arg<cl_mem>(6,  validList2.p());
-  domainCheckSFCAndAssign.set_arg<cl_mem>(7,  idList.p());
+  domainCheckSFCAndAssign.set_arg<cl_mem>(4,   boundariesGPU.p());
+  domainCheckSFCAndAssign.set_arg<cl_mem>(5,   localTree.bodies_key.p());
+  domainCheckSFCAndAssign.set_arg<cl_mem>(6,   validList2.p());
+  domainCheckSFCAndAssign.set_arg<cl_mem>(7,   idList.p());
   domainCheckSFCAndAssign.setWork(localTree.n, 128);
   domainCheckSFCAndAssign.execute(execStream->s());
 
@@ -1286,7 +1286,7 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
                                       outputKeys, outputValues,
                                       localTree.n,
                                       localTree.generalBuffer1, tempOffset);
-
+  double tSort = get_time();
   LOGF(stderr,"Sorting preparing took: %lg nExport: %d  nDomains: %d Since start: %lg\n", get_time()-tCheck, res.x, res.y, get_time()-tStart);
 
   const int nExportParticles = res.x;
@@ -1298,147 +1298,188 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
   outputKeys  .d2h(nToSendToDomains, &domainId[0]);
   outputValues.d2h(nToSendToDomains, &nParticlesPerDomain[0]);
 
-//  for(int i=0; i < res.y; i++)
-//  {
-//    LOGF(stderr,"Domain info: %d -> %d \n", domainId[i].x & 0x0FFFFFF, nParticlesPerDomain[i]);
-//  }
-
-
-  //Check if the memory size, of the generalBuffer is large enough to store the exported particles
-  //if not allocate more but make sure that the copy of compactList survives
-  int validCount = nExportParticles;
-  int tempSize   = localTree.generalBuffer1.get_size() - (4*localTree.n); //4* = 2x uint2 validList2/3
-  int stepSize   = (tempSize / (sizeof(bodyStruct) / sizeof(int)))-512; //Available space in # of bodyStructs
-
-
-  bool doInOneGo = true;
-
   bodyStruct *extraBodyBuffer = NULL;
+  bool doInOneGo              = true;
+  double tExtract             = 0;
+  double ta2aSize             = 0;
 
-  if(stepSize > nExportParticles)
+
+  int *nparticles  = &exchangePartBuffer[0*(nProcs+1)]; //Size nProcs+1
+  int *nsendDispls = &exchangePartBuffer[1*(nProcs+1)]; //Size nProcs+1
+  int *nreceive    = &exchangePartBuffer[2*(nProcs+1)]; //Size nProcs
+
+  //TODO
+  // This can be changed by a copy per domain. That way we do not have to wait till everything is
+  // copied and can start sending whenever one domain is done. Note we can also use GPUdirect for
+  // sending when we use it that way
+
+  //Overlap the particle extraction with the all2all size communication
+
+  const int curOMPMax = omp_get_max_threads();
+  omp_set_nested(1);
+  omp_set_num_threads(2);
+
+
+#pragma omp parallel
   {
-    doInOneGo = true; //We can do it in one go
-  }
-  else
-  {
-    doInOneGo       = false; //We need an extra CPU buffer
-    extraBodyBuffer = new bodyStruct[validCount];
-    assert(extraBodyBuffer != NULL);
-  }
-
-
-  my_dev::dev_mem<bodyStruct>  bodyBuffer(devContext);
-
-  int memOffset1 = bodyBuffer.cmalloc_copy(localTree.generalBuffer1, stepSize, tempOffset1);
-
-  double tx  = get_time();
-  int extractOffset = 0;
-  for(unsigned int i=0; i < validCount; i+= stepSize)
-  {
-    int items = min(stepSize, (int)(validCount-i));
-
-    if(items > 0)
+    const int tid =  omp_get_thread_num();
+    //Thread 0, has GPU context and is responsible for particle extraction/GPU steering
+    //Thread 1, will do the MPI all2all stuff
+    if(tid == 0)
     {
-      extractOutOfDomainParticlesAdvancedSFC2.set_arg<int>(0,    &extractOffset);
-      extractOutOfDomainParticlesAdvancedSFC2.set_arg<int>(1,    &items);
-      extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(2, validList2.p());
-      extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(3, localTree.bodies_Ppos.p());
-      extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(4, localTree.bodies_Pvel.p());
-      extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(5, localTree.bodies_pos.p());
-      extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(6, localTree.bodies_vel.p());
-      extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(7, localTree.bodies_acc0.p());
-      extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(8, localTree.bodies_acc1.p());
-      extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(9, localTree.bodies_time.p());
-      extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(10, localTree.bodies_ids.p());
-      extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(11, localTree.bodies_key.p());
-      extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(12, bodyBuffer.p());
-      extractOutOfDomainParticlesAdvancedSFC2.setWork(items, 128);
-      extractOutOfDomainParticlesAdvancedSFC2.execute(execStream->s());
+      //Check if the memory size, of the generalBuffer is large enough to store the exported particles
+        //if not allocate more but make sure that the copy of compactList survives
+        int validCount = nExportParticles;
+        int tempSize   = localTree.generalBuffer1.get_size() - (4*localTree.n); //4* = 2x uint2 validList2/3
+        int stepSize   = (tempSize / (sizeof(bodyStruct) / sizeof(int)))-512; //Available space in # of bodyStructs
 
-      if(!doInOneGo)
+        if(stepSize > nExportParticles)
+        {
+          doInOneGo = true; //We can do it in one go
+        }
+        else
+        {
+          doInOneGo       = false; //We need an extra CPU buffer
+          extraBodyBuffer = new bodyStruct[validCount];
+          assert(extraBodyBuffer != NULL);
+        }
+
+
+        my_dev::dev_mem<bodyStruct>  bodyBuffer(devContext);
+        int memOffset1 = bodyBuffer.cmalloc_copy(localTree.generalBuffer1, stepSize, tempOffset1);
+
+        double tx  = get_time();
+        int extractOffset = 0;
+        for(unsigned int i=0; i < validCount; i+= stepSize)
+        {
+          int items = min(stepSize, (int)(validCount-i));
+
+          if(items > 0)
+          {
+            extractOutOfDomainParticlesAdvancedSFC2.set_arg<int>(0,    &extractOffset);
+            extractOutOfDomainParticlesAdvancedSFC2.set_arg<int>(1,    &items);
+            extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(2, validList2.p());
+            extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(3, localTree.bodies_Ppos.p());
+            extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(4, localTree.bodies_Pvel.p());
+            extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(5, localTree.bodies_pos.p());
+            extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(6, localTree.bodies_vel.p());
+            extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(7, localTree.bodies_acc0.p());
+            extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(8, localTree.bodies_acc1.p());
+            extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(9, localTree.bodies_time.p());
+            extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(10, localTree.bodies_ids.p());
+            extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(11, localTree.bodies_key.p());
+            extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(12, bodyBuffer.p());
+            extractOutOfDomainParticlesAdvancedSFC2.setWork(items, 128);
+            extractOutOfDomainParticlesAdvancedSFC2.execute(execStream->s());
+
+            if(!doInOneGo)
+            {
+      #if 0
+              bodyBuffer.d2h(items, &extraBodyBuffer[extractOffset]); //Copy to our custom buffer, non-pinned
+      #else
+              bodyBuffer.d2h(items);
+              omp_set_num_threads(4); //Experiment with this number to see what is fastest
+      #pragma omp parallel for
+              for(int cpIdx=0; cpIdx < items; cpIdx++)
+                extraBodyBuffer[extractOffset+cpIdx] = bodyBuffer[cpIdx];
+      #endif
+              extractOffset += items;
+            }
+            else
+            {
+      //        double tx  = get_time();
+              bodyBuffer.d2h(items);
+      //        double ty = get_time();
+      //        LOGF(stderr,"ToDev B: Took: %lg Size: %ld  MB/s: %lg \n", ty-tx, (items*sizeof(bodyStruct)) / (1024*1024), (1/(ty-tx))*(items*sizeof(bodyStruct)) / (1024*1024));
+
+            }
+          }//if items > 0
+        }//end for
+
+        tExtract = get_time();
+
+        LOGF(stderr,"Exported particles from device. In one go: %d  Took: %lg Size: %ld  MB/s: %lg \n",
+            doInOneGo, tExtract-tx, (validCount*sizeof(bodyStruct)) / (1024*1024), (1/(tExtract-tx))*(validCount*sizeof(bodyStruct)) / (1024*1024));
+
+
+        if(doInOneGo)
+        {
+          extraBodyBuffer = &bodyBuffer[0]; //Assign correct pointer
+        }
+
+        //Now we have to move particles from the back of the array to the invalid spots
+        //this can be done in parallel with exchange operation to hide some time
+
+        //One integer for counting
+        my_dev::dev_mem<uint>  atomicBuff(devContext);
+        memOffset1 = atomicBuff.cmalloc_copy(localTree.generalBuffer1,1, tempOffset1);
+        atomicBuff.zeroMem();
+
+        double t3 = get_time();
+        //Internal particle movement
+        internalMoveSFC2.set_arg<int>(0,     &validCount);
+        internalMoveSFC2.set_arg<int>(1,     &localTree.n);
+        internalMoveSFC2.set_arg<uint4>(2,   &lowerBoundary);
+        internalMoveSFC2.set_arg<uint4>(3,   &upperBoundary);
+        internalMoveSFC2.set_arg<cl_mem>(4,  validList3.p());
+        internalMoveSFC2.set_arg<cl_mem>(5,  atomicBuff.p());
+        internalMoveSFC2.set_arg<cl_mem>(6,  localTree.bodies_Ppos.p());
+        internalMoveSFC2.set_arg<cl_mem>(7,  localTree.bodies_Pvel.p());
+        internalMoveSFC2.set_arg<cl_mem>(8,  localTree.bodies_pos.p());
+        internalMoveSFC2.set_arg<cl_mem>(9,  localTree.bodies_vel.p());
+        internalMoveSFC2.set_arg<cl_mem>(10, localTree.bodies_acc0.p());
+        internalMoveSFC2.set_arg<cl_mem>(11, localTree.bodies_acc1.p());
+        internalMoveSFC2.set_arg<cl_mem>(12, localTree.bodies_time.p());
+        internalMoveSFC2.set_arg<cl_mem>(13, localTree.bodies_ids.p());
+        internalMoveSFC2.set_arg<cl_mem>(14, localTree.bodies_key.p());
+        internalMoveSFC2.setWork(validCount, 128);
+        internalMoveSFC2.execute(execStream->s());
+        //  execStream->sync();
+        //LOGF(stderr,"Internal move: %lg  Since start: %lg \n", get_time()-t3,get_time()-tStart);
+    } //if tid == 0
+    else if(tid == 1)
+    {
+      //The MPI thread, performs a2a during memory copies
+
+      memset(nparticles,  0, sizeof(int)*(nProcs+1));
+      memset(nreceive,    0, sizeof(int)*(nProcs));
+      memset(nsendDispls, 0, sizeof(int)*(nProcs));
+
+      int sendOffset = 0;
+      for(int i=0; i < domainId.size(); i++)
       {
-#if 0
-        bodyBuffer.d2h(items, &extraBodyBuffer[extractOffset]); //Copy to our custom buffer, non-pinned
-#else
-        bodyBuffer.d2h(items);
-#pragma omp parallel for
-        for(int cpIdx=0; cpIdx < items; cpIdx++)
-          extraBodyBuffer[extractOffset+cpIdx] = bodyBuffer[cpIdx];
-#endif
-        extractOffset += items;
+        const int domain = domainId[i].x & 0x0FFFFFF;
+
+        nparticles [domain] = nParticlesPerDomain[i];
+        nsendDispls[domain] = sendOffset;
+        sendOffset         += nParticlesPerDomain[i];
+
+        //LOGF(stderr,"Domain info: %d -> %d \n",  domainId[i].x & 0x0FFFFFF, nParticlesPerDomain[i]);
       }
-      else
-      {
-//        double tx  = get_time();
-        bodyBuffer.d2h(items);
-//        double ty = get_time();
-//        LOGF(stderr,"ToDev B: Took: %lg Size: %ld  MB/s: %lg \n", ty-tx, (items*sizeof(bodyStruct)) / (1024*1024), (1/(ty-tx))*(items*sizeof(bodyStruct)) / (1024*1024));
 
-      }
-    }//if items > 0
-  }//end for
+      double tStarta2a = get_time();
+      MPI_Alltoall(nparticles, 1, MPI_INT, nreceive, 1, MPI_INT, MPI_COMM_WORLD);
+      ta2aSize = get_time()-tStarta2a;
+    }//if tid == 1
+  } //omp section
 
+  omp_set_num_threads(curOMPMax); //Restore the number of OMP threads
 
-  double ty = get_time();
-  double tExtract = ty;
-
-  LOGF(stderr,"Exported particles to device. In one go: %d  Took: %lg Size: %ld  MB/s: %lg \n",
-      doInOneGo, ty-tx, (validCount*sizeof(bodyStruct)) / (1024*1024), (1/(ty-tx))*(validCount*sizeof(bodyStruct)) / (1024*1024));
-
-
-  if(doInOneGo)
-  {
-    extraBodyBuffer = &bodyBuffer[0]; //Assign correct pointer
-  }
-
-  //Now we have to move particles from the back of the array to the invalid spots
-  //this can be done in parallel with exchange operation to hide some time
-
-  //One integer for counting
-  my_dev::dev_mem<uint>  atomicBuff(devContext);
-  memOffset1 = atomicBuff.cmalloc_copy(localTree.generalBuffer1,1, tempOffset1);
-  atomicBuff.zeroMem();
-
-  double t3 = get_time();
-  //Internal particle movement
-  internalMoveSFC2.set_arg<int>(0,     &validCount);
-  internalMoveSFC2.set_arg<int>(1,     &localTree.n);
-  internalMoveSFC2.set_arg<uint4>(2,   &lowerBoundary);
-  internalMoveSFC2.set_arg<uint4>(3,   &upperBoundary);
-  internalMoveSFC2.set_arg<cl_mem>(4,  validList3.p());
-  internalMoveSFC2.set_arg<cl_mem>(5,  atomicBuff.p());
-  internalMoveSFC2.set_arg<cl_mem>(6,  localTree.bodies_Ppos.p());
-  internalMoveSFC2.set_arg<cl_mem>(7,  localTree.bodies_Pvel.p());
-  internalMoveSFC2.set_arg<cl_mem>(8,  localTree.bodies_pos.p());
-  internalMoveSFC2.set_arg<cl_mem>(9,  localTree.bodies_vel.p());
-  internalMoveSFC2.set_arg<cl_mem>(10, localTree.bodies_acc0.p());
-  internalMoveSFC2.set_arg<cl_mem>(11, localTree.bodies_acc1.p());
-  internalMoveSFC2.set_arg<cl_mem>(12, localTree.bodies_time.p());
-  internalMoveSFC2.set_arg<cl_mem>(13, localTree.bodies_ids.p());
-  internalMoveSFC2.set_arg<cl_mem>(14, localTree.bodies_key.p());
-  internalMoveSFC2.setWork(validCount, 128);
-  internalMoveSFC2.execute(execStream->s());
-
-//  execStream->sync();
-
-
-  LOGF(stderr,"Fulll extract took: Internl move: %lg  Since start: %lg \n", get_time()-t3,get_time()-tStart);
-
+  //LOGF(stderr,"Particle extraction took: %lg \n", get_time()-tStart);
 
   int currentN = localTree.n;
 
-  //this->gpu_exchange_particles_with_overflow_check_SFC(localTree, &bodyBuffer[0], compactList, validCount);
   this->gpu_exchange_particles_with_overflow_check_SFC2(localTree, &extraBodyBuffer[0],
-                                                        domainId, nParticlesPerDomain,
-                                                        validCount);
+                                                        nparticles, nsendDispls, nreceive,
+                                                        nExportParticles);
 
 
 
   double tEnd = get_time();
 
   char buff5[1024];
-  sprintf(buff5,"EXCHANGE-%d: tCheckDomain: %lg tExtract: %lg tDomainEx: %lg nExport: %d nImport: %d \n",
-      procId, tCheck-tStart, tExtract-tCheck, tEnd-tExtract,validCount, localTree.n - (currentN-validCount));
+  sprintf(buff5,"EXCHANGE-%d: tCheckDomain: %lg ta2aSize: %lg tSort: %lg tExtract: %lg tDomainEx: %lg nExport: %d nImport: %d \n",
+      procId, tCheck-tStart, ta2aSize, tSort-tCheck, tExtract-tSort, tEnd-tExtract,nExportParticles, localTree.n - (currentN-nExportParticles));
   devContext.writeLogEvent(buff5);
 
   if(!doInOneGo) delete[] extraBodyBuffer;
@@ -1608,47 +1649,19 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
 
 
 #if 0
-  Hier gebleven;
-  Werkt:
-  - Markeren als valid/invalid
-  - Sorteren van IDs
-  - Nu de extract functie maken zodat hij alles extract
-  - rekening houdend met de offset voor de lees ID
-  - scatter read en continous write
-
-  -- Checken van domain ervoor en erna daardoor weten we meteen de indices,
-  en hoeven we die niet op CPU te checken. Op CPU kan alleen na data-copy
-  als we indices eerder weten kunnen we alltoall overallpen met data-ccopy.
-  Vergelijkbaar met de tree-build kernel.
-  Maar dan weten we niet welk domein erbij hoort? Alleen als we dan het domain
-  opvragen van die positie.
-
-  Data
-  IDs:     [0,1,2,3,  4,5,6,7,8  ,9  ]
-  Domains: [0,1,3,0xF,1,1,0,3,0xF,0xF]
-  Valid:   [1,1,1,0  ,1,1,1,1,0  ,0  ]  <- No need to set if we partition based on 0x0FFFFFF check
-
-  First step, sort by value: <- Requires sorting the full range
-  IDs:     [0,6,1,4,5,2,7,3  ,8  ,9  ]
-  Domains: [0,0,1,1,1,3,3,0xF,0xF,0xF]
---====
-  First step, partition if based on stencil? Is there a partition value ?
+  First step, partition?
   IDs:     [0,1,2,4,5,6,7,3, 8  ,9  ]
   Domains: [0,1,3,1,1,0,3,0xF,0xF,0xF]
 
-  Second step, sort?
+  Second step, sort by exported domain
    IDs:     [0,6,1,4,5,3,7,3, 8  ,9  ]
    Domains: [0,0,1,1,1,3,3,0xF,0xF,0xF]
 
-             segmented reduction
+ Third step, reduce the domains
    Domains/Key  [0,0,1,1,1,3,3]
    Values       [1,1,1,1,1,1,1]
-   reducebykey  [2,3,2]
-                [0,1,3]
-
-   Domains/value [0,0,1,1,1,3,3]
-   unique       [0,1,3]
-
+   reducebykey  [0,1,3] domain IDs
+                [2,3,2] # particles per domain
 #endif
 
 
@@ -1660,68 +1673,16 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
 
 //Exchange particles with other processes
 int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree,
-    bodyStruct *particlesToSend,
-    std::vector<uint2> &domainKeys,
-    std::vector<uint> &domainCounts,
-    int nToSend)
+                                                            bodyStruct *particlesToSend,
+                                                            int *nparticles, int *nsendDispls,
+                                                            int *nreceive, int nToSend)
 {
 #ifdef USE_MPI
 
   double tStart = get_time();
 
-  int myid      = procId;
-  int nproc     = nProcs;
-  int iloc      = 0;
-  int nbody     = nToSend;
-
-
-  bodyStruct  tmpp;
-
-  int *firstloc    = &exchangePartBuffer[0*nProcs];                //Size nProcs+1
-  int *nparticles  = &exchangePartBuffer[1*(nProcs+1)];            //Size nProcs+1
-  int *nsendDispls = &exchangePartBuffer[2*(nProcs+1)];            //Size nProcs+1
-  int *nrecvDispls = &exchangePartBuffer[3*(nProcs+1)];            //Size nProcs+1
-  int *nreceive    = &exchangePartBuffer[4*(nProcs+1)];            //Size nProcs
-  int *nsendbytes  = &exchangePartBuffer[4*(nProcs+1) + 1*nProcs]; //Size nProcs
-  int *nrecvbytes  = &exchangePartBuffer[4*(nProcs+1) + 2*nProcs]; //Size nProcs
-
-  memset(nparticles,  0, sizeof(int)*(nProcs+1));
-  memset(nreceive,    0, sizeof(int)*(nProcs));
-  memset(nsendbytes,  0, sizeof(int)*(nProcs));
-  memset(nsendDispls, 0, sizeof(int)*(nProcs));
-
-  // Loop over particles and determine which particle needs to go where
-  // reorder the bodies in such a way that bodies that have to be send
-  // away are stored after each other in the array
-  double t1 = get_time();
-
-  int sendOffset = 0;
-  for(int i=0; i < domainKeys.size(); i++)
-  {
-    const int domain = domainKeys[i].x & 0x0FFFFFF;
-
-    nparticles [domain] = domainCounts[i];
-    nsendbytes [domain] = domainCounts[i]*sizeof(bodyStruct);
-    nsendDispls[domain] = sendOffset*sizeof(bodyStruct);
-    sendOffset         += domainCounts[i];
-
-    LOGF(stderr,"Domain info: %d -> %d \n",  domainKeys[i].x & 0x0FFFFFF, domainCounts[i]);
-  }
-
-  double tReorder = get_time();
-
-
-  t1 = get_time();
-
-  //Non-blocking send/recv version
-
-  double tStarta2a = get_time();
-  MPI_Alltoall(nparticles, 1, MPI_INT, nreceive, 1, MPI_INT, MPI_COMM_WORLD);
-
-  double tEnda2a = get_time();
   unsigned int recvCount  = nreceive[0];
-
-  for (int i = 1; i < nproc; i++)
+  for (int i = 1; i < nProcs; i++)
   {
     recvCount     += nreceive[i];
   }
@@ -1735,15 +1696,15 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree
   static MPI_Request req[NMAXPROC*2];
 
   int nreq = 0;
-  for (int dist = 1; dist < nproc; dist++)
+  for (int dist = 1; dist < nProcs; dist++)
   {
-    const int src    = (nproc + myid - dist) % nproc;
-    const int dst    = (nproc + myid + dist) % nproc;
-    const int scount = nsendbytes[dst];
-    const int rcount = nreceive[src]*sizeof(bodyStruct);
+    const int src    = (nProcs + procId - dist) % nProcs;
+    const int dst    = (nProcs + procId + dist) % nProcs;
+    const int scount = nparticles[dst] * sizeof(bodyStruct);
+    const int rcount = nreceive  [src] * sizeof(bodyStruct);
 
 #if 1
-    if (scount > 0) MPI_Isend(&particlesToSend[nsendDispls[dst]/sizeof(bodyStruct)], scount, MPI_BYTE, dst, 1, MPI_COMM_WORLD, &req[nreq++]);
+    if (scount > 0) MPI_Isend(&particlesToSend[nsendDispls[dst]], scount, MPI_BYTE, dst, 1, MPI_COMM_WORLD, &req[nreq++]);
     if(rcount > 0)
     {
       MPI_Irecv(&recv_buffer3[recvOffset], rcount, MPI_BYTE, src, 1, MPI_COMM_WORLD, &req[nreq++]);
@@ -1751,7 +1712,7 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree
     }
 #else
     MPI_Status stat;
-    MPI_Sendrecv(&particlesToSend[nsendDispls[dst]/sizeof(bodyStruct)],
+    MPI_Sendrecv(&particlesToSend[nsendDispls[dst]],
         scount, MPI_BYTE, dst, 1,
         &recv_buffer3[recvOffset], rcount, MPI_BYTE, src, 1, MPI_COMM_WORLD, &stat);
     recvOffset += nreceive[src];
@@ -1762,12 +1723,11 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree
   MPI_Waitall(nreq, req, stat);
 
   double tSendEnd = get_time();
-  LOGF(stderr, "EXCHANGE V2 comm iter: %d  a2asize: %lg data-send: %lg data-wait: %lg \n",
-                iter, tEnda2a-tStarta2a, t94-tEnda2a, tSendEnd -t94);
+  //LOGF(stderr, "EXCHANGE V2 comm iter: %d  data-send: %lg data-wait: %lg \n",iter, t94-tStart, tSendEnd -t94);
 
   //If we arrive here all particles have been exchanged, move them to the GPU
 
-  LOGF(stderr,"Required inter-process communication time: %lg ,proc: %d\n", get_time()-t1, myid);
+  LOGF(stderr,"Required inter-process communication time: %lg ,proc: %d\n", get_time()-tStart, procId);
 
   //Compute the new number of particles:
   int newN = tree.n + recvCount - nToSend;
@@ -1781,8 +1741,8 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree
   }
 #endif
 
-  execStream->sync();   //make certain that the particle movement on the device
-  //is complete before we resize
+  //make certain that the particle movement on the device is complete before we resize
+  execStream->sync();
 
   double tSyncGPU = get_time();
 
@@ -1792,7 +1752,7 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree
   if(tree.bodies_acc0.get_size() < newN)
     memSize = newN * MULTI_GPU_MEM_INCREASE;
 
-  LOGF(stderr,"Going to allocate memory for %d particles \n", newN);
+  //LOGF(stderr,"Going to allocate memory for %d particles \n", newN);
 
   //Have to resize the bodies vector to keep the numbering correct
   //but do not reduce the size since we need to preserve the particles
@@ -1824,9 +1784,6 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree
 
   int memOffset1 = bodyBuffer.cmalloc_copy(localTree.generalBuffer1, stepSize, 0);
 
-//  LOGF(stderr, "Exchange, received %d \tSend: %d newN: %d\tItems that can be insert in one step: %d\n",
-//      recvCount, nToSend, newN, stepSize);
-
   double tAllocComplete = get_time();
 
   int insertOffset = 0;
@@ -1840,8 +1797,6 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree
 #pragma omp parallel for
         for(int cpIdx=0; cpIdx < items; cpIdx++)
           bodyBuffer[cpIdx] = recv_buffer3[insertOffset+cpIdx];
-
-//      memcpy(&bodyBuffer[0], &recv_buffer3[insertOffset], sizeof(bodyStruct)*items);
 
       bodyBuffer.h2d(items);
 
@@ -1862,10 +1817,9 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree
       insertNewParticlesSFC.set_arg<cl_mem>(13, bodyBuffer.p());
       insertNewParticlesSFC.setWork(items, 128);
       insertNewParticlesSFC.execute(execStream->s());
-    }
-
+    }// if items > 0
     insertOffset += items;
-  }
+  } //for recvCount
 
   //Resize the arrays of the tree
   tree.setN(newN);
@@ -1874,12 +1828,10 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree
   double tEnd = get_time();
 
   char buff5[1024];
-  sprintf(buff5,"EXCHANGEB-%d: tExSort: %lg tExSend: %lg tExGPUSync: %lg tExGPUAlloc: %lg tExGPUSend: %lg\n",
-                procId, tReorder-tStart, tSendEnd-tStarta2a, tSyncGPU-tSendEnd,
-                tAllocComplete-tSyncGPU, tEnd-tAllocComplete);
-  devContext.writeLogEvent(buff5);
-  sprintf(buff5,"EXCHANGEV-%d: ta2aSize: %lg tISendIRecv: %lg tWaitall: %lg\n",
-                procId, tEnda2a-tStarta2a, t94-tEnda2a, tSendEnd-t94);
+  sprintf(buff5,"EXCHANGEB-%d: tExSend: %lg tExGPUSync: %lg tExGPUAlloc: %lg tExGPUSend: %lg tISendIRecv: %lg tWaitall: %lg\n",
+                procId, tSendEnd-tStart, tSyncGPU-tSendEnd,
+                tAllocComplete-tSyncGPU, tEnd-tAllocComplete,
+                t94-tStart, tSendEnd-t94);
   devContext.writeLogEvent(buff5);
 
 #endif

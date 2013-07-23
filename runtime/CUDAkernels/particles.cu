@@ -225,7 +225,7 @@ extern "C" uint2 thrust_partitionDomains( my_dev::dev_mem<uint2> &validList,
                                   binary_op);
 #endif
 
-  //LOGF(stderr,"Sorting detail: N: %d partition: %lg sort: %lg reduce: %lg \n",remoteParticles, t2-t1,t3-t2,get_time()-t3);
+  LOGF(stderr,"Sorting detail: N: %d partition: %lg sort: %lg reduce: %lg \n",remoteParticles, t2-t1,t3-t2,get_time()-t3);
 
   const int nValues = (int)(new_end.first  - outKeys);
  //return the number of remote particles and the number of remote domains
