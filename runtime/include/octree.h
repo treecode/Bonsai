@@ -484,9 +484,12 @@ protected:
 
   my_dev::kernel domainCheckSFC;
   my_dev::kernel internalMoveSFC;
+  my_dev::kernel internalMoveSFC2;
   my_dev::kernel extractOutOfDomainParticlesAdvancedSFC;
+  my_dev::kernel extractOutOfDomainParticlesAdvancedSFC2;
   my_dev::kernel insertNewParticlesSFC;
   my_dev::kernel extractSampleParticlesSFC;
+  my_dev::kernel domainCheckSFCAndAssign;
 
 #ifdef USE_B40C
   Sort90 *sorter;
@@ -717,6 +720,13 @@ public:
   int  gpu_exchange_particles_with_overflow_check(tree_structure &tree,
                                                   bodyStruct *particlesToSend, 
                                                   my_dev::dev_mem<uint> &extractList, int nToSend);
+
+  int gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree,
+                                                    bodyStruct *particlesToSend,
+                                                    std::vector<uint2> &domainKeys,
+                                                    std::vector<uint> &domainCounts,
+                                                    int nToSend);
+
   void gpuRedistributeParticles();
 
 //  int  exchange_particles_with_overflow_check(tree_structure &localTree);

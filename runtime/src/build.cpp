@@ -63,6 +63,8 @@ void octree::allocateParticleMemory(tree_structure &tree)
 
 
 
+
+
   #ifdef USE_B40C
     sorter = new Sort90(n_bodies, tree.generalBuffer1.d());
 //     sorter = new Sort90(n_bodies);
@@ -602,8 +604,13 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
 
     domComp = get_time()-t0;
 
-    LOGF(stderr, "Computing, exchanging and recompute of domain boundaries took: %f \n", get_time()-t0);
+    char buff5[1024];
+    sprintf(buff5,"EXCHANGEA-%d: tUpdateBoundaries: %lg\n", procId,  domComp);
+    devContext.writeLogEvent(buff5);
+
+    LOGF(stderr, "Computing, exchanging and recompute of domain boundaries took: %f \n",domComp);
     t0 = get_time();
+
 
     gpuRedistributeParticles_SFC(&tree.parallelBoundaries[0]);
 

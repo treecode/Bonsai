@@ -266,6 +266,92 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
   } //end if
   
   devContext.stopTiming("Data-reordering", 1, execStream->s());   
+
+
+#if 0
+
+  int validCount = localTree.n / 2;
+   //Check if the memory size, of the generalBuffer is large enough to store the exported particles
+   //if not allocate more but make sure that the copy of compactList survives
+   int tempSize = localTree.generalBuffer1.get_size() - localTree.n;
+   int needSize = (int)(1.01f*(validCount*(sizeof(bodyStruct)/sizeof(int))));
+   int stepSize = (tempSize / (sizeof(bodyStruct) / sizeof(int)))-512;
+
+   if(procId == 0)
+   {
+     bool doInOneGo = true;
+
+     bodyStruct *extraBodyBuffer = NULL;
+
+     if(stepSize > needSize)
+     {
+       //We can do it in one go
+       doInOneGo = true;
+     }
+     else
+     {
+       //We need an extra CPU buffer
+       doInOneGo       = false;
+       extraBodyBuffer = new bodyStruct[validCount];
+       assert(extraBodyBuffer != NULL);
+     }
+
+    my_dev::dev_mem<bodyStruct>  bodyBuffer(devContext);
+
+    my_dev::dev_mem<uint2>  validList2(devContext);
+    int tempOffset1 = validList2.  cmalloc_copy(localTree.generalBuffer1, localTree.n, 0);
+
+    int memOffset1 = bodyBuffer.cmalloc_copy(localTree.generalBuffer1, stepSize, tempOffset1);
+
+//    bodyBuffer.zeroMem();
+
+    for(int i=0; i < validCount; i++)
+      validList2[i] = make_uint2(i,i);
+    validList2.h2d();
+
+    int extractOffset = 0;
+    for(unsigned int i=0; i < validCount; i+= stepSize)
+    {
+      int items = min(stepSize, (int)(validCount-i));
+
+      if(items > 0)
+      {
+        double t1 = get_time();
+        extractOutOfDomainParticlesAdvancedSFC2.set_arg<int>(0,    &extractOffset);
+        extractOutOfDomainParticlesAdvancedSFC2.set_arg<int>(1,    &items);
+        extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(2, validList2.p());
+        extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(3, localTree.bodies_Ppos.p());
+        extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(4, localTree.bodies_Pvel.p());
+        extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(5, localTree.bodies_pos.p());
+        extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(6, localTree.bodies_vel.p());
+        extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(7, localTree.bodies_acc0.p());
+        extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(8, localTree.bodies_acc1.p());
+        extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(9, localTree.bodies_time.p());
+        extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(10, localTree.bodies_ids.p());
+        extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(11, localTree.bodies_key.p());
+        extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(12, bodyBuffer.p());
+        extractOutOfDomainParticlesAdvancedSFC2.setWork(items, 128);
+        extractOutOfDomainParticlesAdvancedSFC2.execute(execStream->s());
+        execStream->sync();
+        double t2 = get_time();
+
+        LOGF(stderr,"EXTR: %d \t %lg  size of body buf: %d Step: %d \n", items, t2-t1, sizeof(bodyStruct), i);
+
+        bodyBuffer.d2h(items); // validCount);
+//        for(int i=0; i < items; i++)
+//        {
+//          LOGF(stderr,"%d\tPos: %f %f %f %f\tVel: %f %f %f %f\tKey: %d %d %d %d \n",
+//              i,
+//              bodyBuffer[i].pos.x,bodyBuffer[i].pos.y,bodyBuffer[i].pos.z,bodyBuffer[i].pos.w,
+//              bodyBuffer[i].vel.x,bodyBuffer[i].vel.y,bodyBuffer[i].vel.z,bodyBuffer[i].vel.w,
+//              bodyBuffer[i].key.x,bodyBuffer[i].key.y,bodyBuffer[i].key.z,bodyBuffer[i].key.w);
+//        }
+
+      }
+    }
+   }
    
+   MPI_Finalize(); exit(0);
+#endif
 }
 

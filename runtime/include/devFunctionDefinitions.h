@@ -91,8 +91,10 @@ extern "C" void  (gpu_internalMove)(int n_extract, int       n_bodies,double4  x
 extern "C" void  (gpu_insertNewParticles)(int       n_extract, int       n_insert, int       n_oldbodies, int       offset, real4     *Ppos, real4     *Pvel, real4     *pos, real4     *vel, real4     *acc0, real4     *acc1, float2    *time, int       *body_id, bodyStruct *source);
 
 extern "C" void  (gpu_internalMoveSFC) (int       n_extract, int       n_bodies, uint4  lowBoundary, uint4  highBoundary, int       *extractList, int       *indexList, real4     *Ppos, real4     *Pvel, real4     *pos, real4     *vel, real4     *acc0, real4     *acc1, float2    *time, int       *body_id, uint4     *body_key);
+extern "C" void  (gpu_internalMoveSFC2) (int       n_extract, int       n_bodies, uint4  lowBoundary, uint4  highBoundary, int2       *extractList, int       *indexList, real4     *Ppos, real4     *Pvel, real4     *pos, real4     *vel, real4     *acc0, real4     *acc1, float2    *time, int       *body_id, uint4     *body_key);
 
 extern "C" void  (gpu_extractOutOfDomainParticlesAdvancedSFC)(int offset, int n_extract, int *extractList, real4 *Ppos, real4 *Pvel, real4 *pos, real4 *vel, real4 *acc0, real4 *acc1, float2 *time, int   *body_id, uint4 *body_key, bodyStruct *destination);
+extern "C" void  (gpu_extractOutOfDomainParticlesAdvancedSFC2)(int offset, int n_extract, uint2 *extractList, real4 *Ppos, real4 *Pvel, real4 *pos, real4 *vel, real4 *acc0, real4 *acc1, float2 *time, int   *body_id, uint4 *body_key, bodyStruct *destination);
 
 extern "C" void  (gpu_insertNewParticlesSFC)(int       n_extract, int       n_insert, int       n_oldbodies, int       offset, real4     *Ppos, real4     *Pvel, real4     *pos, real4     *vel, real4     *acc0, real4     *acc1, float2    *time, int       *body_id, uint4     *body_key, bodyStruct *source);
 extern "C" void  (gpu_extractSampleParticlesSFC)(int    n_bodies, int    sample_freq, uint4  *body_pos, uint4  *samplePosition);
@@ -103,7 +105,6 @@ extern "C" void  (gpu_build_parallel_grps)( uint   compact_list_len, uint   offs
 
 extern "C" void  (gpu_segmentedSummaryBasic) (const int n_groups, uint     *validGroups, uint     *atomicValues, uint2    *hashGroupInfo, uint4    *hashGroupKey, uint4    *hashGroupResult, uint4    *sourceData);
 
-
-
+extern "C" void  (gpu_domainCheckSFCAndAssign)(int    n_bodies, int    nProcs, uint4  lowBoundary, uint4  highBoundary, uint4  *boundaryList,  uint4  *body_key, uint    *validList,  uint   *idList);
 
 #endif
