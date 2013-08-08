@@ -270,44 +270,54 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
 
 #if 0
 
-  int validCount = localTree.n / 2;
-   //Check if the memory size, of the generalBuffer is large enough to store the exported particles
-   //if not allocate more but make sure that the copy of compactList survives
-   int tempSize = localTree.generalBuffer1.get_size() - localTree.n;
-   int needSize = (int)(1.01f*(validCount*(sizeof(bodyStruct)/sizeof(int))));
-   int stepSize = (tempSize / (sizeof(bodyStruct) / sizeof(int)))-512;
+  //Items = 11078474
+  //Valid = 6558113
+  //Buff = 236720128
 
    if(procId == 0)
    {
-     bool doInOneGo = true;
+     const int nExportParticles = 6558113;
 
+     bool doInOneGo              = true;
      bodyStruct *extraBodyBuffer = NULL;
 
-     if(stepSize > needSize)
-     {
-       //We can do it in one go
-       doInOneGo = true;
-     }
-     else
-     {
-       //We need an extra CPU buffer
-       doInOneGo       = false;
-       extraBodyBuffer = new bodyStruct[validCount];
-       assert(extraBodyBuffer != NULL);
-     }
+     localTree.generalBuffer1.cresize(236720128, true);
 
-    my_dev::dev_mem<bodyStruct>  bodyBuffer(devContext);
 
     my_dev::dev_mem<uint2>  validList2(devContext);
+    my_dev::dev_mem<uint2>  validList3(devContext);
     int tempOffset1 = validList2.  cmalloc_copy(localTree.generalBuffer1, localTree.n, 0);
+        tempOffset1 = validList3.  cmalloc_copy(localTree.generalBuffer1, localTree.n, tempOffset1);
 
+
+    //Check if the memory size, of the generalBuffer is large enough to store the exported particles
+    //if not allocate more but make sure that the copy of compactList survives
+    int validCount = nExportParticles;
+    //int tempSize   = localTree.generalBuffer1.get_size() - (4*localTree.n); //4* = 2x uint2 validList2/3
+    int tempSize   = localTree.generalBuffer1.get_size() - tempOffset1; //4* = 2x uint2 validList2/3
+    int stepSize   = (tempSize / (sizeof(bodyStruct) / sizeof(int)))-512; //Available space in # of bodyStructs
+
+    if(stepSize > nExportParticles)
+    {
+      doInOneGo = true; //We can do it in one go
+    }
+    else
+    {
+      doInOneGo       = false; //We need an extra CPU buffer
+      extraBodyBuffer = new bodyStruct[validCount];
+      assert(extraBodyBuffer != NULL);
+    }
+
+
+    my_dev::dev_mem<bodyStruct>  bodyBuffer(devContext);
     int memOffset1 = bodyBuffer.cmalloc_copy(localTree.generalBuffer1, stepSize, tempOffset1);
-
-//    bodyBuffer.zeroMem();
 
     for(int i=0; i < validCount; i++)
       validList2[i] = make_uint2(i,i);
     validList2.h2d();
+
+    FILE *out = fopen("temp-1.txt", "w");
+
 
     int extractOffset = 0;
     for(unsigned int i=0; i < validCount; i+= stepSize)
@@ -316,6 +326,12 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
 
       if(items > 0)
       {
+
+        LOGF(stderr, "extractOffset: %d items: %d stepSize: %d validCount: %d validList2.size: %d tempSize: %d buff: %d  i %d onego: %d tempOffset1: %d memOffset1: %d\n",
+                     extractOffset, items, stepSize, validCount, validList2.get_size(),
+                     tempSize, localTree.generalBuffer1.get_size(), i, doInOneGo,
+                     tempOffset1, memOffset1);
+
         double t1 = get_time();
         extractOutOfDomainParticlesAdvancedSFC2.set_arg<int>(0,    &extractOffset);
         extractOutOfDomainParticlesAdvancedSFC2.set_arg<int>(1,    &items);
@@ -331,6 +347,7 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
         extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(11, localTree.bodies_key.p());
         extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(12, bodyBuffer.p());
         extractOutOfDomainParticlesAdvancedSFC2.setWork(items, 128);
+        extractOutOfDomainParticlesAdvancedSFC2.printWorkSize();
         extractOutOfDomainParticlesAdvancedSFC2.execute(execStream->s());
         execStream->sync();
         double t2 = get_time();
@@ -338,17 +355,18 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
         LOGF(stderr,"EXTR: %d \t %lg  size of body buf: %d Step: %d \n", items, t2-t1, sizeof(bodyStruct), i);
 
         bodyBuffer.d2h(items); // validCount);
-//        for(int i=0; i < items; i++)
-//        {
-//          LOGF(stderr,"%d\tPos: %f %f %f %f\tVel: %f %f %f %f\tKey: %d %d %d %d \n",
-//              i,
-//              bodyBuffer[i].pos.x,bodyBuffer[i].pos.y,bodyBuffer[i].pos.z,bodyBuffer[i].pos.w,
-//              bodyBuffer[i].vel.x,bodyBuffer[i].vel.y,bodyBuffer[i].vel.z,bodyBuffer[i].vel.w,
-//              bodyBuffer[i].key.x,bodyBuffer[i].key.y,bodyBuffer[i].key.z,bodyBuffer[i].key.w);
-//        }
+        for(int i=0; i < items; i++)
+        {
+          fprintf(out,"%d\tPos: %f %f %f %f\tVel: %f %f %f %f\tKey: %d %d %d %d \n",
+              i,
+              bodyBuffer[i].pos.x,bodyBuffer[i].pos.y,bodyBuffer[i].pos.z,bodyBuffer[i].pos.w,
+              bodyBuffer[i].vel.x,bodyBuffer[i].vel.y,bodyBuffer[i].vel.z,bodyBuffer[i].vel.w,
+              bodyBuffer[i].key.x,bodyBuffer[i].key.y,bodyBuffer[i].key.z,bodyBuffer[i].key.w);
+        }
 
       }
     }
+    fclose(out);
    }
    
    MPI_Finalize(); exit(0);

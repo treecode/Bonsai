@@ -1053,7 +1053,7 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
     /* LB step */
 
     double f_lb = 1.0;
-#if 1  /* LB: use load ballacing */
+#if 1  /* LB: use load balancing */
     {
       static double prevDurStep = -1;
       static int prevSampFreq = -1;
@@ -1330,7 +1330,7 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
       //Check if the memory size, of the generalBuffer is large enough to store the exported particles
         //if not allocate more but make sure that the copy of compactList survives
         int validCount = nExportParticles;
-        int tempSize   = localTree.generalBuffer1.get_size() - (4*localTree.n); //4* = 2x uint2 validList2/3
+        int tempSize   = localTree.generalBuffer1.get_size() - tempOffset1;
         int stepSize   = (tempSize / (sizeof(bodyStruct) / sizeof(int)))-512; //Available space in # of bodyStructs
 
         if(stepSize > nExportParticles)
@@ -5938,7 +5938,7 @@ void octree::mpiSumParticleCount(int numberOfParticles)
 {
   //Sum the number of particles on all processes
 #ifdef USE_MPI
-  unsigned long long tmp;
+  unsigned long long tmp  = 0;
   unsigned long long tmp2 = numberOfParticles;
   MPI_Allreduce(&tmp2,&tmp,1, MPI_UNSIGNED_LONG_LONG, MPI_SUM,MPI_COMM_WORLD);
   nTotalFreq_ull = tmp;

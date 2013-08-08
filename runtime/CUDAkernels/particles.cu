@@ -781,6 +781,8 @@ KERNEL_DECLARE(gpu_extractOutOfDomainParticlesAdvancedSFC2)(
   //5x faster than original (above)
   __shared__ bodyStruct shmem[128];
 
+  if((bid * blockDim.x) >= n_extract) return;
+
   if(id < n_extract)
   {
     shmem[threadIdx.x].Ppos  = Ppos[extractList[offset+id].y];
@@ -793,37 +795,37 @@ KERNEL_DECLARE(gpu_extractOutOfDomainParticlesAdvancedSFC2)(
     shmem[threadIdx.x].id    = body_id[extractList[offset+id].y];
     shmem[threadIdx.x].key   = body_key[extractList[offset+id].y];
   }
-
   __syncthreads();
 
   int startWrite  = bid * blockDim.x;
   float4 *shdata4 = (float4*)shmem;
   float4 *output  = (float4*)&destination[startWrite];
 
+
   //We have blockDim.x thread, each thread writes a float4. Compute number of items per thread-block
   //and number of loops and remaining items
   const float nThreadsPerItem = sizeof(bodyStruct) / sizeof(float4);
   const int   nItemsPerLoop   = (int)(blockDim.x / nThreadsPerItem);
 
-  const int nExtractThisBlock = min(n_extract-(bid * blockDim.x), blockDim.x);
+  const int nExtractThisBlock = min(n_extract-startWrite, (int)blockDim.x);
 
   const int   nLoops          = (nExtractThisBlock/nItemsPerLoop);
-  const int   nExtra          = (nExtractThisBlock - nLoops*nItemsPerLoop)*nThreadsPerItem;
+  int         nExtra          = (nExtractThisBlock - nLoops*nItemsPerLoop)*nThreadsPerItem;
+
 
   int startOut = 0;
-
-#pragma unroll
   for(int i=0; i < nLoops; i++)
   {
-    output[startOut + threadIdx.x] = shdata4[threadIdx.x  + startOut]; //Write first blockDim.x * float4 items
+    output[startOut + threadIdx.x] = shdata4[threadIdx.x  + startOut]; //Write blockDim.x * float4 items
     startOut += blockDim.x;
   }
 
   //Write the remaining items
   if(threadIdx.x < nExtra)
   {
-    output[startOut + threadIdx.x] = shdata4[threadIdx.x  + startOut]; //Write first blockDim.x * float4 items
+    output[startOut + threadIdx.x] = shdata4[threadIdx.x  + startOut]; //Write remaining float4 items
   }
+
 
 
 #endif
@@ -831,7 +833,7 @@ KERNEL_DECLARE(gpu_extractOutOfDomainParticlesAdvancedSFC2)(
 #if 0
   Do not use the below kernels without first checking
   that the offsets are correct. There were problems with the ones
-  above
+  above.
 
 #elif 0
   //
@@ -844,7 +846,7 @@ KERNEL_DECLARE(gpu_extractOutOfDomainParticlesAdvancedSFC2)(
   int startOut = 0;
   for(int j=0; j < 2; j++)
   {
-    int nExtractThisBlock = min(n_extract-(bid * blockDim.x), blockDim.x);
+    int nExtractThisBlock = min(n_extract-(bid * blockDim.x), (int)blockDim.x);
     nExtractThisBlock    -= j*64;
     nExtractThisBlock     = min(64, nExtractThisBlock);
 
