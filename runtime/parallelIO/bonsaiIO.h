@@ -6,8 +6,8 @@ struct BonsaiIO
   bool isFileOpened();
   bool isFileOpenedForRead();
   bool isFileOpenedForWrite();
-  bool setFileOpenedForRead();
-  bool setFileOpenedForWrite();
+  void setFileOpenedForRead();
+  void setFileOpenedForWrite();
 
   template<ID_t>
     bool openFile(const std::string &fileName, const char mode, std::vector<ID_t> &IDList)
