@@ -1,23 +1,29 @@
-class BonsaiIO
+struct BonsaiIO
 {
-  typedef unsigned long long ID_t;
-  BonsaiIO() {}
-  ~BonsaiIO() {} 
+  BonsaiIO() { /* do some sanity tests before open */}
+  ~BonsaiIO() { /* do some sanity tests before close */} 
 
-  bool openFile(const std::string &fileName, const char mode, std::vector<ID_t> &IDList)
-  { 
-    assert(!isFileOpened());
-    /* opens a file with "filename" and a mode "r" for read and "w" for write */
-    /* if mode is "r", the indexList is populated with particle IDs from the file
-     * if mode is "w", the indexList must contain unique & immutable particle IDs */
-    if (mode == 'r')
-      setFileIsOpenedForRead();
-    else if (mode == 'w')
-      setFileIsOpenedForWrite();
-    else
-      assert(0);
-    return isFileOpened(); /* if successfull */
-  }
+  bool isFileOpened();
+  bool isFileOpenedForRead();
+  bool isFileOpenedForWrite();
+  bool setFileOpenedForRead();
+  bool setFileOpenedForWrite();
+
+  template<ID_t>
+    bool openFile(const std::string &fileName, const char mode, std::vector<ID_t> &IDList)
+    { 
+      assert(!isFileOpened());
+      /* opens a file with "filename" and a mode "r" for read and "w" for write */
+      /* if mode is "r", the indexList is populated with particle IDs from the file
+       * if mode is "w", the indexList must contain unique & immutable particle IDs */
+      if (mode == 'r')
+        setFileOpenedForRead();
+      else if (mode == 'w')
+        setFileOpenedForWrite();
+      else
+        assert(0);
+      return isFileOpened(); /* if successfull */
+    }
 
   template<typename T>
     bool writeAttribute(const std::string &attributeName, const std::vector<T> &attributeData)
@@ -53,8 +59,8 @@ class BonsaiIO
       return true;
     }
 
-  template<typename T>
-    bool readAttribute(const std::string &attributeName, std::vector<T> &attributeData, std::vector<ID_t> &IDList)
+  template<typename T, typename ID_t>
+    bool readAttribute(const std::string &attributeName, const std::vector<ID_t> &IDList, std::vector<T> &attributeData)
     {
       assert(isFileOpenedForRead());
       /* returns attrbite for particles with desired IDs */
