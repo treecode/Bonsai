@@ -59,7 +59,7 @@ struct BonsaiIO
       return true;
     }
 
-  template<typename T, typename ID_t>
+  template<typename ID_t, typename T>
     bool readAttribute(const std::string &attributeName, const std::vector<ID_t> &IDList, std::vector<T> &attributeData)
     {
       assert(isFileOpenedForRead());
