@@ -1,3 +1,5 @@
+#pragma once
+
 #ifndef TIPSYDEFS_H
 #define TIPSYDEFS_H
 

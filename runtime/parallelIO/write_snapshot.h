@@ -3,11 +3,6 @@
 #include <fstream>
 #include "tipsydefs.h"
 
-struct real4
-{
-  float x,y,z,w;
-};
-
 size_t write_snapshot(
     const real4 *bodyPositions, 
     const real4 *bodyVelocities, 

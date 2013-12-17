@@ -17,11 +17,13 @@ static inline double rtc(void)
   return etime;
 }
 
-#if 1
+struct real4
+{
+  float x,y,z,w;
+};
+
 #include "write_snapshot.h"
-#else
 #include "sion_write_snapshot.h"
-#endif
 
 int main(int argc, char * argv [])
 {
@@ -53,14 +55,17 @@ int main(int argc, char * argv [])
   MPI_Barrier(MPI_WORKING_WORLD);
   const double t0 = rtc();
 
-#if 1
-  sprintf(&fileName[0], "%s_%010.4f-%d", "simple_test", time, rank);
-#else
-  sprintf(&fileName[0], "%s_%010.4f-%d", "sion_test", time, nrank);
-#endif
+#ifndef _SION_
+  sprintf(&fileName[0], "%s_%010.4f-%d", "naive_test", time, rank);
   const size_t nbytes = write_snapshot(
       &pos[0], &vel[0], &IDs[0], n, fileName, time,
       rank, nrank, MPI_WORKING_WORLD);
+#else
+  sprintf(&fileName[0], "%s_%010.4f-%d", "sion_test", time, nrank);
+  const size_t nbytes = sion_write_snapshot(
+      &pos[0], &vel[0], &IDs[0], n, fileName, time,
+      rank, nrank, MPI_WORKING_WORLD);
+#endif
 
   MPI_Barrier(MPI_WORKING_WORLD);
   const double t1 = rtc();
