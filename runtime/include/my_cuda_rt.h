@@ -50,6 +50,7 @@ inline void __checkCudaErrors(cudaError err, const char *file, const int line )
     {                                                                                                                                      
 //        fprintf(stderr, "%s(%i) : CUDA Runtime API error %d: %s.\n",file, line, (int)err, cudaGetErrorString( err ) );
       LOGF(stderr, "%s(%i) : CUDA Runtime API error %d: %s.\n",file, line, (int)err, cudaGetErrorString( err ) );
+      fprintf(stderr, "%s(%i) : CUDA Runtime API error %d: %s.\n",file, line, (int)err, cudaGetErrorString( err ) );
         exit(-1);                                                                                                                          
     }                                                                                                                                      
 }                                                                                                                                          
@@ -64,6 +65,7 @@ inline void __getLastCudaError(const char *errorMessage, const char *file, const
     {                                                                                                                                      
 //        fprintf(stderr, "%s(%i) : getLastCudaError() CUDA error : %s : (%d) %s.\n", file, line, errorMessage, (int)err, cudaGetErrorString( err ) );
         LOGF(stderr, "%s(%i) : getLastCudaError() CUDA error : %s : (%d) %s.\n", file, line, errorMessage, (int)err, cudaGetErrorString( err ) );
+        fprintf(stderr, "%s(%i) : getLastCudaError() CUDA error : %s : (%d) %s.\n", file, line, errorMessage, (int)err, cudaGetErrorString( err ) );
         exit(-1);                                                                                                                          
     }                                                                                                                                      
 }                                                                                                                                          

@@ -1034,7 +1034,33 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
     MPI_Bcast(&parallelBoundaries[0], sizeof(uint4)*(nProcs+1), MPI_BYTE, 0, MPI_COMM_WORLD);
   }
 
+  //End of 1D
 #else
+ //Start of 2D
+
+  //Jeroen, init the buffers that hold the initial data for
+  //the weighted average for the domain boundaries averaging.
+  const int                                nBoundaryHistory = 4;
+  static std::vector<int>                  historyStoreIndex;
+  static std::vector<int>                  historyWeightValues;
+  static std::vector< std::vector<uint4> > historyBoundaryBuffer;
+
+  static int historyBuffersInitialized = 0;
+
+  if(historyBuffersInitialized == 0)
+  {
+    //Init buffers
+    for (int i=0; i<nBoundaryHistory; ++i) historyStoreIndex.push_back(i);
+
+    //For now just simple linear weighting
+    for (int i=0; i<nBoundaryHistory; ++i) historyWeightValues.push_back(i);
+
+    historyBoundaryBuffer.resize(nBoundaryHistory);
+    for (int i=0; i<nBoundaryHistory; ++i) historyBoundaryBuffer[i].resize(nProcs+1);
+  }
+
+
+
   /* evghenii: 2d sampling comes here,
    * make sure that locakTree.bodies_key.d2h in src/build.cpp.
    * if you don't see my comment there, don't use this version. it will be
@@ -1139,6 +1165,10 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
             ));
     }
 
+    //JB, TODO check if this is the correct location to put this
+    //and or use parallel sort
+    std::sort(key_sample2d.begin(), key_sample2d.end(), DD2D::Key());
+
     const DD2D dd(procId, npx, nProcs, key_sample1d, key_sample2d, MPI_COMM_WORLD);
 
     /* distribute keys */
@@ -1157,6 +1187,114 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
       fprintf(stderr, " it took %g sec to complete 2D domain decomposition\n", dt);
   }
 #endif
+
+  if(historyBuffersInitialized == 0)
+  {
+    //Fill in the initial buffers with the data of the first step
+    for (int i=0; i<nBoundaryHistory; ++i)
+    {
+      for(int idx=0; idx <= nProcs; idx++)
+      {
+        historyBoundaryBuffer[i][idx] = parallelBoundaries[idx];
+      }
+    }
+    historyBuffersInitialized = 1;
+  }
+
+
+  std::vector<uint4> newBoundariesTest(nProcs+2);
+  newBoundariesTest[0] = parallelBoundaries[0];
+  newBoundariesTest[0].w = 0;
+  newBoundariesTest[nProcs] = parallelBoundaries[nProcs];
+  newBoundariesTest[nProcs].w = nProcs;
+  //Average the boundaries
+  for(int i=1; i < nProcs; i++) //Don't include min / max boundaries they stay new
+  {
+    uint4 newKey = parallelBoundaries[i];
+
+    int averageSum           = nBoundaryHistory;
+
+    unsigned long long int weightedHistoryKeyX = newKey.x*nBoundaryHistory;
+    unsigned long long int weightedHistoryKeyY = newKey.y*nBoundaryHistory;
+    unsigned long long int weightedHistoryKeyZ = newKey.z*nBoundaryHistory;
+
+    for(int hidx = 0; hidx < nBoundaryHistory; hidx++)
+    {
+      int rhidx  = historyStoreIndex    [hidx];    //Get the idx to use
+      uint4 hkey = historyBoundaryBuffer[rhidx][i];//Get the key
+      int   hval = historyWeightValues  [hidx];    //Get the multiply value
+
+      if(procId == -1)
+      {
+        fprintf(stderr,"For proc: %d Hist idx: %d -> %d  key: %u %u %u \n",
+            i, hidx, rhidx, hkey.x, hkey.y, hkey.z);
+      }
+
+      //Multiply the key with it's weighting value
+      weightedHistoryKeyX += hkey.x * hval;
+      weightedHistoryKeyY += hkey.y * hval;
+      weightedHistoryKeyZ += hkey.z * hval;
+
+      averageSum += hval;
+    }
+
+    if(procId == -1)
+    {
+      fprintf(stderr, "XProc: %d SUM:  %llu %llu %llu\tSum: %d\n",
+              i, weightedHistoryKeyX, weightedHistoryKeyY, weightedHistoryKeyZ, averageSum);
+    }
+
+
+    //Average the key to get the new key, based on current data and weighted history
+    newBoundariesTest[i].x = weightedHistoryKeyX / averageSum;
+    newBoundariesTest[i].y = weightedHistoryKeyY / averageSum;
+    newBoundariesTest[i].z = weightedHistoryKeyZ / averageSum;
+    newBoundariesTest[i].w = i;
+
+    if(procId == -1)
+    {
+      fprintf(stderr, "XProc After Div: %d SUM:  %llu %llu %llu\tSum: %d\n",
+              i, newBoundariesTest[i].x, newBoundariesTest[i].y, newBoundariesTest[i].z, averageSum);
+    }
+
+  }
+
+  //Now we have to ensure that the keys do not overlap
+  std::sort(newBoundariesTest.begin(), newBoundariesTest.begin()+nProcs, cmp_ph_key());
+  for(int i=0; i < nProcs; i++) //Don't include min / max boundaries they stay new
+  {
+    assert(newBoundariesTest[i].w == i);
+  }
+
+
+  //Rotate the storage locations and then store the boundaries in the right spot
+  std::rotate(historyStoreIndex.begin(),historyStoreIndex.begin()+1,historyStoreIndex.end());
+  int storeIdx = historyStoreIndex[historyStoreIndex.size()-1];
+  for(int i=0; i <= nProcs; i++)
+    historyBoundaryBuffer[storeIdx][i] = newBoundariesTest[i];
+
+
+//#define DO_WEIGHTED_BOUNDARIES //Use this to disable the use of the weighted boundaries
+                               //method. Note it will still be calculated, but just not saved
+#ifdef DO_WEIGHTED_BOUNDARIES
+  for(int i=0; i < nProcs; i++)
+  {
+        parallelBoundaries[i] = newBoundariesTest[i];
+  }
+#endif
+
+
+  if(procId == -1)
+  {
+    for(int i=0; i < nProcs; i++)
+    {
+      fprintf(stderr, "XProc: %d Going from: >= %u %u %u  to < %u %u %u \n",i,
+          newBoundariesTest[i].x,   newBoundariesTest[i].y,   newBoundariesTest[i].z,
+          newBoundariesTest[i+1].x, newBoundariesTest[i+1].y, newBoundariesTest[i+1].z);
+    }
+  }
+
+
 
   if(procId == -1)
   {
@@ -1686,6 +1824,15 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree
   {
     recvCount     += nreceive[i];
   }
+
+  #if 1
+    { /* jb2404 */
+      fprintf(stderr, "Proc: %d Exchange, received %d \tSend: %d newN: %d\n",
+          procId, recvCount, nToSend,  tree.n + recvCount - nToSend);
+    }
+  #endif
+
+
   static std::vector<bodyStruct> recv_buffer3;
   recv_buffer3.resize(recvCount);
 
@@ -1734,12 +1881,7 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree
 
   LOGF(stderr, "Exchange, received %d \tSend: %d newN: %d\n", recvCount, nToSend, newN);
 
-#if 1
-  if(iter < 1){ /* jb2404 */
-    fprintf(stderr, "Proc: %d Exchange, received %d \tSend: %d newN: %d\n",
-        procId, recvCount, nToSend, newN);
-  }
-#endif
+
 
   //make certain that the particle movement on the device is complete before we resize
   execStream->sync();
@@ -1767,6 +1909,7 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree
   tree.bodies_Pvel.cresize(memSize + 1, false);
   tree.bodies_key. cresize(memSize + 1, false);
 
+  memSize = tree.bodies_acc0.get_size();
   //This one has to be at least the same size as the number of particles in order to
   //have enough space to store the other buffers
   //Can only be resized after we are done since we still have
@@ -4543,6 +4686,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
  double tStatsStartAlltoAll, tStartsStartGetLETSend;
 
 
+ int receivedLETCount = 0;
+ int expectedLETCount = 0;
  int nBoundaryOk = 0;
 
   //Use multiple OpenMP threads in parallel to build and exchange LETs
@@ -5020,6 +5165,10 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
           nQuickBoundaryOk++;
         }
 
+	if(quickCheckRecvSizes[i].x == 0)
+	  expectedLETCount++; //Increase the number of incoming trees
+
+
         //Did we use the boundary of that tree, if so it should not send us anything
         if(quickCheckSendSizes[i].y == 1)
         {
@@ -5030,6 +5179,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         recvCountItems           += quickCheckRecvSizes[i].x;
         quickCheckRecvSizes[i].x  = quickCheckRecvSizes[i].x*sizeof(real4);
       }
+      expectedLETCount -= 1; //Don't count ourself
 #else
 
       //Compute offsets, allocate memory
@@ -5262,6 +5412,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
             LOGF(stderr, "Receive complete from: %d  || recvTree: %d since start: %lg ( %lg ) alloc: %lg Recv: %lg Size: %d\n",
                 recvStatus.MPI_SOURCE, 0, get_time()-tStart,get_time()-t0,tZ-tY, get_time()-tZ, count);
+	    
+	    receivedLETCount++;
 
             if( communicationStatus[probeStatus.MPI_SOURCE] == 2)
             {
@@ -5300,6 +5452,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         //Exit if we have send and received all there is
         if(nReceived == nProcs-1)
           if((nSendOut+nQuickCheckSends) == nProcs-1)
+	    if(receivedLETCount == expectedLETCount)
             break;
         //Check if we can clean up some sends in between the receive/send process
         MPI_Status waitStatus;
