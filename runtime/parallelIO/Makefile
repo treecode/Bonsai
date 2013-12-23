@@ -1,16 +1,16 @@
 PROG=write_test
 OBJ=write_test.o
 
-CXX=mpicxx
-LD=mpicxx
+CXX=mpiicpc
+LD=mpiicpc
 
-CXXFLAGS=-O3 -Wall
-
+CXXFLAGS=-g -O2 -Wall `sionconfig --cflags --mpi --be --64`
+LDFLAGS=`sionconfig --libs --mpi --be --64`
 
 all: $(PROG)
 
-$(PROG): $(OBJ)
-	$(LD) $(LDFLAGS) -o $@ $<
+$(PROG): $(OBJ) $(OBJS)
+	$(LD) -o $@ $< $(LDFLAGS)
 
 $(OBJS): %.cpp
 	$(CXX) $(CXXFLAGS) -o $@ -c $<

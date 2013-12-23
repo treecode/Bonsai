@@ -35,6 +35,8 @@ int main(int argc, char * argv [])
   int rank, nrank;
   MPI_Comm_rank (MPI_COMM_WORLD, &rank); 
   MPI_Comm_size (MPI_COMM_WORLD, &nrank);
+  size_t nbytes;
+  double t0,t1;
 
   const MPI_Comm MPI_WORKING_WORLD = MPI_COMM_WORLD;
 
@@ -49,31 +51,37 @@ int main(int argc, char * argv [])
     IDs[i] = 3*i-2;
   }
 
-  const float time = 0.125;
+  const float time = 0.0;
 
   std::string fileName; fileName.resize(256);
-  MPI_Barrier(MPI_WORKING_WORLD);
-  const double t0 = rtc();
 
-#ifndef _SION_
+  if (rank == 0) printf("Naive test\n");
+  MPI_Barrier(MPI_WORKING_WORLD);
+  t0 = rtc();
   sprintf(&fileName[0], "%s_%010.4f-%d", "naive_test", time, rank);
-  const size_t nbytes = write_snapshot(
+  nbytes = write_snapshot(
       &pos[0], &vel[0], &IDs[0], n, fileName, time,
       rank, nrank, MPI_WORKING_WORLD);
-#else
-  sprintf(&fileName[0], "%s_%010.4f-%d", "sion_test", time, nrank);
-  const size_t nbytes = sion_write_snapshot(
-      &pos[0], &vel[0], &IDs[0], n, fileName, time,
-      rank, nrank, MPI_WORKING_WORLD);
-#endif
-
-  MPI_Barrier(MPI_WORKING_WORLD);
-  const double t1 = rtc();
+  t1 = rtc();
 
   if (rank == 0)
-    fprintf(stderr, " -- writing took %g sec -- BW= %g MB/s\n",
+    fprintf(stderr, " -- Naive writing took %g sec -- BW= %g MB/s\n",
         (t1-t0), nbytes/1e6/(t1-t0));
 
+#if defined(SION_MPI)
+  if (rank == 0) printf("SION test\n");
+  MPI_Barrier(MPI_WORKING_WORLD);
+  t0 = rtc();
+  sprintf(&fileName[0], "%s_%010.4f-%d", "sion_test", time, nrank);
+  nbytes = sion_write_snapshot(
+      &pos[0], &vel[0], &IDs[0], n, fileName, time,
+      rank, nrank, MPI_WORKING_WORLD);
+  t1 = rtc();
+
+  if (rank == 0)
+    fprintf(stderr, " -- SION writing took %g sec -- BW= %g MB/s\n",
+        (t1-t0), nbytes/1e6/(t1-t0));
+#endif
 
   MPI_Finalize();
 }
