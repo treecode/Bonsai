@@ -226,7 +226,8 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
                               int &NSecond, int &NThird, octree *tree,
                               vector<real4> &dustPositions, vector<real4> &dustVelocities,
                               vector<int> &dustIDs, int reduce_bodies_factor,
-                              int reduce_dust_factor)  
+                              int reduce_dust_factor,
+                              const bool restart)
 {
   //Process 0 does the file reading and sends the data
   //to the other processes
@@ -239,7 +240,10 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
   
   
   char fullFileName[256];
-  sprintf(fullFileName, "%s", fileName.c_str());
+  if(restart)
+    sprintf(fullFileName, "%s%d", fileName.c_str(), rank);
+  else
+    sprintf(fullFileName, "%s", fileName.c_str());
 
   LOG("Trying to read file: %s \n", fullFileName);
   
@@ -271,6 +275,7 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
   
   //Rough divide
   uint perProc = (NTotal / procs) /reduce_bodies_factor;
+  if(restart) perProc = NTotal /reduce_bodies_factor; //don't subdivide when using restart
   bodyPositions.reserve(perProc+10);
   bodyVelocities.reserve(perProc+10);
   bodiesIDs.reserve(perProc+10);
@@ -367,14 +372,17 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
     particleCount++;
   
   
-    if(bodyPositions.size() > perProc && procCntr != procs)
-    { 
-      tree->ICSend(procCntr,  &bodyPositions[0], &bodyVelocities[0],  &bodiesIDs[0], (int)bodyPositions.size());
-      procCntr++;
-      
-      bodyPositions.clear();
-      bodyVelocities.clear();
-      bodiesIDs.clear();
+    if(!restart)
+    {
+      if(bodyPositions.size() > perProc && procCntr != procs)
+      {
+        tree->ICSend(procCntr,  &bodyPositions[0], &bodyVelocities[0],  &bodiesIDs[0], (int)bodyPositions.size());
+        procCntr++;
+
+        bodyPositions.clear();
+        bodyVelocities.clear();
+        bodiesIDs.clear();
+      }
     }
   }//end while
   
@@ -766,6 +774,7 @@ int main(int argc, char** argv)
   bool displayFPS = false;
   bool diskmode = false;
   bool stereo   = false;
+  bool restartSim  = false;
 
 #if ENABLE_LOG
   ENABLE_RUNTIME_LOG = false;
@@ -793,6 +802,7 @@ int main(int argc, char** argv)
 		ADDUSAGE(" ");
 		ADDUSAGE(" -h  --help             Prints this help ");
 		ADDUSAGE(" -i  --infile #         Input snapshot filename ");
+		ADDUSAGE("     --restart          Let each process restart from a snapshot as specified by 'infile'");
 		ADDUSAGE("     --logfile #        Log filename [" << logFileName << "]");
 		ADDUSAGE("     --dev #            Device ID [" << devID << "]");
 		ADDUSAGE("     --renderdev #      Rendering Device ID [" << renderDevID << "]");
@@ -837,6 +847,7 @@ int main(int argc, char** argv)
 		opt.setFlag( "help" ,   'h');
 		opt.setFlag( "diskmode");
 		opt.setOption( "infile",  'i');
+		opt.setFlag  ( "restart");
 		opt.setOption( "dt",      't' );
 		opt.setOption( "tend",    'T' );
 		opt.setOption( "iend",    'I' );
@@ -888,6 +899,7 @@ int main(int argc, char** argv)
     }
 
     if (opt.getFlag("direct")) direct = true;
+    if (opt.getFlag("restart")) restartSim = true;
     if (opt.getFlag("displayfps")) displayFPS = true;
     if (opt.getFlag("diskmode")) diskmode = true;
     if(opt.getFlag("stereo"))   stereo = true;
@@ -1114,14 +1126,23 @@ int main(int argc, char** argv)
 
   tree->set_context(logFile, false); //Do logging to file and enable timing (false = enabled)
 
-  if (nPlummer == -1 && nSphere == -1 && !diskmode && nMilkyWay == -1)
+  if(restartSim)
+  {
+    //The input snapshot file are many files with each process reading its own
+    //particles
+    read_tipsy_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName,
+        procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
+        dustPositions, dustVelocities, dustIDs, reduce_bodies_factor, reduce_dust_factor, true);
+
+  }
+  else if (nPlummer == -1 && nSphere == -1 && !diskmode && nMilkyWay == -1)
   {
     if(procId == 0)
     {
 #ifdef TIPSYOUTPUT
       read_tipsy_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, 
           procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
-          dustPositions, dustVelocities, dustIDs, reduce_bodies_factor, reduce_dust_factor);    
+          dustPositions, dustVelocities, dustIDs, reduce_bodies_factor, reduce_dust_factor, false);
 
       //      read_generate_cube(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, 
       //                               procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
@@ -1144,7 +1165,7 @@ int main(int argc, char** argv)
     assert(nMWfork > 0);
  
 
-#if 0 /* in this setup all particles will be of equal mass (exact number are galactic-depednant)  */
+#if 1 /* in this setup all particles will be of equal mass (exact number are galactic-depednant)  */
     const float fdisk  = 15.1; 
     const float fbulge = 5.1;   
     const float fhalo  = 242.31; 
