@@ -1,8 +1,10 @@
 #include "octree.h"
+#include  "postProcessModules.h"
 
 #include <iostream>
 #include <algorithm>
 #include <iomanip>
+
 using namespace std;
 
 static double de_max = 0;
@@ -680,6 +682,40 @@ bool octree::iterate_once(IterationData &idata) {
     devContext.stopTiming("Energy", 7, execStream->s());
     idata.totalPredCor += get_time() - tTempTime;
 
+    if(statisticsIter > 0)
+    {
+      if(t_current >= nextStatsTime)
+      {
+        nextStatsTime += statisticsIter;
+        double tDens0 = get_time();
+        localTree.bodies_pos.d2h();
+        localTree.bodies_vel.d2h();
+        localTree.bodies_ids.d2h();
+
+        double tDens1 = get_time();
+        const DENSITY dens(procId, nProcs, localTree.n,
+                           &localTree.bodies_pos[0],
+                           &localTree.bodies_vel[0],
+                           &localTree.bodies_ids[0],
+                           1, 2.33e9, 20, "density", t_current);
+
+        double tDens2 = get_time();
+        if(procId == 0) LOGF(stderr,"Density took: Copy: %lg Create: %lg \n", tDens1-tDens0, tDens2-tDens1);
+
+        double tDisk1 = get_time();
+        const DISKSTATS diskstats(procId, nProcs, localTree.n,
+                           &localTree.bodies_pos[0],
+                           &localTree.bodies_vel[0],
+                           &localTree.bodies_ids[0],
+                           1, 2.33e9, "diskstats", t_current);
+
+        double tDisk2 = get_time();
+        if(procId == 0) LOGF(stderr,"Diskstats took: Create: %lg \n", tDisk2-tDisk1);
+      }
+    }//Statistics dumping
+
+
+
     if(snapshotIter > 0)
     {
       float time = t_current;
@@ -895,10 +931,40 @@ void octree::iterate_setup(IterationData &idata) {
                                      &localTree.bodies_ids[0], localTree.n + localTree.n_dust,
                                      fileName.c_str(), t_current) ;
         }
+      }//if 1
+  }//if snapShotIter > 0
 
+  if(statisticsIter > 0)
+  {
+    if(1)
+    {
+      nextStatsTime += statisticsIter;
+      double tDens0 = get_time();
+      localTree.bodies_pos.d2h();
+      localTree.bodies_vel.d2h();
+      localTree.bodies_ids.d2h();
 
-      }
-  }
+      double tDens1 = get_time();
+      const DENSITY dens(procId, nProcs, localTree.n,
+                         &localTree.bodies_pos[0],
+                         &localTree.bodies_vel[0],
+                         &localTree.bodies_ids[0],
+                         1, 2.33e9, 20, "density", t_current);
+
+      double tDens2 = get_time();
+      if(procId == 0) LOGF(stderr,"Density took: Copy: %lg Create: %lg \n", tDens1-tDens0, tDens2-tDens1);
+
+      double tDisk1 = get_time();
+      const DISKSTATS diskstats(procId, nProcs, localTree.n,
+                         &localTree.bodies_pos[0],
+                         &localTree.bodies_vel[0],
+                         &localTree.bodies_ids[0],
+                         1, 2.33e9, "diskstats", t_current);
+
+      double tDisk2 = get_time();
+      if(procId == 0) LOGF(stderr,"Diskstats took: Create: %lg \n", tDisk2-tDisk1);
+    }
+  }//Statistics dumping
 
   idata.startTime = get_time();
 }

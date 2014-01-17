@@ -383,6 +383,9 @@ protected:
   string        snapshotFile;
   float         nextSnapTime;
 
+  float        statisticsIter;
+  float        nextStatsTime;
+
   int   NTotal, NFirst, NSecond, NThird, snapShotAdd;
   
   float removeDistance;
@@ -953,6 +956,9 @@ public:
 
 
 //    LOGF(stderr, "Settings device : %d\t"  << devID << "\t" << device << "\t" << nProcs <<endl;
+
+    statisticsIter = 1; //Every N-body unit
+    nextStatsTime  = 0;
 
     snapshotIter = snapI;
     snapshotFile = snapF;

@@ -1261,10 +1261,10 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
 
   //Now we have to ensure that the keys do not overlap
   std::sort(newBoundariesTest.begin(), newBoundariesTest.begin()+nProcs, cmp_ph_key());
-  for(int i=0; i < nProcs; i++) //Don't include min / max boundaries they stay new
-  {
-    assert(newBoundariesTest[i].w == i);
-  }
+//  for(int i=0; i < nProcs; i++) //Don't include min / max boundaries they stay new
+//  {
+//    assert(newBoundariesTest[i].w == i);
+//  }
 
 
   //Rotate the storage locations and then store the boundaries in the right spot
