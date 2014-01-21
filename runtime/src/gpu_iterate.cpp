@@ -809,20 +809,16 @@ void octree::iterate_setup(IterationData &idata) {
   
   //Start construction of the tree
   sort_bodies(localTree, true);
-  debugPrintProgress(procId,10);
   build(localTree);
-  debugPrintProgress(procId,20);
   allocateTreePropMemory(localTree);
-  debugPrintProgress(procId,30);
   compute_properties(localTree);
-  debugPrintProgress(procId,2);
   letRunning = false;
      
   double t1;
   sort_bodies(localTree, true);
   //Initial prediction/acceleration to setup the system
   //Will be at time 0
-  //predict localtree
+  //predict the particles
   predict(this->localTree);
   debugPrintProgress(procId,200);
   double notUsed = 0;
@@ -1031,30 +1027,30 @@ void octree::iterate() {
     {
       break;    
     }
-  double totalTime = get_time() - idata.startTime;
-  if (procId == 0)
-  {
-	  LOGF(stderr,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\tdomWait: %g\ttPredCor: %g\n",
-			  procId, totalTime, idata.totalGravTime,
-			  (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
-			  idata.totalLETCommTime,
-			  idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
-			  idata.totalDomUp, idata.totalDomEx, idata.totalDomWait, idata.totalPredCor);
-	  LOGF(stdout,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\tdomWait: %g\ttPredCor: %g\n",
-			  procId, totalTime, idata.totalGravTime,
-			  (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
-			  idata.totalLETCommTime,
-			  idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
-			  idata.totalDomUp, idata.totalDomEx, idata.totalDomWait, idata.totalPredCor);
-  }	
-  char buff[16384];
-  sprintf(buff,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\tdomWait: %g\ttPredCor: %g\n",
-                  procId, totalTime, idata.totalGravTime,
-                  (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
-                  idata.totalLETCommTime,
-                  idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
-                  idata.totalDomUp, idata.totalDomEx, idata.totalDomWait, idata.totalPredCor);
-  devContext.writeLogEvent(buff);
+    double totalTime = get_time() - idata.startTime;
+    if (procId == 0)
+    {
+      LOGF(stderr,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\tdomWait: %g\ttPredCor: %g\n",
+          procId, totalTime, idata.totalGravTime,
+          (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
+          idata.totalLETCommTime,
+          idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
+          idata.totalDomUp, idata.totalDomEx, idata.totalDomWait, idata.totalPredCor);
+      LOGF(stdout,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\tdomWait: %g\ttPredCor: %g\n",
+          procId, totalTime, idata.totalGravTime,
+          (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
+          idata.totalLETCommTime,
+          idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
+          idata.totalDomUp, idata.totalDomEx, idata.totalDomWait, idata.totalPredCor);
+    }
+    char buff[16384];
+    sprintf(buff,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\tdomWait: %g\ttPredCor: %g\n",
+                    procId, totalTime, idata.totalGravTime,
+                    (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
+                    idata.totalLETCommTime,
+                    idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
+                    idata.totalDomUp, idata.totalDomEx, idata.totalDomWait, idata.totalPredCor);
+    devContext.writeLogEvent(buff);
 
   } //end for i
   
@@ -1160,8 +1156,6 @@ void octree::setActiveGrpsFunc(tree_structure &tree)
 //  this->resetCompact();
 //  LOG("t_previous: %lg t_current: %lg dt: %lg Active groups: %d (Total: %d)\n",
 //         t_previous, t_current, t_current-t_previous, tree.n_active_groups, tree.n_groups);
-  
-
 }
 
 void octree::direct_gravity(tree_structure &tree)
