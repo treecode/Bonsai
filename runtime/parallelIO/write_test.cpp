@@ -83,17 +83,19 @@ int main(int argc, char * argv [])
   if (rank == 0)
     fprintf(stderr, " -- SION writing 1 file took %g sec -- BW= %g MB/s\n",
         (t1-t0), nrank*nbytes/1e6/(t1-t0));
-  MPI_Barrier(MPI_WORKING_WORLD);
-  t0 = rtc();
-  sprintf(&fileName[0], "%s_%010.4f-%d", "sion_test", time, nrank);
-  nbytes = sion_write_snapshot(
-      &pos[0], &vel[0], &IDs[0], n, fileName, time,
-      rank, nrank, nrank, MPI_WORKING_WORLD);
-  t1 = rtc();
-
+  if (nrank > 9)
+  {
+    MPI_Barrier(MPI_WORKING_WORLD);
+    t0 = rtc();
+    sprintf(&fileName[0], "%s_%010.4f-%d", "sion_test", time, nrank);
+    nbytes = sion_write_snapshot(
+        &pos[0], &vel[0], &IDs[0], n, fileName, time,
+        rank, nrank, 10, MPI_WORKING_WORLD);
+    t1 = rtc();
   if (rank == 0)
-    fprintf(stderr, " -- SION writing all files took %g sec -- BW= %g MB/s\n",
+    fprintf(stderr, " -- SION writing 10 files took %g sec -- BW= %g MB/s\n",
         (t1-t0), nrank*nbytes/1e6/(t1-t0));
+  }
 #endif
 
   MPI_Finalize();
