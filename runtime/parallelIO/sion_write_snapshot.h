@@ -5,6 +5,7 @@
 
 #include "tipsydefs.h"
 #include <sion.h>
+#define TSZ 5
 
 size_t sion_write_snapshot(
     const real4 *bodyPositions, 
@@ -14,7 +15,8 @@ size_t sion_write_snapshot(
     const std::string &fileName, 
     const float time,
     const int rank, 
-    const int nrank, 
+    const int nrank,
+    int nfiles, 
     const MPI_Comm &comm)
 {
   const int NTotal = n;
@@ -25,10 +27,9 @@ size_t sion_write_snapshot(
   char* newfname;
   char myfname[255];
   sion_int64 chunksize;
-  int nfiles;
   int blksize=-1;
   int myrank=rank;
-  double t[4];
+  double t[TSZ],dt[TSZ],tmin[TSZ],tmax[TSZ],tmean[TSZ];
 
 for(int i=0; i < n; i++)
   {
@@ -50,11 +51,10 @@ for(int i=0; i < n; i++)
   NCombSecond += NCombThird;
 
   lComm=MPI_COMM_NULL;
-  nfiles=1;
   std::strcpy(myfname,fileName.c_str());
   chunksize=sizeof(dump)+NCombFirst*sizeof(dark_particle)+NCombSecond*sizeof(star_particle);
   t[0] = rtc();
-  sid = sion_paropen_mpi(myfname, "bw,ansi", &nfiles, comm, &lComm, &chunksize, &blksize, &myrank, &fptr, &newfname);
+  sid = sion_paropen_mpi(myfname, "wb", &nfiles, comm, &lComm, &chunksize, &blksize, &myrank, &fptr, &newfname);
   t[1] = rtc();
 
   dump  h;
@@ -121,9 +121,25 @@ for(int i=0; i < n; i++)
   } //end i loop
 
   t[2] = rtc();
-  sion_parclose_mpi(sid);
+  sion_ensure_free_space(sid,chunksize);
   t[3] = rtc();
-  if (rank == 0) printf("Time (s) for open, write, close: %g, %g, %g\n",t[1]-t[0],t[2]-t[1],t[3]-t[2]);
+  sion_parclose_mpi(sid);
+  t[4] = rtc();
+
+  dt[0]=t[1]-t[0];
+  dt[1]=t[2]-t[1];
+  dt[2]=t[3]-t[2];
+  dt[3]=t[4]-t[3];
+ 
+  MPI_Reduce(dt,tmin,TSZ,MPI_DOUBLE,MPI_MIN,0,comm);
+  MPI_Reduce(dt,tmax,TSZ,MPI_DOUBLE,MPI_MAX,0,comm);
+  MPI_Reduce(dt,tmean,TSZ,MPI_DOUBLE,MPI_SUM,0,comm);
+  if (rank == 0) printf("Avg. time (s) for open, write, resize, close: %g, %g, %g, %g\n",
+    tmean[0]/nrank,tmean[1]/nrank,tmean[2]/nrank,tmean[3]/nrank);
+  if (rank == 0) printf("Min. time (s) for open, write, resize, close: %g, %g, %g, %g\n",
+    tmin[0],tmin[1],tmin[2],tmin[3]);
+  if (rank == 0) printf("Max. time (s) for open, write, resize, close: %g, %g, %g, %g\n",
+    tmax[0],tmax[1],tmax[2],tmax[3]);
 
 //  LOGF(stderr,"Wrote %d bodies to tipsy file \n", NCombTotal);
 

@@ -5,6 +5,7 @@
 #include <vector>
 #include <string>
 #include <sys/time.h>
+
 static inline double rtc(void)
 {
   struct timeval Tvalue;
@@ -28,7 +29,6 @@ struct real4
 int main(int argc, char * argv [])
 {
   const int n = argc > 1 ? atoi(argv[1]) : 1000000;
-  fprintf(stderr,  " -- writing %d particles -- \n", n);
   assert(n > 16);
 
   MPI_Init(&argc, &argv);
@@ -37,11 +37,12 @@ int main(int argc, char * argv [])
   MPI_Comm_size (MPI_COMM_WORLD, &nrank);
   size_t nbytes;
   double t0,t1;
-
   const MPI_Comm MPI_WORKING_WORLD = MPI_COMM_WORLD;
 
   std::vector<real4> pos(n), vel(n);
   std::vector<int> IDs(n);
+
+  if (rank == 0) fprintf(stderr,  " -- writing %d particles -- \n", n);
 
   for (int i = 0; i < n ; i++)
   {
@@ -66,22 +67,35 @@ int main(int argc, char * argv [])
 
   if (rank == 0)
     fprintf(stderr, " -- Naive writing took %g sec -- BW= %g MB/s\n",
-        (t1-t0), nbytes/1e6/(t1-t0));
+        (t1-t0), nrank*nbytes/1e6/(t1-t0));
+
 
 #if defined(SION_MPI)
-  if (rank == 0) printf("SION test\n");
+  if (rank == 0) printf("SION tests\n");
+  MPI_Barrier(MPI_WORKING_WORLD);
+  t0 = rtc();
+  sprintf(&fileName[0], "%s", "sion_test");
+  nbytes = sion_write_snapshot(
+      &pos[0], &vel[0], &IDs[0], n, fileName, time,
+      rank, nrank, 1, MPI_WORKING_WORLD);
+  t1 = rtc();
+
+  if (rank == 0)
+    fprintf(stderr, " -- SION writing 1 file took %g sec -- BW= %g MB/s\n",
+        (t1-t0), nrank*nbytes/1e6/(t1-t0));
   MPI_Barrier(MPI_WORKING_WORLD);
   t0 = rtc();
   sprintf(&fileName[0], "%s_%010.4f-%d", "sion_test", time, nrank);
   nbytes = sion_write_snapshot(
       &pos[0], &vel[0], &IDs[0], n, fileName, time,
-      rank, nrank, MPI_WORKING_WORLD);
+      rank, nrank, nrank, MPI_WORKING_WORLD);
   t1 = rtc();
 
   if (rank == 0)
-    fprintf(stderr, " -- SION writing took %g sec -- BW= %g MB/s\n",
-        (t1-t0), nbytes/1e6/(t1-t0));
+    fprintf(stderr, " -- SION writing all files took %g sec -- BW= %g MB/s\n",
+        (t1-t0), nrank*nbytes/1e6/(t1-t0));
 #endif
 
   MPI_Finalize();
+
 }

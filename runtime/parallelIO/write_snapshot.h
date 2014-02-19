@@ -16,6 +16,7 @@ size_t write_snapshot(
 {
   const int NTotal = n;
   int NFirst = 0,  NSecond = 0,  NThird = 0;
+  double t[4],tmin[4],tmax[4],tmean[4],dt[4];
 
   for(int i=0; i < n; i++)
   {
@@ -38,7 +39,10 @@ size_t write_snapshot(
 
 
   std::ofstream outputFile;
+
+  t[0] = rtc();
   outputFile.open(fileName.c_str(), std::ios::out | std::ios::binary);
+  t[1] = rtc();
 
   dump  h;
 
@@ -106,7 +110,22 @@ size_t write_snapshot(
     } //end if
   } //end i loop
 
+  t[2] = rtc();
   outputFile.close();
+  t[3] = rtc();
+  dt[0]=t[1]-t[0];
+  dt[1]=t[2]-t[1];
+  dt[2]=t[3]-t[2];
+
+  MPI_Reduce(dt,tmin,4,MPI_DOUBLE,MPI_MIN,0,comm);
+  MPI_Reduce(dt,tmax,4,MPI_DOUBLE,MPI_MAX,0,comm);
+  MPI_Reduce(dt,tmean,4,MPI_DOUBLE,MPI_SUM,0,comm);
+  if (rank == 0) printf("Avg. time (s) for open, write, close: %g, %g, %g\n",
+    tmean[0]/nrank,tmean[1]/nrank,tmean[2]/nrank);
+  if (rank == 0) printf("Min. time (s) for open, write, close: %g, %g, %g\n",
+    tmin[0],tmin[1],tmin[2]);
+  if (rank == 0) printf("Max. time (s) for open, write, close: %g, %g, %g\n",
+    tmax[0],tmax[1],tmax[2]);
 
 //  LOGF(stderr,"Wrote %d bodies to tipsy file \n", NCombTotal);
 
