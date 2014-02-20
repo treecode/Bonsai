@@ -54,7 +54,7 @@ for(int i=0; i < n; i++)
   std::strcpy(myfname,fileName.c_str());
   chunksize=sizeof(dump)+NCombFirst*sizeof(dark_particle)+NCombSecond*sizeof(star_particle);
   t[0] = rtc();
-  sid = sion_paropen_mpi(myfname, "wb", &nfiles, comm, &lComm, &chunksize, &blksize, &myrank, &fptr, &newfname);
+  sid = sion_paropen_mpi(myfname, "wb,posix,buffered", &nfiles, comm, &lComm, &chunksize, &blksize, &myrank, &fptr, &newfname);
   t[1] = rtc();
 
   dump  h;
@@ -66,8 +66,8 @@ for(int i=0; i < n; i++)
   h.ndark = NCombFirst;
   h.nstar = NCombSecond;    //Incase of disks we have to finish this
   h.nsph = 0;
-//  sion_fwrite((char*)&h, sizeof(h), 1, sid);
-  fwrite((char*)&h, sizeof(h), 1, fptr);
+  sion_fwrite((char*)&h, sizeof(h), 1, sid);
+//  fwrite((char*)&h, sizeof(h), 1, fptr);
 
   size_t nbytes = 0;
 
@@ -88,8 +88,8 @@ for(int i=0; i < n; i++)
       d.vel[2] = bodyVelocities[i].z;
       d.phi = bodyIds[i];      //Custom change to tipsy format
 
-//      sion_fwrite((char*)&d, sizeof(d), 1, sid);
-      fwrite((char*)&d, sizeof(d), 1, fptr);
+      sion_fwrite((char*)&d, sizeof(d), 1, sid);
+//      fwrite((char*)&d, sizeof(d), 1, fptr);
       nbytes += sizeof(d);
     } //end if
   } //end i loop
@@ -113,8 +113,8 @@ for(int i=0; i < n; i++)
 
       s.metals = 0;
       s.tform = 0;
-//      sion_fwrite((char*)&s, sizeof(s), 1, sid);
-      fwrite((char*)&s, sizeof(s), 1, fptr);
+      sion_fwrite((char*)&s, sizeof(s), 1, sid);
+//      fwrite((char*)&s, sizeof(s), 1, fptr);
       nbytes += sizeof(s);
       //         outputFile << s;
     } //end if
