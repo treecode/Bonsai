@@ -6,6 +6,15 @@
 #include <string>
 #include <sys/time.h>
 
+extern "C" {
+int llapi_file_create(const char *name, unsigned long long stripe_size,
+                             int stripe_offset, int stripe_count,
+                             int stripe_pattern);
+int llapi_file_open(const char *name, int flags, int mode,
+                           unsigned long long stripe_size, int stripe_offset,
+                           int stripe_count, int stripe_pattern);
+};
+
 static inline double rtc(void)
 {
   struct timeval Tvalue;
@@ -60,6 +69,7 @@ int main(int argc, char * argv [])
   MPI_Barrier(MPI_WORKING_WORLD);
   t0 = rtc();
   sprintf(&fileName[0], "%s_%010.4f-%d", "naive_test", time, rank);
+  llapi_file_create(&fileName[0], 0, -1, 1, 0);
   nbytes = write_snapshot(
       &pos[0], &vel[0], &IDs[0], n, fileName, time,
       rank, nrank, MPI_WORKING_WORLD);
@@ -75,6 +85,7 @@ int main(int argc, char * argv [])
   MPI_Barrier(MPI_WORKING_WORLD);
   t0 = rtc();
   sprintf(&fileName[0], "%s", "sion_test");
+  if (rank == 0) llapi_file_create(&fileName[0], 0, -1, -1, 0);
   nbytes = sion_write_snapshot(
       &pos[0], &vel[0], &IDs[0], n, fileName, time,
       rank, nrank, 1, MPI_WORKING_WORLD);
@@ -83,19 +94,6 @@ int main(int argc, char * argv [])
   if (rank == 0)
     fprintf(stderr, " -- SION writing 1 file took %g sec -- BW= %g MB/s\n",
         (t1-t0), nrank*nbytes/1e6/(t1-t0));
-  if (nrank > 9)
-  {
-    MPI_Barrier(MPI_WORKING_WORLD);
-    t0 = rtc();
-    sprintf(&fileName[0], "%s_%010.4f-%d", "sion_test", time, nrank);
-    nbytes = sion_write_snapshot(
-        &pos[0], &vel[0], &IDs[0], n, fileName, time,
-        rank, nrank, 10, MPI_WORKING_WORLD);
-    t1 = rtc();
-  if (rank == 0)
-    fprintf(stderr, " -- SION writing 10 files took %g sec -- BW= %g MB/s\n",
-        (t1-t0), nrank*nbytes/1e6/(t1-t0));
-  }
 #endif
 
   MPI_Finalize();

@@ -4,7 +4,7 @@ OBJ=write_test.o
 CXX=mpiicpc
 LD=mpiicpc
 CXXFLAGS=-g -O2 -Wall `sionconfig --cflags --mpi --be --64`
-LDFLAGS=`sionconfig --libs --mpi --be --64`
+LDFLAGS=`sionconfig --libs --mpi --be --64` -llustreapi
 
 all: $(PROG)
 
