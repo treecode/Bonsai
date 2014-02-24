@@ -4833,7 +4833,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             real4 *grpCenter2 = &grpCenter[1+nbody+nnode];
 
 
-            //Build the tree we possibly have to send to the remove process
+            //Build the tree we possibly have to send to the remote process
             double bla3;
             const int sizeTree=  getLEToptQuickFullTree(
                                             quickCheckData[ibox],

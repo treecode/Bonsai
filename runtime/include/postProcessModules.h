@@ -1,7 +1,11 @@
 #pragma once
 
 #include <cassert>
-#include <mpi.h>
+
+#ifdef USE_MPI
+  #include <mpi.h>
+#endif
+
 #include <vector>
 #include <sys/time.h>
 
@@ -14,8 +18,11 @@ struct DENSITY
     #define PARSEC    3.08567802e18
     #define ONE_YEAR  3.1558149984e7
     #define DMSTARTID 200000000
+    #define BULGESTARTID 100000000
 
-    #define N_MESH 200
+    #define N_MESH      200
+    #define N_MESH_R    20
+    #define N_MESH_PHI  128
 
     #define MIN_D 1.0
     #define MAX_D 10000.0
@@ -23,9 +30,21 @@ struct DENSITY
     float perProcRes [N_MESH][2*N_MESH];
     float combinedRes[N_MESH][2*N_MESH];
 
+    float perProcResRPhi [N_MESH_PHI][2*N_MESH_R]; //First half is np, second half is mass
+    float combinedResRPhi[N_MESH_PHI][2*N_MESH_R]; //First half is np, second half is mass
+
     const int procId, nProcs, nParticles;
 
     const double xscale, mscale, xmax;
+
+    //For R-Phi computation
+    const double Rmin;
+    const double Rmax;
+    const double pmin;
+    const double pmax;
+
+    double dp;
+    double dR;
 
 
   private:
@@ -42,11 +61,20 @@ struct DENSITY
 
     void reduceAndScale(float dataIn [N_MESH][2*N_MESH],
                         float dataOut[N_MESH][2*N_MESH],
+                        float dataInRPhi [N_MESH_PHI][2*N_MESH_R],
+                        float dataOutRPhi[N_MESH_PHI][2*N_MESH_R],
                         const float dscale)
     {
       //Sum over all processes
       double t0 = get_time2();
-      MPI_Reduce(dataIn, dataOut, 2*(N_MESH*N_MESH), MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
+      #ifdef USE_MPI
+        MPI_Reduce(dataIn,     dataOut,     2*(N_MESH*N_MESH),       MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
+        MPI_Reduce(dataInRPhi, dataOutRPhi, 2*(N_MESH_PHI*N_MESH_R), MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
+      #else
+        memcpy(dataOut,     dataIn,     2*(N_MESH*N_MESH)*sizeof(float));
+        memcpy(dataOutRPhi, dataInRPhi, 2*(N_MESH_PHI*N_MESH_R)*sizeof(float));        
+      #endif
+        
       double t1 = get_time2();
 
       if(procId == 0)
@@ -54,9 +82,11 @@ struct DENSITY
         //Scale results
         float bg      = log10(MIN_D);
 
+        //Density
         for(int i=0;i<N_MESH;i++)
         {
-           for(int j=0;j<N_MESH;j++){
+           for(int j=0;j<N_MESH;j++)
+           {
                //Normalize top view
                if(dataOut[i][j]>0.0){
                  dataOut[i][j] = log10(dataOut[i][j]*dscale);
@@ -71,11 +101,35 @@ struct DENSITY
                }
            }//for j
         }//for i
+
+        //R-Phi scaling
+        for(int j=0;j<N_MESH_R;j++)
+        {
+          float R    = Rmin + (j+0.5)*dR;
+          float SigR = 0.0;
+          int nR     = 0;
+          for(int i=0;i<N_MESH_PHI;i++){
+              SigR += dataOutRPhi[i][N_MESH_R+j];
+              nR   += dataOutRPhi[i][         j];
+          }
+          SigR    /= (2.*M_PI*R*dR);
+          float ds =  2.*M_PI*R*dR/(float)N_MESH_PHI;
+
+          for(int i=0;i<N_MESH_PHI;i++)
+          {
+            dataOutRPhi[i][j] = dataOutRPhi[i][N_MESH_R+j]/ds;
+            dataOutRPhi[i][j]/= SigR;
+          }
+        }//for j
+
+
       }//if procId == 0
       //if(procId == 0) fprintf(stderr,"MPI Reduce: %lg Scale took: %lg \n", t1-t0, get_time2()-t1);
     }//reduceAndScale
 
-    void writeData(const char *fileName, float data[N_MESH][2*N_MESH],
+    void writeData(const char *fileName,
+                   float data    [N_MESH]    [2*N_MESH],
+                   float dataRPhi[N_MESH_PHI][2*N_MESH_R],
                    const float tSim)
     {
       FILE *dump = NULL;
@@ -85,13 +139,20 @@ struct DENSITY
       {
         //Write some info
         fprintf(dump, "#Tsim= %f\n", tSim);
-        fprintf(dump, "#X Y TOP FRONT\n", tSim);
+        fprintf(dump, "#X Y TOP FRONT R-Phi\n", tSim);
 
         for(int i=0;i<N_MESH;i++){
             for(int j=0;j<N_MESH;j++){
-                fprintf(dump, "%d\t%d\t%f\t%f\n", i, j, data[i][j],data[i][j+N_MESH]);
-            }
-        }
+                if(i <  N_MESH_PHI && j < N_MESH_R)
+                {
+                  fprintf(dump, "%d\t%d\t%f\t%f\t%f\n", i, j, data[i][j],data[i][j+N_MESH], dataRPhi[i][j]);
+                }
+                else
+                {
+                  fprintf(dump, "%d\t%d\t%f\t%f\t-\n", i, j, data[i][j],data[i][j+N_MESH]);
+                }
+            }//j
+        }//i
         fclose(dump);
       }//if dump
     }//writeData
@@ -107,7 +168,8 @@ struct DENSITY
             const char *baseFilename,
             const double time) :
             procId(_procId), nProcs(_nProc), nParticles(_n),
-            xscale(_xscale), mscale(_mscale), xmax(_xmax)
+            xscale(_xscale), mscale(_mscale), xmax(_xmax),
+            Rmin(0.0), Rmax(20.0), pmin(-180), pmax(180)
     {
       //Reset the buffers
       for(uint i=0; i < N_MESH; i++)
@@ -117,8 +179,18 @@ struct DENSITY
           perProcRes  [i][j]        = 0.0;
           perProcRes  [i][N_MESH+j] = 0.0;
           combinedRes [i][j]        = 0.0;
-        }
-      }
+
+
+          if(i < N_MESH_PHI&& j < 2*N_MESH_R)
+          {
+            perProcResRPhi [i][j] = 0.0;
+            combinedResRPhi[i][j] = 0.0;
+          }
+        }//j
+      }//i
+
+      dp = (pmax - pmin)/(double)N_MESH_PHI;
+      dR = (Rmax - Rmin)/(double)N_MESH_R;
 
       double xmin = -xmax;
       double ymin = -xmax;
@@ -158,18 +230,41 @@ struct DENSITY
           {
             perProcRes[x][z+N_MESH] += positions[i].w*mscale;
           }//for i
+
+          //R-Phi projection
+          double r2   = positions[i].x*positions[i].x + positions[i].y*positions[i].y;
+          double r    = sqrt(r2);
+          double sinp = positions[i].y/r;
+          double cosp = positions[i].x/r;
+          double phi;
+          if(positions[i].y>0.0){
+              phi = acos(cosp)*180/M_PI;
+          }else{
+              phi = -acos(cosp)*180/M_PI;
+          }
+          x = (int)floor((phi-pmin)/dp);
+          y = (int)floor((r-Rmin)/dR);
+
+          if(x<N_MESH_PHI && y<N_MESH_R && x>=0 && y>=0)
+          {
+            perProcResRPhi[x][         y] += 1;
+            perProcResRPhi[x][N_MESH_R+y] += positions[i].w;
+          }
+
         }//if ID < DMSTARTID
       }//for i < nParticles
       double t2 = get_time2();
 
       //Combine the results for all processes, top view
-      reduceAndScale(perProcRes, combinedRes, dscale);
+      reduceAndScale(perProcRes, combinedRes, perProcResRPhi, combinedResRPhi, dscale);
+
+
 
       double t3 = get_time2();
       //Dump top view results
       char fileName[256];
       sprintf(fileName,"%s-TopFront-%f", baseFilename, time);
-      if(procId == 0) writeData(fileName, combinedRes, tscale*time);
+      if(procId == 0) writeData(fileName, combinedRes, combinedResRPhi, tscale*time);
       double t3b = get_time2();
       //if(procId == 0) fprintf(stderr, "Compute took: %lg Write took: %lg \n", t2-t1, t3b-t3);
     }//Function
@@ -208,10 +303,10 @@ struct DISKSTATS
     //Enum contains variables Ns, Sigs, Vrs, Vas, Vzs, Drs, Das, Dzs, zrms
     enum {NS = 0, SIGS,
           VRS, VAS, VZS,  // mean speed
-          DRS, DAS,DZS,   // dispersion
+          DRS, DAS, DZS,  // dispersion
           ZRMS};
 
-    float perProcRes[nItems][iMax] ;
+    float perProcRes[nItems][3*iMax] ;
 
     float  RrotEnd;
     float  RrotMin;
@@ -232,81 +327,93 @@ struct DISKSTATS
 
     void Analysis(const char *fileNameOut, const int procId, const double treal, const double tsim)
     {
-      float comProcRes[nItems][iMax] ;
+      float comProcRes[nItems][iMax*3] ;
 
-      float Rs[iMax];
-      float Qs[iMax],   Gam[iMax], mX[iMax];
-      float Omgs[iMax], kapps[iMax];
-      float m[iMax],    Mass[iMax];
+      float Rs[iMax*3];
+      float Qs[iMax*3],   Gam[iMax*3], mX[iMax*3];
+      float Omgs[iMax*3], kapps[iMax*3];
+      float m[iMax*3],    Mass[iMax*3];
 
       float VelUnit = UnitVelocity/VELOCITY_KMS_CGS;
 
       //Init
       for(int i=0; i<iMax; i++){
-          Rs[i]           = RrotMin + (i+0.5)*dR;
+          //Rs[i]           = RrotMin + (i+0.5)*dR;
           Qs[i]           = Gam[i]        = mX[i]  = 0.0;
           Omgs[i]         = kapps[i]      = 0.0;
           Mass[i]         = 0.0;
       }
+      for(int j=0; j < 3; j++){
+        for(int i=0; i<iMax; i++){
+            Rs[i+j*iMax]  = RrotMin + (i+0.5)*dR;
+      }}
       for(int j=0; j<nItems; j++)
-        for(int i=0; i<iMax; i++)
+        for(int i=0; i<iMax*3; i++)
           comProcRes[j][i] = 0.0;
 
      double t0 = get_time();
-     //MPI Reduce: Sum results over all processes store in procId == 0
-     MPI_Reduce(perProcRes, comProcRes, nItems*iMax, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
+     #ifdef USE_MPI
+       //MPI Reduce: Sum results over all processes store in procId == 0
+       MPI_Reduce(perProcRes, comProcRes, nItems*iMax*3, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
+     #else
+       memcpy(comProcRes, perProcRes, nItems*iMax*3*sizeof(float));
+     #endif
      double t1 = get_time();
 
      if(procId == 0)
      {
-        // average
-        Mass[0] = comProcRes[SIGS][0];
-        for(int i=0; i<iMax; i++)
-        {
-          if(i>0){
-              Mass[i] = Mass[i-1] + comProcRes[SIGS][i];
-          }
-
-          if(comProcRes[NS][i] != 0)
+       for(int j=0; j < 3; j++)
+       {
+         const int offset = j*iMax;
+          // average
+          Mass[offset+0] = comProcRes[SIGS][offset+0];
+          for(int i=0; i<iMax; i++)
           {
-            comProcRes[SIGS][i]/= (2.0*PI*Rs[i]*dR);
-            comProcRes[VRS][i] /= (float)comProcRes[NS][i];
-            comProcRes[VAS][i] /= (float)comProcRes[NS][i];
-            comProcRes[VZS][i] /= (float)comProcRes[NS][i];
-            comProcRes[DRS][i]  = sqrt(MAX(comProcRes[DRS][i]/(float)comProcRes[NS][i] - SQ(comProcRes[VRS][i]),0.0));
-            comProcRes[DAS][i]  = sqrt(MAX(comProcRes[DAS][i]/(float)comProcRes[NS][i] - SQ(comProcRes[VAS][i]),0.0));
-            comProcRes[DZS][i]  = sqrt(MAX(comProcRes[DZS][i]/(float)comProcRes[NS][i] - SQ(comProcRes[VZS][i]),0.0));
-            Omgs[i]             = comProcRes[VAS][i]/Rs[i];
-            comProcRes[ZRMS][i] = sqrt(comProcRes[ZRMS][i]/(float)comProcRes[NS][i]);
+            if(i>0){
+                Mass[offset+i] = Mass[offset+i-1] + comProcRes[SIGS][offset+i];
+            }
+
+            if(comProcRes[NS][offset+i] != 0)
+            {
+              comProcRes[SIGS][offset+i] /= (2.0*PI*Rs[offset+i]*dR);
+              comProcRes[VRS] [offset+i] /= (float)comProcRes[NS][offset+i];
+              comProcRes[VAS] [offset+i] /= (float)comProcRes[NS][offset+i];
+              comProcRes[VZS] [offset+i] /= (float)comProcRes[NS][offset+i];
+              comProcRes[DRS] [offset+i]  = sqrt(MAX(comProcRes[DRS][offset+i]/(float)comProcRes[NS][offset+i] - SQ(comProcRes[VRS][offset+i]),0.0));
+              comProcRes[DAS] [offset+i]  = sqrt(MAX(comProcRes[DAS][offset+i]/(float)comProcRes[NS][offset+i] - SQ(comProcRes[VAS][offset+i]),0.0));
+              comProcRes[DZS] [offset+i]  = sqrt(MAX(comProcRes[DZS][offset+i]/(float)comProcRes[NS][offset+i] - SQ(comProcRes[VZS][offset+i]),0.0));
+              Omgs            [offset+i]  = comProcRes[VAS][offset+i]/Rs[offset+i];
+              comProcRes[ZRMS][offset+i]  = sqrt(comProcRes[ZRMS][offset+i]/(float)comProcRes[NS][offset+i]);
+            }
+          }//for i
+
+          for(int i=1; i<iMax-1; i++)
+          {
+            kapps[offset+i] = sqrt(MAX(0.5*Rs[offset+i]*((SQ(Omgs[offset+i+1])-SQ(Omgs[offset+i-1]))/dR) + 4.0*SQ(Omgs[offset+i]),0.0));
+            Gam[offset+i]   = -(Rs[offset+i]/Omgs[offset+i])*0.5*(Omgs[offset+i+1]-Omgs[offset+i-1])/dR;
           }
-        }//for i
+          kapps[offset+0]      = 2.0*Omgs[offset+0];
+          kapps[offset+iMax-1] = kapps[offset+iMax-2];
+          Gam[offset+0]        = Gam[offset+1];
+          Gam[offset+iMax-1]   = Gam[offset+iMax-2];
 
-        for(int i=1; i<iMax-1; i++)
-        {
-            kapps[i] = sqrt(MAX(0.5*Rs[i]*((SQ(Omgs[i+1])-SQ(Omgs[i-1]))/dR) + 4.0*SQ(Omgs[i]),0.0));
-            Gam[i]   = -(Rs[i]/Omgs[i])*0.5*(Omgs[i+1]-Omgs[i-1])/dR;
-        }
-        kapps[0]      = 2.0*Omgs[0];
-        kapps[iMax-1] = kapps[iMax-2];
-        Gam[0]        = Gam[1];
-        Gam[iMax-1]   = Gam[iMax-2];
-
-        for(int i=0; i<iMax; i++)
-        {
-          m[i]                = kapps[i]*kapps[i]/(GravConst*comProcRes[SIGS][i]);
-          Qs[i]               = comProcRes[DRS][i]*kapps[i]/(3.36*GravConst*comProcRes[SIGS][i]);
-          mX[i]               = SQ(kapps[i])*Rs[i]/(2.0*PI*GravConst*comProcRes[SIGS][i])/4.0;
-          comProcRes[VRS][i] *= VelUnit;
-          comProcRes[VAS][i] *= VelUnit;
-          comProcRes[VZS][i] *= VelUnit;
-          comProcRes[DRS][i] *= VelUnit;
-          comProcRes[DAS][i] *= VelUnit;
-          comProcRes[DZS][i] *= VelUnit;
-          kapps[i]           *= VelUnit;
-          Omgs[i]            /= UnitTime;
-          comProcRes[SIGS][i]*= SDUnit;
-          Mass[i]            *= 2.33e9;//UnitMass;
-        }
+          for(int i=0; i<iMax; i++)
+          {
+            m[offset+i]                = kapps[offset+i]*kapps[offset+i]/(GravConst*comProcRes[SIGS][offset+i]);
+            Qs[offset+i]               = comProcRes[DRS][offset+i]*kapps[offset+i]/(3.36*GravConst*comProcRes[SIGS][offset+i]);
+            mX[offset+i]               = SQ(kapps[offset+i])*Rs[offset+i]/(2.0*PI*GravConst*comProcRes[SIGS][offset+i])/4.0;
+            comProcRes[VRS][offset+i] *= VelUnit;
+            comProcRes[VAS][offset+i] *= VelUnit;
+            comProcRes[VZS][offset+i] *= VelUnit;
+            comProcRes[DRS][offset+i] *= VelUnit;
+            comProcRes[DAS][offset+i] *= VelUnit;
+            comProcRes[DZS][offset+i] *= VelUnit;
+            kapps[offset+i]           *= VelUnit;
+            Omgs[offset+i]            /= UnitTime;
+            comProcRes[SIGS][offset+i]*= SDUnit;
+            Mass[offset+i]            *= 2.33e9;//UnitMass;
+          }
+        }//For j
         double t2 = get_time();
 
         char fileNameOut2[512];
@@ -319,14 +426,24 @@ struct DISKSTATS
           out.precision(6);
 
           out << "# T = " << treal << " (Gyr) \n";
-          out << "#RS Vas Drs Das Dzs Omg Kapp Q Gam mX Sigs Mass m Zrms\n";
+          out << "#RS(D+B) Vas Drs Das Dzs Omg Kapp Q Gam mX Sigs Mass m Zrms RS(B) Vas Drs Das Dzs Sigs Mass RS(D) Vas Drs Das Dzs Sigs Mass\n";
 
-          for(int i=0; i<iMax; i++){
+          for(int i=0; i<iMax; i++)
+          {
+              //Disk + Bulge results
               out << Rs[i]              << "  " << comProcRes[VAS][i] << "  "  // 1,2
                   << comProcRes[DRS][i] << "  " << comProcRes[DAS][i] << "  " << comProcRes[DZS][i] << "  "// 3,4,5
                   << Omgs[i]            << "  " << kapps[i]           << "  " << Qs[i] << "  " // 6,7,8
                   << Gam[i]             << "  " << mX[i]              << "  " << comProcRes[SIGS][i] << "  " //9,10,11
-                  << Mass[i]            << "  " << m[i]               << "  " << comProcRes[ZRMS][i] << " " << comProcRes[NS][i] << std::endl;  // 12,13,14
+                  << Mass[i]            << "  " << m[i]               << "  " << comProcRes[ZRMS][i] << " " << comProcRes[NS][i]  << "  "  // 12,13,14
+              //Bulge only
+                  << Rs[i+iMax]               << "  " << comProcRes[VAS][i+iMax] << "  "  // 15,16
+                  << comProcRes[DRS][i+iMax]  << "  " << comProcRes[DAS][i+iMax] << "  " << comProcRes[DZS][i+iMax] << "  "// 17,18,19
+                  << comProcRes[SIGS][i+iMax] << "  " << Mass[i+iMax]            << "  "  // 20,21
+              //Disk only
+                  << Rs[i+2*iMax]               << "  " << comProcRes[VAS][i+2*iMax] << "  "  // 22,23
+                  << comProcRes[DRS][i+2*iMax]  << "  " << comProcRes[DAS][i+2*iMax] << "  " << comProcRes[DZS][i+2*iMax] << "  "// 24,25,26
+                  << comProcRes[SIGS][i+2*iMax] << "  " << Mass[i+2*iMax]            << std::endl;  // 27,28
           }
           out.close();
         }
@@ -361,7 +478,7 @@ struct DISKSTATS
         dR         = (RrotEnd - RrotMin)/iMax;
 
         for(int j=0; j<nItems; j++)
-          for(int i=0; i<iMax; i++)
+          for(int i=0; i<3*iMax; i++)
             perProcRes[j][i] = 0.0;
 
         GravConst  = 1.0;
@@ -377,9 +494,9 @@ struct DISKSTATS
         //Process the particles
         for(int j=0; j < nParticles; j++)
         {
-          //if(IDs[j] >= 0 && IDs[j] < BULGESTARTID)
           if(IDs[j] >= 0 && IDs[j] < DMSTARTID)
           {
+            //Bluge+disk particles
             double R  =  sqrt(SQ(positions[j].x) + SQ(positions[j].y));
             double z  =  positions[j].z;
             double vr =  velocities[j].x*positions[j].x/R + velocities[j].y*positions[j].y/R;
@@ -388,16 +505,48 @@ struct DISKSTATS
             if( R <= RrotMin || R >= RrotEnd )    continue;
             int i     = (int)((R-RrotMin)/dR);
 
-            perProcRes[NS  ][i] += 1;
-            perProcRes[SIGS][i] += (float)positions[j].w;
-            perProcRes[VRS ][i] += (float)vr;
-            perProcRes[VAS ][i] += (float)va;
-            perProcRes[VZS ][i] += (float)vz;
-            perProcRes[DRS ][i] += SQ((float)vr);
-            perProcRes[DAS ][i] += SQ((float)va);
-            perProcRes[DZS ][i] += SQ((float)vz);
-            perProcRes[ZRMS][i] += SQ(z);
-          }
+            //Store the different properties
+            //First disk+bulge data
+            int offset = 0;
+            perProcRes[NS  ][offset+i] += 1;
+            perProcRes[SIGS][offset+i] += (float)positions[j].w;
+            perProcRes[VRS ][offset+i] += (float)vr;
+            perProcRes[VAS ][offset+i] += (float)va;
+            perProcRes[VZS ][offset+i] += (float)vz;
+            perProcRes[DRS ][offset+i] += SQ((float)vr);
+            perProcRes[DAS ][offset+i] += SQ((float)va);
+            perProcRes[DZS ][offset+i] += SQ((float)vz);
+            perProcRes[ZRMS][offset+i] += SQ(z);
+
+            offset = iMax;
+            //Bulge only
+            if(IDs[j] >= BULGESTARTID && IDs[j] < DMSTARTID)
+            {
+              perProcRes[NS  ][offset+i] += 1;
+              perProcRes[SIGS][offset+i] += (float)positions[j].w;
+              perProcRes[VRS ][offset+i] += (float)vr;
+              perProcRes[VAS ][offset+i] += (float)va;
+              perProcRes[VZS ][offset+i] += (float)vz;
+              perProcRes[DRS ][offset+i] += SQ((float)vr);
+              perProcRes[DAS ][offset+i] += SQ((float)va);
+              perProcRes[DZS ][offset+i] += SQ((float)vz);
+              perProcRes[ZRMS][offset+i] += SQ(z);
+            }//Bulge
+            offset = 2*iMax;
+            //Disk only
+            if(IDs[j] >= 0 && IDs[j] < BULGESTARTID)
+            {
+              perProcRes[NS  ][offset+i] += 1;
+              perProcRes[SIGS][offset+i] += (float)positions[j].w;
+              perProcRes[VRS ][offset+i] += (float)vr;
+              perProcRes[VAS ][offset+i] += (float)va;
+              perProcRes[VZS ][offset+i] += (float)vz;
+              perProcRes[DRS ][offset+i] += SQ((float)vr);
+              perProcRes[DAS ][offset+i] += SQ((float)va);
+              perProcRes[DZS ][offset+i] += SQ((float)vz);
+              perProcRes[ZRMS][offset+i] += SQ(z);
+            }//Disk
+          }//if(IDs[j] >= 0 && IDs[j] < DMSTARTID)
         }//for nParticles
 
         Analysis(baseFilename, procId, treal, tsim);

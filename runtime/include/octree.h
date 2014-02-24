@@ -957,7 +957,7 @@ public:
 
 //    LOGF(stderr, "Settings device : %d\t"  << devID << "\t" << device << "\t" << nProcs <<endl;
 
-    statisticsIter = 1; //Every N-body unit
+    statisticsIter = 0; //0=disabled, 1 = Every N-body unit, 2= every 2nd n-body unit, etc..
     nextStatsTime  = 0;
 
     snapshotIter = snapI;
