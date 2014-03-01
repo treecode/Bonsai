@@ -1122,7 +1122,10 @@ int main(int argc, char** argv)
     logFileName.append(buff);
   }
 
-  ofstream logFile(logFileName.c_str());
+  //ofstream logFile(logFileName.c_str());
+  //Use a string stream buffer, only write at end of the run
+  std::stringstream logStream;
+  ostream &logFile = logStream;
 
   tree->set_context(logFile, false); //Do logging to file and enable timing (false = enabled)
 
@@ -1448,11 +1451,31 @@ int main(int argc, char** argv)
   if (procId==0)
     fprintf(stderr, " Starting iterating\n");
   tree->mpiSync();
-  tree->iterate(); 
+
+  //Catch exceptions to add some extra print info
+  try
+  {
+      tree->iterate();
+  }
+  catch(const std::exception &exc)
+  {
+      std::cerr << "Process: "  << procId << "\t" << exc.what() <<std::endl;
+  }
+  catch(...)
+  {
+      std::cerr << "Unknown exception on process: " << procId << std::endl;
+  }
 
   LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
 
-  logFile.close();
+
+  double t1w = tree->get_time();
+  ofstream logFile2(logFileName.c_str());
+  logFile2 <<  logStream.rdbuf();
+  logFile2 << "Writing log data took: " << tree->get_time()-t1w << std::endl;
+  logFile2.close();
+
+
 
 #ifdef USE_MPI
   MPI_Finalize();

@@ -109,7 +109,7 @@ namespace my_dev {
     bool logfile_flag;
     bool disable_timing;
     
-    ofstream *logFile;
+    ostream *logFile;
     
     int logID;  //Unique ID to every log line
     
@@ -149,7 +149,7 @@ namespace my_dev {
     int getComputeCapabilityMinor() const {return ccMajor;}
      
     
-    int create(std::ofstream &log, bool disableTiming = false)
+    int create(std::ostream &log, bool disableTiming = false)
     {
       disable_timing = disableTiming;
       logfile_flag = true;

@@ -29,7 +29,7 @@ void octree::set_context( bool disable_timing) {
 }
 
 
-void octree::set_context(std::ofstream &log, bool disable_timing) {  
+void octree::set_context(std::ostream &log, bool disable_timing) {
   
   devContext.create(log, disable_timing);
   set_context2();

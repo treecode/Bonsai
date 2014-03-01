@@ -557,7 +557,7 @@ public:
 
    //jb made these functions public for testing
    void set_context(bool disable_timing = false);
-   void set_context(std::ofstream &log, bool disable_timing = false);
+   void set_context(std::ostream &log, bool disable_timing = false);
    void set_context2();
 
    int getAllignmentOffset(int n);
