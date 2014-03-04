@@ -2,7 +2,7 @@
 #define _OCTREE_H_
 
 #ifdef USE_MPI
-#include "mpi.h"
+  #include "mpi.h"
 #endif
 
 
@@ -32,8 +32,11 @@
 #include <fstream>
 #include <sys/types.h>
 #include "logFileWriter.h"
-#include "MPIComm.h"
 
+#ifdef USE_MPI
+  #include "MPIComm.h"
+  extern MPIComm *myComm;
+#endif
 
 #ifndef WIN32
   #include <unistd.h>
@@ -46,7 +49,7 @@
 
 using namespace std;
 
-extern MPIComm *myComm;
+
 
 
 typedef float real;
@@ -1047,7 +1050,11 @@ public:
 
 //     my_dev::base_mem::printMemUsage();   
     
+#ifdef USE_MPI
     logFileWriter = new LOGFILEWRITER(nProcs, myComm->MPI_COMM_I, myComm->MPI_COMM_J);
+#else
+    logFileWriter = new LOGFILEWRITER(nProcs, 0, 0);
+#endif
 
 
     //Init at zero so we can check for n_dust later on
