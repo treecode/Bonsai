@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <iomanip>
 
+
 using namespace std;
 
 static double de_max = 0;
@@ -1021,6 +1022,8 @@ void octree::iterate_teardown(IterationData &idata) {
                   idata.totalDomUp, idata.totalDomEx, idata.totalDomWait, idata.totalPredCor);
   devContext.writeLogEvent(buff);
 
+  this->writeLogToFile();
+
   if(execStream != NULL)
   {
     delete execStream;
@@ -1079,6 +1082,11 @@ void octree::iterate() {
                     idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
                     idata.totalDomUp, idata.totalDomEx, idata.totalDomWait, idata.totalPredCor);
     devContext.writeLogEvent(buff);
+
+
+    //Write the logdata to file
+    this->writeLogToFile();
+
 
   } //end for i
   

@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string>
+#include <sstream>
 #include <fstream>
 #include <cassert>
 #include <vector>
@@ -123,6 +124,7 @@ namespace my_dev {
     int defaultComputeMode;   
 
 
+    std::string logPrepend;
     
     
   public:
@@ -263,7 +265,7 @@ namespace my_dev {
       
       if(logfile_flag)
       {
-        (*logFile) << logID++ << "\t"  << type << "\t" << text << "\t" << time << endl;
+        (*logFile) << logPrepend << logID++ << "\t"  << type << "\t" << text << "\t" << time << endl;
       }
     }
     
@@ -272,8 +274,21 @@ namespace my_dev {
       if(disable_timing) return;
       if(logfile_flag)
       {
-        (*logFile) << text;
+        (*logFile) << logPrepend << text;
       }
+    }
+
+    void setLogPreamble(std::string text)
+    {
+      logPrepend = text;
+    }
+
+    //This function returns the currently recorded log-data and will clear the log-buffer
+    std::string getLogData()
+    {
+      std::stringstream temp;
+      temp << logFile->rdbuf();
+      return temp.str();
     }
 
     /////////////

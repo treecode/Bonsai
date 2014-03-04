@@ -31,6 +31,9 @@
 #include <iostream>
 #include <fstream>
 #include <sys/types.h>
+#include "logFileWriter.h"
+#include "MPIComm.h"
+
 
 #ifndef WIN32
   #include <unistd.h>
@@ -42,6 +45,9 @@
 #define PRINT_MPI_DEBUG
 
 using namespace std;
+
+extern MPIComm *myComm;
+
 
 typedef float real;
 typedef unsigned int uint;
@@ -409,6 +415,8 @@ protected:
   bool   store_energy_flag;
   double tinit;
 
+  LOGFILEWRITER *logFileWriter;
+
 
   // accurate Win32 timing
 #ifdef WIN32
@@ -559,6 +567,10 @@ public:
    void set_context(bool disable_timing = false);
    void set_context(std::ostream &log, bool disable_timing = false);
    void set_context2();
+   void set_logPreamble(std::string text);
+
+   void writeLogData(std::string &str){ devContext.writeLogEvent(str.c_str());}
+   void writeLogToFile(){ this->logFileWriter->updateLogData(devContext.getLogData());}
 
    int getAllignmentOffset(int n);
    int getTextureAllignmentOffset(int n, int size);
@@ -1035,6 +1047,9 @@ public:
 
 //     my_dev::base_mem::printMemUsage();   
     
+    logFileWriter = new LOGFILEWRITER(nProcs, myComm->MPI_COMM_I, myComm->MPI_COMM_J);
+
+
     //Init at zero so we can check for n_dust later on
     localTree.n      = 0;
     localTree.n_dust = 0;
@@ -1051,6 +1066,8 @@ public:
     delete[] currentRLow;
     delete[] currentRHigh;
     delete[] curSysState;
+
+    delete logFileWriter;
 
     if(globalGrpTreeCntSize) delete[] globalGrpTreeCntSize;
     if(globalGrpTreeCount) delete[] globalGrpTreeCount;

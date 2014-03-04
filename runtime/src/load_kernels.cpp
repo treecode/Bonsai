@@ -49,6 +49,11 @@ void octree::set_context2()
   
 }
 
+void octree::set_logPreamble(std::string text)
+{
+  devContext.setLogPreamble(text);
+}
+
 void octree::load_kernels() {
 
   if (!devContext_flag) set_context();

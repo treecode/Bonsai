@@ -1129,6 +1129,10 @@ int main(int argc, char** argv)
 
   tree->set_context(logFile, false); //Do logging to file and enable timing (false = enabled)
 
+  char logPretext[64];
+  sprintf(logPretext, "PROC-%05d ", procId);
+  tree->set_logPreamble(logPretext);
+
   if(restartSim)
   {
     //The input snapshot file are many files with each process reading its own
@@ -1468,13 +1472,11 @@ int main(int argc, char** argv)
 
   LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
 
-
-  double t1w = tree->get_time();
-  ofstream logFile2(logFileName.c_str());
-  logFile2 <<  logStream.rdbuf();
-  logFile2 << "Writing log data took: " << tree->get_time()-t1w << std::endl;
-  logFile2.close();
-
+  std::stringstream sstemp;
+  sstemp << "Finished total took: " << tree->get_time()-t0 << std::endl;
+  std::string stemp = sstemp.str();
+  tree->writeLogData(stemp);
+  tree->writeLogToFile();//Final write incase anything is left in the buffers
 
 
 #ifdef USE_MPI
