@@ -92,7 +92,7 @@ void octree::getBoundariesGroups(tree_structure &tree, real4 &r_min, real4 &r_ma
 
 
 
-void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
+void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate, bool doFullShuffle) {
 
   //We assume the bodies are already onthe GPU
   devContext.startTiming(execStream->s());
@@ -167,7 +167,8 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
 
   //JB this if statement is required untill I fix the order 
   //of functions in main.cpp  
-  if(oneRunFull == 1)
+  //if(oneRunFull == 1)
+  if(!doFullShuffle)
   {
     my_dev::dev_mem<real4>  real4Buffer1(devContext);
     my_dev::dev_mem<int>    intBuffer1(devContext);

@@ -509,8 +509,10 @@ void octree::build (tree_structure &tree) {
 //This function builds a hash-table for the particle-keys which is required for the
 //domain distribution based on the SFC
 
-void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float lastExecTime2,
-    double &domComp, double &domExch) {
+void octree::parallelDataSummary(tree_structure &tree,
+                                 float lastExecTime, float lastExecTime2,
+                                 double &domComp, double &domExch,
+                                 bool initialSetup) {
   double t0 = get_time();
 
   real4 r_min = {+1e10, +1e10, +1e10, +1e10};
@@ -594,8 +596,9 @@ void octree::parallelDataSummary(tree_structure &tree, float lastExecTime, float
    build_key_list.execute(execStream->s());
 
    exchangeSamplesAndUpdateBoundarySFC(&sampleKeys[0], nSamples,    &globalSamples[0],
-                                        nReceiveCnts,  nReceiveDpls, totalCount,
-                                       &tree.parallelBoundaries[0], lastExecTime);
+                                       nReceiveCnts,  nReceiveDpls, totalCount,
+                                       &tree.parallelBoundaries[0], lastExecTime,
+                                       initialSetup);
 
 
    delete[] nsampleInfo;

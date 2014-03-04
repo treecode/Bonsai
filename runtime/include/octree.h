@@ -586,7 +586,7 @@ public:
 
 
     void desort_bodies(tree_structure &tree);
-    void sort_bodies(tree_structure &tree, bool doDomainUpdate);
+    void sort_bodies(tree_structure &tree, bool doDomainUpdate, bool doFullShuffle = false);
     void getBoundaries(tree_structure &tree, real4 &r_min, real4 &r_max);
     void getBoundariesGroups(tree_structure &tree, real4 &r_min, real4 &r_max);  
 
@@ -768,7 +768,7 @@ public:
 
   void makeLET();
 
-  void parallelDataSummary(tree_structure &tree, float lastExecTime, float lastExecTime2, double &domUpdate, double &domExch);
+  void parallelDataSummary(tree_structure &tree, float lastExecTime, float lastExecTime2, double &domUpdate, double &domExch, bool initalSetup);
 
 
    void gpuRedistributeParticles_SFC(uint4 *boundaries);
@@ -785,7 +785,8 @@ public:
 
   void exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSamples,
                                            uint4 *globalSamples, int  *nReceiveCnts, int *nReceiveDpls,
-                                           int    totalCount,   uint4 *parallelBoundaries, float lastExectime);
+                                           int    totalCount,   uint4 *parallelBoundaries, float lastExectime,
+                                           bool initialSetup);
 
   void essential_tree_exchangeV2(tree_structure &tree,
                                  tree_structure &remote,

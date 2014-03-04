@@ -463,7 +463,7 @@ bool octree::iterate_once(IterationData &idata) {
         double domUp =0, domEx = 0;
         double tZ = get_time();
         devContext.startTiming(execStream->s());
-        parallelDataSummary(localTree, lastTotal, lastLocal, domUp, domEx);
+        parallelDataSummary(localTree, lastTotal, lastLocal, domUp, domEx, false);
         devContext.stopTiming("UpdateDomain", 6, execStream->s());
         double tZZ = get_time();
         idata.lastDomTime   = tZZ-tZ;
@@ -808,22 +808,50 @@ void octree::iterate_setup(IterationData &idata) {
   devContext.writeLogEvent("Starting execution \n");
   
   //Start construction of the tree
-  sort_bodies(localTree, true);
+  sort_bodies(localTree, true, true);
   build(localTree);
   allocateTreePropMemory(localTree);
   compute_properties(localTree);
   letRunning = false;
      
   double t1;
-  sort_bodies(localTree, true);
+  sort_bodies(localTree, true, true);
   //Initial prediction/acceleration to setup the system
   //Will be at time 0
   //predict the particles
   predict(this->localTree);
   debugPrintProgress(procId,200);
   double notUsed = 0;
+
+  //Setup of the particle distribution, initially it should be equal
   if(nProcs > 1)
-    parallelDataSummary(localTree, 30, 30, notUsed, notUsed); //1 for all process, equal part distribution
+  {
+    for(int i=0; i < 5; i++)
+    {
+      parallelDataSummary(localTree, 30, 30, notUsed, notUsed, true); //1 for all process, equal part distribution
+      sort_bodies(localTree, true, true);
+
+      //Check if the min/max are within certain percentage
+      int maxN = 0, minN = 0;
+      #ifdef USE_MPI
+        MPI_Allreduce(&localTree.n, &maxN, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
+        MPI_Allreduce(&localTree.n, &minN, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
+
+        //Compute difference in percent
+        int perc = (int)(100*(maxN-minN)/(double)minN);
+
+        if(procId == 0)
+        {
+          LOGF(stderr, "Particle setup iteration: %d Min: %d  Max: %d Diff: %d %%\n", i, minN, maxN, perc);
+        }
+        if(perc < 10) break; //We're happy if difference is less than 10%
+      #endif
+    }
+  }
+
+//  if(nProcs > 1)
+//    parallelDataSummary(localTree, 30, 30, notUsed, notUsed); //1 for all process, equal part distribution
+//
 
   //Start construction of the tree
   sort_bodies(localTree, true);

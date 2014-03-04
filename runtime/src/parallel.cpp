@@ -900,7 +900,8 @@ void octree::computeSampleRateSFC(float lastExecTime, int &nSamples, float &samp
 
 void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSamples,
     uint4 *globalSamples, int  *nReceiveCnts, int *nReceiveDpls,
-    int    totalCount,   uint4 *parallelBoundaries, float lastExecTime)
+    int    totalCount,   uint4 *parallelBoundaries, float lastExecTime,
+    bool initialSetup)
 {
 #ifdef USE_MPI
 
@@ -1133,8 +1134,8 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
     const int npx = myComm->n_proc_i;  /* number of procs doing domain decomposition */
 
     int nsamples_glb;
-    if(iter == 0)
-      nsamples_glb = nloc_mean / 3; //Higher rate in first step to get proper distribution
+    if(initialSetup)
+      nsamples_glb = nloc_mean / 3; //Higher rate in first steps to get proper distribution
     else
       nsamples_glb = nloc_mean / 30;
 
@@ -1253,7 +1254,7 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
 
     if(procId == -1)
     {
-      fprintf(stderr, "XProc After Div: %d SUM:  %llu %llu %llu\tSum: %d\n",
+      fprintf(stderr, "XProc After Div: %d SUM:  %du %du %du\tSum: %d\n",
               i, newBoundariesTest[i].x, newBoundariesTest[i].y, newBoundariesTest[i].z, averageSum);
     }
 
