@@ -1213,17 +1213,17 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
   {
     uint4 newKey = parallelBoundaries[i];
 
-    int averageSum           = nBoundaryHistory;
+    int averageSum           = (1+nBoundaryHistory)*3;
 
-    unsigned long long int weightedHistoryKeyX = newKey.x*nBoundaryHistory;
-    unsigned long long int weightedHistoryKeyY = newKey.y*nBoundaryHistory;
-    unsigned long long int weightedHistoryKeyZ = newKey.z*nBoundaryHistory;
+    unsigned long long int weightedHistoryKeyX = newKey.x*(unsigned long long int) averageSum;
+    unsigned long long int weightedHistoryKeyY = newKey.y*(unsigned long long int) averageSum;
+    unsigned long long int weightedHistoryKeyZ = newKey.z*(unsigned long long int) averageSum;
 
     for(int hidx = 0; hidx < nBoundaryHistory; hidx++)
     {
-      int rhidx  = historyStoreIndex    [hidx];    //Get the idx to use
-      uint4 hkey = historyBoundaryBuffer[rhidx][i];//Get the key
-      int   hval = historyWeightValues  [hidx];    //Get the multiply value
+      int rhidx  =     historyStoreIndex    [hidx];    //Get the idx to use
+      uint4 hkey =     historyBoundaryBuffer[rhidx][i];//Get the key
+      int   hval = 1 + historyWeightValues  [hidx];    //Get the multiply value
 
       if(procId == -1)
       {
@@ -1232,9 +1232,9 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
       }
 
       //Multiply the key with it's weighting value
-      weightedHistoryKeyX += hkey.x * hval;
-      weightedHistoryKeyY += hkey.y * hval;
-      weightedHistoryKeyZ += hkey.z * hval;
+      weightedHistoryKeyX += hkey.x * (unsigned long long int) hval;
+      weightedHistoryKeyY += hkey.y * (unsigned long long int) hval;
+      weightedHistoryKeyZ += hkey.z * (unsigned long long int) hval;
 
       averageSum += hval;
     }
@@ -5414,7 +5414,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             LOGF(stderr, "Receive complete from: %d  || recvTree: %d since start: %lg ( %lg ) alloc: %lg Recv: %lg Size: %d\n",
                 recvStatus.MPI_SOURCE, 0, get_time()-tStart,get_time()-t0,tZ-tY, get_time()-tZ, count);
 	    
-	    receivedLETCount++;
+            receivedLETCount++;
 
             if( communicationStatus[probeStatus.MPI_SOURCE] == 2)
             {

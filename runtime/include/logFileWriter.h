@@ -93,7 +93,6 @@ struct LOGFILEWRITER
     GatherLogData(logData, fullLog);
     if(procId == 0) {
       logFile <<  fullLog;
-
     }
   }
 
