@@ -734,6 +734,16 @@ int setupMergerModel(vector<real4> &bodyPositions1,
 }
 
 
+double get_time_main()
+{
+  struct timeval Tvalue;
+  struct timezone dummy;
+
+  gettimeofday(&Tvalue,&dummy);
+  return ((double) Tvalue.tv_sec +1.e-6*((double) Tvalue.tv_usec));
+}
+
+
 long long my_dev::base_mem::currentMemUsage;
 long long my_dev::base_mem::maxMemUsage;
 
@@ -785,6 +795,8 @@ int main(int argc, char** argv)
 	TstartGlow = 0.0;
 	dTstartGlow = 1.0;
 #endif
+
+	double tStartupStart = get_time_main();
 
   int nPlummer  = -1;
   int nSphere   = -1;
@@ -985,7 +997,6 @@ int main(int argc, char** argv)
   octree *tree = new octree(argv, devID, theta, eps, snapshotFile, snapshotIter,  timeStep, tEnd, iterEnd, (int)remoDistance, snapShotAdd, rebuild_tree_rate, direct);
 
   double tStartup = tree->get_time();
-
   //Get parallel processing information  
   int procId = tree->mpiGetRank();
   int nProcs = tree->mpiGetNProcs();
@@ -1132,6 +1143,8 @@ int main(int argc, char** argv)
   char logPretext[64];
   sprintf(logPretext, "PROC-%05d ", procId);
   tree->set_logPreamble(logPretext);
+
+  double tStartup2 = tree->get_time();
 
   if(restartSim)
   {
@@ -1377,7 +1390,8 @@ int main(int argc, char** argv)
 
   if(procId == 0)   LOGF(stderr, "Combined Mass: %f \tNTotal: %d \n", totalMass, NTotal);
 
-  LOG("Starting! Bootup time: %lg \n", tree->get_time()-tStartup);
+  fprintf(stderr,"Proc: %d Bootup times: Tree/MPI: %lg Threads/log: %lg IC-model: %lg \n",
+                procId, tStartup-tStartupStart, tStartup2-tStartup, tree->get_time()-tStartup2);
 
 
   double t0 = tree->get_time();
