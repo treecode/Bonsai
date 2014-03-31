@@ -595,11 +595,24 @@ void octree::parallelDataSummary(tree_structure &tree,
    build_key_list.set_arg<real4>(3,    &tree.corner);
    build_key_list.execute(execStream->s());
 
-   exchangeSamplesAndUpdateBoundarySFC(&sampleKeys[0], nSamples,    &globalSamples[0],
-                                       nReceiveCnts,  nReceiveDpls, totalCount,
-                                       &tree.parallelBoundaries[0], lastExecTime,
-                                       initialSetup);
+   bool updateBoundaries = false;
 
+   //Update if the maximum duration is 10% larger than average duration
+   //and always update the first couple of iterations to create load-balance
+   if(iter < 32 || (  100*((maxExecTimePrevStep-avgExecTimePrevStep) / avgExecTimePrevStep) > 10 ))
+   {
+     updateBoundaries = true;
+   }
+
+
+   updateBoundaries = true; //TEST, keep always update for now
+   if(updateBoundaries)
+   {
+     exchangeSamplesAndUpdateBoundarySFC(&sampleKeys[0], nSamples,    &globalSamples[0],
+                                         nReceiveCnts,  nReceiveDpls, totalCount,
+                                         &tree.parallelBoundaries[0], lastExecTime,
+                                         initialSetup);
+   }
 
    delete[] nsampleInfo;
    delete[] nReceiveCnts;

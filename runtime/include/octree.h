@@ -693,6 +693,10 @@ public:
   std::vector<int> exchangePartBuffer;
 
 
+  float maxExecTimePrevStep;      //Maximum duration of gravity computation over all processes
+  float avgExecTimePrevStep;      //Average duration of gravity computation over all processes
+
+
   int grpTree_n_nodes;
   int grpTree_n_topNodes;
 
@@ -1009,6 +1013,10 @@ public:
     exchangePartBuffer.resize(8*nProcs);
 
     globalGrpTreeCntSize = NULL;
+
+
+    maxExecTimePrevStep = 100;    //Some large values to force updates
+    avgExecTimePrevStep = 1;      //Some large values to force updates
 
 
     //An initial guess for group broadcasted information

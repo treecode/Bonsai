@@ -669,7 +669,13 @@ bool octree::iterate_once(IterationData &idata) {
     { //Wait on all processes and time how long the waiting took
       t1 = get_time();
       devContext.startTiming(execStream->s());
-      mpiSync();
+      //mpiSync();
+
+      //Gather info about the load-balance, used to decide if we need to refine the domains
+      MPI_Allreduce(&lastTotal, &maxExecTimePrevStep, 1, MPI_FLOAT, MPI_MAX, MPI_COMM_WORLD);
+      MPI_Allreduce(&lastTotal, &avgExecTimePrevStep, 1, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+      avgExecTimePrevStep /= nProcs;
+
       devContext.stopTiming("Unbalance", 12, execStream->s());
       idata.lastWaitTime  += get_time() - t1;
       idata.totalWaitTime += idata.lastWaitTime;
