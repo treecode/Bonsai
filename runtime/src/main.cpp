@@ -1464,10 +1464,12 @@ int main(int argc, char** argv)
   catch(const std::exception &exc)
   {
       std::cerr << "Process: "  << procId << "\t" << exc.what() <<std::endl;
+      if(nProcs > 1) abort();
   }
   catch(...)
   {
       std::cerr << "Unknown exception on process: " << procId << std::endl;
+      if(nProcs > 1) abort();
   }
 
   LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
