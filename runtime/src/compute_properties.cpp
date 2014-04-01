@@ -140,7 +140,7 @@ void octree::compute_properties(tree_structure &tree) {
       LOGF(stderr, "Starting all compute-properties kernels took; %lg  start: %lg \n", get_time()-tA, get_time()-t0);
 
       //Start copying the particle positions to the host, will overlap with compute properties
-      localTree.bodies_Ppos.d2h(tree.n, false, LETDataToHostStream->s());
+      //Moved to build function localTree.bodies_Ppos.d2h(tree.n, false, LETDataToHostStream->s());
     }
 
   //Keep this sync for now since otherwise we run the risk that memory objects are destroyed

@@ -50,7 +50,12 @@ void octree::makeLET()
 
 
   localTree.multipole.waitForCopyEvent();
+  double t40 = get_time();
+  LOGF(stderr,"MakeLET Preparing data-copy: %lg  sendGroups: %lg Total: %lg \n",
+               t10-t00, t20-t10, t40-t00);
 
+
+#if 0
   union{float f; int i;} u; //__float_as_int
 
   //The next piece of code, makes extracts from our tree-structure. This is done for the "copyTreeUpToLevel"
@@ -201,10 +206,12 @@ void octree::makeLET()
   LOGF(stderr,"MakeLET Preparing data-copy: %lg  sendGroups: %lg Copy: %lg TreeCpy: %lg Total: %lg \n",
                t10-t00, t20-t10, t30-t20, t40-t30, t40-t00);
 
-
+#else
  //End tree-extract
-
-
+  std::vector<real4> topLevelsBuffer;
+  std::vector<uint2> treeSizeAndOffset;
+  int copyTreeUpToLevel = 0;
+#endif
   //Start LET kernels
   essential_tree_exchangeV2(localTree,
                             remoteTree,

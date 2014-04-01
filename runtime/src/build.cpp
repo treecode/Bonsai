@@ -324,6 +324,11 @@ void octree::build (tree_structure &tree) {
 
 //  devContext.startTiming(execStream->s());
 
+  if(nProcs > 1)
+  {
+    //Start copying the particle positions to the host, will overlap with tree-construction
+    localTree.bodies_Ppos.d2h(tree.n, false, LETDataToHostStream->s());
+  }
 
 //  double tBuild0 = get_time();
 
