@@ -5225,6 +5225,7 @@ void octree::mergeAndLaunchLETStructures(
 
   int PROCS  = recvTree-procTrees;
 
+  double t0 = get_time();
 
 #if 0 //This is no longer safe now that we use OpenMP and overlapping communication/computation
   //to use this (only in debug/test case) make sure GPU work is only launched AFTER ALL data
@@ -5517,6 +5518,9 @@ void octree::mergeAndLaunchLETStructures(
   //Compute the total size of the buffer
   int bufferSize     = 1*(totalParticles) + 5*(totalNodes+totalTopNodes+topTree_n_nodes + nodeTextOffset);
 
+
+  double t1 = get_time();
+
   thisPartLETExTime += get_time() - tStart;
   //Allocate memory on host and device to store the merged tree-structure
   if(bufferSize > remote.fullRemoteTree.get_size())
@@ -5531,6 +5535,8 @@ void octree::mergeAndLaunchLETStructures(
   tStart = get_time();
 
   real4 *combinedRemoteTree = &remote.fullRemoteTree[0];
+
+  double t2 = get_time();
 
   //First copy the properties of the top_tree nodes and the original top-nodes
 
@@ -5733,11 +5739,20 @@ void octree::mergeAndLaunchLETStructures(
   }
 #endif
 
+  double t3 = get_time();
+
   //Check if we need to summarize which particles are active,
   //only done during the last approximate_gravity_let call
   bool doActivePart = (procTrees == mpiGetNProcs() -1);
 
   approximate_gravity_let(this->localTree, this->remoteTree, bufferSize, doActivePart);
+
+  double t4 = get_time();
+  //Statistics about the tree-merging
+  char buff5[512];
+  sprintf(buff5, "LETXTIME-%d Iter: %d Processed: %d topTree: %lg Alloc: %lg  Copy/Update: %lg TotalC: %lg Wait: %lg TotalRun: %lg \n",
+                  procId, iter, procTrees, t1-t0, t2-t1,t3-t2,t3-t0, t4-t3, t4-t0);
+  devContext.writeLogEvent(buff5); //TODO DELETE
 }
 
 

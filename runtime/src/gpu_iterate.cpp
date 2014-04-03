@@ -604,7 +604,7 @@ bool octree::iterate_once(IterationData &idata) {
     idata.totalLETCommTime += thisPartLETExTime;
 
 
-    //Compute the total number of interactions that occured
+    //Compute the total number of interactions that we executed
     tTempTime = get_time();
 #if 1
    localTree.interactions.d2h();
