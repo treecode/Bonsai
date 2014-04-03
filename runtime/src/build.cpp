@@ -520,70 +520,38 @@ void octree::parallelDataSummary(tree_structure &tree,
                                  bool initialSetup) {
   double t0 = get_time();
 
+  bool updateBoundaries = false;
+
+  //Update if the maximum duration is 10% larger than average duration
+  //and always update the first couple of iterations to create load-balance
+  if(iter < 32 || (  100*((maxExecTimePrevStep-avgExecTimePrevStep) / avgExecTimePrevStep) > 10 ))
+  {
+    updateBoundaries = true;
+  }
+
+  updateBoundaries = true; //TEST, keep always update for now
+
+
   real4 r_min = {+1e10, +1e10, +1e10, +1e10};
   real4 r_max = {-1e10, -1e10, -1e10, -1e10};
   getBoundaries(tree, r_min, r_max); //Used for predicted position keys further down
 
-  //Build keys on current positions, since those are already sorted, while predicted are not
-  build_key_list.set_arg<cl_mem>(0,   tree.bodies_key.p());
-  build_key_list.set_arg<cl_mem>(1,   tree.bodies_pos.p());
-  build_key_list.set_arg<int>(2,      &tree.n);
-  build_key_list.set_arg<real4>(3,    &tree.corner);
-  build_key_list.setWork(tree.n, 128); //128 threads per block
-  build_key_list.execute(execStream->s());
+  if(updateBoundaries)
+  {
+    //Build keys on current positions, since those are already sorted, while predicted are not
+    build_key_list.set_arg<cl_mem>(0,   tree.bodies_key.p());
+    build_key_list.set_arg<cl_mem>(1,   tree.bodies_pos.p());
+    build_key_list.set_arg<int>(2,      &tree.n);
+    build_key_list.set_arg<real4>(3,    &tree.corner);
+    build_key_list.setWork(tree.n, 128); //128 threads per block
+    build_key_list.execute(execStream->s());
 
-#if 1  /* added by evghenii, needed for 2D domain decomposition in parallel.cpp */
-   tree.bodies_key.d2h(true,execStream->s());
-#endif
+    /* added by evghenii, needed for 2D domain decomposition in parallel.cpp */
+    tree.bodies_key.d2h(true,execStream->s());
+  }
 
-  int nSamples   = 0;
-  float sampleRate = 0;
-  computeSampleRateSFC(lastExecTime, nSamples, sampleRate);
-
-
-
-   my_dev::dev_mem<uint4>  sampleKeys(devContext);
-   int memBufOffset = sampleKeys.cmalloc_copy(localTree.generalBuffer1, nSamples, 0);
-
-   extractSampleParticlesSFC.set_arg<int>(0,     &localTree.n);
-   extractSampleParticlesSFC.set_arg<int>(1,     &nSamples);
-   extractSampleParticlesSFC.set_arg<float>(2,     &sampleRate);
-   extractSampleParticlesSFC.set_arg<cl_mem>(3,  localTree.bodies_key.p());
-   extractSampleParticlesSFC.set_arg<cl_mem>(4,  sampleKeys.p());
-   extractSampleParticlesSFC.setWork(nSamples, 256);
-   extractSampleParticlesSFC.execute(execStream->s());
-
-   sampleKeys.d2h(false,execStream->s());
-
-   //Sync the boundary and number of sample particles over the various processes
-   //this overlaps with the sample extraction on the device
-   int *nsampleInfo  = new int[nProcs];
-   this->sendCurrentRadiusAndSampleInfo(r_min, r_max, nSamples, nsampleInfo);
-
-   //TODO allocate these buffers at the start of program
-   int   *nReceiveCnts = new int[nProcs];
-   int   *nReceiveDpls = new int[nProcs];
-   uint4 *globalSamples;
-
-   //Compute the receive offsets and counts for the sample particles on process 0
-   int totalCount = 0;
-   if(procId == 0)
-   {
-     nReceiveCnts[0] = nsampleInfo[0]*sizeof(uint4);
-     nReceiveDpls[0] = 0;
-     totalCount     += nsampleInfo[0];
-     for(int i=1; i < nProcs; i++)
-     {
-       nReceiveCnts[i] = nsampleInfo[i]*sizeof(uint4);
-       nReceiveDpls[i] = nReceiveDpls[i-1] + nReceiveCnts[i-1];
-       totalCount     += nsampleInfo[i];
-     }
-     globalSamples = new uint4[totalCount+1];
-   }
-
-   execStream->sync(); //Wait till all data is on the host
-
-   //Compute the boundary's of the tree
+   //Get the global boundaries and compute the corner / size of tree
+   this->sendCurrentRadiusInfo(r_min, r_max);
    real size     = 1.001f*std::max(r_max.z - r_min.z,
                           std::max(r_max.y - r_min.y, r_max.x - r_min.x));
 
@@ -591,6 +559,10 @@ void octree::parallelDataSummary(tree_structure &tree,
                               0.5f*(r_min.y + r_max.y) - 0.5f*size,
                               0.5f*(r_min.z + r_max.z) - 0.5f*size,
                               size/(1 << MAXLEVELS));
+
+   if(updateBoundaries)
+     execStream->sync(); //This one has to be finished when we start updating the domain
+                         //as it contains the keys on which we sample to update boundaries
 
    //Compute keys again, needed for the redistribution
    //Note we can call this in parallel with the computation of the domain.
@@ -600,28 +572,14 @@ void octree::parallelDataSummary(tree_structure &tree,
    build_key_list.set_arg<real4>(3,    &tree.corner);
    build_key_list.execute(execStream->s());
 
-   bool updateBoundaries = false;
-
-   //Update if the maximum duration is 10% larger than average duration
-   //and always update the first couple of iterations to create load-balance
-   if(iter < 32 || (  100*((maxExecTimePrevStep-avgExecTimePrevStep) / avgExecTimePrevStep) > 10 ))
-   {
-     updateBoundaries = true;
-   }
-
-
-   updateBoundaries = true; //TEST, keep always update for now
    if(updateBoundaries)
    {
-     exchangeSamplesAndUpdateBoundarySFC(&sampleKeys[0], nSamples,    &globalSamples[0],
-                                         nReceiveCnts,  nReceiveDpls, totalCount,
+     exchangeSamplesAndUpdateBoundarySFC(NULL, 0, NULL,
+                                         NULL,  NULL, 0,
                                          &tree.parallelBoundaries[0], lastExecTime,
                                          initialSetup);
    }
 
-   delete[] nsampleInfo;
-   delete[] nReceiveCnts;
-   delete[] nReceiveDpls;
 
     domComp = get_time()-t0;
 
@@ -633,7 +591,7 @@ void octree::parallelDataSummary(tree_structure &tree,
     t0 = get_time();
 
 
-    gpuRedistributeParticles_SFC(&tree.parallelBoundaries[0]);
+    gpuRedistributeParticles_SFC(&tree.parallelBoundaries[0]); //Redistribute the particles
 
     domExch = get_time()-t0;
 

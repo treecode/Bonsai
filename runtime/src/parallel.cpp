@@ -966,12 +966,155 @@ void octree::computeSampleRateSFC(float lastExecTime, int &nSamples, float &samp
 #endif
 }
 
-void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSamples,
-    uint4 *globalSamples, int  *nReceiveCnts, int *nReceiveDpls,
-    int    totalCount,   uint4 *parallelBoundaries, float lastExecTime,
+void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys2,    int  nSamples2,
+    uint4 *globalSamples2, int  *nReceiveCnts2, int *nReceiveDpls2,
+    int    totalCount2,   uint4 *parallelBoundaries, float lastExecTime,
     bool initialSetup)
 {
 #ifdef USE_MPI
+
+
+#if 1
+ //Start of 2D
+
+
+  /* evghenii: 2d sampling comes here,
+   * make sure that locakTree.bodies_key.d2h in src/build.cpp.
+   * if you don't see my comment there, don't use this version. it will be
+   * blow up :)
+   */
+
+  {
+    const double t0 = get_time();
+
+    const int nkeys_loc = localTree.n;
+    assert(nkeys_loc > 0);
+    const int nloc_mean = nTotalFreq_ull/nProcs;
+
+    /* LB step */
+
+    double f_lb = 1.0;
+#if 1  /* LB: use load balancing */
+    {
+      static double prevDurStep = -1;
+      static int prevSampFreq = -1;
+      prevDurStep = (prevDurStep <= 0) ? lastExecTime : prevDurStep;
+
+      double timeLocal = (lastExecTime + prevDurStep) / 2;
+      double timeSum = 0.0;
+
+      //JB We should not forget to set prevDurStep
+      prevDurStep = timeLocal;
+
+      MPI_Allreduce( &timeLocal, &timeSum, 1,MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+      double fmin = 0.0;
+      double fmax = HUGE;
+
+/* evghenii: updated LB and MEMB part, works on the following synthetic test
+      double lastExecTime = (double)nkeys_loc/nloc_mean;
+      const double imb_min = 0.5;
+      const double imb_max = 2.0;
+      const double imb = imb_min + (imb_max - imb_min)/(nProcs-1) * procId;
+
+      lastExecTime *= imb;
+
+      lastExecTime becomes the same on all procs after about 20 iterations: passed
+      with MEMB enabled, single proc doesn' incrase # particles by more than mem_imballance: passed
+*/
+#if 1  /* MEMB: constrain LB to maintain ballanced memory use */
+      {
+        const double mem_imballance = 0.3;
+
+        double fac = 1.0;
+
+        fmin = fac/(1.0+mem_imballance);
+        fmax = HUGE;
+#if 0   /* use this to limit # of exported particles */
+        fmax = fac*(1.0+mem_imballance);
+#endif
+      }
+
+#endif  /* MEMB: end memory balance */
+
+      f_lb  = timeLocal / timeSum * nProcs;
+      f_lb *= (double)nloc_mean/(double)nkeys_loc;
+      f_lb  = std::max(std::min(fmax, f_lb), fmin);
+    }
+#endif
+
+    /*** particle sampling ***/
+
+    const int npx = myComm->n_proc_i;  /* number of procs doing domain decomposition */
+
+    int nsamples_glb;
+    if(initialSetup)
+      nsamples_glb = nloc_mean / 3; //Higher rate in first steps to get proper distribution
+    else
+      nsamples_glb = nloc_mean / 30;
+
+    std::vector<DD2D::Key> key_sample1d, key_sample2d;
+    key_sample1d.reserve(nsamples_glb);
+    key_sample2d.reserve(nsamples_glb);
+
+    const double nsamples1d_glb = (f_lb * nsamples_glb);
+    const double nsamples2d_glb = (f_lb * nsamples_glb) * npx;
+
+    const double nTot = nTotalFreq_ull;
+    const double stride1d = std::max(nTot/nsamples1d_glb, 1.0);
+    const double stride2d = std::max(nTot/nsamples2d_glb, 1.0);
+    for (double i = 0; i < (double)nkeys_loc; i += stride1d)
+    {
+      const uint4 key = localTree.bodies_key[(int)i];
+      key_sample1d.push_back(DD2D::Key(
+            (static_cast<unsigned long long>(key.y) ) |
+            (static_cast<unsigned long long>(key.x) << 32)
+            ));
+    }
+    for (double i = 0; i < (double)nkeys_loc; i += stride2d)
+    {
+      const uint4 key = localTree.bodies_key[(int)i];
+      key_sample2d.push_back(DD2D::Key(
+            (static_cast<unsigned long long>(key.y) ) |
+            (static_cast<unsigned long long>(key.x) << 32)
+            ));
+    }
+
+    //JB, TODO check if this is the correct location to put this
+    //and or use parallel sort
+    std::sort(key_sample2d.begin(), key_sample2d.end(), DD2D::Key());
+
+    const DD2D dd(procId, npx, nProcs, key_sample1d, key_sample2d, MPI_COMM_WORLD);
+
+    /* distribute keys */
+    for (int p = 0; p < nProcs; p++)
+    {
+      const DD2D::Key key = dd.keybeg(p);
+      parallelBoundaries[p] = (uint4){
+        (uint)((key.key >> 32) & 0x00000000FFFFFFFF),
+          (uint)((key.key      ) & 0x00000000FFFFFFFF),
+          0,0};
+    }
+    parallelBoundaries[nProcs] = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
+
+    const double dt = get_time() - t0;
+    if (procId == 0)
+      fprintf(stderr, " it took %g sec to complete 2D domain decomposition\n", dt);
+  }
+#endif
+
+
+  if(procId == -1)
+  {
+    for(int i=0; i < nProcs; i++)
+    {
+      fprintf(stderr, "Proc: %d Going from: >= %u %u %u  to < %u %u %u \n",i,
+          parallelBoundaries[i].x,   parallelBoundaries[i].y,   parallelBoundaries[i].z,
+          parallelBoundaries[i+1].x, parallelBoundaries[i+1].y, parallelBoundaries[i+1].z);
+    }
+  }
+#endif
+
 
 #if 0 /* evghenii: disable 1D to enable 2D domain decomposition below */
   {
@@ -1104,276 +1247,6 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSam
   }
 
   //End of 1D
-#else
- //Start of 2D
-
-  //Jeroen, init the buffers that hold the initial data for
-  //the weighted average for the domain boundaries averaging.
-  const int                                nBoundaryHistory = 4;
-  static std::vector<int>                  historyStoreIndex;
-  static std::vector<int>                  historyWeightValues;
-  static std::vector< std::vector<uint4> > historyBoundaryBuffer;
-
-  static int historyBuffersInitialized = 0;
-
-  if(historyBuffersInitialized == 0)
-  {
-    //Init buffers
-    for (int i=0; i<nBoundaryHistory; ++i) historyStoreIndex.push_back(i);
-
-    //For now just simple linear weighting
-    for (int i=0; i<nBoundaryHistory; ++i) historyWeightValues.push_back(i);
-
-    historyBoundaryBuffer.resize(nBoundaryHistory);
-    for (int i=0; i<nBoundaryHistory; ++i) historyBoundaryBuffer[i].resize(nProcs+1);
-  }
-
-
-
-  /* evghenii: 2d sampling comes here,
-   * make sure that locakTree.bodies_key.d2h in src/build.cpp.
-   * if you don't see my comment there, don't use this version. it will be
-   * blow up :)
-   */
-  if (procId == 0)
-    delete[] globalSamples;
-
-  {
-    const double t0 = get_time();
-
-    const int nkeys_loc = localTree.n;
-    assert(nkeys_loc > 0);
-    const int nloc_mean = nTotalFreq_ull/nProcs;
-
-    /* LB step */
-
-    double f_lb = 1.0;
-#if 1  /* LB: use load balancing */
-    {
-      static double prevDurStep = -1;
-      static int prevSampFreq = -1;
-      prevDurStep = (prevDurStep <= 0) ? lastExecTime : prevDurStep;
-
-      double timeLocal = (lastExecTime + prevDurStep) / 2;
-      double timeSum = 0.0;
-
-	//JB We should not forget to set prevDurStep
-      prevDurStep = timeLocal;
-
-      MPI_Allreduce( &timeLocal, &timeSum, 1,MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-
-      double fmin = 0.0;
-      double fmax = HUGE;
-
-/* evghenii: updated LB and MEMB part, works on the following synthetic test
-      double lastExecTime = (double)nkeys_loc/nloc_mean;
-      const double imb_min = 0.5;
-      const double imb_max = 2.0;
-      const double imb = imb_min + (imb_max - imb_min)/(nProcs-1) * procId;
-
-      lastExecTime *= imb;
-
-      lastExecTime becomes the same on all procs after about 20 iterations: passed
-      with MEMB enabled, single proc doesn' incrase # particles by more than mem_imballance: passed
-*/
-#if 1  /* MEMB: constrain LB to maintain ballanced memory use */
-      {
-        const double mem_imballance = 0.3;
-
-        double fac = 1.0;
-
-        fmin = fac/(1.0+mem_imballance);
-        fmax = HUGE;
-#if 0   /* use this to limit # of exported particles */
-        fmax = fac*(1.0+mem_imballance);
-#endif
-      }
-
-#endif  /* MEMB: end memory balance */
-
-      f_lb  = timeLocal / timeSum * nProcs;
-      f_lb *= (double)nloc_mean/(double)nkeys_loc;
-      f_lb  = std::max(std::min(fmax, f_lb), fmin);
-    }
-#endif
-
-    /*** particle sampling ***/
-
-    const int npx = myComm->n_proc_i;  /* number of procs doing domain decomposition */
-
-    int nsamples_glb;
-    if(initialSetup)
-      nsamples_glb = nloc_mean / 3; //Higher rate in first steps to get proper distribution
-    else
-      nsamples_glb = nloc_mean / 30;
-
-    std::vector<DD2D::Key> key_sample1d, key_sample2d;
-    key_sample1d.reserve(nsamples_glb);
-    key_sample2d.reserve(nsamples_glb);
-
-    const double nsamples1d_glb = (f_lb * nsamples_glb);
-    const double nsamples2d_glb = (f_lb * nsamples_glb) * npx;
-
-    const double nTot = nTotalFreq_ull;
-    const double stride1d = std::max(nTot/nsamples1d_glb, 1.0);
-    const double stride2d = std::max(nTot/nsamples2d_glb, 1.0);
-    for (double i = 0; i < (double)nkeys_loc; i += stride1d)
-    {
-      const uint4 key = localTree.bodies_key[(int)i];
-      key_sample1d.push_back(DD2D::Key(
-            (static_cast<unsigned long long>(key.y) ) |
-            (static_cast<unsigned long long>(key.x) << 32)
-            ));
-    }
-    for (double i = 0; i < (double)nkeys_loc; i += stride2d)
-    {
-      const uint4 key = localTree.bodies_key[(int)i];
-      key_sample2d.push_back(DD2D::Key(
-            (static_cast<unsigned long long>(key.y) ) |
-            (static_cast<unsigned long long>(key.x) << 32)
-            ));
-    }
-
-    //JB, TODO check if this is the correct location to put this
-    //and or use parallel sort
-    std::sort(key_sample2d.begin(), key_sample2d.end(), DD2D::Key());
-
-    const DD2D dd(procId, npx, nProcs, key_sample1d, key_sample2d, MPI_COMM_WORLD);
-
-    /* distribute keys */
-    for (int p = 0; p < nProcs; p++)
-    {
-      const DD2D::Key key = dd.keybeg(p);
-      parallelBoundaries[p] = (uint4){
-        (uint)((key.key >> 32) & 0x00000000FFFFFFFF),
-          (uint)((key.key      ) & 0x00000000FFFFFFFF),
-          0,0};
-    }
-    parallelBoundaries[nProcs] = make_uint4(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
-
-    const double dt = get_time() - t0;
-    if (procId == 0)
-      fprintf(stderr, " it took %g sec to complete 2D domain decomposition\n", dt);
-  }
-#endif
-
-  if(historyBuffersInitialized == 0)
-  {
-    //Fill in the initial buffers with the data of the first step
-    for (int i=0; i<nBoundaryHistory; ++i)
-    {
-      for(int idx=0; idx <= nProcs; idx++)
-      {
-        historyBoundaryBuffer[i][idx] = parallelBoundaries[idx];
-      }
-    }
-    historyBuffersInitialized = 1;
-  }
-
-
-  std::vector<uint4> newBoundariesTest(nProcs+2);
-  newBoundariesTest[0] = parallelBoundaries[0];
-  newBoundariesTest[0].w = 0;
-  newBoundariesTest[nProcs] = parallelBoundaries[nProcs];
-  newBoundariesTest[nProcs].w = nProcs;
-  //Average the boundaries
-  for(int i=1; i < nProcs; i++) //Don't include min / max boundaries they stay new
-  {
-    uint4 newKey = parallelBoundaries[i];
-
-    int averageSum           = (1+nBoundaryHistory)*3;
-
-    unsigned long long int weightedHistoryKeyX = newKey.x*(unsigned long long int) averageSum;
-    unsigned long long int weightedHistoryKeyY = newKey.y*(unsigned long long int) averageSum;
-    unsigned long long int weightedHistoryKeyZ = newKey.z*(unsigned long long int) averageSum;
-
-    for(int hidx = 0; hidx < nBoundaryHistory; hidx++)
-    {
-      int rhidx  =     historyStoreIndex    [hidx];    //Get the idx to use
-      uint4 hkey =     historyBoundaryBuffer[rhidx][i];//Get the key
-      int   hval = 1 + historyWeightValues  [hidx];    //Get the multiply value
-
-      if(procId == -1)
-      {
-        fprintf(stderr,"For proc: %d Hist idx: %d -> %d  key: %u %u %u \n",
-            i, hidx, rhidx, hkey.x, hkey.y, hkey.z);
-      }
-
-      //Multiply the key with it's weighting value
-      weightedHistoryKeyX += hkey.x * (unsigned long long int) hval;
-      weightedHistoryKeyY += hkey.y * (unsigned long long int) hval;
-      weightedHistoryKeyZ += hkey.z * (unsigned long long int) hval;
-
-      averageSum += hval;
-    }
-
-    if(procId == -1)
-    {
-      fprintf(stderr, "XProc: %d SUM:  %llu %llu %llu\tSum: %d\n",
-              i, weightedHistoryKeyX, weightedHistoryKeyY, weightedHistoryKeyZ, averageSum);
-    }
-
-
-    //Average the key to get the new key, based on current data and weighted history
-    newBoundariesTest[i].x = weightedHistoryKeyX / averageSum;
-    newBoundariesTest[i].y = weightedHistoryKeyY / averageSum;
-    newBoundariesTest[i].z = weightedHistoryKeyZ / averageSum;
-    newBoundariesTest[i].w = i;
-
-    if(procId == -1)
-    {
-      fprintf(stderr, "XProc After Div: %d SUM:  %du %du %du\tSum: %d\n",
-              i, newBoundariesTest[i].x, newBoundariesTest[i].y, newBoundariesTest[i].z, averageSum);
-    }
-
-  }
-
-  //Now we have to ensure that the keys do not overlap
-  std::sort(newBoundariesTest.begin(), newBoundariesTest.begin()+nProcs, cmp_ph_key());
-//  for(int i=0; i < nProcs; i++) //Don't include min / max boundaries they stay new
-//  {
-//    assert(newBoundariesTest[i].w == i);
-//  }
-
-
-  //Rotate the storage locations and then store the boundaries in the right spot
-  std::rotate(historyStoreIndex.begin(),historyStoreIndex.begin()+1,historyStoreIndex.end());
-  int storeIdx = historyStoreIndex[historyStoreIndex.size()-1];
-  for(int i=0; i <= nProcs; i++)
-    historyBoundaryBuffer[storeIdx][i] = newBoundariesTest[i];
-
-
-//#define DO_WEIGHTED_BOUNDARIES //Use this to disable the use of the weighted boundaries
-                               //method. Note it will still be calculated, but just not saved
-#ifdef DO_WEIGHTED_BOUNDARIES
-  for(int i=0; i < nProcs; i++)
-  {
-        parallelBoundaries[i] = newBoundariesTest[i];
-  }
-#endif
-
-
-  if(procId == -1)
-  {
-    for(int i=0; i < nProcs; i++)
-    {
-      fprintf(stderr, "XProc: %d Going from: >= %u %u %u  to < %u %u %u \n",i,
-          newBoundariesTest[i].x,   newBoundariesTest[i].y,   newBoundariesTest[i].z,
-          newBoundariesTest[i+1].x, newBoundariesTest[i+1].y, newBoundariesTest[i+1].z);
-    }
-  }
-
-
-
-  if(procId == -1)
-  {
-    for(int i=0; i < nProcs; i++)
-    {
-      fprintf(stderr, "Proc: %d Going from: >= %u %u %u  to < %u %u %u \n",i,
-          parallelBoundaries[i].x,   parallelBoundaries[i].y,   parallelBoundaries[i].z,
-          parallelBoundaries[i+1].x, parallelBoundaries[i+1].y, parallelBoundaries[i+1].z);
-    }
-  }
 #endif
 }
 
@@ -3599,7 +3472,8 @@ int3 getLET1(
 }
 
 
-
+//April 3, 2014. JB: Disabled the copy/creation of tree. Since we don't do alltoallV sends
+//it now only counts/tests
 template<typename T>
 int getLEToptQuickFullTree(
     std::vector<T> &LETBuffer,
@@ -3801,7 +3675,7 @@ int getLEToptQuickFullTree(
   }
 
   double tCalc = get_time2();
-#if 0
+#if 0 //Disabled tree-copy
   assert((int)bufferStruct.LETBuffer_ptcl.size() == nExportPtcl);
   assert((int)bufferStruct.LETBuffer_node.size() == nExportCell);
 
@@ -4611,16 +4485,11 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 {
 #ifdef USE_MPI
 
-
-//  mpiSync(); //todo delete
-
-
   double t0         = get_time();
 
   double tStatsStartUpStart = get_time(); //TODO DELETE
 
   bool mergeOwntree = false;              //Default do not include our own tree-structure, thats mainly used for testing
-  int level_start   = tree.startLevelMin; //Depth of where to start the tree-walk
   int procTrees     = 0;                  //Number of trees that we've received and processed
 
   real4  *bodies              = &tree.bodies_Ppos[0];
@@ -4635,10 +4504,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
   treeBuffers            = new real4*[mpiGetNProcs()];
   int *treeBuffersSource = new int[nProcs];
 
-  real4 *recvAllToAllBuffer = NULL;
-  real4 *recvAllGatherVBuffer = NULL;
-
-
   //Timers for the LET Exchange
   static double totalLETExTime    = 0;
   thisPartLETExTime               = 0;
@@ -4650,8 +4515,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
   this->fullGrpAndLETRequestStatistics[procId] = make_uint2(0, procId); //Reset our box
 
   uint2 node_begend;
-  node_begend.x   = tree.level_list[level_start].x;
-  node_begend.y   = tree.level_list[level_start].y;
+  node_begend.x   = tree.level_list[tree.startLevelMin].x;
+  node_begend.y   = tree.level_list[tree.startLevelMin].y;
 
   int resultOfQuickCheck[nProcs];
 
@@ -4674,11 +4539,9 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
   int nQuickCheckRealSends      = 0;
   int nQuickCheckReceives       = 0;
   int nQuickBoundaryOk          = 0;
-  int nLevelQuick[MAXLEVELS];
-  for(int i=0; i < MAXLEVELS; i++)  nLevelQuick[i] = 0;
 
 
-  omp_set_num_threads(8);
+  omp_set_num_threads(8); //8 Piz-Daint, 16 Titan
 
   letObject *computedLETs = new letObject[nProcs-1];
 
@@ -4688,7 +4551,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
   int nComputedLETs   = 0;
   int nReceived       = 0;
   int nSendOut        = 0;
-  int nToSend	      = 0;
+  int nToSend	        = 0;
 
   //Use getLETQuick instead of recursiveTopLevelCheck
  #define doGETLETQUICK
@@ -4707,15 +4570,15 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
   static std::vector<v4sf> quickCheckData[NPROCMAX];
 
-#ifdef doGETLETQUICK
-  for (int i = 0; i < nProcs; i++)
-  {
-    quickCheckData[i].reserve(1+NCELLMAX*NLEAF*5*2);
-    quickCheckData[i].clear();
-  }
-#endif
+//#ifdef doGETLETQUICK
+//  for (int i = 0; i < nProcs; i++)
+//  {
+//    quickCheckData[i].reserve(1+NCELLMAX*NLEAF*5*2);
+//    quickCheckData[i].clear();
+//  }
+//#endif
 
-  std::map<int, int> communicationStatus;
+  std::vector<int> communicationStatus(nProcs);
   for(int i=0; i < nProcs; i++) communicationStatus[i] = 0;
 
 
@@ -4727,7 +4590,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
   double ZA1, tXC2, tXD2;
   double tA1 = 0, tA2 = 0, tA3 = 0, tA4, tXD3;
   int nQuickRecv = 0;
-  int tempMark = 3;
 
   double tStatsStartLoop = get_time(); //TODO DELETE
 
@@ -4744,8 +4606,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
   std::vector<int>   requiresFullLET;              //Build from quick-check results
   std::vector<int>   requiresFullLETExtra;         //Build from received boundary status info.
-                                                  //contains IDs that are not in requiresFullLET, but are in
-                                                  //list of IDs for which boundary is not good enough
+                                                   //contains IDs that are not in requiresFullLET, but are in
+                                                   //list of IDs for which boundary is not good enough
   std::vector<int>   idsThatNeedExtraLET;          //Processes on this list need getLET data
   std::vector<int>   idsThatNeedMoreThanBoundary;  //Processes on this list need getLET data
 
@@ -4769,8 +4631,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       const int allocSize = (int)(tree.n_nodes*1.10);
 
       //Resize the buffers
-//      getLETBuffers[tid].LETBuffer_node.reserve(allocSize);
-//      getLETBuffers[tid].LETBuffer_ptcl.reserve(allocSize);
+      //      getLETBuffers[tid].LETBuffer_node.reserve(allocSize);
+      //      getLETBuffers[tid].LETBuffer_ptcl.reserve(allocSize);
       getLETBuffers[tid].currLevelVecI.reserve(allocSize);
       getLETBuffers[tid].nextLevelVecI.reserve(allocSize);
       getLETBuffers[tid].currLevelVecUI4.reserve(allocSize);
@@ -4814,10 +4676,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         idx             += this->globalGrpTreeCount[ibox] / 2; //Divide by two to get halfway
         real4 *grpSize   =  &globalGrpTreeCntSize[idx];
 
-        //Start and endGrp, only used when not using a tree-structure for the groups
-//        int startGrp = 0;
-//        int endGrp   = this->globalGrpTreeCount[ibox] / 2;
-
 
         if(doQuickLETCheck) //Perform the quick-check tests
         {
@@ -4840,14 +4698,14 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                             &nodeCenterInfo[0],
                                             &nodeSizeInfo[0],
                                             &multipole[0],
-                                            0, //Cellbeg
-                                            1,  //Cell end
+                                            0,                //Cellbeg
+                                            1,                //Cell end
                                             &bodies[0],
                                             tree.n,
-                                            grpSize2,    //size
-                                            grpCenter2,  //centre
-                                            0,//grp begin
-                                            1,//grp eend
+                                            grpSize2,         //size
+                                            grpCenter2,       //center
+                                            0,                //group begin
+                                            1,                //group end
                                             tree.n_nodes,
                                             procId, ibox,
                                             nflops, bla3);
@@ -4885,10 +4743,10 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                 nReceived++;
                 nBoundaryOk++;
 
-                communicationStatus[ibox] = 2; //Indicate we used the boundary
+                communicationStatus[ibox] = 2;    //2 Indicate we used the boundary
               }//omp critical
 
-              quickCheckSendSizes[ibox].y = 1; //1 To indicate we used this processes boundary
+              quickCheckSendSizes[ibox].y = 1;    //1 To indicate we used this processes boundary
             }//resultTree == 0
             else
             {
@@ -4904,7 +4762,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             }
             else
             { //Quickcheck failed, requires point to point LET
-              quickCheckSendSizes[ibox].x = 0;
+              quickCheckSendSizes[ibox].x =  0;
               resultOfQuickCheck [ibox]   = -1;
 
               #pragma omp critical
@@ -4917,7 +4775,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             #pragma omp critical
               nCompletedQuickCheck++;
 
-//          continue;
         } //if(doQuickLETCheck)
       } //end while, this part does the quickListCreation
 
@@ -4940,15 +4797,44 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                          mergeOwntree,  treeBuffersSource, treeBuffers);
         }//tid == 0
 
+        bool breakOutOfFullLoop = false;
 
+        int ibox          = 0;
         int currentTicket = 0;
+
         #pragma omp critical
                 currentTicket = omp_ticket2++; //Get a unique ticket to determine which process to build the LET for
 
         if(currentTicket >= requiresFullLET.size())
-          break;
+        {
+          //We processed the nodes we identified ourself using quickLET, next we
+          //continue with the LETs that we need to do after the A2A.
 
-        const int ibox = requiresFullLET[currentTicket];
+          while(1)
+          { //Wait till the A2a communication is complete
+            if(completedA2A == true)  break;
+            usleep(10);
+          }
+
+
+          #pragma omp critical
+                  currentTicket = omp_ticket3++; //Get a unique ticket to determine which process to build the LET for
+
+          if(currentTicket >= idsThatNeedMoreThanBoundary.size())
+            breakOutOfFullLoop = true;
+
+          ibox = idsThatNeedMoreThanBoundary[currentTicket]; //From the A2A result list
+        }
+        else
+        {
+          ibox = requiresFullLET[currentTicket];             //From the quickTest result list
+        }
+
+        //Jump out of the LET creation while
+        if(breakOutOfFullLoop == true) break;
+
+
+
         //Group info for this process
         int idx          =   globalGrpTreeOffsets[ibox];
         real4 *grpCenter =  &globalGrpTreeCntSize[idx];
@@ -4964,9 +4850,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         double tz = get_time();
         real4   *LETDataBuffer;
         unsigned long long int nflops = 0;
-
-
-
 
         double tStartEx = get_time();
 
@@ -5033,10 +4916,10 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         }
 
         //Set the tree properties, before we exchange the data
-        LETDataBuffer[0].x = host_int_as_float(countParticles);    //Number of particles in the LET
-        LETDataBuffer[0].y = host_int_as_float(countNodes);        //Number of nodes     in the LET
+        LETDataBuffer[0].x = host_int_as_float(countParticles);         //Number of particles in the LET
+        LETDataBuffer[0].y = host_int_as_float(countNodes);             //Number of nodes     in the LET
         LETDataBuffer[0].z = host_int_as_float(usedStartEndNode.x);     //First node on the level that indicates the start of the tree walk
-        LETDataBuffer[0].w = host_int_as_float(usedStartEndNode.y);     //last node on the level that indicates the start of the tree walk
+        LETDataBuffer[0].w = host_int_as_float(usedStartEndNode.y);     //last  node on the level that indicates the start of the tree walk
 
         //In a critical section to prevent multiple threads writing to the same location
         #pragma omp critical
@@ -5047,7 +4930,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
           nComputedLETs++;
         }
 
-
         if(tid == 0)
         {
           checkGPUAndStartLETComputation(tree, remote, topNodeOnTheFlyCount,
@@ -5057,157 +4939,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       }//end while that surrounds LET computations
 
 
-
-
-      //Wait on the signal that the a2a is completed
-      //and that we might have to do extra work
-
-      while(1)
-      {
-        if(completedA2A == true)  break;
-        usleep(10);
-      }
-
-      while(1)
-      {
-
-        if(tid == 0)
-        {
-          checkGPUAndStartLETComputation(tree, remote, topNodeOnTheFlyCount,
-                                         nReceived, procTrees,  tStart, totalLETExTime,
-                                         mergeOwntree,  treeBuffersSource, treeBuffers);
-        }//tid == 0
-
-
-        int currentTicket = 0;
-        #pragma omp critical
-                currentTicket = omp_ticket3++; //Get a unique ticket to determine which process to build the LET for
-
-        if(currentTicket >= idsThatNeedMoreThanBoundary.size())
-          break;
-
-        const int ibox = idsThatNeedMoreThanBoundary[currentTicket];
-        //Group info for this process
-        int idx          =   globalGrpTreeOffsets[ibox];
-        real4 *grpCenter =  &globalGrpTreeCntSize[idx];
-        idx             += this->globalGrpTreeCount[ibox] / 2; //Divide by two to get halfway
-        real4 *grpSize   =  &globalGrpTreeCntSize[idx];
-
-        //Start and endGrp, only used when not using a tree-structure for the groups
-        int startGrp = 0;
-        int endGrp   = this->globalGrpTreeCount[ibox] / 2;
-
-        //If we arrive here, we did the quick tests, so now check if we need to do the full test
-        //for this process
-//        if(resultOfQuickCheck[ibox] >= 0)
-//        {
-//          fprintf(stderr,"ERROR this is not possible in current setup!!!\n");
-//          continue; //We can skip this one it passed the quick check
-//        }
-
-        int countNodes = 0, countParticles = 0;
-
-        double tz = get_time();
-        real4   *LETDataBuffer;
-        unsigned long long int nflops = 0;
-
-        int2 usedStartEndNode;
-
-
-        double tStartEx = get_time();
-
-        //Extract the boundaries
-        #ifdef USE_GROUP_TREE
-          std::vector<float4> boundaryCentres;
-          std::vector<float4> boundarySizes;
-
-          boundarySizes.reserve(endGrp);
-          boundaryCentres.reserve(endGrp);
-          boundarySizes.clear();
-          boundaryCentres.clear();
-
-          int nbody = host_float_as_int(grpCenter[0].x);
-          int nnode = host_float_as_int(grpCenter[0].y);
-
-          grpSize   = &grpCenter[1+nbody];
-          grpCenter = &grpCenter[1+nbody+nnode];
-
-          for(int startSearch=0; startSearch < nnode; startSearch++)
-          {
-            //Two tests, if its a  leaf, and/or if its a node and marked as end-point
-            if((host_float_as_int(grpSize[startSearch].w) == 0xFFFFFFFF) || grpCenter[startSearch].w <= 0) //Tree extract
-            {
-              boundarySizes.push_back  (grpSize  [startSearch]);
-              boundaryCentres.push_back(grpCenter[startSearch]);
-            }
-          }//end for
-
-          endGrp    = boundarySizes.size();
-          grpCenter = &boundaryCentres[0];
-          grpSize   = &boundarySizes  [0];
-        #endif
-
-        double tEndEx = get_time();
-
-        usedStartEndNode.x = node_begend.x;
-        usedStartEndNode.y = node_begend.y;
-
-        assert(startGrp == 0);
-        int3  nExport = getLET1(
-                                getLETBuffers[tid],
-                                &LETDataBuffer,
-                                &nodeCenterInfo[0],
-                                &nodeSizeInfo[0],
-                                &multipole[0],
-                                usedStartEndNode.x, usedStartEndNode.y,
-                                &bodies[0],
-                                tree.n,
-                                grpSize, grpCenter,
-                                endGrp,
-                                tree.n_nodes, nflops);
-
-        countParticles  = nExport.y;
-        countNodes      = nExport.x;
-        int bufferSize  = 1 + 1*countParticles + 5*countNodes;
-        //Use count of exported particles and nodes, but let particles count more heavy.
-        //Used during particle exchange / domain update to speedup particle-box assignment
-        this->fullGrpAndLETRequestStatistics[ibox] = make_uint2(countParticles*10 + countNodes, ibox);
-        if (ENABLE_RUNTIME_LOG)
-        {
-          fprintf(stderr,"Proc: %d LET getLetOp count&fill [%d,%d]: Depth: %d Dest: %d Total : %lg (#P: %d \t#N: %d) nNodes= %d  nGroups= %d \tsince start: %lg \n",
-                          procId, procId, tid, nExport.z, ibox, get_time()-tz,countParticles,
-                          countNodes, tree.n_nodes, endGrp, get_time()-t0);
-        }
-
-        //Set the tree properties, before we exchange the data
-        LETDataBuffer[0].x = host_int_as_float(countParticles);    //Number of particles in the LET
-        LETDataBuffer[0].y = host_int_as_float(countNodes);        //Number of nodes     in the LET
-        LETDataBuffer[0].z = host_int_as_float(usedStartEndNode.x);     //First node on the level that indicates the start of the tree walk
-        LETDataBuffer[0].w = host_int_as_float(usedStartEndNode.y);     //last node on the level that indicates the start of the tree walk
-
-        //In a critical section to prevent multiple threads writing to the same location
-#pragma omp critical
-        {
-          computedLETs[nComputedLETs].buffer      = LETDataBuffer;
-          computedLETs[nComputedLETs].destination = ibox;
-          computedLETs[nComputedLETs].size        = sizeof(real4)*bufferSize;
-          nComputedLETs++;
-        }
-
-
-        if(tid == 0)
-        {
-          checkGPUAndStartLETComputation(tree, remote, topNodeOnTheFlyCount,
-                                         nReceived, procTrees,  tStart, totalLETExTime,
-                                         mergeOwntree,  treeBuffersSource, treeBuffers);
-        }//tid == 0
-      }//end while that surrounds LET computations
-
-
-
-
-
-//ALL LET BUILT AND SENT
+      //ALL LET-trees are built and sent to remote domains/MPI thread
 
       if(tid != 0) tStatsEndGetLET = get_time(); //TODO delete
 
@@ -5242,7 +4974,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
     {
       //MPI communication thread
 
-      //Do nothing untill we are finished with the quickLet computation
+      //Do nothing until we are finished with the quickLet/boundary-test computation
       while(1)
       {
         if(nCompletedQuickCheck == nProcs-1)
@@ -5314,113 +5046,18 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
         //Check if this process is already on our list of processes that
         //require extra data
-        //if(requiresFullLETMap.find(boxID) == requiresFullLETMap.end())
-        //  idsThatNeedMoreThanBoundary.push_back(boxID);
-        if(resultOfQuickCheck[boxID] != -1) idsThatNeedMoreThanBoundary.push_back(boxID);
+         if(resultOfQuickCheck[boxID] != -1) idsThatNeedMoreThanBoundary.push_back(boxID);
       }
 
       completedA2A = true;
-      fprintf(stderr,"Proc: %d Has to processes an additional lets: %ld Already did: %d Used bound: %d\n",
+      LOGF(stderr,"Proc: %d Has to processes an additional lets: %ld Already did: %d Used bound: %d\n",
           procId,idsThatNeedMoreThanBoundary.size(), requiresFullLETCount, nQuickBoundaryOk);
 
       nToSend = idsThatNeedMoreThanBoundary.size() + requiresFullLETCount;
 
 
       tStatsEndAlltoAll = get_time();
-#if 0
-      double tmem = get_time();
-      recvAllToAllBuffer =  new real4[recvCountItems];
-      LOGF(stderr, "Completed_alltoall mem alloc! Iter: %d Took: %lg \n", iter, get_time()-tmem);
 
-      //Convert the values to bytes to get correct offsets and sizes
-      for(int i=0; i < nProcs; i++)
-      {
-        quickCheckSendSizes[i].x  *= sizeof(real4);
-        quickCheckSendOffset[i]   *= sizeof(real4);
-
-        if(quickCheckSendSizes[i].x > 0) nQuickCheckRealSends++;
-      }
-
-      double t110 = get_time();
-      {
-        //Combine the results of the various threads into one continuous array
-        double tbla = get_time();
-        int nsend = 0;
-        std::vector<int> sdispl(nProcs+1,0), scount(nProcs);
-        for (int i = 0; i < nProcs; i++)
-        {
-          scount[i]    = quickCheckData[i].size();
-          nsend       += scount[i];
-          sdispl[i+1]  = sdispl[i] + scount[i];
-        }
-
-        std::vector<v4sf> data(nsend);
-        for (int i = 0; i < nProcs; i++)
-        {
-          const int displ = sdispl[i];
-          const int nsend = scount[i];
-          for (int j = 0; j < nsend; j++)
-            data[displ + j] = quickCheckData[i][j];
-        }
-
-        double tbla2  = get_time();
-        LOGF(stderr,"Prep quickCheckData took: %lg  Items: %d \n", tbla2-tbla, (int)data.size());
-        myComm->all2allv_2D(data, &scount[0]);
-
-        for (size_t i = 0; i < data.size(); i++)
-          ((v4sf*)recvAllToAllBuffer)[i] = data[i];
-
-        //Reorder the sizes / offsets into the same order as data has been received
-        int2 temp[nProcs];
-        int newIdx = 0;
-        for(int x=0; x<myComm->n_proc_i; x++)
-        {
-          for(int y=0; y<myComm->n_proc_j; y++)
-          {
-            int k = myComm->n_proc_i*y + x;
-            temp[newIdx].x = quickCheckRecvSizes[k].x;
-            newIdx++;
-          }
-        }
-        memcpy(quickCheckRecvSizes, temp, sizeof(int2)*nProcs);
-      }
-
-      LOGF(stderr, "[%d] Completed_alltoall 2D data communication! Iter: %d Took: %lg ( %lg )\tSize: %f MB \n",
-          procId, iter, get_time()-t110,  get_time()-t0, (recvCountItems*sizeof(real4))/(double)(1024*1024));
-      ZA1 = (recvCountItems*sizeof(real4))/(double)(1024*1024);//TODO DELETE
-
-      tStatsEndAlltoAll = get_time();
-
-      #pragma omp critical(updateReceivedProcessed)
-      {
-        //This is in a critical section since topNodeOnTheFlyCount is reset
-        //by the GPU worker thread (thread == 0)
-        int offset = 0;
-        for(int i=0;  i < nProcs; i++)
-        {
-          int items  = quickCheckRecvSizes[i].x  / sizeof(real4);
-          if(items > 0)
-          {
-            treeBuffers[nReceived] = &recvAllToAllBuffer[offset];
-            offset                += items;
-
-            //Increase the top-node count
-            int topStart = host_float_as_int(treeBuffers[nReceived][0].z);
-            int topEnd   = host_float_as_int(treeBuffers[nReceived][0].w);
-
-            //LOGF(stderr, "Received from: %d  start: %d end: %d  offset: %d  offset old: %lu\n",
-            //    i, topStart, topEnd, offset, quickCheckRecvOffset[i] / sizeof(real4));
-
-            topNodeOnTheFlyCount += (topEnd-topStart);
-            treeBuffersSource[nReceived] = 1; //1 indicate quick check source
-            nReceived++;
-            nQuickCheckReceives++;
-          }
-        }
-      }
-
-      nQuickRecv = nReceived;//TODO DELETE
-#endif
       LOGF(stderr, "Received trees using alltoall: %d qRecvSum %d  top-nodes: %d Send with alltoall: %d qSndSum: %d \tnBoundary: %d\n",
                     nQuickCheckReceives, nReceived, topNodeOnTheFlyCount,
                     nQuickCheckRealSends, nQuickCheckRealSends+nQuickBoundaryOk,nBoundaryOk);
@@ -5428,14 +5065,16 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       tStartsStartGetLETSend = get_time();
       while(1)
       {
-        //Sending part of the individual LETs
+        bool sleepAtTheEnd = true;  //Will be set to false if we did anything in here. If true we wait a bit
+
+        //Send out individual LETs that are computed and ready to be send
         int tempComputed = nComputedLETs;
 
         if(tempComputed > nSendOut)
         {
+          sleepAtTheEnd = false;
           for(int i=nSendOut; i < tempComputed; i++)
           {
-            //fprintf(stderr,"[%d] Sending out data to: %d \n", procId, computedLETs[i].destination);
             MPI_Isend(&(computedLETs[i].buffer)[0],computedLETs[i].size,
                 MPI_BYTE, computedLETs[i].destination, 999,
                 MPI_COMM_WORLD, &(computedLETs[i].req));
@@ -5454,9 +5093,9 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
           if(flag)
           {
+            sleepAtTheEnd = false;  //We do something here
             int count;
             MPI_Get_count(&probeStatus, MPI_BYTE, &count);
-            //fprintf(stderr,"%d\tThere is a message of size: %d %ld From: %d tag: %d\n",tid, count, count / sizeof(real4), probeStatus.MPI_SOURCE, probeStatus.MPI_TAG);
 
             double tY = get_time();
             real4 *recvDataBuffer = new real4[count / sizeof(real4)];
@@ -5464,7 +5103,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             MPI_Recv(&recvDataBuffer[0], count, MPI_BYTE, probeStatus.MPI_SOURCE, probeStatus.MPI_TAG, MPI_COMM_WORLD,&recvStatus);
 
             LOGF(stderr, "Receive complete from: %d  || recvTree: %d since start: %lg ( %lg ) alloc: %lg Recv: %lg Size: %d\n",
-                recvStatus.MPI_SOURCE, 0, get_time()-tStart,get_time()-t0,tZ-tY, get_time()-tZ, count);
+                          recvStatus.MPI_SOURCE, 0, get_time()-tStart,get_time()-t0,tZ-tY, get_time()-tZ, count);
 	    
             receivedLETCount++;
 
@@ -5484,8 +5123,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
               int topStart = host_float_as_int(treeBuffers[nReceived][0].z);
               int topEnd   = host_float_as_int(treeBuffers[nReceived][0].w);
 
-
-  #pragma omp critical(updateReceivedProcessed)
+              #pragma omp critical(updateReceivedProcessed)
               {
                 //This is in a critical section since topNodeOnTheFlyCount is reset
                 //by the GPU worker thread (thread == 0)
@@ -5496,10 +5134,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
             flag = 0;
           }//if flag
-
-          //TODO we could add an other probe here to keep, receiving data
-          //until there is nothing more.
-        }while(flag);
+        }while(flag); //TODO, if we reset flag after do, we keep receiving untill we emptied waiting list
 
 
 
@@ -5509,10 +5144,9 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 //            receivedLETCount,expectedLETCount, nSendOut, nToSend);
 
         //Exit if we have send and received all there is
-        if(nReceived == nProcs-1) //if we received data for all processes
-//          if((nSendOut+nQuickCheckSends) >= nProcs-1) //if we send out all our own data
-          if((nSendOut == nToSend))
-            if(receivedLETCount == expectedLETCount) //If we received all that we expect,
+        if(nReceived == nProcs-1)                    //if we received data for all processes
+          if((nSendOut == nToSend))                  //If we sent out all the LETs we need to send
+            if(receivedLETCount == expectedLETCount) //If we received all LETS that we expect, which
               break;                                 //can be more than nReceived if we get double data
 
         //Check if we can clean up some sends in between the receive/send process
@@ -5523,15 +5157,13 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
           if(computedLETs[i].buffer != NULL) MPI_Test(&(computedLETs[i].req), &testFlag, &waitStatus);
           if (testFlag)
           {
-             //LOGF(stderr,"Got confirmation from: %d \n", computedLETs[i].destination);
             free(computedLETs[i].buffer);
             computedLETs[i].buffer = NULL;
             testFlag               = 0;
           }
         }//end for nSendOut
 
-        //TODO only do this sleep if we did not send/receive something
-        usleep(10);
+        if(sleepAtTheEnd)   usleep(10); //Only sleep when we did not send or receive anything
       } //while (1) surrounding the thread-id==1 code
 
       //Wait till all outgoing sends have been completed
@@ -5541,7 +5173,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         if(computedLETs[i].buffer)
         {
           MPI_Wait(&(computedLETs[i].req), &waitStatus);
-          //LOGF(stderr,"Got confirmation from: %d \n", computedLETs[i].destination);
           free(computedLETs[i].buffer);
           computedLETs[i].buffer = NULL;
         }
@@ -5573,7 +5204,7 @@ tAlltoAll: %lg tGetLETSend: %lg tTotal: %lg mbSize-a2a: %f nA2AQsend: %d nA2AQre
      //ZA1, nQuickCheckSends, nQuickRecv, nBoundaryOk);
    devContext.writeLogEvent(buff5); //TODO DELETE
 
-  if(recvAllToAllBuffer) delete[] recvAllToAllBuffer;
+//  if(recvAllToAllBuffer) delete[] recvAllToAllBuffer;
   delete[] treeBuffersSource;
   delete[] computedLETs;
   delete[] treeBuffers;
