@@ -1049,7 +1049,13 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys2,    int  nSa
 
     int nsamples_glb;
     if(initialSetup)
-      nsamples_glb = nloc_mean / 3; //Higher rate in first steps to get proper distribution
+    {
+      nsamples_glb = nTotalFreq_ull / 1000;
+      nsamples_glb = std::max(nsamples_glb, nloc_mean / 3);
+      if(procId == 0) fprintf(stderr,"TEST Nsamples_gbl: %d \n", nsamples_glb);
+
+      //nsamples_glb = nloc_mean / 3; //Higher rate in first steps to get proper distribution
+    }
     else
       nsamples_glb = nloc_mean / 30;
 
@@ -1082,6 +1088,7 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys2,    int  nSa
 
     //JB, TODO check if this is the correct location to put this
     //and or use parallel sort
+    std::sort(key_sample1d.begin(), key_sample1d.end(), DD2D::Key());
     std::sort(key_sample2d.begin(), key_sample2d.end(), DD2D::Key());
 
     const DD2D dd(procId, npx, nProcs, key_sample1d, key_sample2d, MPI_COMM_WORLD);
@@ -1529,6 +1536,9 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
       for(int i=0; i < domainId.size(); i++)
       {
         const int domain = domainId[i].x & 0x0FFFFFF;
+
+        assert(domain != procId); //Should not send to ourselves
+
 
         nparticles [domain] = nParticlesPerDomain[i];
         nsendDispls[domain] = sendOffset;

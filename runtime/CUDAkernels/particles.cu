@@ -536,15 +536,19 @@ static __device__ int find_domain(uint4 key, uint2 cij, uint4 *keys) {
   while (r - l > 1) {
     int m = (r + l) >> 1;
     int cmp = cmp_uint4(keys[m], key);
-    if (cmp == -1) {
+    if(cmp == 0) return m;
+    else if (cmp == -1) {
       l = m;
     } else {
       r = m;
     }
   }
-  if (cmp_uint4(keys[l], key) >= 0) return l;
 
-  return r;
+  if (cmp_uint4(keys[r], key) == 0) return r;
+  return l;
+
+  //if (cmp_uint4(keys[l], key) >= 0) return l;
+  //return r;
 }
 //Check if a particles key is within the min and max boundaries
 KERNEL_DECLARE(gpu_domainCheckSFCAndAssign)(int    n_bodies,
@@ -581,12 +585,12 @@ KERNEL_DECLARE(gpu_domainCheckSFCAndAssign)(int    n_bodies,
     //way we get the top-end values of the domain
     uint2 cij;
     cij.x = 0; cij.y = nProcs+1;
-    int domain = find_domain(key, cij, &boundaryList[1]);
+    //int domain = find_domain(key, cij, &boundaryList[1]);
+    int domain = find_domain(key, cij, &boundaryList[0]);
 
-//    valid = domain;
     valid = domain | ((1) << 31);
   }
-  //validList[id] = id | ((valid) << 31);
+
   validList[id] = make_uint2(valid, id);
   idList[id]    = 1;
 }
