@@ -204,15 +204,21 @@ void octree::allocateTreePropMemory(tree_structure &tree)
   //Allocate memory
   if(tree.groupCenterInfo.get_size() > 0)
   {
-    n_nodes = (int)(n_nodes * 1.1f);
+    if(tree.boxSizeInfo.get_size() <= n_nodes)
+      n_nodes *= MULTI_GPU_MEM_INCREASE;
+
+    //n_nodes = (int)(n_nodes * 1.1f);
     //Resize, so we dont alloc if we already have mem alloced
     tree.multipole.cresize_nocpy(3*n_nodes,     false);
-
     tree.boxSizeInfo.cresize_nocpy(n_nodes,     false);  //host alloced
-    tree.groupSizeInfo.cresize_nocpy(tree.n_groups,   false);
-
     tree.boxCenterInfo.cresize_nocpy(n_nodes,   false); //host alloced
-    tree.groupCenterInfo.cresize_nocpy(tree.n_groups, false);
+
+    int n_groups = tree.n_groups;
+    if(tree.groupSizeInfo.get_size() <= n_groups)
+      n_groups *= MULTI_GPU_MEM_INCREASE;
+
+    tree.groupSizeInfo.cresize_nocpy(n_groups,   false);
+    tree.groupCenterInfo.cresize_nocpy(n_groups, false);
   }
   else
   {

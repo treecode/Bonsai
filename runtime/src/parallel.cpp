@@ -475,6 +475,160 @@ void extractGroups(
   }
 }
 
+//Exports a full-structure including the multipole moments
+int extractGroupsTreeFullCount2(
+    std::vector<real4> &groupCentre,
+    std::vector<real4> &groupSize,
+    std::vector<real4> &groupMulti,
+    std::vector<real4> &groupBody,
+    const real4 *nodeCentre,
+    const real4 *nodeSize,
+    const real4 *nodeMulti,
+    const real4 *nodeBody,
+    const int cellBeg,
+    const int cellEnd,
+    const int nNodes,
+    const int maxDepth)
+{
+  groupCentre.clear();
+  groupCentre.reserve(nNodes);
+
+  groupSize.clear();
+  groupSize.reserve(nNodes);
+
+  groupMulti.clear();
+  groupMulti.reserve(3*nNodes);
+
+  groupBody.clear();
+  groupBody.reserve(nNodes); //We only select leaves with child==1, so cant ever have more than this
+
+  const int levelCountMax = nNodes;
+  std::vector<int> currLevelVec, nextLevelVec;
+  currLevelVec.reserve(levelCountMax);
+  nextLevelVec.reserve(levelCountMax);
+  Swap<std::vector<int> > levelList(currLevelVec, nextLevelVec);
+
+  //These are top level nodes. And everything before
+  //should be added. Nothing has to be changed
+  //since we keep the structure
+  for(int cell = 0; cell < cellBeg; cell++)
+  {
+    groupCentre.push_back(nodeCentre[cell]);
+    groupSize  .push_back(nodeSize[cell]);
+//    groupMulti .push_back(nodeMulti[cell*3+0]);
+//    groupMulti .push_back(nodeMulti[cell*3+1]);
+//    groupMulti .push_back(nodeMulti[cell*3+2]);
+  }
+
+  for (int cell = cellBeg; cell < cellEnd; cell++)
+    levelList.first().push_back(cell);
+
+
+  int childOffset    = cellEnd;
+  int childBodyCount = 0;
+
+  int depth = 0;
+  while (!levelList.first().empty())
+  {
+//    LOGF(stderr, " depth= %d Store offset: %d cursize: %d\n", depth++, childOffset, groupSize.size());
+    const int csize = levelList.first().size();
+    for (int i = 0; i < csize; i++)
+    {
+      const uint   nodeIdx = levelList.first()[i];
+      const float4 centre  = nodeCentre[nodeIdx];
+      const float4 size    = nodeSize[nodeIdx];
+      const float nodeInfo_x = centre.w;
+      const uint  nodeInfo_y = host_float_as_int(size.w);
+
+//      LOGF(stderr,"BeforeWorking on %d \tLeaf: %d \t %f [%f %f %f]\n",nodeIdx, nodeInfo_x <= 0.0f, nodeInfo_x, centre.x, centre.y, centre.z);
+      const int lchild  =    nodeInfo_y & 0x0FFFFFFF;            //Index to the first child of the node
+      const int lnchild = (((nodeInfo_y & 0xF0000000) >> 28)) ;  //The number of children this node has
+
+      const bool lleaf = nodeInfo_x <= 0.0f;
+      if (!lleaf)
+      {
+#if 1
+        //We mark this as an end-point
+        if (lnchild == 8)
+        {
+          float4 size1 = size;
+          size1.w = host_int_as_float(0xFFFFFFFF);
+          groupCentre.push_back(centre);
+          groupSize  .push_back(size1);
+//          groupMulti .push_back(nodeMulti[nodeIdx*3+0]);
+//          groupMulti .push_back(nodeMulti[nodeIdx*3+1]);
+//          groupMulti .push_back(nodeMulti[nodeIdx*3+2]);
+        }
+        else
+#endif
+        {
+//          LOGF(stderr,"ORIChild info: Node: %d stored at: %d  info:  %d %d \n",nodeIdx, groupSize.size(), lchild, lnchild);
+          //We pursue this branch, mark the offsets and add the parent
+          //to our list and the children to next level process
+          float4 size1   = size;
+          uint newOffset   = childOffset | ((uint)(lnchild) << LEAFBIT);
+          childOffset     += lnchild;
+          size1.w         = host_int_as_float(newOffset);
+
+          if(depth <  maxDepth){
+            size1.w = host_int_as_float(0xFFFFFFFF); //mark as end point
+          }
+
+          groupCentre.push_back(centre);
+          groupSize  .push_back(size1);
+//          groupMulti .push_back(nodeMulti[nodeIdx*3+0]);
+//          groupMulti .push_back(nodeMulti[nodeIdx*3+1]);
+//          groupMulti .push_back(nodeMulti[nodeIdx*3+2]);
+
+          if(depth <  maxDepth){
+            for (int i = lchild; i < lchild + lnchild; i++)
+              levelList.second().push_back(i);
+          }
+        }
+      }
+      else
+      {
+        //We always open leafs with nchild == 1 so check and possibly add child
+        if(lnchild == 0)
+        { //1 child
+          float4 size1;
+          uint newOffset  = childBodyCount | ((uint)(lnchild) << LEAFBIT);
+          childBodyCount += 1;
+          size1.w         = host_int_as_float(newOffset);
+
+          groupCentre.push_back(centre);
+          groupSize  .push_back(size1);
+//          groupMulti .push_back(nodeMulti[nodeIdx*3+0]);
+//          groupMulti .push_back(nodeMulti[nodeIdx*3+1]);
+//          groupMulti .push_back(nodeMulti[nodeIdx*3+2]);
+          groupBody  .push_back(nodeBody[lchild]);
+
+//          LOGF(stderr,"Adding a leaf with only 1 child!! Grp cntr: %f %f %f body: %f %f %f\n",
+//              centre.x, centre.y, centre.z, nodeBody[lchild].x, nodeBody[lchild].y, nodeBody[lchild].z);
+        }
+        else
+        { //More than 1 child, mark as END point
+          float4 size1 = size;
+          size1.w = host_int_as_float(0xFFFFFFFF);
+          groupCentre.push_back(centre);
+          groupSize  .push_back(size1);
+
+//          groupMulti .push_back(nodeMulti[nodeIdx*3+0]);
+//          groupMulti .push_back(nodeMulti[nodeIdx*3+1]);
+//          groupMulti .push_back(nodeMulti[nodeIdx*3+2]);
+        }
+      }
+    }
+
+//    LOGF(stderr, "  done depth= %d Store offset: %d cursize: %d\n", depth, childOffset, groupSize.size());
+    levelList.swap();
+    levelList.second().clear();
+    depth++;
+  }
+
+  //Required space:
+  return (1 + groupBody.size() + 5*groupSize.size());
+}
 
 
 //Exports a full-structure including the multipole moments
@@ -489,7 +643,8 @@ void extractGroupsTreeFull(
     const real4 *nodeBody,
     const int cellBeg,
     const int cellEnd,
-    const int nNodes)
+    const int nNodes,
+    const int maxDepth)
 {
   groupCentre.clear();
   groupCentre.reserve(nNodes);
@@ -571,14 +726,20 @@ void extractGroupsTreeFull(
           childOffset     += lnchild;
           size1.w         = host_int_as_float(newOffset);
 
+          if(depth <  maxDepth){
+            size1.w = host_int_as_float(0xFFFFFFFF); //mark as end point
+          }
+
           groupCentre.push_back(centre);
           groupSize  .push_back(size1);
           groupMulti .push_back(nodeMulti[nodeIdx*3+0]);
           groupMulti .push_back(nodeMulti[nodeIdx*3+1]);
           groupMulti .push_back(nodeMulti[nodeIdx*3+2]);
 
-          for (int i = lchild; i < lchild + lnchild; i++)
-            levelList.second().push_back(i);
+          if(depth <  maxDepth){
+            for (int i = lchild; i < lchild + lnchild; i++)
+              levelList.second().push_back(i);
+          }
         }
       }
       else
@@ -618,6 +779,7 @@ void extractGroupsTreeFull(
 //    LOGF(stderr, "  done depth= %d Store offset: %d cursize: %d\n", depth, childOffset, groupSize.size());
     levelList.swap();
     levelList.second().clear();
+    depth++;
   }
 
 
@@ -678,7 +840,9 @@ int extractGroupsTreeFullCount(
     const real4 *nodeSize,
     const int cellBeg,
     const int cellEnd,
-    const int nNodes)
+    const int nNodes,
+    const int maxDepth,
+          int &depth)
 {
   const int levelCountMax = nNodes;
   std::vector<int> currLevelVec, nextLevelVec;
@@ -694,7 +858,7 @@ int extractGroupsTreeFullCount(
   for (int cell = cellBeg; cell < cellEnd; cell++)
     levelList.first().push_back(cell);
 
-  int depth = 0;
+//  int depth = 0;
   while (!levelList.first().empty())
   {
     const int csize = levelList.first().size();
@@ -716,10 +880,12 @@ int extractGroupsTreeFullCount(
         //We mark this as an end-point
         if (lnchild != 8)
         {
-          //We pursue this branch, mark the offsets and add the parent
-          //to our list and the children to next level process
-          for (int i = lchild; i < lchild + lnchild; i++)
-            levelList.second().push_back(i);
+          if(depth <  maxDepth){
+            //We pursue this branch, mark the offsets and add the parent
+            //to our list and the children to next level process
+            for (int i = lchild; i < lchild + lnchild; i++)
+              levelList.second().push_back(i);
+          }
         }
       }
       else
@@ -731,6 +897,7 @@ int extractGroupsTreeFullCount(
         }
       }
     }
+    depth++;
     levelList.swap();
     levelList.second().clear();
   }
@@ -1355,6 +1522,7 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
   domainCheckSFCAndAssign.set_arg<cl_mem>(5,   localTree.bodies_key.p());
   domainCheckSFCAndAssign.set_arg<cl_mem>(6,   validList2.p());
   domainCheckSFCAndAssign.set_arg<cl_mem>(7,   idList.p());
+  domainCheckSFCAndAssign.set_arg<int   >(8,   &procId);
   domainCheckSFCAndAssign.setWork(localTree.n, 128);
   domainCheckSFCAndAssign.execute(execStream->s());
 
@@ -1799,21 +1967,27 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree
   {
     const int src    = (nProcs + procId - dist) % nProcs;
     const int dst    = (nProcs + procId + dist) % nProcs;
-    const int scount = nparticles[dst] * sizeof(bodyStruct);
-    const int rcount = nreceive  [src] * sizeof(bodyStruct);
+    const int scount = nparticles[dst] * (sizeof(bodyStruct) / sizeof(double));
+    const int rcount = nreceive  [src] * (sizeof(bodyStruct) / sizeof(double));
+
+    assert(scount >= 0);
+    assert(rcount >= 0);
 
 #if 1
-    if (scount > 0) MPI_Isend(&particlesToSend[nsendDispls[dst]], scount, MPI_BYTE, dst, 1, MPI_COMM_WORLD, &req[nreq++]);
+    if (scount > 0)
+    {
+      MPI_Isend(&particlesToSend[nsendDispls[dst]], scount, MPI_DOUBLE, dst, 1, MPI_COMM_WORLD, &req[nreq++]);
+    }
     if(rcount > 0)
     {
-      MPI_Irecv(&recv_buffer3[recvOffset], rcount, MPI_BYTE, src, 1, MPI_COMM_WORLD, &req[nreq++]);
+      MPI_Irecv(&recv_buffer3[recvOffset], rcount, MPI_DOUBLE, src, 1, MPI_COMM_WORLD, &req[nreq++]);
       recvOffset += nreceive[src];
     }
 #else
     MPI_Status stat;
     MPI_Sendrecv(&particlesToSend[nsendDispls[dst]],
-        scount, MPI_BYTE, dst, 1,
-        &recv_buffer3[recvOffset], rcount, MPI_BYTE, src, 1, MPI_COMM_WORLD, &stat);
+        scount, MPI_DOUBLE, dst, 1,
+        &recv_buffer3[recvOffset], rcount, MPI_DOUBLE, src, 1, MPI_COMM_WORLD, &stat);
     recvOffset += nreceive[src];
 #endif
   }
@@ -2449,41 +2623,181 @@ void octree::sendCurrentInfoGrpTree()
   localTree.boxSizeInfo.waitForCopyEvent();
   localTree.boxCenterInfo.waitForCopyEvent();
 
-  double tStartGrp = get_time(); //TODO delete
-
   /* JB encode the groupTree / boundaries as a tree-structure */
   static std::vector<real4> groupCentre, groupSize;
-  static std::vector<real4> groupMulti, groupBody;
+  static std::vector<real4> groupMulti,  groupBody;
+
+
+  double tStartGrp = get_time(); //TODO delete
+
+  int nGroupsSmallSet = 0;
+  int nGroupsFullSet  = 0;
+  int depthSmallSet   = -1;
+  int searchDepthUsed = 99;
+
+  static int tempStartSmall = 0;
+  static int tempStartDepth = 5;
+
+  std::vector<int2> globalGroupSizeArray(nProcs);     //x is fullGroup, y = smallGroup
+  std::vector<int2> globalGroupSizeArrayRecv(nProcs); //x is fullGroup, y = smallGroup
+  globalGroupSizeArray[procId] = make_int2(0,0); //Nothing to ourselves
+
+
+  //Count the number of processes that used the boundary tree
+  //and compute the average level
+  int smallTreeStart = localTree.level_list[localTree.startLevelMin].x;
+  int smallTreeEnd   = localTree.level_list[localTree.startLevelMin].y;
+
+  if(iter < 8)
+  {
+    for(int i=0; i < nProcs; i++)
+    {
+      fullGrpAndLETRequestStatistics[i].x = 0;
+      fullGrpAndLETRequestStatistics[i].y = 0;
+    }
+  }
+  else
+  {
+    //Start on the root node
+    if(iter >= 12)
+    {
+      searchDepthUsed = tempStartDepth;
+      tempStartDepth--;
+
+      searchDepthUsed = std::max(searchDepthUsed,1); //Minimum level 1
+
+      if(searchDepthUsed == 1)
+      {
+        //Start decreasing the start level
+        tempStartSmall++;
+      }
+
+      //Set the start and end node of start level
+      if(tempStartSmall > localTree.startLevelMin) tempStartSmall = localTree.startLevelMin;
+
+      smallTreeStart  = localTree.level_list[localTree.startLevelMin-tempStartSmall].x;
+      smallTreeEnd    = localTree.level_list[localTree.startLevelMin-tempStartSmall].y;
+    }
+
+
+
+    if(iter > 20)
+    {
+      smallTreeStart  = 0;
+      smallTreeEnd    = 1;
+      searchDepthUsed = 1;
+    }
+  }
+
+  LOGF(stderr,"GRP Iter: %d small: %d %d  d: %d  full: %d %d \n",
+      iter, smallTreeStart, smallTreeEnd,searchDepthUsed,
+      localTree.level_list[localTree.startLevelMin].x,
+      localTree.level_list[localTree.startLevelMin].y);
+
+  nGroupsSmallSet =  extractGroupsTreeFullCount2(
+                        groupCentre, groupSize,
+                        groupMulti, groupBody,
+                        &localTree.boxCenterInfo[0],
+                        &localTree.boxSizeInfo[0],
+                        &localTree.multipole[0],
+                        &localTree.bodies_Ppos[0],
+                        smallTreeStart,
+                        smallTreeEnd,
+                        localTree.n_nodes, searchDepthUsed);
+
+//  nGroupsSmallSet = extractGroupsTreeFullCount(
+//                          &localTree.boxCenterInfo[0],
+//                          &localTree.boxSizeInfo[0],
+//                          smallTreeStart,
+//                          smallTreeEnd,
+//                          localTree.n_nodes, searchDepthUsed, depthSmallSet);
+
+  for(int i=0; i < nProcs; i++)
+  {
+    if(i == procId) globalGroupSizeArray[i].y = nGroupsSmallSet;
+
+    if(fullGrpAndLETRequestStatistics[i].x > 0)
+    {
+      globalGroupSizeArray[i].y = nGroupsSmallSet; //Use the small set
+    }
+    else
+    {
+      globalGroupSizeArray[i].y = -nGroupsSmallSet; //use the big set
+    }
+  }
 
   //Count only, does not require multipole info and
   //can therefore be executed while copy continues
+  int depth = 0;
   int nGroups = extractGroupsTreeFullCount(
-    &localTree.boxCenterInfo[0],
-    &localTree.boxSizeInfo[0],
-    localTree.level_list[localTree.startLevelMin].x,
-    localTree.level_list[localTree.startLevelMin].y,
-    localTree.n_nodes);
+                      &localTree.boxCenterInfo[0],
+                      &localTree.boxSizeInfo[0],
+                      localTree.level_list[localTree.startLevelMin].x,
+                      localTree.level_list[localTree.startLevelMin].y,
+                      localTree.n_nodes, 99, depth);
+  nGroupsFullSet = nGroups;
+
+  //Assign the fullGroup sizes to process that need more than the smallGroup size
+  for(int i=0; i < nProcs; i++)
+  {
+    if(globalGroupSizeArray[i].y <= 0)
+      globalGroupSizeArray[i].x = nGroups;
+    else
+      globalGroupSizeArray[i].x = 0;
+
+    //If small and big are equal then use small for allgatherv
+    if(abs(globalGroupSizeArray[i].y) == nGroups)
+    {
+      globalGroupSizeArray[i].y = nGroups;
+      globalGroupSizeArray[i].x = 0;
+    }
+  }
+
+  //Statistics
+  int nGroupsSmall = 0;
+  int nGroupsLarge = 0;
+  for(int i=0; i < nProcs; i++)
+  {
+    if(globalGroupSizeArray[i].x == 0)
+      nGroupsSmall++;
+    else
+      nGroupsLarge++;
+  }
+
 
   double t0 = get_time();
 
-  //Communicate with network while we copy multipole
-  std::vector<int> globalSizeArray(nProcs), displacement(nProcs,0);
-  MPI_Allgather(
-                &nGroups,            sizeof(int), MPI_BYTE,
-                &globalSizeArray[0], sizeof(int), MPI_BYTE,
-                MPI_COMM_WORLD); /* to globalSize Array */
 
-  /* compute displacements for allgatherv */
+
+
+//  fprintf(stderr,"Proc: %d  GRPDEPTH2: full: %d %d  small: %d %d ||\tSaved: %d nSmall: %d nLarge: %d\n",
+//                  procId,
+//                  nGroups, depth,
+//                  nGroupsSmallSet, depthSmallSet,
+//                  nGroups-nGroupsSmallSet, nGroupsSmall,nGroupsLarge);
+
+  //Communicate the sizes
+  MPI_Alltoall(&globalGroupSizeArray[0],     2, MPI_INT,
+               &globalGroupSizeArrayRecv[0], 2, MPI_INT, MPI_COMM_WORLD);
+
+
+  std::vector<int> groupRecvSizesSmall(nProcs, 0);
+  std::vector<int> groupRecvSizesA2A(nProcs, 0);
+  std::vector<int>  displacement(nProcs,0);
+
+  /* compute displacements for allgatherv for fullGrps */
   int runningOffset = 0;
   for (int i = 0; i < nProcs; i++)
   {
-    this->globalGrpTreeCount[i]   = globalSizeArray[i];
+    groupRecvSizesSmall[i] = sizeof(real4)*abs(globalGroupSizeArrayRecv[i].y); //Size of small tree
+
+    this->globalGrpTreeCount[i]   = std::max(globalGroupSizeArrayRecv[i].x, globalGroupSizeArrayRecv[i].y);
     this->globalGrpTreeOffsets[i] = runningOffset;
+
     fullGrpAndLETRequest[i]       = 0;
 
     displacement[i]               = runningOffset*sizeof(real4);
-    runningOffset                += globalSizeArray[i];
-    globalSizeArray[i]           *= sizeof(real4); //Number in bytes
+    runningOffset                += std::max(globalGroupSizeArrayRecv[i].x, globalGroupSizeArrayRecv[i].y);
   }
 
   double t1 = get_time();
@@ -2492,58 +2806,199 @@ void octree::sendCurrentInfoGrpTree()
   if (globalGrpTreeCntSize) delete[] globalGrpTreeCntSize;
   globalGrpTreeCntSize = new real4[runningOffset]; /* total Number Of Groups = runningOffset */
 
-  //Wait for multi poles to copy
+  //Two methods
+  //1) use MPI_Alltoallv
+  //2) use combination of allgatherv (for small) + isend/irecv for large
+
+  //Wait for multipoles to copy
   localTree.multipole.waitForCopyEvent();
 
-  extractGroupsTreeFull(
-    groupCentre, groupSize,
-    groupMulti, groupBody,
-    &localTree.boxCenterInfo[0],
-    &localTree.boxSizeInfo[0],
-    &localTree.multipole[0],
-    &localTree.bodies_Ppos[0],
-    localTree.level_list[localTree.startLevelMin].x,
-    localTree.level_list[localTree.startLevelMin].y,
-    localTree.n_nodes);
-
-  nGroups = groupCentre.size();
-  LOGF(stderr, "ExtractGroupsTreeFull n: %d [%d] Multi: %d \tTook: %lg\n",
-         nGroups, (int)groupSize.size(), (int)groupMulti.size(),
-         get_time() - t1);
-  assert(nGroups*3 == groupMulti.size());
-
-  //Merge all data into a single array, store offsets
-  const int nbody = groupBody.size();
-  const int nnode = groupSize.size();
-
   static std::vector<real4> fullBoundaryTree;
-  fullBoundaryTree.reserve(1 + nbody + 5*nnode); //header+bodies+size+cntr+3*multi
-  fullBoundaryTree.clear();
+  static std::vector<real4> SmallBoundaryTree;
 
-  //Set the tree properties, before we exchange the data
-  float4 description;
-  description.x = host_int_as_float(nbody);
-  description.y = host_int_as_float(nnode);
-  description.z = host_int_as_float(localTree.level_list[localTree.startLevelMin].x);
-  description.w = host_int_as_float(localTree.level_list[localTree.startLevelMin].y);
+  //Build the small-tree
+  {
+     extractGroupsTreeFull(
+                           groupCentre, groupSize,
+                           groupMulti, groupBody,
+                           &localTree.boxCenterInfo[0],
+                           &localTree.boxSizeInfo[0],
+                           &localTree.multipole[0],
+                           &localTree.bodies_Ppos[0],
+                           smallTreeStart,
+                           smallTreeEnd,
+                           localTree.n_nodes, searchDepthUsed);
 
-  fullBoundaryTree.push_back(description);
-  fullBoundaryTree.insert(fullBoundaryTree.end(), groupBody.begin()  , groupBody.end());   //Particles
-  fullBoundaryTree.insert(fullBoundaryTree.end(), groupSize.begin()  , groupSize.end());   //Sizes
-  fullBoundaryTree.insert(fullBoundaryTree.end(), groupCentre.begin(), groupCentre.end()); //Centres
-  fullBoundaryTree.insert(fullBoundaryTree.end(), groupMulti.begin() , groupMulti.end());  //Multipoles
+     nGroups = groupCentre.size();
+     assert(nGroups*3 == groupMulti.size());
 
-  assert(fullBoundaryTree.size() == (1 + nbody + 5*nnode));
-  nGroups = fullBoundaryTree.size();
+     //Merge all data into a single array, store offsets
+     const int nbody = groupBody.size();
+     const int nnode = groupSize.size();
 
-  MPI_Allgatherv(&fullBoundaryTree[0], sizeof(real4)*nGroups, MPI_BYTE,
-                 globalGrpTreeCntSize, &globalSizeArray[0],   &displacement[0], MPI_BYTE,
-                 MPI_COMM_WORLD);
+     LOGF(stderr, "ExtractGroupsTreeFull (small) n: %d [%d] Multi: %d body: %d Tot: %d \tTook: %lg\n",
+            nGroups, (int)groupSize.size(), (int)groupMulti.size(), (int)groupBody.size(),
+            1 + nbody + 5*nnode, get_time() - t1);
+
+
+     SmallBoundaryTree.reserve(1 + nbody + 5*nnode); //header+bodies+size+cntr+3*multi
+     SmallBoundaryTree.clear();
+
+     //Set the tree properties, before we exchange the data
+     float4 description;
+     description.x = host_int_as_float(nbody);
+     description.y = host_int_as_float(nnode);
+     description.z = host_int_as_float(smallTreeStart);
+     description.w = host_int_as_float(smallTreeEnd);
+
+     SmallBoundaryTree.push_back(description);
+     SmallBoundaryTree.insert(SmallBoundaryTree.end(), groupBody.begin()  , groupBody.end());   //Particles
+     SmallBoundaryTree.insert(SmallBoundaryTree.end(), groupSize.begin()  , groupSize.end());   //Sizes
+     SmallBoundaryTree.insert(SmallBoundaryTree.end(), groupCentre.begin(), groupCentre.end()); //Centres
+     SmallBoundaryTree.insert(SmallBoundaryTree.end(), groupMulti.begin() , groupMulti.end());  //Multipoles
+
+     assert(SmallBoundaryTree.size() == (1 + nbody + 5*nnode));
+//     fprintf(stderr,"Proc: %d Smalltree: %d %d %d %d \n",
+//         procId, nbody,nnode, localTree.level_list[localTree.startLevelMin].x,
+//         localTree.level_list[localTree.startLevelMin].y);
+  }
+
+  //Build the full-tree
+  {
+     extractGroupsTreeFull(
+       groupCentre, groupSize,
+       groupMulti, groupBody,
+       &localTree.boxCenterInfo[0],
+       &localTree.boxSizeInfo[0],
+       &localTree.multipole[0],
+       &localTree.bodies_Ppos[0],
+       localTree.level_list[localTree.startLevelMin].x,
+       localTree.level_list[localTree.startLevelMin].y,
+       localTree.n_nodes, 99);
+
+     nGroups = groupCentre.size();
+     assert(nGroups*3 == groupMulti.size());
+
+     //Merge all data into a single array, store offsets
+     const int nbody = groupBody.size();
+     const int nnode = groupSize.size();
+
+     LOGF(stderr, "ExtractGroupsTreeFull n: %d [%d] Multi: %d body: %d Tot: %d \tTook: %lg\n",
+            nGroups, (int)groupSize.size(), (int)groupMulti.size(),(int)groupBody.size(),
+            1 + nbody + 5*nnode, get_time() - t1);
+
+     fullBoundaryTree.reserve(1 + nbody + 5*nnode); //header+bodies+size+cntr+3*multi
+     fullBoundaryTree.clear();
+
+     //Set the tree properties, before we exchange the data
+     float4 description;
+     description.x = host_int_as_float(nbody);
+     description.y = host_int_as_float(nnode);
+     description.z = host_int_as_float(localTree.level_list[localTree.startLevelMin].x);
+     description.w = host_int_as_float(localTree.level_list[localTree.startLevelMin].y);
+
+     fullBoundaryTree.push_back(description);
+     fullBoundaryTree.insert(fullBoundaryTree.end(), groupBody.begin()  , groupBody.end());   //Particles
+     fullBoundaryTree.insert(fullBoundaryTree.end(), groupSize.begin()  , groupSize.end());   //Sizes
+     fullBoundaryTree.insert(fullBoundaryTree.end(), groupCentre.begin(), groupCentre.end()); //Centres
+     fullBoundaryTree.insert(fullBoundaryTree.end(), groupMulti.begin() , groupMulti.end());  //Multipoles
+
+     assert(fullBoundaryTree.size() == (1 + nbody + 5*nnode));
+
+//     fprintf(stderr,"Proc: %d Bigtree: %d %d %d %d \n",
+//         procId, nbody,nnode, localTree.level_list[localTree.startLevelMin].x,
+//         localTree.level_list[localTree.startLevelMin].y);
+  }
+
+#if 1
+
+  //MPI_Allgatherv + Isend/IRecv
+  {
+    nGroups = SmallBoundaryTree.size();
+    MPI_Allgatherv(&SmallBoundaryTree[0], sizeof(real4)*nGroups, MPI_BYTE,
+                   globalGrpTreeCntSize, &groupRecvSizesSmall[0],   &displacement[0], MPI_BYTE,
+                   MPI_COMM_WORLD);
+  }
+
+  double t2 = get_time();
+
+  //Send / recv loop like particle exchange
+  #define NMAXPROC 32768
+  static MPI_Status stat[NMAXPROC];
+  static MPI_Request req[NMAXPROC*2];
+
+  int nreq = 0;
+  for (int dist = 1; dist < nProcs; dist++)
+  {
+    const int src    = (nProcs + procId - dist) % nProcs;
+    const int dst    = (nProcs + procId + dist) % nProcs;
+    const int scount = (globalGroupSizeArray    [dst].y <= 0) ? fullBoundaryTree.size()         * sizeof(real4) : 0;
+    const int rcount = (globalGroupSizeArrayRecv[src].y <= 0) ? globalGroupSizeArrayRecv[src].x * sizeof(real4) : 0;
+    const int offset = this->globalGrpTreeOffsets[src];
+
+    if (scount > 0)
+    {
+      MPI_Isend(&fullBoundaryTree[0], scount, MPI_BYTE, dst, 1, MPI_COMM_WORLD, &req[nreq++]);
+      LOGF(stderr,"Sending to: %d size: %d \n", dst, (int)(scount / sizeof(real4)));
+    }
+    if(rcount > 0)
+    {
+      MPI_Irecv(&globalGrpTreeCntSize[offset], rcount, MPI_BYTE, src, 1, MPI_COMM_WORLD, &req[nreq++]);
+      LOGF(stderr,"Receiving from: %d size: %d Offset: %d \n",
+                    src, globalGroupSizeArrayRecv[src].x, offset);
+    }
+  }
+  MPI_Waitall(nreq, req, stat);
+
+#endif
+
+
+
+//  mpiSync();   MPI_Finalize();   exit(0);
+
+#if 0
+  //MPI alltoallv
+
+  std::vector<int> sendOffsets(nProcs);
+  std::vector<int> sendSizes(nProcs);
+
+  static std::vector<real4> bothBoundaryTrees;
+  bothBoundaryTrees.insert(bothBoundaryTrees.end(),SmallBoundaryTree.begin(), SmallBoundaryTree.end());
+  bothBoundaryTrees.insert(bothBoundaryTrees.end(),fullBoundaryTree.begin(),  fullBoundaryTree.end());
+
+  const int fullTreeOffset = bothBoundaryTrees.size()*sizeof(real4);
+  for(int i=0; i < nProcs; i++)
+  {
+    if(globalGroupSizeArray[i].y >= 0)
+    {
+      sendOffsets[i] = 0; //small tree
+      sendSizes[i] = SmallBoundaryTree.size()*sizeof(real4);
+    }
+    else
+    {
+      sendOffsets[i] = fullTreeOffset; //full tree
+      sendSizes[i] = fullBoundaryTree.size()*sizeof(real4);
+    }
+  }
+
+
+
+  MPI_Alltoallv(&bothBoundaryTrees[0],
+                &sendSizes[0],                &sendOffsets[0],  MPI_BYTE,
+                &globalGrpTreeCntSize[0],
+                (int*)&this->globalGrpTreeCount[0], &displacement[0], MPI_BYTE,
+                MPI_COMM_WORLD);
+
+
+#endif
+
+
+//
 
   double tEndGrp = get_time();
   char buff5[1024];
-  sprintf(buff5,"BLETTIME-%d: Iter: %d tGrpSend: %lg nGrpSize: %d tAllgather: %lg tAllGatherv: %lg\n",
-                 procId, iter, tEndGrp-tStartGrp, nGroups, t1-t0, tEndGrp-t1);
+  sprintf(buff5,"BLETTIME-%d: Iter: %d tGrpSend: %lg nGrpSizeSmall: %d nGrpSizeLarge: %d nSmall: %d nLarge: %d tAllgather: %lg tAllGatherv: %lg tSendRecv: %lg\n",
+                 procId, iter, tEndGrp-tStartGrp, nGroupsSmallSet, nGroupsFullSet, nGroupsSmall, nGroupsLarge, t1-t0, t2-t1, tEndGrp-t2);
   devContext.writeLogEvent(buff5);
 
 
@@ -3122,11 +3577,12 @@ int getLEToptQuickTreevsTree(
     const int nNodes,
     const int procId,
     const int ibox,
-    double &timeFunction)
+    double &timeFunction, int &depth)
 {
   double tStart = get_time2();
 
-  int depth = 0;
+  //int depth = 0;
+  depth = 0;
 
   const _v4sf*          nodeSizeV = (const _v4sf*)nodeSize;
   const _v4sf*        nodeCentreV = (const _v4sf*)nodeCentre;
@@ -4522,7 +4978,12 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
   int topNodeOnTheFlyCount = 0;
 
-  this->fullGrpAndLETRequestStatistics[procId] = make_uint2(0, procId); //Reset our box
+  this->fullGrpAndLETRequestStatistics[procId] = make_uint2(0, 0); //Reset our box
+  for(int i=0; i < nProcs; i++)
+  {
+    if(iter < 8)
+      this->fullGrpAndLETRequestStatistics[i] = make_uint2(1, 1); //Mark as used boundary
+  }
 
   uint2 node_begend;
   node_begend.x   = tree.level_list[tree.startLevelMin].x;
@@ -4530,10 +4991,11 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
   int resultOfQuickCheck[nProcs];
 
-  int2 quickCheckSendSizes [nProcs];
-  int quickCheckSendOffset[nProcs];
+  //int2 quickCheckSendSizes [nProcs];
+  int4 quickCheckSendSizes [nProcs];
+  int  quickCheckSendOffset[nProcs];
 
-  int2 quickCheckRecvSizes [nProcs];
+  int4 quickCheckRecvSizes [nProcs];
   int quickCheckRecvOffset[nProcs];
 
 
@@ -4542,6 +5004,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
   resultOfQuickCheck[procId]    = 99; //Mark ourself
   quickCheckSendSizes[procId].x =  0;
   quickCheckSendSizes[procId].y =  0;
+  quickCheckSendSizes[procId].z =  0;
   quickCheckSendOffset[procId]  =  0;
 
   //For statistics
@@ -4722,6 +5185,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
             //Test if the boundary tree sent by the remote tree is sufficient for us
             double tBoundaryCheck;
+            int depthSearch = 0;
             const int resultTree = getLEToptQuickTreevsTree(
                                               getLETBuffers[tid],
                                               &grpCenter[1+nbody+nnode],    //cntr
@@ -4734,7 +5198,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                               nnode,
                                               procId,
                                               ibox,
-                                              tBoundaryCheck);
+                                              tBoundaryCheck, depthSearch);
 
             if(resultTree == 0)
             {
@@ -4757,6 +5221,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
               }//omp critical
 
               quickCheckSendSizes[ibox].y = 1;    //1 To indicate we used this processes boundary
+              quickCheckSendSizes[ibox].z = depthSearch;
             }//resultTree == 0
             else
             {
@@ -4767,8 +5232,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             {
               quickCheckSendSizes[ibox].x = sizeTree;
               resultOfQuickCheck [ibox] = 1;
-
-              this->fullGrpAndLETRequestStatistics[ibox] = make_uint2(sizeTree, ibox); //TODO delete
             }
             else
             { //Quickcheck failed, requires point to point LET
@@ -4832,8 +5295,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
           if(currentTicket >= idsThatNeedMoreThanBoundary.size())
             breakOutOfFullLoop = true;
-
-          ibox = idsThatNeedMoreThanBoundary[currentTicket]; //From the A2A result list
+          else
+            ibox = idsThatNeedMoreThanBoundary[currentTicket]; //From the A2A result list
         }
         else
         {
@@ -4917,7 +5380,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         int bufferSize  = 1 + 1*countParticles + 5*countNodes;
         //Use count of exported particles and nodes, but let particles count more heavy.
         //Used during particle exchange / domain update to speedup particle-box assignment
-        this->fullGrpAndLETRequestStatistics[ibox] = make_uint2(countParticles*10 + countNodes, ibox);
+//        this->fullGrpAndLETRequestStatistics[ibox] = make_uint2(countParticles*10 + countNodes, ibox);
         if (ENABLE_RUNTIME_LOG)
         {
           fprintf(stderr,"Proc: %d LET getLetOp count&fill [%d,%d]: Depth: %d Dest: %d Total : %lg (#P: %d \t#N: %d) nNodes= %d  nGroups= %d \tsince start: %lg \n",
@@ -5001,7 +5464,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       //Send the sizes
       LOGF(stderr, "Going to do the alltoall size communication! Iter: %d Since begin: %lg \n", iter, get_time()-tStart);
       double t100 = get_time();
-      MPI_Alltoall(quickCheckSendSizes, 2, MPI_INT, quickCheckRecvSizes, 2, MPI_INT, MPI_COMM_WORLD);
+      MPI_Alltoall(quickCheckSendSizes, 4, MPI_INT, quickCheckRecvSizes, 4, MPI_INT, MPI_COMM_WORLD);
       LOGF(stderr, "Completed_alltoall size communication! Iter: %d Took: %lg ( %lg )\n", iter, get_time()-t100, get_time()-t0);
 
       //If quickCheckRecvSizes[].y == 1 then the remote process used the boundary.
@@ -5016,9 +5479,15 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
           quickCheckSendSizes[i].x = 0;
           quickCheckSendOffset[i] = 0;
           nQuickBoundaryOk++;
+
+          //Mark as we can use small boundary
+          //this->fullGrpAndLETRequestStatistics[i] = make_uint2(1, 1);
         }
         else
         {
+          //Did not use boundary, mark that for next run, so it sends full boundary
+          this->fullGrpAndLETRequestStatistics[i] = make_uint2(0, 0);
+
           if(i != procId) idsThatNeedExtraLET.push_back(i);
         }
 
@@ -5116,6 +5585,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                           recvStatus.MPI_SOURCE, 0, get_time()-tStart,get_time()-t0,tZ-tY, get_time()-tZ, count);
 	    
             receivedLETCount++;
+
+//            this->fullGrpAndLETRequestStatistics[probeStatus.MPI_SOURCE] = make_uint2(0, 0);
 
             if( communicationStatus[probeStatus.MPI_SOURCE] == 2)
             {

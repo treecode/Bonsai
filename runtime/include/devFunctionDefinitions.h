@@ -105,6 +105,6 @@ extern "C" void  (gpu_build_parallel_grps)( uint   compact_list_len, uint   offs
 
 extern "C" void  (gpu_segmentedSummaryBasic) (const int n_groups, uint     *validGroups, uint     *atomicValues, uint2    *hashGroupInfo, uint4    *hashGroupKey, uint4    *hashGroupResult, uint4    *sourceData);
 
-extern "C" void  (gpu_domainCheckSFCAndAssign)(int    n_bodies, int    nProcs, uint4  lowBoundary, uint4  highBoundary, uint4  *boundaryList,  uint4  *body_key, uint    *validList,  uint   *idList);
+extern "C" void  (gpu_domainCheckSFCAndAssign)(int    n_bodies, int    nProcs, uint4  lowBoundary, uint4  highBoundary, uint4  *boundaryList,  uint4  *body_key, uint    *validList,  uint   *idList, int procId);
 
 #endif

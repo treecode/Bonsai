@@ -795,13 +795,26 @@ int main(int argc, char** argv)
 	TstartGlow = 0.0;
 	dTstartGlow = 1.0;
 #endif
-
-	double tStartupStart = get_time_main();
+        
+  double tStartupStart = get_time_main();       
+  double tStartModel   = 0;
+  double tEndModel     = 0;
+  
+  
 
   int nPlummer  = -1;
   int nSphere   = -1;
   int nMilkyWay = -1;
   int nMWfork   =  4;
+  std::string taskVar;
+#define TITAN_G
+//#define SLURM_G
+#ifdef TITAN_G
+  //Works for both Titan and Piz Daint
+  taskVar = std::string("PMI_FORK_RANK");
+#elif defined SLURM_G
+  taskVar = std::string("SLURM_PROCID");
+#endif
 	/************** beg - command line arguments ********/
 #if 1
 	{
@@ -850,6 +863,7 @@ int main(int argc, char** argv)
 #ifdef GALACTICS
 		ADDUSAGE("     --milkyway #      use Milky Way model with # particles per proc");
 		ADDUSAGE("     --mwfork   #      fork Milky Way generator into # processes [" << nMWfork << "]");
+    ADDUSAGE("     --taskvar  #      variable name to obtain task id [for randoms seed] before MPI_Init. \n");
 #endif
 		ADDUSAGE("     --sphere   #      use spherical model with # particles per proc");
     ADDUSAGE("     --diskmode        use diskmode to read same input file all MPI taks and randomly shuffle its positions");
@@ -870,6 +884,7 @@ int main(int argc, char** argv)
 #ifdef GALACTICS
     opt.setOption( "milkyway");
     opt.setOption( "mwfork");
+    opt.setOption( "taskvar");
 #endif
     opt.setOption( "sphere");
     opt.setOption( "dev" );
@@ -925,6 +940,7 @@ int main(int argc, char** argv)
     if ((optarg = opt.getValue("plummer")))      nPlummer           = atoi(optarg);
     if ((optarg = opt.getValue("milkyway")))     nMilkyWay          = atoi(optarg);
     if ((optarg = opt.getValue("mwfork")))       nMWfork            = atoi(optarg);
+    if ((optarg = opt.getValue("taskvar")))      taskVar            = std::string(optarg);
     if ((optarg = opt.getValue("sphere")))       nSphere            = atoi(optarg);
     if ((optarg = opt.getValue("logfile")))      logFileName        = string(optarg);
     if ((optarg = opt.getValue("dev")))          devID              = atoi  (optarg);
@@ -957,6 +973,89 @@ int main(int argc, char** argv)
 #undef ADDUSAGE
   }
 #endif
+
+
+  /********** init galaxy **********/
+  const char * argVal = getenv(taskVar.c_str());
+  if (argVal == NULL)
+  {
+    fprintf(stderr, " Unknown ENV_VARIABLE: %s  -- Falling to basic forking method after MPI_Init, unsafe!\n", taskVar.c_str());
+    taskVar = std::string();
+  }
+  if (nMilkyWay >= 0 && !taskVar.empty())
+  {
+    assert(argVal != NULL);
+    const int procId = atoi(argVal);
+//    fprintf(stderr, " taskVar= %s , value= %d\n", taskVar.c_str(), procId);
+#ifdef GALACTICS
+    if (procId == 0) printf("Using MilkyWay model with n= %d per proc, forked %d times \n", nMilkyWay, nMWfork);
+    assert(nMilkyWay > 0);
+    assert(nMWfork > 0);
+    
+    tStartModel = get_time_main();
+  
+ 
+
+#if 1 /* in this setup all particles will be of equal mass (exact number are galactic-depednant)  */
+    const float fdisk  = 15.1; 
+    const float fbulge = 5.1;   
+    const float fhalo  = 242.31; 
+#else  /* here, bulge & mw particles have the same mass, but halo particles is 32x heavier */
+    const float fdisk  = 15.1; 
+    const float fbulge = 5.1; 
+    const float fhalo  = 7.5; 
+#endif
+
+    const float fsum = fdisk + fhalo + fbulge;
+
+    const int ndisk  = (int)(nMilkyWay * fdisk/fsum);
+    const int nbulge = (int)(nMilkyWay * fbulge/fsum);
+    const int nhalo  = (int)(nMilkyWay * fhalo/fsum);
+
+    assert(ndisk  > 0);
+    assert(nbulge > 0);
+    assert(nhalo  > 0);
+
+    const Galactics g(procId, 32768*7, ndisk, nbulge, nhalo, nMWfork);
+    if (procId == 0)
+      printf("  ndisk= %d  nbulge= %d  nhalo= %d :: ntotal= %d\n",
+          g.get_ndisk(), g.get_nbulge(), g.get_nhalo(), g.get_ntot());
+
+    const int ntot = g.get_ntot();
+    bodyPositions.resize(ntot);
+    bodyVelocities.resize(ntot);
+    bodyIDs.resize(ntot);
+    for (int i= 0; i < ntot; i++)
+    {
+      assert(!std::isnan(g[i].x));
+      assert(!std::isnan(g[i].y));
+      assert(!std::isnan(g[i].z));
+      assert(g[i].mass > 0.0);
+      bodyIDs[i] = g[i].id;
+
+      bodyPositions[i].x = g[i].x;
+      bodyPositions[i].y = g[i].y;
+      bodyPositions[i].z = g[i].z;
+      bodyPositions[i].w = g[i].mass; // * 1.0/(double)nProcs ,scaled later ..
+      
+      assert(!std::isnan(g[i].vx));
+      assert(!std::isnan(g[i].vy));
+      assert(!std::isnan(g[i].vz));
+
+      bodyVelocities[i].x = g[i].vx;
+      bodyVelocities[i].y = g[i].vy;
+      bodyVelocities[i].z = g[i].vz;
+      bodyVelocities[i].w = 0.0;
+    }
+    
+    tEndModel   = get_time_main();  
+#else
+    assert(0);
+#endif
+  }
+
+  /*********************************/
+
   /************** end - command line arguments ********/
 
 
@@ -997,6 +1096,7 @@ int main(int argc, char** argv)
   octree *tree = new octree(argv, devID, theta, eps, snapshotFile, snapshotIter,  timeStep, tEnd, iterEnd, (int)remoDistance, snapShotAdd, rebuild_tree_rate, direct);
 
   double tStartup = tree->get_time();
+
   //Get parallel processing information  
   int procId = tree->mpiGetRank();
   int nProcs = tree->mpiGetNProcs();
@@ -1139,12 +1239,12 @@ int main(int argc, char** argv)
   ostream &logFile = logStream;
 
   tree->set_context(logFile, false); //Do logging to file and enable timing (false = enabled)
-
+  
   char logPretext[64];
   sprintf(logPretext, "PROC-%05d ", procId);
   tree->set_logPreamble(logPretext);
 
-  double tStartup2 = tree->get_time();
+  double tStartup2 = tree->get_time();  
 
   if(restartSim)
   {
@@ -1180,66 +1280,77 @@ int main(int argc, char** argv)
   else if(nMilkyWay >= 0)
   {
 #ifdef GALACTICS
-    if (procId == 0) printf("Using MilkyWay model with n= %d per proc, forked %d times \n", nMilkyWay, nMWfork);
-    assert(nMilkyWay > 0);
-    assert(nMWfork > 0);
- 
+    if (taskVar.empty())
+    {
+      tStartModel   = get_time_main();  
+      if (procId == 0) printf("Using MilkyWay model with n= %d per proc, forked %d times \n", nMilkyWay, nMWfork);
+      assert(nMilkyWay > 0);
+      assert(nMWfork > 0);
+
 
 #if 1 /* in this setup all particles will be of equal mass (exact number are galactic-depednant)  */
-    const float fdisk  = 15.1; 
-    const float fbulge = 5.1;   
-    const float fhalo  = 242.31; 
+      const float fdisk  = 15.1; 
+      const float fbulge = 5.1;   
+      const float fhalo  = 242.31; 
 #else  /* here, bulge & mw particles have the same mass, but halo particles is 32x heavier */
-    const float fdisk  = 15.1; 
-    const float fbulge = 5.1; 
-    const float fhalo  = 7.5; 
+      const float fdisk  = 15.1; 
+      const float fbulge = 5.1; 
+      const float fhalo  = 7.5; 
 #endif
 
-    const float fsum = fdisk + fhalo + fbulge;
+      const float fsum = fdisk + fhalo + fbulge;
 
-    const int ndisk  = (int)(nMilkyWay * fdisk/fsum);
-    const int nbulge = (int)(nMilkyWay * fbulge/fsum);
-    const int nhalo  = (int)(nMilkyWay * fhalo/fsum);
+      const int ndisk  = (int)(nMilkyWay * fdisk/fsum);
+      const int nbulge = (int)(nMilkyWay * fbulge/fsum);
+      const int nhalo  = (int)(nMilkyWay * fhalo/fsum);
 
-    assert(ndisk  > 0);
-    assert(nbulge > 0);
-    assert(nhalo  > 0);
+      assert(ndisk  > 0);
+      assert(nbulge > 0);
+      assert(nhalo  > 0);
 
-    const double t0 = tree->get_time();
-    const Galactics g(procId, nProcs, ndisk, nbulge, nhalo, nMWfork);
-    const double dt = tree->get_time() - t0;
-    if (procId == 0)
-      printf("  ndisk= %d  nbulge= %d  nhalo= %d :: ntotal= %d in %g sec\n",
-          g.get_ndisk(), g.get_nbulge(), g.get_nhalo(), g.get_ntot(), dt);
+      const double t0 = tree->get_time();
+      const Galactics g(procId, nProcs, ndisk, nbulge, nhalo, nMWfork);
+      const double dt = tree->get_time() - t0;
+      if (procId == 0)
+        printf("  ndisk= %d  nbulge= %d  nhalo= %d :: ntotal= %d in %g sec\n",
+            g.get_ndisk(), g.get_nbulge(), g.get_nhalo(), g.get_ntot(), dt);
 
-    const int ntot = g.get_ntot();
-    bodyPositions.resize(ntot);
-    bodyVelocities.resize(ntot);
-    bodyIDs.resize(ntot);
-    for (int i= 0; i < ntot; i++)
+      const int ntot = g.get_ntot();
+      bodyPositions.resize(ntot);
+      bodyVelocities.resize(ntot);
+      bodyIDs.resize(ntot);
+      for (int i= 0; i < ntot; i++)
+      {
+        assert(!std::isnan(g[i].x));
+        assert(!std::isnan(g[i].y));
+        assert(!std::isnan(g[i].z));
+        assert(g[i].mass > 0.0);
+        bodyIDs[i] = g[i].id;
+
+        bodyPositions[i].x = g[i].x;
+        bodyPositions[i].y = g[i].y;
+        bodyPositions[i].z = g[i].z;
+        bodyPositions[i].w = g[i].mass * 1.0/(double)nProcs;
+
+        assert(!std::isnan(g[i].vx));
+        assert(!std::isnan(g[i].vy));
+        assert(!std::isnan(g[i].vz));
+
+        bodyVelocities[i].x = g[i].vx;
+        bodyVelocities[i].y = g[i].vy;
+        bodyVelocities[i].z = g[i].vz;
+        bodyVelocities[i].w = 0.0;
+      }
+      tEndModel   = get_time_main();  
+    }
+    else
     {
-      assert(!std::isnan(g[i].x));
-      assert(!std::isnan(g[i].y));
-      assert(!std::isnan(g[i].z));
-      assert(g[i].mass > 0.0);
-      bodyIDs[i] = g[i].id;
-
-      bodyPositions[i].x = g[i].x;
-      bodyPositions[i].y = g[i].y;
-      bodyPositions[i].z = g[i].z;
-      bodyPositions[i].w = g[i].mass * 1.0/(double)nProcs;
-      
-      assert(!std::isnan(g[i].vx));
-      assert(!std::isnan(g[i].vy));
-      assert(!std::isnan(g[i].vz));
-
-      bodyVelocities[i].x = g[i].vx;
-      bodyVelocities[i].y = g[i].vy;
-      bodyVelocities[i].z = g[i].vz;
-      bodyVelocities[i].w = 0.0;
+      const int ntot = bodyPositions.size();
+      for (int i= 0; i < ntot; i++)
+        bodyPositions[i].w *= 1.0/(double)nProcs;
     }
 #else
-    assert(0);
+      assert(0);
 #endif
   }
   else if(nPlummer >= 0)
@@ -1390,8 +1501,9 @@ int main(int argc, char** argv)
 
   if(procId == 0)   LOGF(stderr, "Combined Mass: %f \tNTotal: %d \n", totalMass, NTotal);
 
+
   fprintf(stderr,"Proc: %d Bootup times: Tree/MPI: %lg Threads/log: %lg IC-model: %lg \n",
-                procId, tStartup-tStartupStart, tStartup2-tStartup, tree->get_time()-tStartup2);
+                procId, tStartup-tStartupStart, tStartup2-tStartup, tEndModel - tStartModel);
 
 
   double t0 = tree->get_time();
@@ -1488,12 +1600,12 @@ int main(int argc, char** argv)
 
   LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
 
+
   std::stringstream sstemp;
   sstemp << "Finished total took: " << tree->get_time()-t0 << std::endl;
   std::string stemp = sstemp.str();
   tree->writeLogData(stemp);
   tree->writeLogToFile();//Final write incase anything is left in the buffers
-
 
 #ifdef USE_MPI
   MPI_Finalize();

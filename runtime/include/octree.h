@@ -1024,34 +1024,41 @@ public:
     //to 1 and all remote ones to 0 for starters
     fullGrpAndLETRequest           = new int[nProcs];
     fullGrpAndLETRequestStatistics = new uint2[nProcs];
-    if(nProcs <= NUMBER_OF_FULL_EXCHANGE)
-    {
-      //Set all processors to use the full-grp data
-      for(int i=0; i < nProcs; i++)
-      {
-        fullGrpAndLETRequestStatistics[i] = make_uint2(0xFFFFFFF0,i);
-      }
-      fullGrpAndLETRequestStatistics[procId] = make_uint2(0,procId);
-    }
-    else
-    {
-      for(int i=0; i < nProcs; i++) fullGrpAndLETRequestStatistics[i] = make_uint2(0,i);
 
-      //Initially set the neighboring processes to use the full data
-      for(int i=1; i <= NUMBER_OF_FULL_EXCHANGE/2; i++)
-      {
-              int src = (procId-i);
-              if(src < 0) src+=nProcs;
-//              fprintf(stderr, "[%d] Writing src: %d \n", procId, src);
-              fullGrpAndLETRequestStatistics[src] = make_uint2(src+1,src);
-      }
-      for(int i=1; i <= NUMBER_OF_FULL_EXCHANGE/2; i++)
-      {
-              int src = (procId+i) % nProcs;
-//              fprintf(stderr, "[%d] Writing src: %d \n", procId, src);
-              fullGrpAndLETRequestStatistics[src] = make_uint2(src+1,src);
-      }
+    for(int i=0; i < nProcs; i++)
+    {
+      fullGrpAndLETRequestStatistics[i] = make_uint2(0,0);
     }
+
+
+//    if(nProcs <= NUMBER_OF_FULL_EXCHANGE)
+//    {
+//      //Set all processors to use the full-grp data
+//      for(int i=0; i < nProcs; i++)
+//      {
+//        fullGrpAndLETRequestStatistics[i] = make_uint2(0xFFFFFFF0,i);
+//      }
+//      fullGrpAndLETRequestStatistics[procId] = make_uint2(0,procId);
+//    }
+//    else
+//    {
+//      for(int i=0; i < nProcs; i++) fullGrpAndLETRequestStatistics[i] = make_uint2(0,i);
+//
+//      //Initially set the neighboring processes to use the full data
+//      for(int i=1; i <= NUMBER_OF_FULL_EXCHANGE/2; i++)
+//      {
+//              int src = (procId-i);
+//              if(src < 0) src+=nProcs;
+////              fprintf(stderr, "[%d] Writing src: %d \n", procId, src);
+//              fullGrpAndLETRequestStatistics[src] = make_uint2(src+1,src);
+//      }
+//      for(int i=1; i <= NUMBER_OF_FULL_EXCHANGE/2; i++)
+//      {
+//              int src = (procId+i) % nProcs;
+////              fprintf(stderr, "[%d] Writing src: %d \n", procId, src);
+//              fullGrpAndLETRequestStatistics[src] = make_uint2(src+1,src);
+//      }
+//    }
 
 
     prevDurStep = -1;   //Set it to negative so we know its the first step
