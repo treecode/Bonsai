@@ -207,10 +207,9 @@ void octree::allocateTreePropMemory(tree_structure &tree)
     if(tree.boxSizeInfo.get_size() <= n_nodes)
       n_nodes *= MULTI_GPU_MEM_INCREASE;
 
-    //n_nodes = (int)(n_nodes * 1.1f);
     //Resize, so we dont alloc if we already have mem alloced
     tree.multipole.cresize_nocpy(3*n_nodes,     false);
-    tree.boxSizeInfo.cresize_nocpy(n_nodes,     false);  //host alloced
+    tree.boxSizeInfo.cresize_nocpy(n_nodes,     false); //host alloced
     tree.boxCenterInfo.cresize_nocpy(n_nodes,   false); //host alloced
 
     int n_groups = tree.n_groups;
@@ -535,7 +534,7 @@ void octree::parallelDataSummary(tree_structure &tree,
     updateBoundaries = true;
   }
 
-  updateBoundaries = true; //TEST, keep always update for now
+  //updateBoundaries = true; //TEST, keep always update for now
 
 
   real4 r_min = {+1e10, +1e10, +1e10, +1e10};

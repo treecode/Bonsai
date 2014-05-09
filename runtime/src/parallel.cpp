@@ -2638,9 +2638,15 @@ void octree::sendCurrentInfoGrpTree()
   static int tempStartSmall = 0;
   static int tempStartDepth = 5;
 
+  static bool modifyNSmall = true;
+
+
+  //TODO this version stops tuning after iteration 16. Adjust method to make
+  //this a per-process tuning
+
   std::vector<int2> globalGroupSizeArray(nProcs);     //x is fullGroup, y = smallGroup
   std::vector<int2> globalGroupSizeArrayRecv(nProcs); //x is fullGroup, y = smallGroup
-  globalGroupSizeArray[procId] = make_int2(0,0); //Nothing to ourselves
+  globalGroupSizeArray[procId] = make_int2(0,0);      //Nothing to ourselves
 
 
   //Count the number of processes that used the boundary tree
@@ -2659,7 +2665,7 @@ void octree::sendCurrentInfoGrpTree()
   else
   {
     //Start on the root node
-    if(iter >= 12)
+    if(iter >= 12 && modifyNSmall == true)
     {
       searchDepthUsed = tempStartDepth;
       tempStartDepth--;
@@ -2677,11 +2683,26 @@ void octree::sendCurrentInfoGrpTree()
 
       smallTreeStart  = localTree.level_list[localTree.startLevelMin-tempStartSmall].x;
       smallTreeEnd    = localTree.level_list[localTree.startLevelMin-tempStartSmall].y;
+
+
+      if(iter == 16) modifyNSmall = false;
+
+    }
+
+    if(modifyNSmall == false)
+    {
+      searchDepthUsed = tempStartDepth+1; //same as 16
+      searchDepthUsed = std::max(searchDepthUsed,1); //Minimum level 1
+      //Set the start and end node of start level
+      if(tempStartSmall > localTree.startLevelMin) tempStartSmall = localTree.startLevelMin;
+
+      smallTreeStart  = localTree.level_list[localTree.startLevelMin-tempStartSmall].x;
+      smallTreeEnd    = localTree.level_list[localTree.startLevelMin-tempStartSmall].y;
     }
 
 
-
-    if(iter > 20)
+    //if(iter > 20)
+    if(0)
     {
       smallTreeStart  = 0;
       smallTreeEnd    = 1;
@@ -5014,7 +5035,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
   int nQuickBoundaryOk          = 0;
 
 
-  omp_set_num_threads(8); //8 Piz-Daint, 16 Titan
+  omp_set_num_threads(16); //8 Piz-Daint, 16 Titan
 
   letObject *computedLETs = new letObject[nProcs-1];
 
@@ -5486,7 +5507,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         else
         {
           //Did not use boundary, mark that for next run, so it sends full boundary
-          this->fullGrpAndLETRequestStatistics[i] = make_uint2(0, 0);
+          if(iter  < 16) //TODO this stops updating this list after iteration 16, make dynamic
+	          this->fullGrpAndLETRequestStatistics[i] = make_uint2(0, 0);
 
           if(i != procId) idsThatNeedExtraLET.push_back(i);
         }
