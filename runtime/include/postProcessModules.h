@@ -20,15 +20,15 @@ struct DENSITY
     #define DMSTARTID 200000000
     #define BULGESTARTID 100000000
 
-    #define N_MESH      200
+    #define N_MESH      1024
     #define N_MESH_R    20
     #define N_MESH_PHI  128
 
     #define MIN_D 1.0
     #define MAX_D 10000.0
 
-    float perProcRes [N_MESH][2*N_MESH];
-    float combinedRes[N_MESH][2*N_MESH];
+    float perProcRes [N_MESH][4*N_MESH];
+    float combinedRes[N_MESH][4*N_MESH];
 
     float perProcResRPhi [N_MESH_PHI][2*N_MESH_R]; //First half is np, second half is mass
     float combinedResRPhi[N_MESH_PHI][2*N_MESH_R]; //First half is np, second half is mass
@@ -59,8 +59,8 @@ struct DENSITY
     }
 
 
-    void reduceAndScale(float dataIn [N_MESH][2*N_MESH],
-                        float dataOut[N_MESH][2*N_MESH],
+    void reduceAndScale(float dataIn [N_MESH][4*N_MESH],
+                        float dataOut[N_MESH][4*N_MESH],
                         float dataInRPhi [N_MESH_PHI][2*N_MESH_R],
                         float dataOutRPhi[N_MESH_PHI][2*N_MESH_R],
                         const float dscale)
@@ -68,10 +68,10 @@ struct DENSITY
       //Sum over all processes
       double t0 = get_time2();
       #ifdef USE_MPI
-        MPI_Reduce(dataIn,     dataOut,     2*(N_MESH*N_MESH),       MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
+        MPI_Reduce(dataIn,     dataOut,     4*(N_MESH*N_MESH),       MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
         MPI_Reduce(dataInRPhi, dataOutRPhi, 2*(N_MESH_PHI*N_MESH_R), MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
       #else
-        memcpy(dataOut,     dataIn,     2*(N_MESH*N_MESH)*sizeof(float));
+        memcpy(dataOut,     dataIn,     4*(N_MESH*N_MESH)*sizeof(float));
         memcpy(dataOutRPhi, dataInRPhi, 2*(N_MESH_PHI*N_MESH_R)*sizeof(float));        
       #endif
         
@@ -80,27 +80,27 @@ struct DENSITY
       if(procId == 0)
       {
         //Scale results
-        float bg      = log10(MIN_D);
+//        float bg      = log10(MIN_D);
 
         //Density
-        for(int i=0;i<N_MESH;i++)
-        {
-           for(int j=0;j<N_MESH;j++)
-           {
-               //Normalize top view
-               if(dataOut[i][j]>0.0){
-                 dataOut[i][j] = log10(dataOut[i][j]*dscale);
-               }else{
-                 dataOut[i][j] = bg;
-               }
-               //Normalize front view
-               if(dataOut[i][N_MESH+j]>0.0){
-                 dataOut[i][N_MESH+j] = log10(dataOut[i][N_MESH+j]*dscale);
-               }else{
-                 dataOut[i][N_MESH+j] = bg;
-               }
-           }//for j
-        }//for i
+//        for(int i=0;i<N_MESH;i++)
+//        {
+//           for(int j=0;j<N_MESH;j++)
+//           {
+//               //Normalize top view
+//               if(dataOut[i][j]>0.0){
+//                 dataOut[i][j] = log10(dataOut[i][j]*dscale);
+//               }else{
+//                 dataOut[i][j] = bg;
+//               }
+//               //Normalize front view
+//               if(dataOut[i][N_MESH+j]>0.0){
+//                 dataOut[i][N_MESH+j] = log10(dataOut[i][N_MESH+j]*dscale);
+//               }else{
+//                 dataOut[i][N_MESH+j] = bg;
+//               }
+//           }//for j
+//        }//for i
 
         //R-Phi scaling
         for(int j=0;j<N_MESH_R;j++)
@@ -128,12 +128,66 @@ struct DENSITY
     }//reduceAndScale
 
     void writeData(const char *fileName,
-                   float data    [N_MESH]    [2*N_MESH],
+                   float data    [N_MESH]    [4*N_MESH],
                    float dataRPhi[N_MESH_PHI][2*N_MESH_R],
-                   const float tSim)
+                   const double tSim)
     {
+
+#if 1
+
+      ofstream out;
+      out.open(fileName);
+      if(out.is_open())
+      {
+        //Write the header for
+        int flag    = -1;
+        double tmpD = 0.0;
+        float  tmpF = 0.0f;
+
+        out.write((char*)&flag, sizeof(int));
+        int n = N_MESH;
+        out.write((char*)&n, sizeof(int));
+        out.write((char*)&n, sizeof(int));
+        int Nz = 1;
+        out.write((char*)&Nz,   sizeof(int));
+        out.write((char*)&tSim, sizeof(double));
+        out.write((char*)&tmpD, sizeof(double));
+        out.write((char*)&tmpD, sizeof(double));
+        out.write((char*)&tmpD, sizeof(double));
+        out.write((char*)&tmpD, sizeof(double));
+        out.write((char*)&tmpD, sizeof(double));
+
+        //The actual data
+        for(int i=0;i<N_MESH;i++){
+          for(int j=0;j<N_MESH;j++){
+
+            //Density
+            out.write((char*)&data[i][N_MESH * 0 + j], sizeof(float));
+            out.write((char*)&data[i][N_MESH * 1 + j], sizeof(float));
+            out.write((char*)&data[i][N_MESH * 2 + j], sizeof(float));
+            out.write((char*)&data[i][N_MESH * 3 + j], sizeof(float));
+
+            //R-phi
+	          if(i <  N_MESH_PHI && j < N_MESH_R)
+            {
+              out.write((char*)&dataRPhi[i][j], sizeof(float));
+            }
+            else
+            {
+              out.write((char*)&tmpF, sizeof(float));
+            }
+          }//for j
+        }//for i
+        out.close();
+
+      }//out.is_open
+
+#else
+      //Old ASCII format, does not contain velocities
+      char filename2[256];
+      sprintf(filename2, "TestJB.txt");
       FILE *dump = NULL;
-            dump = fopen(fileName, "w");
+            dump = fopen(filename2, "w");
 
       if(dump)
       {
@@ -145,16 +199,17 @@ struct DENSITY
             for(int j=0;j<N_MESH;j++){
                 if(i <  N_MESH_PHI && j < N_MESH_R)
                 {
-                  fprintf(dump, "%d\t%d\t%f\t%f\t%f\n", i, j, data[i][j],data[i][j+N_MESH], dataRPhi[i][j]);
+                  fprintf(dump, "%d\t%d\t%f\t%f\t%f\n", i, j, data[i][j],data[i][j+2*N_MESH], dataRPhi[i][j]);
                 }
                 else
                 {
-                  fprintf(dump, "%d\t%d\t%f\t%f\t-\n", i, j, data[i][j],data[i][j+N_MESH]);
+                  fprintf(dump, "%d\t%d\t%f\t%f\t-\n", i, j, data[i][j],data[i][j+2*N_MESH]);
                 }
             }//j
         }//i
         fclose(dump);
       }//if dump
+#endif
     }//writeData
  
   public:
@@ -176,15 +231,15 @@ struct DENSITY
       {
         for(uint j=0; j < N_MESH; j++)
         {
-          perProcRes  [i][j]        = 0.0;
-          perProcRes  [i][N_MESH+j] = 0.0;
-          combinedRes [i][j]        = 0.0;
+          perProcRes  [i][N_MESH*0 + j] = 0.0;
+          perProcRes  [i][N_MESH*1 + j] = 0.0;
+          perProcRes  [i][N_MESH*2 + j] = 0.0;
+          perProcRes  [i][N_MESH*3 + j] = 0.0;
 
 
           if(i < N_MESH_PHI&& j < 2*N_MESH_R)
           {
             perProcResRPhi [i][j] = 0.0;
-            combinedResRPhi[i][j] = 0.0;
           }
         }//j
       }//i
@@ -222,13 +277,15 @@ struct DENSITY
           //Top view
           if(x<N_MESH && y<N_MESH && x>0 && y>0)
           {
-            perProcRes[x][y] += positions[i].w*mscale;
+            perProcRes[x][y+0*N_MESH] += positions[i].w*mscale;
+            perProcRes[x][y+1*N_MESH] += velocities[i].x*velocities[i].x+velocities[i].y*velocities[i].y;
           }
 
           //Front view
           if(x<N_MESH && z<N_MESH && x>0 && z>0)
           {
-            perProcRes[x][z+N_MESH] += positions[i].w*mscale;
+            perProcRes[x][z+2*N_MESH] += positions[i].w*mscale;
+            perProcRes[x][z+3*N_MESH] += velocities[i].x*velocities[i].x+velocities[i].z*velocities[i].z;
           }//for i
 
           //R-Phi projection

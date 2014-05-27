@@ -129,6 +129,7 @@ if (COMPILE_SM30)
     )
   add_definitions("-DKEPLER")
   set(GENCODE -gencode arch=compute_35,code=sm_35 -gencode arch=compute_35,code=compute_35 -Xptxas=-v -ftz=true)
+  #  set(GENCODE -gencode arch=compute_35,code=sm_35 -gencode arch=compute_35,code=compute_35 -Xptxas=-v -ftz=true -lineinfo)
 
 else (COMPILE_SM30)
   set (CUFILES

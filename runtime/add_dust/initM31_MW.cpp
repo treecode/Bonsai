@@ -182,7 +182,9 @@ real centerGalaxy(Particle::Vector &ptcl)
 
 real readGalaxy(dump &h, Particle::Vector &ptcl, FILE *fin, 
 		const real massRatio = 1.0,
-		const real sizeRatio = 1.0)
+		const real sizeRatio = 1.0,
+                const int  IDIncrease = 0
+               )
 {
 	readf(h, fin);
 	ptcl.resize(h.nbodies);
@@ -197,6 +199,8 @@ real readGalaxy(dump &h, Particle::Vector &ptcl, FILE *fin,
 		p.pos = vec3(d.pos[0], d.pos[1], d.pos[2]);
 		p.vel = vec3(d.vel[0], d.vel[1], d.vel[2]);
 		p.eps = d.eps;
+                
+                p.ID += IDIncrease;
 	}
 	
 	for(int i = 0; i < h.nstar; i++)
@@ -209,6 +213,8 @@ real readGalaxy(dump &h, Particle::Vector &ptcl, FILE *fin,
 		p.pos = vec3(s.pos[0], s.pos[1], s.pos[2]);
 		p.vel = vec3(s.vel[0], s.vel[1], s.vel[2]);
 		p.eps = s.eps;
+                
+                p.ID += IDIncrease;
 	}
 
 	real M = centerGalaxy(ptcl);
@@ -386,7 +392,7 @@ int main(int argc, char **argv)
 	Particle::Vector ptcl1, ptcl2;
 
 	const real M1 = readGalaxy(h1, ptcl1, fin1);
-	const real M2 = readGalaxy(h2, ptcl2, fin2, massRatio, sizeRatio);
+	const real M2 = readGalaxy(h2, ptcl2, fin2, massRatio, sizeRatio, 5000000);
 
 	fclose(fin1);
 	fclose(fin2);

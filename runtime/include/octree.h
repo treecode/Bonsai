@@ -687,7 +687,7 @@ public:
   uint *globalGrpTreeOffsets;
 
   int  *fullGrpAndLETRequest;
-  uint2 *fullGrpAndLETRequestStatistics;
+  int2 *fullGrpAndLETRequestStatistics;
 
   std::vector<int> infoGrpTreeBuffer;
   std::vector<int> exchangePartBuffer;
@@ -1023,11 +1023,11 @@ public:
     //We set the statistics for our neighboring processes
     //to 1 and all remote ones to 0 for starters
     fullGrpAndLETRequest           = new int[nProcs];
-    fullGrpAndLETRequestStatistics = new uint2[nProcs];
+    fullGrpAndLETRequestStatistics = new int2[nProcs];
 
     for(int i=0; i < nProcs; i++)
     {
-      fullGrpAndLETRequestStatistics[i] = make_uint2(0,0);
+      fullGrpAndLETRequestStatistics[i] = make_int2(0,0);
     }
 
 
