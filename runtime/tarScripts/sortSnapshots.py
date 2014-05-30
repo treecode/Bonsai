@@ -91,7 +91,8 @@ if __name__ == "__main__":
     execCommand(mkFolder)
     for proc in range(0,nProc):
       srcFile = prefix+snap+("-%d" % proc)
-      dstFile = destFolder + "/" + ("%06d" % proc)
+#      dstFile = destFolder + "/" + ("%06d" % proc)
+      dstFile = destFolder + snap + ("-%d" % proc)
       mvFile = "mv %s %s" % (srcFile, dstFile)
       print mvFile
       execCommand(mvFile)
