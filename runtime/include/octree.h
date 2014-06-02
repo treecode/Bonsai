@@ -89,16 +89,19 @@ typedef struct nInfoStruct
 
 typedef struct bodyStruct
 {
+  real4  acc0;
+  real4  Ppos;
+  real4  Pvel;
+  float2 time;
+  int    id;
+  int    temp;
+
+#ifdef DO_BLOCK_TIMESTEP_EXCHANGE_MPI
+  uint4 key;
   real4 pos;
   real4 vel;
-  real4 acc0;
   real4 acc1;
-  real4 Ppos;
-  real4 Pvel;
-  float2 time;
-  int   id;
-  int   temp;
-  uint4 key;
+#endif
 } bodyStruct;
 
 typedef struct sampleRadInfo
@@ -489,8 +492,8 @@ protected:
   my_dev::kernel domainCheck;
   my_dev::kernel extractSampleParticles;
   my_dev::kernel extractOutOfDomainR4;
-  my_dev::kernel extractOutOfDomainBody;
-  my_dev::kernel insertNewParticles;
+  //my_dev::kernel extractOutOfDomainBody;
+  //my_dev::kernel insertNewParticles;
   my_dev::kernel internalMove;
 
   my_dev::kernel build_parallel_grps;
@@ -499,7 +502,7 @@ protected:
   my_dev::kernel domainCheckSFC;
   my_dev::kernel internalMoveSFC;
   my_dev::kernel internalMoveSFC2;
-  my_dev::kernel extractOutOfDomainParticlesAdvancedSFC;
+  //my_dev::kernel extractOutOfDomainParticlesAdvancedSFC;
   my_dev::kernel extractOutOfDomainParticlesAdvancedSFC2;
   my_dev::kernel insertNewParticlesSFC;
   my_dev::kernel extractSampleParticlesSFC;
@@ -974,9 +977,6 @@ public:
       #endif
     }
 
-
-//    LOGF(stderr, "Settings device : %d\t"  << devID << "\t" << device << "\t" << nProcs <<endl;
-
     statisticsIter = 0; //0=disabled, 1 = Every N-body unit, 2= every 2nd n-body unit, etc..
     nextStatsTime  = 0;
 
@@ -1029,36 +1029,6 @@ public:
     {
       fullGrpAndLETRequestStatistics[i] = make_int2(0,0);
     }
-
-
-//    if(nProcs <= NUMBER_OF_FULL_EXCHANGE)
-//    {
-//      //Set all processors to use the full-grp data
-//      for(int i=0; i < nProcs; i++)
-//      {
-//        fullGrpAndLETRequestStatistics[i] = make_uint2(0xFFFFFFF0,i);
-//      }
-//      fullGrpAndLETRequestStatistics[procId] = make_uint2(0,procId);
-//    }
-//    else
-//    {
-//      for(int i=0; i < nProcs; i++) fullGrpAndLETRequestStatistics[i] = make_uint2(0,i);
-//
-//      //Initially set the neighboring processes to use the full data
-//      for(int i=1; i <= NUMBER_OF_FULL_EXCHANGE/2; i++)
-//      {
-//              int src = (procId-i);
-//              if(src < 0) src+=nProcs;
-////              fprintf(stderr, "[%d] Writing src: %d \n", procId, src);
-//              fullGrpAndLETRequestStatistics[src] = make_uint2(src+1,src);
-//      }
-//      for(int i=1; i <= NUMBER_OF_FULL_EXCHANGE/2; i++)
-//      {
-//              int src = (procId+i) % nProcs;
-////              fprintf(stderr, "[%d] Writing src: %d \n", procId, src);
-//              fullGrpAndLETRequestStatistics[src] = make_uint2(src+1,src);
-//      }
-//    }
 
 
     prevDurStep = -1;   //Set it to negative so we know its the first step

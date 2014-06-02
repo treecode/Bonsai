@@ -9,6 +9,11 @@ typedef float4 real4;
 //Dont uncomment this yet
 #define DO_BLOCK_TIMESTEP
 
+//Enabling the following increases the number of particle properties
+//exchanged during mpi particle exchange. Only required if you run
+//block time steps. Not needed in the default shared time-step mode.
+//#define DO_BLOCK_TIMESTEP_EXCHANGE_MPI
+
 //Uncomment the next line to use thrust radix sort instead of built in one
 // #define USE_THRUST
 

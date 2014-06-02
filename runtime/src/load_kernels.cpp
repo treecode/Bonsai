@@ -344,15 +344,15 @@ void octree::load_kernels() {
   domainCheck.setContext(devContext);  
   extractSampleParticles.setContext(devContext);  
   extractOutOfDomainR4.setContext(devContext);  
-  extractOutOfDomainBody.setContext(devContext);  
-  insertNewParticles.setContext(devContext);  
+//  extractOutOfDomainBody.setContext(devContext);
+//  insertNewParticles.setContext(devContext);
   internalMove.setContext(devContext);  
   build_parallel_grps.setContext(devContext);
   segmentedSummaryBasic.setContext(devContext);
   domainCheckSFC.setContext(devContext);
   internalMoveSFC.setContext(devContext);
   internalMoveSFC2.setContext(devContext);
-  extractOutOfDomainParticlesAdvancedSFC.setContext(devContext);
+//  extractOutOfDomainParticlesAdvancedSFC.setContext(devContext);
   extractOutOfDomainParticlesAdvancedSFC2.setContext(devContext);
   insertNewParticlesSFC.setContext(devContext);
   extractSampleParticlesSFC.setContext(devContext);
@@ -364,8 +364,8 @@ void octree::load_kernels() {
   domainCheck.load_source("./parallel.ptx", pathName.c_str());
   extractSampleParticles.load_source("./parallel.ptx", pathName.c_str());
   extractOutOfDomainR4.load_source("./parallel.ptx", pathName.c_str());
-  extractOutOfDomainBody.load_source("./parallel.ptx", pathName.c_str());
-  insertNewParticles.load_source("./parallel.ptx", pathName.c_str());
+//  extractOutOfDomainBody.load_source("./parallel.ptx", pathName.c_str());
+//  insertNewParticles.load_source("./parallel.ptx", pathName.c_str());
   internalMove.load_source("./parallel.ptx", pathName.c_str());
 
   
@@ -374,7 +374,7 @@ void octree::load_kernels() {
   domainCheckSFC.load_source("./parallel.ptx", pathName.c_str());
   internalMoveSFC.load_source("./parallel.ptx", pathName.c_str());
   internalMoveSFC2.load_source("./parallel.ptx", pathName.c_str());
-  extractOutOfDomainParticlesAdvancedSFC.load_source("./parallel.ptx", pathName.c_str());
+//  extractOutOfDomainParticlesAdvancedSFC.load_source("./parallel.ptx", pathName.c_str());
   extractOutOfDomainParticlesAdvancedSFC2.load_source("./parallel.ptx", pathName.c_str());
   insertNewParticlesSFC.load_source("./parallel.ptx", pathName.c_str());
   extractSampleParticlesSFC.load_source("./parallel.ptx", pathName.c_str());
@@ -383,8 +383,8 @@ void octree::load_kernels() {
   domainCheck.create("doDomainCheck", (const void*)&doDomainCheck);
   extractSampleParticles.create("extractSampleParticles", (const void*)&gpu_extractSampleParticles);
   extractOutOfDomainR4.create("extractOutOfDomainParticlesR4", (const void*)&extractOutOfDomainParticlesR4);
-  extractOutOfDomainBody.create("extractOutOfDomainParticlesAdvanced", (const void*)&extractOutOfDomainParticlesAdvanced);
-  insertNewParticles.create("insertNewParticles", (const void*)&gpu_insertNewParticles);
+//  extractOutOfDomainBody.create("extractOutOfDomainParticlesAdvanced", (const void*)&extractOutOfDomainParticlesAdvanced);
+//  insertNewParticles.create("insertNewParticles", (const void*)&gpu_insertNewParticles);
   internalMove.create("internalMove", (const void*)&gpu_internalMove);
 
   extractSampleParticlesSFC.create("build_parallel_grps", (const void*)&gpu_extractSampleParticlesSFC);
@@ -393,7 +393,7 @@ void octree::load_kernels() {
   domainCheckSFC.create("domainCheckSFC", (const void*)&gpu_domainCheckSFC);
   internalMoveSFC.create("internalMoveSFC", (const void*)&gpu_internalMoveSFC);
   internalMoveSFC2.create("internalMoveSFC2", (const void*)&gpu_internalMoveSFC2);
-  extractOutOfDomainParticlesAdvancedSFC.create("extractOutOfDomainParticlesAdvancedSFC", (const void*)&gpu_extractOutOfDomainParticlesAdvancedSFC);
+//  extractOutOfDomainParticlesAdvancedSFC.create("extractOutOfDomainParticlesAdvancedSFC", (const void*)&gpu_extractOutOfDomainParticlesAdvancedSFC);
   extractOutOfDomainParticlesAdvancedSFC2.create("extractOutOfDomainParticlesAdvancedSFC2", (const void*)&gpu_extractOutOfDomainParticlesAdvancedSFC2);
   insertNewParticlesSFC.create("insertNewParticlesSFC", (const void*)&gpu_insertNewParticlesSFC);
   domainCheckSFCAndAssign.create("domainCheckSFCAndAssign", (const void*)&gpu_domainCheckSFCAndAssign);

@@ -2110,504 +2110,7 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree
 
 #endif
 
-#if 1
 
-
-//Exchange particles with other processes
-int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
-    bodyStruct *particlesToSend,
-    my_dev::dev_mem<uint> &extractList,
-
-    int nToSend)
-{
-#ifdef USE_MPI
-
-  double tStart = get_time();
-
-  int myid      = procId;
-  int nproc     = nProcs;
-  int iloc      = 0;
-  int nbody     = nToSend;
-
-
-  bodyStruct  tmpp;
-
-  int *firstloc    = &exchangePartBuffer[0*nProcs];                //Size nProcs+1
-  int *nparticles  = &exchangePartBuffer[1*(nProcs+1)];            //Size nProcs+1
-  int *nsendDispls = &exchangePartBuffer[2*(nProcs+1)];            //Size nProcs+1
-  int *nrecvDispls = &exchangePartBuffer[3*(nProcs+1)];            //Size nProcs+1
-  int *nreceive    = &exchangePartBuffer[4*(nProcs+1)];            //Size nProcs
-  int *nsendbytes  = &exchangePartBuffer[4*(nProcs+1) + 1*nProcs]; //Size nProcs
-  int *nrecvbytes  = &exchangePartBuffer[4*(nProcs+1) + 2*nProcs]; //Size nProcs
-
-
-
-  memset(nparticles,  0, sizeof(int)*(nProcs+1));
-  memset(nreceive,    0, sizeof(int)*(nProcs));
-  memset(nsendbytes,  0, sizeof(int)*(nProcs));
-  memset(nsendDispls, 0, sizeof(int)*(nProcs));
-
-  // Loop over particles and determine which particle needs to go where
-  // reorder the bodies in such a way that bodies that have to be send
-  // away are stored after each other in the array
-  double t1 = get_time();
-
-  //Array reserve some memory before hand , 1%
-  static vector<bodyStruct> array2Send;
-  array2Send.reserve((int)(nToSend*1.5));
-  array2Send.clear();
-
-
-
-  static int firstSort = 1;
-  if(firstSort)
-  {
-    //This only works if particles are sorted. WHich we currently
-    //only guarentee during the first step
-
-    std::vector<int> offsets(nProcs+2);
-    std::vector<int> items(nProcs+2);
-
-    int location       = 0;
-    offsets[location]  = 0;
-
-    for(int i=0; i < nToSend; i++)
-    {
-      uint4 key  = particlesToSend[i].key;
-
-      bool assigned = false;
-      while(!assigned)
-      {
-        uint4 lowerBoundary = tree.parallelBoundaries[location];
-        uint4 upperBoundary = tree.parallelBoundaries[location+1];
-
-        int bottom = cmp_uint4(key, lowerBoundary);
-        int top    = cmp_uint4(key, upperBoundary);
-
-        assert(bottom >= 0);
-
-        if(top < 0)
-        {
-          //is in box
-          assigned = true;
-        }
-        else
-        {
-          //outside box
-          offsets[++location] = i;
-          assert(location < nProcs);
-        }
-      }//while
-    }//for
-
-    //Fill remaining processes
-    while(location <= nProcs)
-      offsets[++location] = nToSend;
-
-    //Fill items
-    for(int ib=0; ib < nProcs; ib++)
-    {
-      items[ib] = offsets[ib+1]-offsets[ib];
-    }
-
-    assert(items[procId] == 0);
-
-    for(int ib =0; ib < nProcs; ib++)
-    {
-      nparticles[ib] = items[ib];
-      nsendbytes[ib] = nparticles[ib]*sizeof(bodyStruct);
-      nsendDispls[ib] = offsets[ib]*sizeof(bodyStruct);
-    }
-
-      char buff[512];
-      sprintf(buff, "Proc: XXX");
-      for(int i=0; i < nProcs; i++)
-      {
-        //sprintf(buff, "%s [%d, %d] ", buff, nparticles[i], nsendbytes[i]);
-        sprintf(buff, "%s [%d, %d] ", buff, i, nparticles[i]);
-      }
-      LOGF(stderr,"%s \n", buff);
-
-    array2Send.clear();
-    array2Send.insert(array2Send.end(), particlesToSend, particlesToSend+nToSend);
-
-#if 1
-    for(int ib=0; ib < nProcs; ib++)
-    {
-      uint4 lowerBoundary = tree.parallelBoundaries[ib];
-      uint4 upperBoundary = tree.parallelBoundaries[ib+1];
-
-      for(int i= offsets[ib]; i <  offsets[ib+1]; i++)
-      {
-        uint4 key  = particlesToSend[i].key;
-        int bottom = cmp_uint4(key, lowerBoundary);
-        int top    = cmp_uint4(key, upperBoundary);
-
-        if(bottom >= 0 && top < 0)
-        {
-          //Inside
-        }
-        else
-        {
-          assert(!"Particle not in the box");
-        }
-      }//for i
-    }//for ib
-#endif
-
-
-    //LOGF(stderr,  "EXCHANGE reorder iter: %d  took: %lg \tItems: %d Total-n: %d\n",
-    if(iter == 0 && procId == 0)
-      fprintf(stderr,  "EXCHANGE reorder iter: %d  took: %lg \tItems: %d Total-n: %d\n",
-          iter, get_time()-t1, nToSend, tree.n);
-
-
-    firstSort = 0;
-  }
-  else  {
-    //Sort the statistics, causing the processes with which we interact most to be on top
-
-    //Disabled to get this compiled. If we ever enable this code path we should change this
-#if 0
-    std::sort(fullGrpAndLETRequestStatistics, fullGrpAndLETRequestStatistics+nProcs, cmp_uint2_reverse());
-#endif
-
-
-    for(int ib=0;ib<nproc;ib++)
-    {
-      //    int ibox          = (ib+myid)%nproc;
-      int ibox = fullGrpAndLETRequestStatistics[ib].y;
-
-      firstloc[ibox]    = iloc;      //Index of the first particle send to proc: ibox
-      nsendDispls[ibox] = iloc*sizeof(bodyStruct);
-
-      for(int i=iloc; i<nbody;i++)
-      {
-        uint4 lowerBoundary = tree.parallelBoundaries[ibox];
-        uint4 upperBoundary = tree.parallelBoundaries[ibox+1];
-
-        uint4 key  = particlesToSend[i].key;
-        int bottom = cmp_uint4(key, lowerBoundary);
-        int top    = cmp_uint4(key, upperBoundary);
-
-
-        if(bottom >= 0 && top < 0)
-        {
-          //Reorder the particle information
-          tmpp                  = particlesToSend[iloc];
-          particlesToSend[iloc] = particlesToSend[i];
-          particlesToSend[i]    = tmpp;
-
-          //Put the particle in the array of to send particles
-          array2Send.push_back(particlesToSend[iloc]);
-
-          iloc++;
-        }// end if
-      }//for i=iloc
-      nparticles[ibox] = iloc-firstloc[ibox];//Number of particles that has to be send to proc: ibox
-      nsendbytes[ibox] = nparticles[ibox]*sizeof(bodyStruct);
-    } // for(int ib=0;ib<nproc;ib++)
-
-
-    //   printf("Required search time: %lg ,proc: %d found in our own box: %d n: %d  to others: %ld \n",
-    //          get_time()-t1, myid, nparticles[myid], tree.n, array2Send.size());
-    if(iloc < nbody)
-    {
-      LOGF(stderr, "Exchange_particle error: A particle could not be assigned to a box: iloc: %d total: %d \n", iloc,nbody);
-      exit(0);
-    }
-    LOGF(stderr,  "EXCHANGE reorder iter: %d  took: %lg \tItems: %d Total-n: %d\n",
-        iter, get_time()-t1, nToSend, tree.n);
-  }
-
-  double tReorder = get_time();
-
-
-  t1 = get_time();
-#if 0
-  //AlltoallV version
-  MPI_Alltoall(nparticles, 1, MPI_INT, nreceive, 1, MPI_INT, MPI_COMM_WORLD);
-
-  //Compute how much we will receive and the offsets and displacements
-  nrecvDispls[0]   = 0;
-  nrecvbytes [0]   = nreceive[0]*sizeof(bodyStruct);
-  unsigned int recvCount  = nreceive[0];
-  for(int i=1; i < nProcs; i++)
-  {
-    nrecvbytes [i] = nreceive[i]*sizeof(bodyStruct);
-    nrecvDispls[i] = nrecvDispls[i-1] + nrecvbytes [i-1];
-    recvCount     += nreceive[i];
-  }
-
-  vector<bodyStruct> recv_buffer3(recvCount);
-
-  MPI_Alltoallv(&array2Send[0],   nsendbytes, nsendDispls, MPI_BYTE,
-      &recv_buffer3[0], nrecvbytes, nrecvDispls, MPI_BYTE,
-      MPI_COMM_WORLD);
-
-#elif 0
-
-  //Blocking Send/Recv version
-
-  MPI_Alltoall(nparticles, 1, MPI_INT, nreceive, 1, MPI_INT, MPI_COMM_WORLD);
-  double t92 = get_time();
-  unsigned int recvCount  = nreceive[0];
-  for (int i = 1; i < nproc; i++)
-  {
-    recvCount     += nreceive[i];
-  }
-  vector<bodyStruct> recv_buffer3(recvCount);
-  double t93=get_time();
-
-  int recvOffset = 0;
-
-  static MPI_Status stat;
-  for (int dist = 1; dist < nproc; dist++)
-  {
-    const int src = (nproc + myid - dist) % nproc;
-    const int dst = (nproc + myid + dist) % nproc;
-    const int scount = nsendbytes[dst];
-    const int rcount = nreceive[src]*sizeof(bodyStruct);
-    if ((myid/dist) & 1)
-    {
-
-      if (scount > 0) MPI_Send(&array2Send[nsendDispls[dst]/sizeof(bodyStruct)], scount, MPI_BYTE, dst, 1, MPI_COMM_WORLD);
-      if (rcount > 0) MPI_Recv(&recv_buffer3[recvOffset], rcount, MPI_BYTE   , src, 1, MPI_COMM_WORLD, &stat);
-
-      recvOffset +=  nreceive[src];
-    }
-    else
-    {
-      if (rcount > 0) MPI_Recv(&recv_buffer3[recvOffset], rcount, MPI_BYTE   , src, 1, MPI_COMM_WORLD, &stat);
-      if (scount > 0) MPI_Send(&array2Send[nsendDispls[dst]/sizeof(bodyStruct)], scount, MPI_BYTE, dst, 1, MPI_COMM_WORLD);
-
-      recvOffset +=  nreceive[src];
-    }
-  }
-
-  double t94 = get_time();
-
-#elif 1
-  //Non-blocking send/recv version
-
-  double tStarta2a = get_time();
-  MPI_Alltoall(nparticles, 1, MPI_INT, nreceive, 1, MPI_INT, MPI_COMM_WORLD);
-
-  double tEnda2a = get_time();
-  unsigned int recvCount  = nreceive[0];
-
-  for (int i = 1; i < nproc; i++)
-  {
-    recvCount     += nreceive[i];
-  }
-  static std::vector<bodyStruct> recv_buffer3;
-  recv_buffer3.resize(recvCount);
-
-  int recvOffset = 0;
-
-#define NMAXPROC 32768
-  static MPI_Status stat[NMAXPROC];
-  static MPI_Request req[NMAXPROC*2];
-
-  int nreq = 0;
-  for (int dist = 1; dist < nproc; dist++)
-  {
-    const int src    = (nproc + myid - dist) % nproc;
-    const int dst    = (nproc + myid + dist) % nproc;
-    const int scount = nsendbytes[dst];
-    const int rcount = nreceive[src]*sizeof(bodyStruct);
-
-#if 1
-    if (scount > 0) MPI_Isend(&array2Send[nsendDispls[dst]/sizeof(bodyStruct)], scount, MPI_BYTE, dst, 1, MPI_COMM_WORLD, &req[nreq++]);
-    if(rcount > 0)
-    {
-      MPI_Irecv(&recv_buffer3[recvOffset], rcount, MPI_BYTE, src, 1, MPI_COMM_WORLD, &req[nreq++]);
-      recvOffset += nreceive[src];
-    }
-#else
-    MPI_Status stat;
-    MPI_Sendrecv(&array2Send[nsendDispls[dst]/sizeof(bodyStruct)],
-        scount, MPI_BYTE, dst, 1,
-        &recv_buffer3[recvOffset], rcount, MPI_BYTE, src, 1, MPI_COMM_WORLD, &stat);
-    recvOffset += nreceive[src];
-#endif
-  }
-
-  double t94 = get_time();
-  MPI_Waitall(nreq, req, stat);
-
-  double tSendEnd = get_time();
-  LOGF(stderr, "EXCHANGE comm iter: %d  a2asize: %lg data-send: %lg data-wait: %lg \n",
-                iter, tEnda2a-tStarta2a, tEnda2a-t94, tSendEnd -t94);
-
-#else
-  //Build in sendRecv version, note do not enable due to alreeady
-  //moved code
-
-  //Allocate two times the amount of memory of that which we send
-  vector<bodyStruct> recv_buffer3(nbody*2);
-  unsigned int recvCount = 0;
-
-  //Exchange the data with the other processors
-  int ibend = -1;
-  int nsend;
-  int isource = 0;
-  for(int ib=nproc-1;ib>0;ib--)
-  {
-    int ibox = (ib+myid)%nproc; //index to send...
-
-    if (ib == nproc-1)
-    {
-      isource= (myid+1)%nproc;
-    }
-    else
-    {
-      isource = (isource+1)%nproc;
-      if (isource == myid)isource = (isource+1)%nproc;
-    }
-
-
-    if(MP_exchange_particle_with_overflow_check<bodyStruct>(ibox, &array2Send[0],
-          recv_buffer3, firstloc[ibox] - nparticles[myid],
-          nparticles[ibox], isource,
-          nsend, recvCount))
-    {
-      ibend = ibox; //Here we get if exchange failed
-      ib = 0;
-    }//end if mp exchang
-  }//end for all boxes
-
-
-  if(ibend == -1){
-
-  }else{
-    //Something went wrong
-    cerr << "ERROR in exchange_particles_with_overflow_check! \n"; exit(0);
-  }
-#endif
-
-  //If we arrive here all particles have been exchanged, move them to the GPU
-
-  LOGF(stderr,"Required inter-process communication time: %lg ,proc: %d\n", get_time()-t1, myid);
-
-  //Compute the new number of particles:
-  int newN = tree.n + recvCount - nToSend;
-
-  LOGF(stderr, "Exchange, received %d \tSend: %d newN: %d\n", recvCount, nToSend, newN);
-
-#if 1
-  if(iter < 1){ /* jb2404 */
-    fprintf(stderr, "Proc: %d Exchange, received %d \tSend: %d newN: %d\n",
-        procId, recvCount, nToSend, newN);
-  }
-#endif
-
-  execStream->sync();   //make certain that the particle movement on the device
-  //is complete before we resize
-
-  double tSyncGPU = get_time();
-
-  //Allocate 10% extra if we have to allocate, to reduce the total number of
-  //memory allocations
-  int memSize = newN;
-  if(tree.bodies_acc0.get_size() < newN)
-    memSize = newN * MULTI_GPU_MEM_INCREASE;
-
-  LOGF(stderr,"Going to allocate memory for %d particles \n", newN);
-
-  //Have to resize the bodies vector to keep the numbering correct
-  //but do not reduce the size since we need to preserve the particles
-  //in the over sized memory
-  tree.bodies_pos. cresize(memSize + 1, false);
-  tree.bodies_acc0.cresize(memSize,     false);
-  tree.bodies_acc1.cresize(memSize,     false);
-  tree.bodies_vel. cresize(memSize,     false);
-  tree.bodies_time.cresize(memSize,     false);
-  tree.bodies_ids. cresize(memSize + 1, false);
-  tree.bodies_Ppos.cresize(memSize + 1, false);
-  tree.bodies_Pvel.cresize(memSize + 1, false);
-  tree.bodies_key. cresize(memSize + 1, false);
-
-  //This one has to be at least the same size as the number of particles in order to
-  //have enough space to store the other buffers
-  //Can only be resized after we are done since we still have
-  //parts of memory pointing to that buffer (extractList)
-  //Note that we allocate some extra memory to make everything texture/memory aligned
-  tree.generalBuffer1.cresize_nocpy(3*(memSize)*4 + 4096, false);
-
-
-  //Now we have to copy the data in batches in case the generalBuffer1 is not large enough
-  //Amount we can store:
-  int spaceInIntSize    = 3*(memSize)*4;
-  int stepSize          = spaceInIntSize / (sizeof(bodyStruct) / sizeof(int));
-
-  my_dev::dev_mem<bodyStruct>  bodyBuffer(devContext);
-
-  int memOffset1 = bodyBuffer.cmalloc_copy(localTree.generalBuffer1,
-      stepSize, 0);
-
-  //  fprintf(stderr, "Exchange, received %d \tSend: %d newN: %d\tItems that can be insert in one step: %d\n",
-  //      recvCount, nToSend, newN, stepSize);
-//  LOGF(stderr, "Exchange, received %d \tSend: %d newN: %d\tItems that can be insert in one step: %d\n",
-//      recvCount, nToSend, newN, stepSize);
-
-  double tAllocComplete = get_time();
-
-  int insertOffset = 0;
-  for(unsigned int i=0; i < recvCount; i+= stepSize)
-  {
-    int items = min(stepSize, (int)(recvCount-i));
-
-    if(items > 0)
-    {
-      //Copy the data from the MPI receive buffers into the GPU-send buffer
-      memcpy(&bodyBuffer[0], &recv_buffer3[insertOffset], sizeof(bodyStruct)*items);
-
-      bodyBuffer.h2d(items);
-
-      //Start the kernel that puts everything in place
-      insertNewParticlesSFC.set_arg<int>(0,    &nToSend);
-      insertNewParticlesSFC.set_arg<int>(1,    &items);
-      insertNewParticlesSFC.set_arg<int>(2,    &tree.n);
-      insertNewParticlesSFC.set_arg<int>(3,    &insertOffset);
-      insertNewParticlesSFC.set_arg<cl_mem>(4, localTree.bodies_Ppos.p());
-      insertNewParticlesSFC.set_arg<cl_mem>(5, localTree.bodies_Pvel.p());
-      insertNewParticlesSFC.set_arg<cl_mem>(6, localTree.bodies_pos.p());
-      insertNewParticlesSFC.set_arg<cl_mem>(7, localTree.bodies_vel.p());
-      insertNewParticlesSFC.set_arg<cl_mem>(8, localTree.bodies_acc0.p());
-      insertNewParticlesSFC.set_arg<cl_mem>(9, localTree.bodies_acc1.p());
-      insertNewParticlesSFC.set_arg<cl_mem>(10, localTree.bodies_time.p());
-      insertNewParticlesSFC.set_arg<cl_mem>(11, localTree.bodies_ids.p());
-      insertNewParticlesSFC.set_arg<cl_mem>(12, localTree.bodies_key.p());
-      insertNewParticlesSFC.set_arg<cl_mem>(13, bodyBuffer.p());
-      insertNewParticlesSFC.setWork(items, 128);
-      insertNewParticlesSFC.execute(execStream->s());
-    }
-
-    insertOffset += items;
-  }
-
-  //Resize the arrays of the tree
-  tree.setN(newN);
-  reallocateParticleMemory(tree);
-
-  double tEnd = get_time();
-
-  char buff5[1024];
-  sprintf(buff5,"EXCHANGEB-%d: tExSort: %lg tExSend: %lg tExGPUSync: %lg tExGPUAlloc: %lg tExGPUSend: %lg\n",
-                procId, tReorder-tStart, tSendEnd-tStarta2a, tSyncGPU-tSendEnd,
-                tAllocComplete-tSyncGPU, tEnd-tAllocComplete);
-  devContext.writeLogEvent(buff5);
-  sprintf(buff5,"EXCHANGEV-%d: ta2aSize: %lg tISendIRecv: %lg tWaitall: %lg\n",
-                procId, tEnda2a-tStarta2a, t94-tEnda2a, tSendEnd-t94);
-  devContext.writeLogEvent(buff5);
-
-#endif
-
-  return 0;
-}
-
-#endif
 
 
 //Functions related to the LET Creation and Exchange
@@ -5300,7 +4803,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
             LOGF(stderr, "Receive complete from: %d  || recvTree: %d since start: %lg ( %lg ) alloc: %lg Recv: %lg Size: %d\n",
                           recvStatus.MPI_SOURCE, 0, get_time()-tStart,get_time()-t0,tZ-tY, get_time()-tZ, count);
-	    
+
             receivedLETCount++;
 
 //            this->fullGrpAndLETRequestStatistics[probeStatus.MPI_SOURCE] = make_uint2(0, 0);
@@ -8566,6 +8069,504 @@ void extractGroupsPrint(
 
 #endif //if 1/0
 
+#if 0
+
+
+//Exchange particles with other processes
+int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
+    bodyStruct *particlesToSend,
+    my_dev::dev_mem<uint> &extractList,
+
+    int nToSend)
+{
+#ifdef USE_MPI
+
+  double tStart = get_time();
+
+  int myid      = procId;
+  int nproc     = nProcs;
+  int iloc      = 0;
+  int nbody     = nToSend;
+
+
+  bodyStruct  tmpp;
+
+  int *firstloc    = &exchangePartBuffer[0*nProcs];                //Size nProcs+1
+  int *nparticles  = &exchangePartBuffer[1*(nProcs+1)];            //Size nProcs+1
+  int *nsendDispls = &exchangePartBuffer[2*(nProcs+1)];            //Size nProcs+1
+  int *nrecvDispls = &exchangePartBuffer[3*(nProcs+1)];            //Size nProcs+1
+  int *nreceive    = &exchangePartBuffer[4*(nProcs+1)];            //Size nProcs
+  int *nsendbytes  = &exchangePartBuffer[4*(nProcs+1) + 1*nProcs]; //Size nProcs
+  int *nrecvbytes  = &exchangePartBuffer[4*(nProcs+1) + 2*nProcs]; //Size nProcs
+
+
+
+  memset(nparticles,  0, sizeof(int)*(nProcs+1));
+  memset(nreceive,    0, sizeof(int)*(nProcs));
+  memset(nsendbytes,  0, sizeof(int)*(nProcs));
+  memset(nsendDispls, 0, sizeof(int)*(nProcs));
+
+  // Loop over particles and determine which particle needs to go where
+  // reorder the bodies in such a way that bodies that have to be send
+  // away are stored after each other in the array
+  double t1 = get_time();
+
+  //Array reserve some memory before hand , 1%
+  static vector<bodyStruct> array2Send;
+  array2Send.reserve((int)(nToSend*1.5));
+  array2Send.clear();
+
+
+
+  static int firstSort = 1;
+  if(firstSort)
+  {
+    //This only works if particles are sorted. WHich we currently
+    //only guarentee during the first step
+
+    std::vector<int> offsets(nProcs+2);
+    std::vector<int> items(nProcs+2);
+
+    int location       = 0;
+    offsets[location]  = 0;
+
+    for(int i=0; i < nToSend; i++)
+    {
+      uint4 key  = particlesToSend[i].key;
+
+      bool assigned = false;
+      while(!assigned)
+      {
+        uint4 lowerBoundary = tree.parallelBoundaries[location];
+        uint4 upperBoundary = tree.parallelBoundaries[location+1];
+
+        int bottom = cmp_uint4(key, lowerBoundary);
+        int top    = cmp_uint4(key, upperBoundary);
+
+        assert(bottom >= 0);
+
+        if(top < 0)
+        {
+          //is in box
+          assigned = true;
+        }
+        else
+        {
+          //outside box
+          offsets[++location] = i;
+          assert(location < nProcs);
+        }
+      }//while
+    }//for
+
+    //Fill remaining processes
+    while(location <= nProcs)
+      offsets[++location] = nToSend;
+
+    //Fill items
+    for(int ib=0; ib < nProcs; ib++)
+    {
+      items[ib] = offsets[ib+1]-offsets[ib];
+    }
+
+    assert(items[procId] == 0);
+
+    for(int ib =0; ib < nProcs; ib++)
+    {
+      nparticles[ib] = items[ib];
+      nsendbytes[ib] = nparticles[ib]*sizeof(bodyStruct);
+      nsendDispls[ib] = offsets[ib]*sizeof(bodyStruct);
+    }
+
+      char buff[512];
+      sprintf(buff, "Proc: XXX");
+      for(int i=0; i < nProcs; i++)
+      {
+        //sprintf(buff, "%s [%d, %d] ", buff, nparticles[i], nsendbytes[i]);
+        sprintf(buff, "%s [%d, %d] ", buff, i, nparticles[i]);
+      }
+      LOGF(stderr,"%s \n", buff);
+
+    array2Send.clear();
+    array2Send.insert(array2Send.end(), particlesToSend, particlesToSend+nToSend);
+
+#if 1
+    for(int ib=0; ib < nProcs; ib++)
+    {
+      uint4 lowerBoundary = tree.parallelBoundaries[ib];
+      uint4 upperBoundary = tree.parallelBoundaries[ib+1];
+
+      for(int i= offsets[ib]; i <  offsets[ib+1]; i++)
+      {
+        uint4 key  = particlesToSend[i].key;
+        int bottom = cmp_uint4(key, lowerBoundary);
+        int top    = cmp_uint4(key, upperBoundary);
+
+        if(bottom >= 0 && top < 0)
+        {
+          //Inside
+        }
+        else
+        {
+          assert(!"Particle not in the box");
+        }
+      }//for i
+    }//for ib
+#endif
+
+
+    //LOGF(stderr,  "EXCHANGE reorder iter: %d  took: %lg \tItems: %d Total-n: %d\n",
+    if(iter == 0 && procId == 0)
+      fprintf(stderr,  "EXCHANGE reorder iter: %d  took: %lg \tItems: %d Total-n: %d\n",
+          iter, get_time()-t1, nToSend, tree.n);
+
+
+    firstSort = 0;
+  }
+  else  {
+    //Sort the statistics, causing the processes with which we interact most to be on top
+
+    //Disabled to get this compiled. If we ever enable this code path we should change this
+#if 0
+    std::sort(fullGrpAndLETRequestStatistics, fullGrpAndLETRequestStatistics+nProcs, cmp_uint2_reverse());
+#endif
+
+
+    for(int ib=0;ib<nproc;ib++)
+    {
+      //    int ibox          = (ib+myid)%nproc;
+      int ibox = fullGrpAndLETRequestStatistics[ib].y;
+
+      firstloc[ibox]    = iloc;      //Index of the first particle send to proc: ibox
+      nsendDispls[ibox] = iloc*sizeof(bodyStruct);
+
+      for(int i=iloc; i<nbody;i++)
+      {
+        uint4 lowerBoundary = tree.parallelBoundaries[ibox];
+        uint4 upperBoundary = tree.parallelBoundaries[ibox+1];
+
+        uint4 key  = particlesToSend[i].key;
+        int bottom = cmp_uint4(key, lowerBoundary);
+        int top    = cmp_uint4(key, upperBoundary);
+
+
+        if(bottom >= 0 && top < 0)
+        {
+          //Reorder the particle information
+          tmpp                  = particlesToSend[iloc];
+          particlesToSend[iloc] = particlesToSend[i];
+          particlesToSend[i]    = tmpp;
+
+          //Put the particle in the array of to send particles
+          array2Send.push_back(particlesToSend[iloc]);
+
+          iloc++;
+        }// end if
+      }//for i=iloc
+      nparticles[ibox] = iloc-firstloc[ibox];//Number of particles that has to be send to proc: ibox
+      nsendbytes[ibox] = nparticles[ibox]*sizeof(bodyStruct);
+    } // for(int ib=0;ib<nproc;ib++)
+
+
+    //   printf("Required search time: %lg ,proc: %d found in our own box: %d n: %d  to others: %ld \n",
+    //          get_time()-t1, myid, nparticles[myid], tree.n, array2Send.size());
+    if(iloc < nbody)
+    {
+      LOGF(stderr, "Exchange_particle error: A particle could not be assigned to a box: iloc: %d total: %d \n", iloc,nbody);
+      exit(0);
+    }
+    LOGF(stderr,  "EXCHANGE reorder iter: %d  took: %lg \tItems: %d Total-n: %d\n",
+        iter, get_time()-t1, nToSend, tree.n);
+  }
+
+  double tReorder = get_time();
+
+
+  t1 = get_time();
+#if 0
+  //AlltoallV version
+  MPI_Alltoall(nparticles, 1, MPI_INT, nreceive, 1, MPI_INT, MPI_COMM_WORLD);
+
+  //Compute how much we will receive and the offsets and displacements
+  nrecvDispls[0]   = 0;
+  nrecvbytes [0]   = nreceive[0]*sizeof(bodyStruct);
+  unsigned int recvCount  = nreceive[0];
+  for(int i=1; i < nProcs; i++)
+  {
+    nrecvbytes [i] = nreceive[i]*sizeof(bodyStruct);
+    nrecvDispls[i] = nrecvDispls[i-1] + nrecvbytes [i-1];
+    recvCount     += nreceive[i];
+  }
+
+  vector<bodyStruct> recv_buffer3(recvCount);
+
+  MPI_Alltoallv(&array2Send[0],   nsendbytes, nsendDispls, MPI_BYTE,
+      &recv_buffer3[0], nrecvbytes, nrecvDispls, MPI_BYTE,
+      MPI_COMM_WORLD);
+
+#elif 0
+
+  //Blocking Send/Recv version
+
+  MPI_Alltoall(nparticles, 1, MPI_INT, nreceive, 1, MPI_INT, MPI_COMM_WORLD);
+  double t92 = get_time();
+  unsigned int recvCount  = nreceive[0];
+  for (int i = 1; i < nproc; i++)
+  {
+    recvCount     += nreceive[i];
+  }
+  vector<bodyStruct> recv_buffer3(recvCount);
+  double t93=get_time();
+
+  int recvOffset = 0;
+
+  static MPI_Status stat;
+  for (int dist = 1; dist < nproc; dist++)
+  {
+    const int src = (nproc + myid - dist) % nproc;
+    const int dst = (nproc + myid + dist) % nproc;
+    const int scount = nsendbytes[dst];
+    const int rcount = nreceive[src]*sizeof(bodyStruct);
+    if ((myid/dist) & 1)
+    {
+
+      if (scount > 0) MPI_Send(&array2Send[nsendDispls[dst]/sizeof(bodyStruct)], scount, MPI_BYTE, dst, 1, MPI_COMM_WORLD);
+      if (rcount > 0) MPI_Recv(&recv_buffer3[recvOffset], rcount, MPI_BYTE   , src, 1, MPI_COMM_WORLD, &stat);
+
+      recvOffset +=  nreceive[src];
+    }
+    else
+    {
+      if (rcount > 0) MPI_Recv(&recv_buffer3[recvOffset], rcount, MPI_BYTE   , src, 1, MPI_COMM_WORLD, &stat);
+      if (scount > 0) MPI_Send(&array2Send[nsendDispls[dst]/sizeof(bodyStruct)], scount, MPI_BYTE, dst, 1, MPI_COMM_WORLD);
+
+      recvOffset +=  nreceive[src];
+    }
+  }
+
+  double t94 = get_time();
+
+#elif 1
+  //Non-blocking send/recv version
+
+  double tStarta2a = get_time();
+  MPI_Alltoall(nparticles, 1, MPI_INT, nreceive, 1, MPI_INT, MPI_COMM_WORLD);
+
+  double tEnda2a = get_time();
+  unsigned int recvCount  = nreceive[0];
+
+  for (int i = 1; i < nproc; i++)
+  {
+    recvCount     += nreceive[i];
+  }
+  static std::vector<bodyStruct> recv_buffer3;
+  recv_buffer3.resize(recvCount);
+
+  int recvOffset = 0;
+
+#define NMAXPROC 32768
+  static MPI_Status stat[NMAXPROC];
+  static MPI_Request req[NMAXPROC*2];
+
+  int nreq = 0;
+  for (int dist = 1; dist < nproc; dist++)
+  {
+    const int src    = (nproc + myid - dist) % nproc;
+    const int dst    = (nproc + myid + dist) % nproc;
+    const int scount = nsendbytes[dst];
+    const int rcount = nreceive[src]*sizeof(bodyStruct);
+
+#if 1
+    if (scount > 0) MPI_Isend(&array2Send[nsendDispls[dst]/sizeof(bodyStruct)], scount, MPI_BYTE, dst, 1, MPI_COMM_WORLD, &req[nreq++]);
+    if(rcount > 0)
+    {
+      MPI_Irecv(&recv_buffer3[recvOffset], rcount, MPI_BYTE, src, 1, MPI_COMM_WORLD, &req[nreq++]);
+      recvOffset += nreceive[src];
+    }
+#else
+    MPI_Status stat;
+    MPI_Sendrecv(&array2Send[nsendDispls[dst]/sizeof(bodyStruct)],
+        scount, MPI_BYTE, dst, 1,
+        &recv_buffer3[recvOffset], rcount, MPI_BYTE, src, 1, MPI_COMM_WORLD, &stat);
+    recvOffset += nreceive[src];
+#endif
+  }
+
+  double t94 = get_time();
+  MPI_Waitall(nreq, req, stat);
+
+  double tSendEnd = get_time();
+  LOGF(stderr, "EXCHANGE comm iter: %d  a2asize: %lg data-send: %lg data-wait: %lg \n",
+                iter, tEnda2a-tStarta2a, tEnda2a-t94, tSendEnd -t94);
+
+#else
+  //Build in sendRecv version, note do not enable due to alreeady
+  //moved code
+
+  //Allocate two times the amount of memory of that which we send
+  vector<bodyStruct> recv_buffer3(nbody*2);
+  unsigned int recvCount = 0;
+
+  //Exchange the data with the other processors
+  int ibend = -1;
+  int nsend;
+  int isource = 0;
+  for(int ib=nproc-1;ib>0;ib--)
+  {
+    int ibox = (ib+myid)%nproc; //index to send...
+
+    if (ib == nproc-1)
+    {
+      isource= (myid+1)%nproc;
+    }
+    else
+    {
+      isource = (isource+1)%nproc;
+      if (isource == myid)isource = (isource+1)%nproc;
+    }
+
+
+    if(MP_exchange_particle_with_overflow_check<bodyStruct>(ibox, &array2Send[0],
+          recv_buffer3, firstloc[ibox] - nparticles[myid],
+          nparticles[ibox], isource,
+          nsend, recvCount))
+    {
+      ibend = ibox; //Here we get if exchange failed
+      ib = 0;
+    }//end if mp exchang
+  }//end for all boxes
+
+
+  if(ibend == -1){
+
+  }else{
+    //Something went wrong
+    cerr << "ERROR in exchange_particles_with_overflow_check! \n"; exit(0);
+  }
+#endif
+
+  //If we arrive here all particles have been exchanged, move them to the GPU
+
+  LOGF(stderr,"Required inter-process communication time: %lg ,proc: %d\n", get_time()-t1, myid);
+
+  //Compute the new number of particles:
+  int newN = tree.n + recvCount - nToSend;
+
+  LOGF(stderr, "Exchange, received %d \tSend: %d newN: %d\n", recvCount, nToSend, newN);
+
+#if 1
+  if(iter < 1){ /* jb2404 */
+    fprintf(stderr, "Proc: %d Exchange, received %d \tSend: %d newN: %d\n",
+        procId, recvCount, nToSend, newN);
+  }
+#endif
+
+  execStream->sync();   //make certain that the particle movement on the device
+  //is complete before we resize
+
+  double tSyncGPU = get_time();
+
+  //Allocate 10% extra if we have to allocate, to reduce the total number of
+  //memory allocations
+  int memSize = newN;
+  if(tree.bodies_acc0.get_size() < newN)
+    memSize = newN * MULTI_GPU_MEM_INCREASE;
+
+  LOGF(stderr,"Going to allocate memory for %d particles \n", newN);
+
+  //Have to resize the bodies vector to keep the numbering correct
+  //but do not reduce the size since we need to preserve the particles
+  //in the over sized memory
+  tree.bodies_pos. cresize(memSize + 1, false);
+  tree.bodies_acc0.cresize(memSize,     false);
+  tree.bodies_acc1.cresize(memSize,     false);
+  tree.bodies_vel. cresize(memSize,     false);
+  tree.bodies_time.cresize(memSize,     false);
+  tree.bodies_ids. cresize(memSize + 1, false);
+  tree.bodies_Ppos.cresize(memSize + 1, false);
+  tree.bodies_Pvel.cresize(memSize + 1, false);
+  tree.bodies_key. cresize(memSize + 1, false);
+
+  //This one has to be at least the same size as the number of particles in order to
+  //have enough space to store the other buffers
+  //Can only be resized after we are done since we still have
+  //parts of memory pointing to that buffer (extractList)
+  //Note that we allocate some extra memory to make everything texture/memory aligned
+  tree.generalBuffer1.cresize_nocpy(3*(memSize)*4 + 4096, false);
+
+
+  //Now we have to copy the data in batches in case the generalBuffer1 is not large enough
+  //Amount we can store:
+  int spaceInIntSize    = 3*(memSize)*4;
+  int stepSize          = spaceInIntSize / (sizeof(bodyStruct) / sizeof(int));
+
+  my_dev::dev_mem<bodyStruct>  bodyBuffer(devContext);
+
+  int memOffset1 = bodyBuffer.cmalloc_copy(localTree.generalBuffer1,
+      stepSize, 0);
+
+  //  fprintf(stderr, "Exchange, received %d \tSend: %d newN: %d\tItems that can be insert in one step: %d\n",
+  //      recvCount, nToSend, newN, stepSize);
+//  LOGF(stderr, "Exchange, received %d \tSend: %d newN: %d\tItems that can be insert in one step: %d\n",
+//      recvCount, nToSend, newN, stepSize);
+
+  double tAllocComplete = get_time();
+
+  int insertOffset = 0;
+  for(unsigned int i=0; i < recvCount; i+= stepSize)
+  {
+    int items = min(stepSize, (int)(recvCount-i));
+
+    if(items > 0)
+    {
+      //Copy the data from the MPI receive buffers into the GPU-send buffer
+      memcpy(&bodyBuffer[0], &recv_buffer3[insertOffset], sizeof(bodyStruct)*items);
+
+      bodyBuffer.h2d(items);
+
+      //Start the kernel that puts everything in place
+      insertNewParticlesSFC.set_arg<int>(0,    &nToSend);
+      insertNewParticlesSFC.set_arg<int>(1,    &items);
+      insertNewParticlesSFC.set_arg<int>(2,    &tree.n);
+      insertNewParticlesSFC.set_arg<int>(3,    &insertOffset);
+      insertNewParticlesSFC.set_arg<cl_mem>(4, localTree.bodies_Ppos.p());
+      insertNewParticlesSFC.set_arg<cl_mem>(5, localTree.bodies_Pvel.p());
+      insertNewParticlesSFC.set_arg<cl_mem>(6, localTree.bodies_pos.p());
+      insertNewParticlesSFC.set_arg<cl_mem>(7, localTree.bodies_vel.p());
+      insertNewParticlesSFC.set_arg<cl_mem>(8, localTree.bodies_acc0.p());
+      insertNewParticlesSFC.set_arg<cl_mem>(9, localTree.bodies_acc1.p());
+      insertNewParticlesSFC.set_arg<cl_mem>(10, localTree.bodies_time.p());
+      insertNewParticlesSFC.set_arg<cl_mem>(11, localTree.bodies_ids.p());
+      insertNewParticlesSFC.set_arg<cl_mem>(12, localTree.bodies_key.p());
+      insertNewParticlesSFC.set_arg<cl_mem>(13, bodyBuffer.p());
+      insertNewParticlesSFC.setWork(items, 128);
+      insertNewParticlesSFC.execute(execStream->s());
+    }
+
+    insertOffset += items;
+  }
+
+  //Resize the arrays of the tree
+  tree.setN(newN);
+  reallocateParticleMemory(tree);
+
+  double tEnd = get_time();
+
+  char buff5[1024];
+  sprintf(buff5,"EXCHANGEB-%d: tExSort: %lg tExSend: %lg tExGPUSync: %lg tExGPUAlloc: %lg tExGPUSend: %lg\n",
+                procId, tReorder-tStart, tSendEnd-tStarta2a, tSyncGPU-tSendEnd,
+                tAllocComplete-tSyncGPU, tEnd-tAllocComplete);
+  devContext.writeLogEvent(buff5);
+  sprintf(buff5,"EXCHANGEV-%d: ta2aSize: %lg tISendIRecv: %lg tWaitall: %lg\n",
+                procId, tEnda2a-tStarta2a, t94-tEnda2a, tSendEnd-t94);
+  devContext.writeLogEvent(buff5);
+
+#endif
+
+  return 0;
+}
+
+#endif
 
 
 

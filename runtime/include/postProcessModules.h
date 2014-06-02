@@ -142,7 +142,7 @@ struct DENSITY
         //Write the header for
         int flag    = -1;
         double tmpD = 0.0;
-        float  tmpF = 0.0f;
+        float  tmpF = -1.f;
 
         out.write((char*)&flag, sizeof(int));
         int n = N_MESH;

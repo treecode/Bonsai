@@ -85,15 +85,15 @@ extern "C" void  (doDomainCheck)(int    n_bodies, double4  xlow, double4  xhigh,
 extern "C" void  (gpu_domainCheckSFC)(int    n_bodies, uint4  lowBoundary, uint4  highBoundary, uint4  *body_key, int    *validList);                                           
 extern "C" void  (gpu_extractSampleParticles)(int    n_bodies, int    sample_freq, real4  *body_pos, real4  *samplePosition);
 extern "C" void  (extractOutOfDomainParticlesR4)(int n_extract, int *extractList, real4 *source, real4 *destination);
-extern "C" void  (extractOutOfDomainParticlesAdvanced)(int n_extract,int *extractList, real4 *Ppos,real4 *Pvel,real4 *pos,real4 *vel,real4 *acc0,real4 *acc1,float2 *time,int   *body_id,bodyStruct *destination);                                                       
+//extern "C" void  (extractOutOfDomainParticlesAdvanced)(int n_extract,int *extractList, real4 *Ppos,real4 *Pvel,real4 *pos,real4 *vel,real4 *acc0,real4 *acc1,float2 *time,int   *body_id,bodyStruct *destination);
 extern "C" void  (gpu_internalMove)(int n_extract, int       n_bodies,double4  xlow, double4  xhigh, int       *extractList, int       *indexList, real4     *Ppos, real4     *Pvel, real4     *pos, real4     *vel, real4     *acc0, real4     *acc1, float2    *time, int       *body_id);
 
-extern "C" void  (gpu_insertNewParticles)(int       n_extract, int       n_insert, int       n_oldbodies, int       offset, real4     *Ppos, real4     *Pvel, real4     *pos, real4     *vel, real4     *acc0, real4     *acc1, float2    *time, int       *body_id, bodyStruct *source);
+//extern "C" void  (gpu_insertNewParticles)(int       n_extract, int       n_insert, int       n_oldbodies, int       offset, real4     *Ppos, real4     *Pvel, real4     *pos, real4     *vel, real4     *acc0, real4     *acc1, float2    *time, int       *body_id, bodyStruct *source);
 
 extern "C" void  (gpu_internalMoveSFC) (int       n_extract, int       n_bodies, uint4  lowBoundary, uint4  highBoundary, int       *extractList, int       *indexList, real4     *Ppos, real4     *Pvel, real4     *pos, real4     *vel, real4     *acc0, real4     *acc1, float2    *time, int       *body_id, uint4     *body_key);
 extern "C" void  (gpu_internalMoveSFC2) (int       n_extract, int       n_bodies, uint4  lowBoundary, uint4  highBoundary, int2       *extractList, int       *indexList, real4     *Ppos, real4     *Pvel, real4     *pos, real4     *vel, real4     *acc0, real4     *acc1, float2    *time, int       *body_id, uint4     *body_key);
 
-extern "C" void  (gpu_extractOutOfDomainParticlesAdvancedSFC)(int offset, int n_extract, int *extractList, real4 *Ppos, real4 *Pvel, real4 *pos, real4 *vel, real4 *acc0, real4 *acc1, float2 *time, int   *body_id, uint4 *body_key, bodyStruct *destination);
+//extern "C" void  (gpu_extractOutOfDomainParticlesAdvancedSFC)(int offset, int n_extract, int *extractList, real4 *Ppos, real4 *Pvel, real4 *pos, real4 *vel, real4 *acc0, real4 *acc1, float2 *time, int   *body_id, uint4 *body_key, bodyStruct *destination);
 extern "C" void  (gpu_extractOutOfDomainParticlesAdvancedSFC2)(int offset, int n_extract, uint2 *extractList, real4 *Ppos, real4 *Pvel, real4 *pos, real4 *vel, real4 *acc0, real4 *acc1, float2 *time, int   *body_id, uint4 *body_key, bodyStruct *destination);
 
 extern "C" void  (gpu_insertNewParticlesSFC)(int       n_extract, int       n_insert, int       n_oldbodies, int       offset, real4     *Ppos, real4     *Pvel, real4     *pos, real4     *vel, real4     *acc0, real4     *acc1, float2    *time, int       *body_id, uint4     *body_key, bodyStruct *source);
