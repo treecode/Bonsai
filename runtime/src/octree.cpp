@@ -35,8 +35,6 @@ double octree::get_time() {
 #endif
 }
 
-
-
 int octree::getAllignmentOffset(int n)
 {
   const int allignBoundary = 128*sizeof(uint); //Fermi,128 bytes 
@@ -73,38 +71,13 @@ int octree::getTextureAllignmentOffset(int n, int size)
 
 
 /*********************************/
+/******** Input functions  ******/
 /*********************************/
+
+
 /*********************************/
-
-/*
-void octree::write_dumbp_snapshot(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName) {
-  char fullFileName[256];
-  sprintf(fullFileName, "%s", fileName.c_str());
-
-  cerr << "Trying to write to file: " << fullFileName << endl;
-
-  ofstream outputFile(fullFileName, ios::out);
-  
-  if(!outputFile.is_open())
-  {
-    cout << "Can't open output file \n";
-    exit(0);
-  }
-  
-  for(int i=0; i < n ; i++)
-  {
-    outputFile << bodyIds[i] << "\t" << bodyPositions[i].w << "\t" << bodyPositions[i].x << "\t" <<
-                       bodyPositions[i].y << "\t" << bodyPositions[i].z << "\t" <<
-                       bodyVelocities[i].x << "\t" << bodyVelocities[i].y << "\t" <<
-                       bodyVelocities[i].z  << endl;
-  }
-
-
-  outputFile.close();
-
-  fprintf(stderr, "Wrote %d bodies to dump file \n", n);
-};
-*/
+/******** Output functions  ******/
+/*********************************/
 
 //Version that writes the BD dump format
 void octree::write_dumbp_snapshot(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName) {
@@ -235,10 +208,6 @@ void octree::write_snapshot_per_process(real4 *bodyPositions, real4 *bodyVelocit
     LOGF(stderr,"Wrote %d bodies to tipsy file \n", NCombTotal);
 
 }
-
-
-
-
 
 void octree::write_dumbp_snapshot_parallel_tipsy(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName,
                                                  int NCombTotal, int NCombFirst, int NCombSecond, int NCombThird, float time) 

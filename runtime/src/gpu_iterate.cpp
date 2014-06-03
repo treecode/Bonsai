@@ -222,207 +222,6 @@ void octree::makeLET()
   letRunning = false;
 }
 
-#if 1
-
-extern void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyVelocities,
-                              vector<int> &bodiesIDs,  float eps2, string fileName, 
-                              int rank, int procs, int &NTotal2, int &NFirst, 
-                              int &NSecond, int &NThird, octree *tree,
-                              vector<real4> &dustPositions, vector<real4> &dustVelocities,
-                              vector<int> &dustIDs, int reduce_bodies_factor, int reduce_dust_factor, const bool restart) ;
-extern int setupMergerModel(vector<real4> &bodyPositions1,      vector<real4> &bodyVelocities1,
-                            vector<int>   &bodyIDs1,            vector<real4> &bodyPositions2,
-                            vector<real4> &bodyVelocities2,     vector<int>   &bodyIDs2);
-
-bool octree::addGalaxy(int galaxyID)
-{
-    //To add an galaxy we need to have read it in from the host
-    #ifdef USE_DUST
-      //We move the dust data into the position data (on the device :) )
-      localTree.bodies_pos.copy_devonly(localTree.dust_pos, localTree.n_dust, localTree.n);
-      localTree.bodies_vel.copy_devonly(localTree.dust_vel, localTree.n_dust, localTree.n);
-      localTree.bodies_ids.copy_devonly(localTree.dust_ids, localTree.n_dust, localTree.n);
-    #endif
-  
-    this->localTree.bodies_pos.d2h();
-    this->localTree.bodies_vel.d2h();
-    this->localTree.bodies_ids.d2h();
-    
-    vector<real4> newGalaxy_pos;
-    vector<real4> newGalaxy_vel;
-    vector<int> newGalaxy_ids;
-    vector<real4> currentGalaxy_pos;
-    vector<real4> currentGalaxy_vel;
-    vector<int>   currentGalaxy_ids;    
-
-    int n_particles = this->localTree.n + this->localTree.n_dust;
-    currentGalaxy_pos.insert(currentGalaxy_pos.begin(), &this->localTree.bodies_pos[0],
-                          &this->localTree.bodies_pos[0]+n_particles);
-    currentGalaxy_vel.insert(currentGalaxy_vel.begin(), &this->localTree.bodies_vel[0],
-                          &this->localTree.bodies_vel[0]+n_particles);
-    currentGalaxy_ids.insert(currentGalaxy_ids.begin(), &this->localTree.bodies_ids[0],
-                          &this->localTree.bodies_ids[0]+n_particles);    
-    
-    vector<real4> newGalaxy_pos_dust;
-    vector<real4> newGalaxy_vel_dust;
-    vector<int> newGalaxy_ids_dust;    
-    
-    //string fileName = "model3_child_compact.tipsy";
-    string fileName = "modelC30kDust.bin";
-    int rank =0;
-    int procs = 1;
-    int NTotal, NFirst, NSecond, Nthird = 0;
-    read_tipsy_file_parallel(newGalaxy_pos, newGalaxy_vel, newGalaxy_ids, 0, fileName, 
-                             rank, procs, NTotal, NFirst, NSecond, NThird, this,
-                             newGalaxy_pos_dust, newGalaxy_vel_dust, newGalaxy_ids_dust,
-                             1, 1, false);
-    
-
-    int n_addGalaxy      = (int) newGalaxy_pos.size();
-    int n_addGalaxy_dust = (int) newGalaxy_pos_dust.size();
-    //Put the dust with the main particles for orbit computations
-    newGalaxy_pos.insert(newGalaxy_pos.end(), newGalaxy_pos_dust.begin(), newGalaxy_pos_dust.end());
-    newGalaxy_vel.insert(newGalaxy_vel.end(), newGalaxy_vel_dust.begin(), newGalaxy_vel_dust.end());
-    newGalaxy_ids.insert(newGalaxy_ids.end(), newGalaxy_ids_dust.begin(), newGalaxy_ids_dust.end());
-  
-  //First we need to compute the merger parameters
-  //this can be done on host or device or just precomputed
-  //However we need to center the galaxy on their center of mass
-  //which requires some loops, while it should be possible to do on 
-  //the device since the COM info is available in the tree-structure
-  //but the center of mass velocity isnt
-  
-  //So modify the positions to COM of the current galaxy and the new one
-  
-  //Compute merger parameters
-  
-  
-  //Modify the positions/velocity and angles of the galaxy on the device
-  
-  //Modify the to be added galaxy
-  
-  
-  //Now put everything together:  
-  int old_n     = this->localTree.n;
-  int old_ndust = this->localTree.n_dust;
-  
-  
-  //Increase the size of the buffers
-  this->localTree.setN(n_addGalaxy + this->localTree.n);
-  this->reallocateParticleMemory(this->localTree); //Resize preserves original data
-  
-
-  setupMergerModel(currentGalaxy_pos,currentGalaxy_vel ,currentGalaxy_ids ,
-                   newGalaxy_pos, newGalaxy_vel, newGalaxy_ids);      
-  
-  #ifdef USE_DUST
-    this->localTree.setNDust(n_addGalaxy_dust + this->localTree.n_dust);    
-    //The dust function checks if it needs to resize or malloc
-    this->allocateDustMemory(this->localTree); 
-  #endif  
-    
-  //Get particle data back to the host so we can add our new data
-  this->localTree.bodies_pos.d2h();
-  this->localTree.bodies_acc0.d2h();  
-  this->localTree.bodies_vel.d2h();
-  this->localTree.bodies_time.d2h();
-  this->localTree.bodies_ids.d2h();
-  this->localTree.bodies_Ppos.d2h();
-  this->localTree.bodies_Pvel.d2h();
-  
-  //Now we have to do some memory copy magic, IF we have USE_DUST defined the lay-out is like this:
-  //[[tree.n galaxy1][tree.n_dust galaxy1][n_addGalaxy galaxy2][n_addGalaxy_dust galaxy2]]
-  //So lets get that in the right arrays :-)
-  memcpy(&this->localTree.bodies_pos [0], &currentGalaxy_pos[0], sizeof(real4)*old_n);
-  memcpy(&this->localTree.bodies_pos [old_n], &currentGalaxy_pos[old_n + old_ndust], sizeof(real4)*n_addGalaxy);
-
-  memcpy(&this->localTree.bodies_vel [0], &currentGalaxy_vel[0], sizeof(real4)*old_n);
-  memcpy(&this->localTree.bodies_vel [old_n], &currentGalaxy_vel[old_n + old_ndust], sizeof(real4)*n_addGalaxy);
-  
-  memcpy(&this->localTree.bodies_ids[0], &currentGalaxy_ids[0], sizeof(int)*old_n);
-  memcpy(&this->localTree.bodies_ids[old_n], &currentGalaxy_ids[old_n + old_ndust], sizeof(int)*n_addGalaxy);
-  
-  #ifdef USE_DUST
-    if(old_ndust + n_addGalaxy_dust)
-    {
-      memcpy(&this->localTree.dust_pos[0], &currentGalaxy_pos[old_n], sizeof(real4)*old_ndust);
-      memcpy(&this->localTree.dust_vel [0], &currentGalaxy_vel[old_n], sizeof(real4)*old_ndust);
-      memcpy(&this->localTree.dust_ids[0], &currentGalaxy_ids[old_n], sizeof(int)*old_ndust);
-
-      if(n_addGalaxy_dust > 0){
-        memcpy(&this->localTree.dust_pos[old_ndust], 
-              &currentGalaxy_pos[old_n + old_ndust + n_addGalaxy], sizeof(real4)*n_addGalaxy_dust);
-        memcpy(&this->localTree.dust_vel [old_ndust], 
-              &currentGalaxy_vel[old_n + old_ndust + n_addGalaxy], sizeof(real4)*n_addGalaxy_dust);
-        memcpy(&this->localTree.dust_ids[old_ndust], 
-              &currentGalaxy_ids[old_n + old_ndust + n_addGalaxy], sizeof(int)*n_addGalaxy_dust);
-      }
-      this->localTree.dust_pos.h2d();
-      this->localTree.dust_vel.h2d();
-      this->localTree.dust_ids.h2d();
-
-      this->localTree.dust_acc0.d2h();
-      for(int i=old_ndust; i < old_ndust + n_addGalaxy_dust; i++)
-      {
-        //Zero the accelerations of the new particles
-        this->localTree.dust_acc0[i] = make_float4(0.0f,0.0f,0.0f,0.0f);
-      }
-    //  fprintf(stderr, "Dust info %d %d \n", old_ndust, n_addGalaxy_dust);      this->localTree.dust_acc0.h2d();
-      this->localTree.dust_acc1.zeroMem();
-    }
-
-  #endif
-
-
-  float2 curTime = this->localTree.bodies_time[0];
-  for(int i=0; i < this->localTree.n; i++)
-  {
-    this->localTree.bodies_time[i] = curTime;
-    //Zero the accelerations of the new particles
-    if(i >= old_n)
-    {
-      this->localTree.bodies_acc0[i] = make_float4(0.0f,0.0f,0.0f,0.0f);
-    }
-  }
-  this->localTree.bodies_acc1.zeroMem();
-  
- 
-  this->localTree.bodies_pos.h2d();
-  this->localTree.bodies_acc0.h2d();  
-  this->localTree.bodies_vel.h2d();
-  this->localTree.bodies_time.h2d();
-  this->localTree.bodies_ids.h2d();
-  
-  //Fill the predicted arrays
-  this->localTree.bodies_Ppos.copy(this->localTree.bodies_pos, localTree.n);
-  this->localTree.bodies_Pvel.copy(this->localTree.bodies_pos, localTree.n);
-  
-  resetEnergy();
-  
-//   for(int i=0; i < this->localTree.n; i++)
-//   {
-//     fprintf(stderr, "%d\t%d \n", i, this->localTree.bodies_ids[i] );
-//   }
-
-  
-  //Copy the new galaxy behind the current galaxy
-//   memcpy(&m_tree->localTree.bodies_pos[old_n], 
-//          &new_bodyPositions[0], sizeof(real4)*new_bodyPositions.size());
-//   memcpy(&m_tree->localTree.bodies_Ppos[old_n], 
-//          &new_bodyPositions[0], sizeof(real4)*new_bodyPositions.size());
-  //...etc. 
-  
-
-  //Send everything back to the device
-  
-  //With some luck we can jump directly to iterate_once
-  //if that doesnt work we might have to do some extra steps...to be tested  
-    
-  return true;
-  
-}
-#endif
-
 
 
 
@@ -673,7 +472,9 @@ bool octree::iterate_once(IterationData &idata) {
     #endif     
     
     if(nProcs > 1)
-    { //Wait on all processes and time how long the waiting took
+    {
+      #ifdef USE_MPI
+      //Wait on all processes and time how long the waiting took
       t1 = get_time();
       devContext.startTiming(execStream->s());
       //mpiSync();
@@ -686,6 +487,7 @@ bool octree::iterate_once(IterationData &idata) {
       devContext.stopTiming("Unbalance", 12, execStream->s());
       idata.lastWaitTime  += get_time() - t1;
       idata.totalWaitTime += idata.lastWaitTime;
+      #endif
     }
     
     idata.Nact_since_last_tree_rebuild += this->localTree.n_active_particles;
