@@ -15,25 +15,23 @@ http://github.com/treecode/Bonsai
 */
 
 #ifdef WIN32
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <Windows.h>
-#include <process.h>
-#define M_PI        3.14159265358979323846264338328
+  #define WIN32_LEAN_AND_MEAN
+  #define NOMINMAX
+  #include <Windows.h>
+  #include <process.h>
+  #define M_PI        3.14159265358979323846264338328
 
-#include <stdlib.h>
-#include <time.h>
-void srand48(const long seed)
-{
-  srand(seed);
-}
-//JB This is not a proper work around but just to get things compiled...
-double drand48()
-{
-  return double(rand())/RAND_MAX;
-}
-
-
+  #include <stdlib.h>
+  #include <time.h>
+  void srand48(const long seed)
+  {
+    srand(seed);
+  }
+  //JB This is not a proper work around but just to get things compiled...
+  double drand48()
+  {
+    return double(rand())/RAND_MAX;
+  }
 #endif
 
 
@@ -47,6 +45,7 @@ double drand48()
 #include <vector>
 #include <fstream>
 #include <sstream>
+#include <sys/time.h>
 #include "log.h"
 #include "anyoption.h"
 #include "renderloop.h"
@@ -397,93 +396,79 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
 }
 
 
-void read_generate_cube(vector<real4> &bodyPositions, vector<real4> &bodyVelocities,
-                              vector<int> &bodiesIDs,  float eps2, string fileName, 
-                              int rank, int procs, int &NTotal2, int &NFirst, 
-                              int &NSecond, int &NThird, octree *tree,
-                              vector<real4> &dustPositions, vector<real4> &dustVelocities,
-                              vector<int> &dustIDs, int reduce_bodies_factor,
-                              int reduce_dust_factor)  
+
+#ifdef GALACTICS
+void generateGalacticsModel(const int      procId,
+                            const int      nProcs,
+                            const int      nMilkyWay,
+                            const int      nMWfork,
+                            const bool     scaleMass,
+                            vector<real4> &bodyPositions,
+                            vector<real4> &bodyVelocities,
+                            vector<int>   &bodyIDs)
 {
-  //Process 0 does the file reading and sends the data
-  //to the other processes
-  /* 
+  if (procId == 0) printf("Using MilkyWay model with n= %d per proc, forked %d times \n", nMilkyWay, nMWfork);
+  assert(nMilkyWay > 0);
+  assert(nMWfork > 0);
 
-     Read in our custom version of the tipsy file format.
-     Most important change is that we store particle id on the 
-     location where previously the potential was stored.
-  */
-  
 
-  int NTotal;
-  int idummy;
-  real4 positions;
-  real4 velocity;
 
-     
-  //Read tipsy header  
-  NTotal        = (int)std::pow(2.0, 22);
-  NFirst        = NTotal;
-  NSecond       = 0;
-  NThird        = 0;
+  #if 1 /* in this setup all particles will be of equal mass (exact number are galactic-depednant)  */
+    const float fdisk  = 15.1;
+    const float fbulge = 5.1;
+    const float fhalo  = 242.31;
+  #else  /* here, bulge & mw particles have the same mass, but halo particles is 32x heavier */
+    const float fdisk  = 15.1;
+    const float fbulge = 5.1;
+    const float fhalo  = 7.5;
+  #endif
 
-  fprintf(stderr,"Going to generate a random cube , number of particles: %d \n", NTotal);
+  const float fsum = fdisk + fhalo + fbulge;
 
-  tree->set_t_current((float) 0);
-  
-  //Rough divide
-  uint perProc = NTotal / procs;
-  bodyPositions.reserve(perProc+10);
-  bodyVelocities.reserve(perProc+10);
-  bodiesIDs.reserve(perProc+10);
-  perProc -= 1;
+  const int ndisk  = (int)(nMilkyWay * fdisk/fsum);
+  const int nbulge = (int)(nMilkyWay * fbulge/fsum);
+  const int nhalo  = (int)(nMilkyWay * fhalo/fsum);
 
-  //Start reading
-  int particleCount = 0;
-  int procCntr = 1;
-  
+  assert(ndisk  > 0);
+  assert(nbulge > 0);
+  assert(nhalo  > 0);
 
-  int globalParticleCount = 0;
+  const Galactics g(procId, nProcs, ndisk, nbulge, nhalo, nMWfork);
+  if (procId == 0)
+   printf("  ndisk= %d  nbulge= %d  nhalo= %d :: ntotal= %d\n",
+       g.get_ndisk(), g.get_nbulge(), g.get_nhalo(), g.get_ntot());
 
-  float mass = 1.0  / NTotal;
-  
-  for(int i=0; i < NTotal; i++)
+  const int ntot = g.get_ntot();
+  bodyPositions.resize(ntot);
+  bodyVelocities.resize(ntot);
+  bodyIDs.resize(ntot);
+  for (int i= 0; i < ntot; i++)
   {
-      velocity.w        = 0;
-      positions.w       = mass;
-      positions.x       = drand48();
-      positions.y       = drand48();
-      positions.z       = drand48();
-      velocity.x        = 0.001*drand48();
-      velocity.y        = 0.001*drand48();
-      velocity.z        = 0.001*drand48();
+   assert(!std::isnan(g[i].x));
+   assert(!std::isnan(g[i].y));
+   assert(!std::isnan(g[i].z));
+   assert(g[i].mass > 0.0);
+   bodyIDs[i] = g[i].id;
 
-      globalParticleCount++;
-      bodyPositions.push_back(positions);
-      bodyVelocities.push_back(velocity);
-      bodiesIDs.push_back(globalParticleCount);  
-  
-    if(bodyPositions.size() > perProc && procCntr != procs)
-    { 
-      tree->ICSend(procCntr,  &bodyPositions[0], &bodyVelocities[0],  &bodiesIDs[0], (int)bodyPositions.size());
-      procCntr++;
-      
-      bodyPositions.clear();
-      bodyVelocities.clear();
-      bodiesIDs.clear();
-    }
-  }//end while
-  
-  //Clear the last one since its double
-//   bodyPositions.resize(bodyPositions.size()-1);  
-//   NTotal2 = particleCount-1;
-  NTotal2 = NTotal;
-  LOGF(stderr,"NTotal: %d\tper proc: %d\tFor ourself: %d \tNDust: %d \n",
-               NTotal, perProc, (int)bodiesIDs.size(), (int)dustPositions.size());
-}
+   bodyPositions[i].x = g[i].x;
+   bodyPositions[i].y = g[i].y;
+   bodyPositions[i].z = g[i].z;
+   if(scaleMass)
+     bodyPositions[i].w = g[i].mass * 1.0/(double)nProcs;
+   else
+     bodyPositions[i].w = g[i].mass; // * 1.0/(double)nProcs ,scaled later ..
 
+   assert(!std::isnan(g[i].vx));
+   assert(!std::isnan(g[i].vy));
+   assert(!std::isnan(g[i].vz));
 
-
+   bodyVelocities[i].x = g[i].vx;
+   bodyVelocities[i].y = g[i].vy;
+   bodyVelocities[i].z = g[i].vz;
+   bodyVelocities[i].w = 0.0;
+  }
+} //generateGalacticsModel
+#endif
 
 
 double get_time_main()
@@ -518,25 +503,25 @@ int main(int argc, char** argv)
   float timeStep = 1.0f / 16.0f;
   float tEnd     = 1;
   int   iterEnd  = (1 << 30);
-  devID      = 0;
-  renderDevID = 0;
+  devID          = 0;
+  renderDevID    = 0;
 
-  string fileName       =  "";
-  string logFileName    = "gpuLog.log";
-  string snapshotFile   = "snapshot_";
-  float snapshotIter     = -1;
-  float  remoDistance   = -1.0;
-  int    snapShotAdd    =  0;
-  int rebuild_tree_rate = 2;
+  string fileName          =  "";
+  string logFileName       = "gpuLog.log";
+  string snapshotFile      = "snapshot_";
+  float snapshotIter       = -1;
+  float  remoDistance      = -1.0;
+  int    snapShotAdd       =  0;
+  int rebuild_tree_rate    = 2;
   int reduce_bodies_factor = 1;
-  int reduce_dust_factor = 1;
-  string fullScreenMode = "";
-  bool direct = false;
+  int reduce_dust_factor   = 1;
+  string fullScreenMode    = "";
+  bool direct     = false;
   bool fullscreen = false;
   bool displayFPS = false;
-  bool diskmode = false;
-  bool stereo   = false;
-  bool restartSim  = false;
+  bool diskmode   = false;
+  bool stereo     = false;
+  bool restartSim = false;
 
 #if ENABLE_LOG
   ENABLE_RUNTIME_LOG = false;
@@ -556,6 +541,7 @@ int main(int argc, char** argv)
 
   int nPlummer  = -1;
   int nSphere   = -1;
+  int nCube     = -1;
   int nMilkyWay = -1;
   int nMWfork   =  4;
   std::string taskVar;
@@ -601,7 +587,7 @@ int main(int argc, char** argv)
     ADDUSAGE("     --log              enable logging ");
     ADDUSAGE("     --prepend-rank     prepend the MPI rank in front of the log-lines ");
 #endif
-        ADDUSAGE("     --direct           enable N^2 direct gravitation [" << (direct ? "on" : "off") << "]");
+    ADDUSAGE("     --direct           enable N^2 direct gravitation [" << (direct ? "on" : "off") << "]");
 #ifdef USE_OPENGL
 		ADDUSAGE("     --fullscreen #     set fullscreen mode string");
     ADDUSAGE("     --displayfps       enable on-screen FPS display");
@@ -609,16 +595,15 @@ int main(int argc, char** argv)
 		ADDUSAGE("     --dTglow  #        reach full brightness in @ # Myr [" << dTstartGlow << "]");
 		ADDUSAGE("     --stereo           enable stereo rendering");
 #endif
-
-
-		ADDUSAGE("     --plummer  #      use plummer model with # particles per proc");
 #ifdef GALACTICS
-		ADDUSAGE("     --milkyway #      use Milky Way model with # particles per proc");
-		ADDUSAGE("     --mwfork   #      fork Milky Way generator into # processes [" << nMWfork << "]");
-    ADDUSAGE("     --taskvar  #      variable name to obtain task id [for randoms seed] before MPI_Init. \n");
+		ADDUSAGE("     --milkyway #       use Milky Way model with # particles per proc");
+		ADDUSAGE("     --mwfork   #       fork Milky Way generator into # processes [" << nMWfork << "]");
+    ADDUSAGE("     --taskvar  #       variable name to obtain task id [for randoms seed] before MPI_Init. \n");
 #endif
-		ADDUSAGE("     --sphere   #      use spherical model with # particles per proc");
-    ADDUSAGE("     --diskmode        use diskmode to read same input file all MPI taks and randomly shuffle its positions");
+    ADDUSAGE("     --plummer  #       use Plummer model with # particles per proc");
+		ADDUSAGE("     --sphere   #       use spherical model with # particles per proc");
+		ADDUSAGE("     --cube     #       use cube model with # particles per proc");
+    ADDUSAGE("     --diskmode         use diskmode to read same input file all MPI taks and randomly shuffle its positions");
 		ADDUSAGE(" ");
 
 
@@ -639,6 +624,7 @@ int main(int argc, char** argv)
     opt.setOption( "taskvar");
 #endif
     opt.setOption( "sphere");
+    opt.setOption( "cube");
     opt.setOption( "dev" );
     opt.setOption( "renderdev" );
     opt.setOption( "logfile" );
@@ -666,13 +652,9 @@ int main(int argc, char** argv)
     opt.processCommandArgs( argc, argv );
 
 
-    if( ! opt.hasOptions()) { /* print usage if no options */
-      opt.printUsage();
-      exit(0);
-    }
-
-    if( opt.getFlag( "help" ) || opt.getFlag( 'h' ) ) 
+    if( ! opt.hasOptions() ||  opt.getFlag( "help" ) || opt.getFlag( 'h' ) )
     {
+      /* print usage if no options or requested help */
       opt.printUsage();
       exit(0);
     }
@@ -694,6 +676,7 @@ int main(int argc, char** argv)
     if ((optarg = opt.getValue("mwfork")))       nMWfork            = atoi(optarg);
     if ((optarg = opt.getValue("taskvar")))      taskVar            = std::string(optarg);
     if ((optarg = opt.getValue("sphere")))       nSphere            = atoi(optarg);
+    if ((optarg = opt.getValue("cube")))         nCube              = atoi(optarg);
     if ((optarg = opt.getValue("logfile")))      logFileName        = string(optarg);
     if ((optarg = opt.getValue("dev")))          devID              = atoi  (optarg);
     renderDevID = devID;
@@ -716,7 +699,7 @@ int main(int argc, char** argv)
     if ((optarg = opt.getValue("dTglow")))	 dTstartGlow  = (float)atof(optarg);
     dTstartGlow = std::max(dTstartGlow, 1.0f);
 #endif
-    if (fileName.empty() && nPlummer == -1 && nSphere == -1 && nMilkyWay == -1)
+    if (fileName.empty() && nPlummer == -1 && nSphere == -1 && nMilkyWay == -1 && nCube == -1)
     {
       opt.printUsage();
       exit(0);
@@ -727,7 +710,7 @@ int main(int argc, char** argv)
 #endif
 
 
-  /********** init galaxy **********/
+  /********** init galaxy before MPI initialization to prevent problems with forking **********/
   const char * argVal = getenv(taskVar.c_str());
   if (argVal == NULL)
   {
@@ -738,72 +721,18 @@ int main(int argc, char** argv)
   {
     assert(argVal != NULL);
     const int procId = atoi(argVal);
-//    fprintf(stderr, " taskVar= %s , value= %d\n", taskVar.c_str(), procId);
-#ifdef GALACTICS
-    if (procId == 0) printf("Using MilkyWay model with n= %d per proc, forked %d times \n", nMilkyWay, nMWfork);
-    assert(nMilkyWay > 0);
-    assert(nMWfork > 0);
-    
-    tStartModel = get_time_main();
-  
- 
-
-#if 1 /* in this setup all particles will be of equal mass (exact number are galactic-depednant)  */
-    const float fdisk  = 15.1; 
-    const float fbulge = 5.1;   
-    const float fhalo  = 242.31; 
-#else  /* here, bulge & mw particles have the same mass, but halo particles is 32x heavier */
-    const float fdisk  = 15.1; 
-    const float fbulge = 5.1; 
-    const float fhalo  = 7.5; 
-#endif
-
-    const float fsum = fdisk + fhalo + fbulge;
-
-    const int ndisk  = (int)(nMilkyWay * fdisk/fsum);
-    const int nbulge = (int)(nMilkyWay * fbulge/fsum);
-    const int nhalo  = (int)(nMilkyWay * fhalo/fsum);
-
-    assert(ndisk  > 0);
-    assert(nbulge > 0);
-    assert(nhalo  > 0);
-
-    const Galactics g(procId, 32768*7, ndisk, nbulge, nhalo, nMWfork);
-    if (procId == 0)
-      printf("  ndisk= %d  nbulge= %d  nhalo= %d :: ntotal= %d\n",
-          g.get_ndisk(), g.get_nbulge(), g.get_nhalo(), g.get_ntot());
-
-    const int ntot = g.get_ntot();
-    bodyPositions.resize(ntot);
-    bodyVelocities.resize(ntot);
-    bodyIDs.resize(ntot);
-    for (int i= 0; i < ntot; i++)
-    {
-      assert(!std::isnan(g[i].x));
-      assert(!std::isnan(g[i].y));
-      assert(!std::isnan(g[i].z));
-      assert(g[i].mass > 0.0);
-      bodyIDs[i] = g[i].id;
-
-      bodyPositions[i].x = g[i].x;
-      bodyPositions[i].y = g[i].y;
-      bodyPositions[i].z = g[i].z;
-      bodyPositions[i].w = g[i].mass; // * 1.0/(double)nProcs ,scaled later ..
-      
-      assert(!std::isnan(g[i].vx));
-      assert(!std::isnan(g[i].vy));
-      assert(!std::isnan(g[i].vz));
-
-      bodyVelocities[i].x = g[i].vx;
-      bodyVelocities[i].y = g[i].vy;
-      bodyVelocities[i].z = g[i].vz;
-      bodyVelocities[i].w = 0.0;
-    }
-    
-    tEndModel   = get_time_main();  
-#else
-    assert(0);
-#endif
+    //    fprintf(stderr, " taskVar= %s , value= %d\n", taskVar.c_str(), procId);
+    #ifdef GALACTICS
+        tStartModel = get_time_main();
+        //Use 32768*7 for nProcs to create independent seeds for all processes we use
+        //do not scale untill we know the number of processors
+        generateGalacticsModel(procId, 32768*7, nMilkyWay, nMWfork,
+                               false, bodyPositions, bodyVelocities,
+                               bodyIDs);
+        tEndModel   = get_time_main();
+    #else
+        assert(0);
+    #endif
   }
 
   /*********************************/
@@ -845,7 +774,8 @@ int main(int argc, char** argv)
 
 
   //Creat the octree class and set the properties
-  octree *tree = new octree(argv, devID, theta, eps, snapshotFile, snapshotIter,  timeStep, tEnd, iterEnd, (int)remoDistance, snapShotAdd, rebuild_tree_rate, direct);
+  octree *tree = new octree(argv, devID, theta, eps, snapshotFile, snapshotIter,  timeStep,
+                            tEnd, iterEnd, (int)remoDistance, snapShotAdd, rebuild_tree_rate, direct);
 
   double tStartup = tree->get_time();
 
@@ -855,7 +785,7 @@ int main(int argc, char** argv)
 
   if (procId == 0)
   {
-    //NOte cant use LOGF here since MPI isnt initialized yet
+    //Note can't use LOGF here since MPI isn't initialized yet
     cerr << "[INIT]\tUsed settings: \n";
     cerr << "[INIT]\tInput filename " << fileName << endl;
     cerr << "[INIT]\tLog filename " << logFileName << endl;
@@ -870,9 +800,9 @@ int main(int argc, char** argv)
 
 
     if( reduce_bodies_factor > 1 )
-      cout << "[INIT]\tReduce number of non-dust bodies by " << reduce_bodies_factor << " \n";
+      cerr << "[INIT]\tReduce number of non-dust bodies by " << reduce_bodies_factor << " \n";
     if( reduce_dust_factor > 1 )
-      cout << "[INIT]\tReduce number of dust bodies by " << reduce_dust_factor << " \n";
+      cerr << "[INIT]\tReduce number of dust bodies by " << reduce_dust_factor << " \n";
 
 #if ENABLE_LOG
     if (ENABLE_RUNTIME_LOG)
@@ -894,78 +824,71 @@ int main(int argc, char** argv)
   }
 
 #ifdef USE_MPI
-#if 1
-  omp_set_num_threads(16);
-#pragma omp parallel
-  {
-    int tid = omp_get_thread_num();
-    cpu_set_t cpuset;
-    CPU_ZERO(&cpuset);
-    pthread_getaffinity_np(pthread_self()  , sizeof( cpu_set_t ), &cpuset );
+
+  //Used on Titan and Piz Daint
+  #if 1
+    omp_set_num_threads(16);
+  #pragma omp parallel
+    {
+      int tid = omp_get_thread_num();
+      cpu_set_t cpuset;
+      CPU_ZERO(&cpuset);
+      pthread_getaffinity_np(pthread_self()  , sizeof( cpu_set_t ), &cpuset );
+
+      int num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+
+      int i, set=-1;
+      for (i = 0; i < CPU_SETSIZE; i++)
+        if (CPU_ISSET(i, &cpuset))
+          set = i;
+      //    fprintf(stderr,"[Proc: %d ] Thread %d bound to: %d Total cores: %d\n",
+      //        procId, tid,  set, num_cores);
+    }
+  #endif
 
 
-    int num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+  #if 0
+    omp_set_num_threads(4);
+    //default
+    // int cpulist[] = {0,1,2,3,8,9,10,11};
+    int cpulist[] = {0,1,2,3, 8,9,10,11, 4,5,6,7, 12,13,14,15}; //HA-PACS
+    //int cpulist[] = {0,1,2,3,4,5,6,7};
+    //int cpulist[] = {0,2,4,6, 8,10,12,14};
+    //int cpulist[] = {1,3,5,7, 9,11,13,15};
+    //int cpulist[] = {1,9,5,11, 3,7,13,15};
+    //int cpulist[] = {1,15,3,13, 2,4,6,8};
+    //int cpulist[] = {1,1,1,1, 1,1,1,1};
 
-    int i, set=-1;
-    for (i = 0; i < CPU_SETSIZE; i++)
-      if (CPU_ISSET(i, &cpuset))
-        set = i;
-    //    fprintf(stderr,"[Proc: %d ] Thread %d bound to: %d Total cores: %d\n",
-    //        procId, tid,  set, num_cores);
-  }
+
+  #pragma omp parallel
+    {
+      int tid = omp_get_thread_num();
+      //int core_id = procId*4+tid;
+      int core_id = (procId%4)*4+tid;
+      core_id     = cpulist[core_id];
+
+      int num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+
+      cpu_set_t cpuset;
+      CPU_ZERO(&cpuset);
+      CPU_SET(core_id, &cpuset);
+      pthread_t current_thread = pthread_self();
+      int return_val = pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset);
+
+      CPU_ZERO(&cpuset);
+      pthread_getaffinity_np(pthread_self()  , sizeof( cpu_set_t ), &cpuset );
+
+      int i, set=-1;
+      for (i = 0; i < CPU_SETSIZE; i++)
+        if (CPU_ISSET(i, &cpuset))
+          set = i;
+      //printf("CPU2: CPU %d\n", i);
+
+      fprintf(stderr,"Binding thread: %d of rank: %d to cpu: %d CHECK: %d Total cores: %d\n",
+          tid, procId, core_id, set, num_cores);
+    }
+  #endif
 #endif
-
-
-
-
-#if 0
-  omp_set_num_threads(4);
-  //default
-  // int cpulist[] = {0,1,2,3,8,9,10,11};
-  int cpulist[] = {0,1,2,3, 8,9,10,11, 4,5,6,7, 12,13,14,15}; //HA-PACS
-  //int cpulist[] = {0,1,2,3,4,5,6,7};
-  //int cpulist[] = {0,2,4,6, 8,10,12,14};
-  //int cpulist[] = {1,3,5,7, 9,11,13,15};
-  //int cpulist[] = {1,9,5,11, 3,7,13,15};
-  //int cpulist[] = {1,15,3,13, 2,4,6,8};
-  //int cpulist[] = {1,1,1,1, 1,1,1,1};
-
-
-#pragma omp parallel
-  {
-    int tid = omp_get_thread_num();
-    //int core_id = procId*4+tid;
-    int core_id = (procId%4)*4+tid;
-    core_id = cpulist[core_id];
-
-    int num_cores = sysconf(_SC_NPROCESSORS_ONLN);
-    //    if (core_id >= num_cores)
-
-    cpu_set_t cpuset;
-    CPU_ZERO(&cpuset);
-    CPU_SET(core_id, &cpuset);
-    pthread_t current_thread = pthread_self();
-    int return_val = pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset);
-
-    CPU_ZERO(&cpuset);
-    pthread_getaffinity_np(pthread_self()  , sizeof( cpu_set_t ), &cpuset );
-
-    int i, set=-1;
-    for (i = 0; i < CPU_SETSIZE; i++)
-      if (CPU_ISSET(i, &cpuset))
-        set = i;
-    //printf("CPU2: CPU %d\n", i);
-
-
-    fprintf(stderr,"Binding thread: %d of rank: %d to cpu: %d CHECK: %d Total cores: %d\n",
-        tid, procId, core_id, set, num_cores);
-
-  }
-#endif
-#endif
-
-
-
 
 
   #if ENABLE_LOG
@@ -1000,29 +923,23 @@ int main(int argc, char** argv)
 
   if(restartSim)
   {
-    //The input snapshot file are many files with each process reading its own
-    //particles
+    //The input snapshot file are many files with each process reading its own particles
     read_tipsy_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName,
-        procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
-        dustPositions, dustVelocities, dustIDs, reduce_bodies_factor, reduce_dust_factor, true);
-
+                             procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
+                             dustPositions, dustVelocities, dustIDs,
+                             reduce_bodies_factor, reduce_dust_factor, true);
   }
-  else if (nPlummer == -1 && nSphere == -1 && !diskmode && nMilkyWay == -1)
+  else if (nPlummer == -1 && nSphere == -1  && nCube == -1 && !diskmode && nMilkyWay == -1)
   {
     if(procId == 0)
     {
-#ifdef TIPSYOUTPUT
-      read_tipsy_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, 
-          procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
-          dustPositions, dustVelocities, dustIDs, reduce_bodies_factor, reduce_dust_factor, false);
-
-      //      read_generate_cube(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, 
-      //                               procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
-      //                              dustPositions, dustVelocities, dustIDs, reduce_bodies_factor, reduce_dust_factor);    
-
-#else
-      read_dumbp_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, procId, nProcs, NTotal, NFirst, NSecond, NThird, tree, reduce_bodies_factor);
-#endif
+      #ifdef TIPSYOUTPUT
+            read_tipsy_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName,
+                procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
+                dustPositions, dustVelocities, dustIDs, reduce_bodies_factor, reduce_dust_factor, false);
+      #else
+            read_dumbp_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, procId, nProcs, NTotal, NFirst, NSecond, NThird, tree, reduce_bodies_factor);
+      #endif
     }
     else
     {
@@ -1031,83 +948,28 @@ int main(int argc, char** argv)
   }
   else if(nMilkyWay >= 0)
   {
-#ifdef GALACTICS
-    if (taskVar.empty())
-    {
-      tStartModel   = get_time_main();  
-      if (procId == 0) printf("Using MilkyWay model with n= %d per proc, forked %d times \n", nMilkyWay, nMWfork);
-      assert(nMilkyWay > 0);
-      assert(nMWfork > 0);
-
-
-#if 1 /* in this setup all particles will be of equal mass (exact number are galactic-depednant)  */
-      const float fdisk  = 15.1; 
-      const float fbulge = 5.1;   
-      const float fhalo  = 242.31; 
-#else  /* here, bulge & mw particles have the same mass, but halo particles is 32x heavier */
-      const float fdisk  = 15.1; 
-      const float fbulge = 5.1; 
-      const float fhalo  = 7.5; 
-#endif
-
-      const float fsum = fdisk + fhalo + fbulge;
-
-      const int ndisk  = (int)(nMilkyWay * fdisk/fsum);
-      const int nbulge = (int)(nMilkyWay * fbulge/fsum);
-      const int nhalo  = (int)(nMilkyWay * fhalo/fsum);
-
-      assert(ndisk  > 0);
-      assert(nbulge > 0);
-      assert(nhalo  > 0);
-
-      const double t0 = tree->get_time();
-      const Galactics g(procId, nProcs, ndisk, nbulge, nhalo, nMWfork);
-      const double dt = tree->get_time() - t0;
-      if (procId == 0)
-        printf("  ndisk= %d  nbulge= %d  nhalo= %d :: ntotal= %d in %g sec\n",
-            g.get_ndisk(), g.get_nbulge(), g.get_nhalo(), g.get_ntot(), dt);
-
-      const int ntot = g.get_ntot();
-      bodyPositions.resize(ntot);
-      bodyVelocities.resize(ntot);
-      bodyIDs.resize(ntot);
-      for (int i= 0; i < ntot; i++)
-      {
-        assert(!std::isnan(g[i].x));
-        assert(!std::isnan(g[i].y));
-        assert(!std::isnan(g[i].z));
-        assert(g[i].mass > 0.0);
-        bodyIDs[i] = g[i].id;
-
-        bodyPositions[i].x = g[i].x;
-        bodyPositions[i].y = g[i].y;
-        bodyPositions[i].z = g[i].z;
-        bodyPositions[i].w = g[i].mass * 1.0/(double)nProcs;
-
-        assert(!std::isnan(g[i].vx));
-        assert(!std::isnan(g[i].vy));
-        assert(!std::isnan(g[i].vz));
-
-        bodyVelocities[i].x = g[i].vx;
-        bodyVelocities[i].y = g[i].vy;
-        bodyVelocities[i].z = g[i].vz;
-        bodyVelocities[i].w = 0.0;
-      }
-      tEndModel   = get_time_main();  
-    }
-    else
-    {
-      const int ntot = bodyPositions.size();
-      for (int i= 0; i < ntot; i++)
-        bodyPositions[i].w *= 1.0/(double)nProcs;
-    }
-#else
-      assert(0);
-#endif
+    #ifdef GALACTICS
+        if (taskVar.empty())
+        {
+          tStartModel   = get_time_main();
+          generateGalacticsModel(procId, nProcs, nMilkyWay, nMWfork,
+                                 true, bodyPositions, bodyVelocities,
+                                 bodyIDs);
+          tEndModel   = get_time_main();
+        }
+        else
+        {
+          const int ntot = bodyPositions.size();
+          for (int i= 0; i < ntot; i++)
+            bodyPositions[i].w *= 1.0/(double)nProcs;
+        }
+    #else
+          assert(0);
+    #endif
   }
   else if(nPlummer >= 0)
   {
-    if (procId == 0) printf("Using plummer model with n= %d per proc \n", nPlummer);
+    if (procId == 0) printf("Using Plummer model with n= %d per process \n", nPlummer);
     assert(nPlummer > 0);
     const int seed = 19810614 + procId;
     const Plummer m(nPlummer, procId, seed);
@@ -1116,7 +978,6 @@ int main(int argc, char** argv)
     bodyIDs.resize(nPlummer);
     for (int i= 0; i < nPlummer; i++)
     {
-
       assert(!std::isnan(m.pos[i].x));
       assert(!std::isnan(m.pos[i].y));
       assert(!std::isnan(m.pos[i].z));
@@ -1137,7 +998,7 @@ int main(int argc, char** argv)
   else if (nSphere >= 0)
   {
     //Sphere
-    if (procId == 0) printf("Using Spherical model with n= %d per proc \n", nSphere);
+    if (procId == 0) printf("Using Spherical model with n= %d per process \n", nSphere);
     assert(nSphere >= 0);
     bodyPositions.resize(nSphere);
     bodyVelocities.resize(nSphere);
@@ -1169,6 +1030,37 @@ int main(int argc, char** argv)
         np++;
       }//if
     }//while
+  }//else
+  else if (nCube >= 0)
+  {
+    //CUBE
+    if (procId == 0) printf("Using Cube model with n= %d per process \n", nSphere);
+    assert(nCube >= 0);
+    bodyPositions.resize(nCube);
+    bodyVelocities.resize(nCube);
+    bodyIDs.resize(nCube);
+
+    srand48(procId+19840501);
+
+    /* generate uniform sphere */
+    for (int i= 0; i < nCube; i++)
+    {
+      const double x = 2*drand48()-1.0;
+      const double y = 2*drand48()-1.0;
+      const double z = 2*drand48()-1.0;
+
+      bodyIDs[i]   = nCube*procId + i;
+
+      bodyPositions[i].x = x;
+      bodyPositions[i].y = y;
+      bodyPositions[i].z = z;
+      bodyPositions[i].w = (1.0/nCube) * 1.0/nCube;
+
+      bodyVelocities[i].x = 0;
+      bodyVelocities[i].y = 0;
+      bodyVelocities[i].z = 0;
+      bodyVelocities[i].w = 0;
+    }//
   }//else
   else if (diskmode)
   {
@@ -1261,41 +1153,37 @@ int main(int argc, char** argv)
   tree->localTree.bodies_Pvel.h2d();
   tree->localTree.bodies_ids.h2d();
 
-
-#ifdef USE_MPI
-  //Use sampling particles, determine frequency
-  tree->mpiSumParticleCount(tree->localTree.n); //Determine initial frequency
-#endif
-
-
   //If required set the dust particles
-#ifdef USE_DUST
-  if( (int)dustPositions.size() > 0)
-  {
-    LOGF(stderr, "Allocating dust properties for %d dust particles \n",
-        (int)dustPositions.size());   
-    tree->localTree.setNDust((int)dustPositions.size());
-    tree->allocateDustMemory(tree->localTree);
-
-    //Load dust data onto the device
-    for(uint i=0; i < dustPositions.size(); i++)
+  #ifdef USE_DUST
+    if( (int)dustPositions.size() > 0)
     {
-      tree->localTree.dust_pos[i] = dustPositions[i];
-      tree->localTree.dust_vel[i] = dustVelocities[i];
-      tree->localTree.dust_ids[i] = dustIDs[i];
+      LOGF(stderr, "Allocating dust properties for %d dust particles \n",
+          (int)dustPositions.size());
+      tree->localTree.setNDust((int)dustPositions.size());
+      tree->allocateDustMemory(tree->localTree);
+
+      //Load dust data onto the device
+      for(uint i=0; i < dustPositions.size(); i++)
+      {
+        tree->localTree.dust_pos[i] = dustPositions[i];
+        tree->localTree.dust_vel[i] = dustVelocities[i];
+        tree->localTree.dust_ids[i] = dustIDs[i];
+      }
+
+      tree->localTree.dust_pos.h2d();
+      tree->localTree.dust_vel.h2d();
+      tree->localTree.dust_ids.h2d();
     }
-
-    tree->localTree.dust_pos.h2d();
-    tree->localTree.dust_vel.h2d();
-    tree->localTree.dust_ids.h2d();    
-  }
-#endif //ifdef USE_DUST
+  #endif //ifdef USE_DUST
 
 
-#ifdef USE_MPI
-  //Startup the OMP threads
-  omp_set_num_threads(4);
-#endif
+  #ifdef USE_MPI
+    //Sum all the particles to get total number of particles in the system
+    tree->mpiSumParticleCount(tree->localTree.n);
+
+    //Startup the OMP threads
+    omp_set_num_threads(4);
+  #endif
 
 
   //Start the integration
