@@ -103,6 +103,8 @@ extern void displayTimers()
 #include <cuda_gl_interop.h>
 #endif
 
+
+
 void read_dumbp_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyVelocities,  vector<int> &bodiesIDs,  float eps2,
                      string fileName, int rank, int procs, int &NTotal2, int &NFirst, int &NSecond, int &NThird, octree *tree, int reduce_bodies_factor)  
 {
@@ -255,7 +257,7 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
     exit(0);
   }
   
-  dump  h;
+  dumpV2  h;
   inputFile.read((char*)&h, sizeof(h));  
 
   int NTotal;
@@ -264,11 +266,19 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
   real4 velocity;
 
      
-  //Read tipsy header  
+  //Read Tipsy header
   NTotal        = h.nbodies;
   NFirst        = h.ndark;
   NSecond       = h.nstar;
   NThird        = h.nsph;
+
+  printf("File version: %d \n", h.version);
+
+  int fileFormatVersion = 0;
+
+  if(h.version == 2) fileFormatVersion = 2;
+
+
 
   tree->set_t_current((float) h.time);
   
@@ -284,8 +294,8 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
   int particleCount = 0;
   int procCntr = 1;
   
-  dark_particle d;
-  star_particle s;
+  dark_particleV2 d;
+  star_particleV2 s;
 
   int globalParticleCount = 0;
   int bodyCount = 0;
@@ -296,7 +306,8 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
     if(i < NFirst)
     {
       inputFile.read((char*)&d, sizeof(d));
-      velocity.w        = d.eps;
+      //velocity.w        = d.eps;
+      velocity.w        = 0;
       positions.w       = d.mass;
       positions.x       = d.pos[0];
       positions.y       = d.pos[1];
@@ -304,12 +315,25 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
       velocity.x        = d.vel[0];
       velocity.y        = d.vel[1];
       velocity.z        = d.vel[2];
-      idummy            = d.phi;
+      idummy            = d.getID();
+
+      //Force compatibility with older 32bit ID files by mapping the particle IDs
+      if(fileFormatVersion == 0)
+      {
+        int oldID = d.getID_V1();
+
+        //Convert by adding dark-matter start value
+
+//        printf("Old id: %ld new id: %d \n", idummy, d.getID_V1());
+
+      }
+      //end mapping
     }
     else
     {
       inputFile.read((char*)&s, sizeof(s));
-      velocity.w        = s.eps;
+      //velocity.w        = s.eps;
+      velocity.w        = 0;
       positions.w       = s.mass;
       positions.x       = s.pos[0];
       positions.y       = s.pos[1];
@@ -317,7 +341,17 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
       velocity.x        = s.vel[0];
       velocity.y        = s.vel[1];
       velocity.z        = s.vel[2];
-      idummy            = s.phi;
+      idummy            = s.getID();
+
+      //Force compatibility with older 32bit ID files by mapping the particle IDs
+      if(fileFormatVersion == 0)
+      {
+        int oldID = s.getID_V1();
+
+//        printf("Old id: %ld new id: %d \n", idummy, s.getID_V1());
+
+      }
+      //end mapping
     }
 
 
@@ -369,6 +403,8 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
     #endif
     
     particleCount++;
+
+
   
   
     if(!restart)

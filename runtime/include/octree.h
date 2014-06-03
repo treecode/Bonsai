@@ -52,8 +52,9 @@ using namespace std;
 
 
 
-typedef float real;
-typedef unsigned int uint;
+typedef float              real;
+typedef unsigned int       uint;
+typedef unsigned long long ullong; //ulonglong1
 
 #define NBLOCK_REDUCE     256
 #define NBLOCK_BOUNDARY   120
@@ -61,6 +62,37 @@ typedef unsigned int uint;
 #define NBLOCK_PREFIX     512           //At the moment only used during memory alloc
 
 #define NMAXSAMPLE 20000                //Used by first on host domain division
+
+
+
+/*
+ * V1 IDs, 32 bit integers
+ * >  200000000               => Dark-matter
+ * >= 100000000 <  200000000  => Bulge
+ * >= 0         <  100000000  => Disk
+ *    Possible:
+ *      >= 0         <  40000000 => Disk
+ *      >= 40000000  <  50000000 => Glowing stars in spiral arms
+ *      >= 50000000  <  70000000 => Dust
+ *      >= 70000000  < 100000000 => Glow mass less dust particles
+ *
+ * V2 IDs, 64 bit integers => 9.223.372.036.854.775.807
+ *
+ * >  3.000.000.000.000.000.000                             => Dark-matter
+ * >= 2.000.000.000.000.000.000 < 3.000.000.000.000.000.000 => Bulge
+ * >= 0                         < 2.000.000.000.000.000.000 => Disk
+ *
+ *
+ */
+
+#define DARKMATTERID  3000000000000000000
+#define DISKID        0
+#define BULGEID       2000000000000000000
+
+
+
+
+
 
 #ifdef USE_B40C
 #include "sort.h"
@@ -548,6 +580,10 @@ public:
    void write_dumbp_snapshot_parallel(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName, float time) ;
    void write_dumbp_snapshot_parallel_tipsy(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName,
                                             int NCombTotal, int NCombFirst, int NCombSecond, int NCombThird, float time);
+
+   void write_dumbp_snapshot_parallel_tipsyV2(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName,
+                                               int NCombTotal, int NCombFirst, int NCombSecond, int NCombThird, float time);
+
    void write_snapshot_per_process(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName, float time);
 
    void set_src_directory(string src_dir);

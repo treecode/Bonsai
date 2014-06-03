@@ -79,51 +79,19 @@ int octree::getTextureAllignmentOffset(int n, int size)
 /******** Output functions  ******/
 /*********************************/
 
-//Version that writes the BD dump format
-void octree::write_dumbp_snapshot(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName) {
-  char fullFileName[256];
-  sprintf(fullFileName, "%s", fileName.c_str());
-
-  cout << "Trying to write to file: " << fullFileName << endl;
-
-  ofstream outputFile(fullFileName, ios::out);
-  
-  if(!outputFile.is_open())
-  {
-    cout << "Can't open output file \n";
-    exit(0);
-  }
-  
-  outputFile.precision(16);
-  
-  //Write the header                                                                                                                                        
-  outputFile << NTotal << "\t" << NFirst << "\t" << NSecond << "\t" << NThird << endl;   
-  
-  for(int i=0; i < n ; i++)
-  {
-    outputFile << bodyIds[i] << "\t" << bodyPositions[i].w << "\t" << bodyPositions[i].x << "\t" <<
-                       bodyPositions[i].y       << "\t" << bodyPositions[i].z << "\t" <<
-                       bodyVelocities[i].x      << "\t" << bodyVelocities[i].y << "\t" <<
-                       bodyVelocities[i].z      << "\t" << bodyVelocities[i].w << endl;
-  }
 
 
-  outputFile.close();
-
-  fprintf(stdout, "Wrote %d bodies to dump file \n", n);
-};
-
-void octree::write_snapshot_per_process(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName, float time)
+void octree::write_snapshot_per_process(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds,
+                                        int n, string fileName, float time)
 {
     NTotal = n;
     NFirst = NSecond = NThird = 0;
 
     for(int i=0; i < n; i++)
     {
-      //Specific for JB his files
-      if(bodyIds[i] >= 0         && bodyIds[i] < 100000000) NThird++;
-      if(bodyIds[i] >= 100000000 && bodyIds[i] < 200000000) NSecond++;
-      if(bodyIds[i] >= 200000000 && bodyIds[i] < 300000000) NFirst++;
+      if(bodyIds[i] >= DISKID  && bodyIds[i] < BULGEID)       NThird++;
+      if(bodyIds[i] >= BULGEID && bodyIds[i] < DARKMATTERID)  NSecond++;
+      if(bodyIds[i] >= DARKMATTERID)                          NFirst++;
     }
 
     //Sync them to process 0
@@ -133,15 +101,14 @@ void octree::write_snapshot_per_process(real4 *bodyPositions, real4 *bodyVelocit
     NCombSecond = (NSecond);
     NCombThird  = (NThird);
 
-    //Since the dust and disk particles are star particles
-    //lets add them
+    //Since the bulge and disk particles are star particles, lets add them
     NCombSecond += NCombThird;
 
 
     ofstream outputFile;
     outputFile.open(fileName.c_str(), ios::out | ios::binary);
 
-    dump  h;
+    dumpV2  h;
 
     if(!outputFile.is_open())
     {
@@ -149,23 +116,24 @@ void octree::write_snapshot_per_process(real4 *bodyPositions, real4 *bodyVelocit
       exit(0);
     }
 
-    //Create tipsy header
-    h.time = time;
+    //Create Tipsy header
+    h.time    = time;
     h.nbodies = NCombTotal;
-    h.ndim = 3;
-    h.ndark = NCombFirst;
-    h.nstar = NCombSecond;    //Incase of disks we have to finish this
-    h.nsph = 0;
+    h.ndim    = 3;
+    h.ndark   = NCombFirst;
+    h.nstar   = NCombSecond;    //Incase of disks we have to finish this
+    h.nsph    = 0;
+    h.version = 2;
     outputFile.write((char*)&h, sizeof(h));
 
-    //Frist write the dark matter particles
+    //First write the dark matter particles
     for(int i=0; i < NCombTotal ; i++)
     {
-      if(bodyIds[i] >= 200000000 && bodyIds[i] < 300000000)
+      if(bodyIds[i] >= DARKMATTERID)
       {
         //Set particle properties
-        dark_particle d;
-        d.eps = bodyVelocities[i].w;
+        dark_particleV2 d;
+        //d.eps = bodyVelocities[i].w;
         d.mass = bodyPositions[i].w;
         d.pos[0] = bodyPositions[i].x;
         d.pos[1] = bodyPositions[i].y;
@@ -173,7 +141,7 @@ void octree::write_snapshot_per_process(real4 *bodyPositions, real4 *bodyVelocit
         d.vel[0] = bodyVelocities[i].x;
         d.vel[1] = bodyVelocities[i].y;
         d.vel[2] = bodyVelocities[i].z;
-        d.phi = bodyIds[i];      //Custom change to tipsy format
+        d.setID(bodyIds[i]);      //Custom change to Tipsy format
 
         outputFile.write((char*)&d, sizeof(d));
       } //end if
@@ -182,25 +150,22 @@ void octree::write_snapshot_per_process(real4 *bodyPositions, real4 *bodyVelocit
     //Next write the star particles
     for(int i=0; i < NCombTotal ; i++)
     {
-      if(bodyIds[i] >= 0 && bodyIds[i] < 200000000)
-      {
-        //Set particle properties
-        star_particle s;
-        s.eps = bodyVelocities[i].w;
-        s.mass = bodyPositions[i].w;
-        s.pos[0] = bodyPositions[i].x;
-        s.pos[1] = bodyPositions[i].y;
-        s.pos[2] = bodyPositions[i].z;
-        s.vel[0] = bodyVelocities[i].x;
-        s.vel[1] = bodyVelocities[i].y;
-        s.vel[2] = bodyVelocities[i].z;
-        s.phi = bodyIds[i];      //Custom change to tipsy format
+      //Set particle properties
+      star_particleV2 s;
+      //s.eps = bodyVelocities[i].w;
+      s.mass = bodyPositions[i].w;
+      s.pos[0] = bodyPositions[i].x;
+      s.pos[1] = bodyPositions[i].y;
+      s.pos[2] = bodyPositions[i].z;
+      s.vel[0] = bodyVelocities[i].x;
+      s.vel[1] = bodyVelocities[i].y;
+      s.vel[2] = bodyVelocities[i].z;
+      s.setID(bodyIds[i]);      //Custom change to tipsy format
 
-        s.metals = 0;
-        s.tform = 0;
-        outputFile.write((char*)&s, sizeof(s));
-//         outputFile << s;
-     } //end if
+      s.metals = 0;
+      s.tform = 0;
+      outputFile.write((char*)&s, sizeof(s));
+
     } //end i loop
 
     outputFile.close();
@@ -209,65 +174,66 @@ void octree::write_snapshot_per_process(real4 *bodyPositions, real4 *bodyVelocit
 
 }
 
-void octree::write_dumbp_snapshot_parallel_tipsy(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName,
-                                                 int NCombTotal, int NCombFirst, int NCombSecond, int NCombThird, float time) 
+void octree::write_dumbp_snapshot_parallel_tipsyV2(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName,
+                                                 int NCombTotal, int NCombFirst, int NCombSecond, int NCombThird, float time)
 {
-  #ifdef TIPSYOUTPUT  
+  #ifdef TIPSYOUTPUT
   //Rank 0 does the writing
   if(mpiGetRank() == 0)
   {
     ofstream outputFile;
     outputFile.open(fileName.c_str(), ios::out | ios::binary);
 
-    dump  h;
- 
+    dumpV2  h;
+
     if(!outputFile.is_open())
     {
       cout << "Can't open output file: "<< fileName << std::endl;
       exit(0);
     }
-      
-    //Create tipsy header
-    h.time = time;
+
+    //Create Tipsy header
+    h.time    = time;
     h.nbodies = NCombTotal;
-    h.ndim = 3;
-    h.ndark = NCombFirst;
-    h.nstar = NCombSecond;    //Incase of disks we have to finish this
-    h.nsph = 0;
+    h.ndim    = 3;
+    h.ndark   = NCombFirst;
+    h.nstar   = NCombSecond;    //In case of disks we have to finish this
+    h.nsph    = 0;
+    h.version = 2;
 
     outputFile.write((char*)&h, sizeof(h));
-    
+
     //Buffer to store complete snapshot
     vector<real4> allPositions;
     vector<real4> allVelocities;
-    vector<int> allIds;
-    
+    vector<int>   allIds;
+
     allPositions.insert(allPositions.begin(), &bodyPositions[0], &bodyPositions[n]);
     allVelocities.insert(allVelocities.begin(), &bodyVelocities[0], &bodyVelocities[n]);
     allIds.insert(allIds.begin(), &bodyIds[0], &bodyIds[n]);
-    
+
     //Now receive the data from the other processes
     vector<real4> extPositions;
     vector<real4> extVelocities;
     vector<int>   extIds;
-    
+
     for(int recvFrom=1; recvFrom < mpiGetNProcs(); recvFrom++)
     {
       ICRecv(recvFrom, extPositions, extVelocities,  extIds);
-      
+
       allPositions.insert(allPositions.end(), extPositions.begin(), extPositions.end());
       allVelocities.insert(allVelocities.end(), extVelocities.begin(), extVelocities.end());
-      allIds.insert(allIds.end(), extIds.begin(), extIds.end());     
+      allIds.insert(allIds.end(), extIds.begin(), extIds.end());
     }
-    
+
     //Frist write the dark matter particles
     for(int i=0; i < NCombTotal ; i++)
     {
-      if(allIds[i] >= 200000000 && allIds[i] < 300000000)
+      if(allIds[i] >= DARKMATTERID)
       {
         //Set particle properties
-        dark_particle d;
-        d.eps = allVelocities[i].w;
+        dark_particleV2 d;
+        //d.eps = allVelocities[i].w;
         d.mass = allPositions[i].w;
         d.pos[0] = allPositions[i].x;
         d.pos[1] = allPositions[i].y;
@@ -275,22 +241,21 @@ void octree::write_dumbp_snapshot_parallel_tipsy(real4 *bodyPositions, real4 *bo
         d.vel[0] = allVelocities[i].x;
         d.vel[1] = allVelocities[i].y;
         d.vel[2] = allVelocities[i].z;
-        d.phi = allIds[i];      //Custom change to tipsy format
-        
+        //d.ID[0] = allIds[i];      //Custom change to tipsy format
+        d.setID(allIds[i]);
+
         outputFile.write((char*)&d, sizeof(d));
-      } //end if 
+      } //end if
     } //end i loop
-    
-    
+
+
     //Next write the star particles
     for(int i=0; i < NCombTotal ; i++)
     {
-//       if(allIds[i] >= 100000000 && allIds[i] < 200000000)
-      if(allIds[i] >= 0 && allIds[i] < 200000000)
       {
         //Set particle properties
-        star_particle s;
-        s.eps = allVelocities[i].w;
+        star_particleV2 s;
+        //s.eps = allVelocities[i].w;
         s.mass = allPositions[i].w;
         s.pos[0] = allPositions[i].x;
         s.pos[1] = allPositions[i].y;
@@ -298,7 +263,7 @@ void octree::write_dumbp_snapshot_parallel_tipsy(real4 *bodyPositions, real4 *bo
         s.vel[0] = allVelocities[i].x;
         s.vel[1] = allVelocities[i].y;
         s.vel[2] = allVelocities[i].z;
-        s.phi = allIds[i];      //Custom change to tipsy format
+        s.setID(allIds[i]);
 
         s.metals = 0;
         s.tform = 0;
@@ -306,10 +271,13 @@ void octree::write_dumbp_snapshot_parallel_tipsy(real4 *bodyPositions, real4 *bo
 //         outputFile << s;
      } //end if
     } //end i loop
-    
+
     outputFile.close();
 
     fprintf(stdout, "Wrote %d bodies to tipsy file \n", NCombTotal);
+    fprintf(stdout, "Test: %d %d  and long: %d \t header: %d %d  test: %d\n",
+        sizeof(dark_particle), sizeof(dark_particleV2),
+        sizeof(long), sizeof(dump), sizeof(dumpV2), sizeof(ulonglong1));
   }
   else
   {
@@ -319,20 +287,17 @@ void octree::write_dumbp_snapshot_parallel_tipsy(real4 *bodyPositions, real4 *bo
  #endif
 }
 
-void octree::write_dumbp_snapshot_parallel(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName, float time) 
+void octree::write_dumbp_snapshot_parallel(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName, float time)
 {
-  
-  //If we use individual softening then first sync the particle types
-  //#ifdef INDSOFT  
     NTotal = n;
     NFirst = NSecond = NThird = 0;
     
     for(int i=0; i < n; i++)
     { 
       //Specific for JB his files
-      if(bodyIds[i] >= 0         && bodyIds[i] < 100000000) NThird++;
-      if(bodyIds[i] >= 100000000 && bodyIds[i] < 200000000) NSecond++;
-      if(bodyIds[i] >= 200000000 && bodyIds[i] < 300000000) NFirst++;        
+      if(bodyIds[i] >= DISKID  && bodyIds[i] < BULGEID)       NThird++;
+      if(bodyIds[i] >= BULGEID && bodyIds[i] < DARKMATTERID)  NSecond++;
+      if(bodyIds[i] >= DARKMATTERID)                          NFirst++;
     }
     
     //Sync them to process 0
@@ -341,92 +306,163 @@ void octree::write_dumbp_snapshot_parallel(real4 *bodyPositions, real4 *bodyVelo
     NCombFirst  = SumOnRootRank(NFirst);
     NCombSecond = SumOnRootRank(NSecond);
     NCombThird  = SumOnRootRank(NThird);
-  //#endif
     
     //Since the dust and disk particles are star particles
     //lets add them
     NCombSecond += NCombThird;    
-  
-  #ifdef TIPSYOUTPUT
-  //#ifdef INDSOFT
+
     char fullFileName[256];
     sprintf(fullFileName, "%s", fileName.c_str());
     string tempName; tempName.assign(fullFileName);
-    write_dumbp_snapshot_parallel_tipsy(bodyPositions, bodyVelocities, bodyIds, n, tempName,
+    write_dumbp_snapshot_parallel_tipsyV2(bodyPositions, bodyVelocities, bodyIds, n, tempName,
                                         NCombTotal, NCombFirst, NCombSecond, NCombThird, time);
     return;
-  #endif
-  //#endif
-  //Rank 0 does the writing
-  if(mpiGetRank() == 0)
-  {
-    char fullFileName[256];
-    sprintf(fullFileName, "%s", fileName.c_str());
 
-    cout << "Trying to write to file: " << fullFileName << endl;
-
-    ofstream outputFile(fullFileName, ios::out);
-    outputFile.precision(16);
-  
-    if(!outputFile.is_open())
-    {
-      cout << "Can't open output file: "<< fullFileName << std::endl;
-      exit(0);
-    }
-  
-    #ifdef INDSOFT
-      //Write the header                                                                                                                                        
-      outputFile << NCombTotal << "\t" << NCombFirst << "\t" << NCombSecond << "\t" << NCombThird << endl;   
-    #endif
-    
-    //Now receive the data from the other processes
-    vector<real4> extPositions;
-    vector<real4> extVelocities;
-    vector<int>   extIds;
-    
-    int particleCount = 0;    
-    for(int recvFrom=1; recvFrom < mpiGetNProcs(); recvFrom++)
-    {
-      ICRecv(recvFrom, extPositions, extVelocities,  extIds);
-      
-      for(unsigned int i=0; i < extPositions.size() ; i++)
-      {
-        outputFile << extIds[i] << "\t" << extPositions[i].w << "\t" << extPositions[i].x << "\t" <<
-                      extPositions[i].y << "\t" << extPositions[i].z << "\t" <<
-                          extVelocities[i].x      << "\t" << extVelocities[i].y << "\t" <<
-                          #ifdef INDSOFT
-                            extVelocities[i].z      << "\t" << extVelocities[i].w << endl;
-                          #else
-                            extVelocities[i].z << endl;
-                          #endif
-      }
-      particleCount += (int)extPositions.size();
-    }
-    
-    for(int i=0; i < n ; i++)
-    {
-      outputFile << bodyIds[i] << "\t" << bodyPositions[i].w << "\t" << bodyPositions[i].x << "\t" <<
-                        bodyPositions[i].y       << "\t" << bodyPositions[i].z << "\t" <<
-                        bodyVelocities[i].x      << "\t" << bodyVelocities[i].y << "\t" <<
-                        #ifdef INDSOFT                        
-                          bodyVelocities[i].z      << "\t" << bodyVelocities[i].w << endl;
-                        #else
-                          bodyVelocities[i].z << endl;                        
-                        #endif
-    }
-    particleCount += n;
-    
-    
-    outputFile.close();
-
-    fprintf(stdout, "Wrote %d bodies to dump file \n", particleCount);
-  }
-  else
-  {
-    //All other ranks send their data to proess 0
-    ICSend(0,  bodyPositions, bodyVelocities,  bodyIds, n);
-  }
 };
+
+//Version that writes the BD dump format
+//void octree::write_dumbp_snapshot(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName) {
+//  char fullFileName[256];
+//  sprintf(fullFileName, "%s", fileName.c_str());
+//
+//  cout << "Trying to write to file: " << fullFileName << endl;
+//
+//  ofstream outputFile(fullFileName, ios::out);
+//
+//  if(!outputFile.is_open())
+//  {
+//    cout << "Can't open output file \n";
+//    exit(0);
+//  }
+//
+//  outputFile.precision(16);
+//
+//  //Write the header
+//  outputFile << NTotal << "\t" << NFirst << "\t" << NSecond << "\t" << NThird << endl;
+//
+//  for(int i=0; i < n ; i++)
+//  {
+//    outputFile << bodyIds[i] << "\t" << bodyPositions[i].w << "\t" << bodyPositions[i].x << "\t" <<
+//                       bodyPositions[i].y       << "\t" << bodyPositions[i].z << "\t" <<
+//                       bodyVelocities[i].x      << "\t" << bodyVelocities[i].y << "\t" <<
+//                       bodyVelocities[i].z      << "\t" << bodyVelocities[i].w << endl;
+//  }
+//
+//
+//  outputFile.close();
+//
+//  fprintf(stdout, "Wrote %d bodies to dump file \n", n);
+//};
+//void octree::write_dumbp_snapshot_parallel_tipsy(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName,
+//                                                 int NCombTotal, int NCombFirst, int NCombSecond, int NCombThird, float time)
+//{
+//  #ifdef TIPSYOUTPUT
+//  //Rank 0 does the writing
+//  if(mpiGetRank() == 0)
+//  {
+//    ofstream outputFile;
+//    outputFile.open(fileName.c_str(), ios::out | ios::binary);
+//
+//    dump  h;
+//
+//    if(!outputFile.is_open())
+//    {
+//      cout << "Can't open output file: "<< fileName << std::endl;
+//      exit(0);
+//    }
+//
+//    //Create tipsy header
+//    h.time = time;
+//    h.nbodies = NCombTotal;
+//    h.ndim = 3;
+//    h.ndark = NCombFirst;
+//    h.nstar = NCombSecond;    //Incase of disks we have to finish this
+//    h.nsph = 0;
+//
+//    outputFile.write((char*)&h, sizeof(h));
+//
+//    //Buffer to store complete snapshot
+//    vector<real4> allPositions;
+//    vector<real4> allVelocities;
+//    vector<int> allIds;
+//
+//    allPositions.insert(allPositions.begin(), &bodyPositions[0], &bodyPositions[n]);
+//    allVelocities.insert(allVelocities.begin(), &bodyVelocities[0], &bodyVelocities[n]);
+//    allIds.insert(allIds.begin(), &bodyIds[0], &bodyIds[n]);
+//
+//    //Now receive the data from the other processes
+//    vector<real4> extPositions;
+//    vector<real4> extVelocities;
+//    vector<int>   extIds;
+//
+//    for(int recvFrom=1; recvFrom < mpiGetNProcs(); recvFrom++)
+//    {
+//      ICRecv(recvFrom, extPositions, extVelocities,  extIds);
+//
+//      allPositions.insert(allPositions.end(), extPositions.begin(), extPositions.end());
+//      allVelocities.insert(allVelocities.end(), extVelocities.begin(), extVelocities.end());
+//      allIds.insert(allIds.end(), extIds.begin(), extIds.end());
+//    }
+//
+//    //Frist write the dark matter particles
+//    for(int i=0; i < NCombTotal ; i++)
+//    {
+//      if(allIds[i] >= 200000000 && allIds[i] < 300000000)
+//      {
+//        //Set particle properties
+//        dark_particle d;
+//        d.eps = allVelocities[i].w;
+//        d.mass = allPositions[i].w;
+//        d.pos[0] = allPositions[i].x;
+//        d.pos[1] = allPositions[i].y;
+//        d.pos[2] = allPositions[i].z;
+//        d.vel[0] = allVelocities[i].x;
+//        d.vel[1] = allVelocities[i].y;
+//        d.vel[2] = allVelocities[i].z;
+//        d.phi = allIds[i];      //Custom change to tipsy format
+//
+//        outputFile.write((char*)&d, sizeof(d));
+//      } //end if
+//    } //end i loop
+//
+//
+//    //Next write the star particles
+//    for(int i=0; i < NCombTotal ; i++)
+//    {
+////       if(allIds[i] >= 100000000 && allIds[i] < 200000000)
+//      if(allIds[i] >= 0 && allIds[i] < 200000000)
+//      {
+//        //Set particle properties
+//        star_particle s;
+//        s.eps = allVelocities[i].w;
+//        s.mass = allPositions[i].w;
+//        s.pos[0] = allPositions[i].x;
+//        s.pos[1] = allPositions[i].y;
+//        s.pos[2] = allPositions[i].z;
+//        s.vel[0] = allVelocities[i].x;
+//        s.vel[1] = allVelocities[i].y;
+//        s.vel[2] = allVelocities[i].z;
+//        s.phi = allIds[i];      //Custom change to tipsy format
+//
+//        s.metals = 0;
+//        s.tform = 0;
+//        outputFile.write((char*)&s, sizeof(s));
+////         outputFile << s;
+//     } //end if
+//    } //end i loop
+//
+//    outputFile.close();
+//
+//    fprintf(stdout, "Wrote %d bodies to tipsy file \n", NCombTotal);
+//  }
+//  else
+//  {
+//    //All other ranks send their data to proess 0
+//    ICSend(0,  bodyPositions, bodyVelocities,  bodyIds, n);
+//  }
+// #endif
+//}
+
 
 /*********************************/
 /*********************************/
