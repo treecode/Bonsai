@@ -1,3 +1,4 @@
+// g++ convDensBinToAscii.cpp -O3 convDensBinToAscii
 #include <stdio.h>
 #include <iostream>
 #include <stdlib.h>
