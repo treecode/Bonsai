@@ -105,122 +105,6 @@ extern void displayTimers()
 
 
 
-void read_dumbp_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyVelocities,  vector<ullong> &bodiesIDs,  float eps2,
-                     string fileName, int rank, int procs, int &NTotal2, int &NFirst, int &NSecond, int &NThird, octree *tree, int reduce_bodies_factor)  
-{
-  //Process 0 does the file reading and sends the data
-  //to the other processes
-  
-  //Now we have different types of files, try to determine which one is used
-  /*****
-  If individual softening is on there is only one option:
-  Header is formatted as follows: 
-  N     #       #       #
-  so read the first number and compute how particles should be distributed
-  
-  If individual softening is NOT enabled, i can be anything, but for ease I assume standard dumbp files:
-  no Header
-  ID mass x y z vx vy vz
-  now the next step is risky, we assume mass adds up to 1, so number of particles will be : 1 / mass
-  use this as initial particle distribution
-  
-  */
-  
-  
-  char fullFileName[256];
-  sprintf(fullFileName, "%s", fileName.c_str());
-
-  LOG("Trying to read file: %s \n", fullFileName);
-
-  ifstream inputFile(fullFileName, ios::in);
-
-  if(!inputFile.is_open())
-  {
-    LOG("Can't open input file \n");
-    exit(0);
-  }
-  
-  int NTotal;
-  int idummy;
-  real4 positions;
-  real4 velocity;
-
-  #ifndef INDSOFT
-     inputFile >> idummy >> positions.w;
-     inputFile.seekg(0, ios::beg); //Reset file pointer
-     NTotal = (int)(1 / positions.w);
-  #else
-     //Read the Ntotal from the file header
-     inputFile >> NTotal >> NFirst >> NSecond >> NThird;
-  #endif
-  
-  
-  
-  //Rough divide
-  uint perProc = NTotal / procs;
-  bodyPositions.reserve(perProc+10);
-  bodyVelocities.reserve(perProc+10);
-  bodiesIDs.reserve(perProc+10);
-  perProc -= 1;
-
-  //Start reading
-  int particleCount = 0;
-  int procCntr = 1;
-
-  int globalParticleCount = 0;
-
-  while(!inputFile.eof()) {
-    
-    inputFile >> idummy
-              >> positions.w >> positions.x >> positions.y >> positions.z
-              >> velocity.x >> velocity.y >> velocity.z;    
-
-	globalParticleCount++;
-
-	if( globalParticleCount % reduce_bodies_factor == 0 ) 
-		positions.w *= reduce_bodies_factor;
-
-	if( globalParticleCount % reduce_bodies_factor != 0 )
-		continue;
-
-    #ifndef INDSOFT
-      velocity.w = sqrt(eps2);
-    #else
-      inputFile >> velocity.w; //Read the softening from the input file
-    #endif
-    
-    bodyPositions.push_back(positions);
-    bodyVelocities.push_back(velocity);
-    
-    #ifndef INDSOFT    
-      idummy = particleCount;
-    #endif
-    
-    bodiesIDs.push_back(idummy);  
-    
-    particleCount++;
-  
-  
-    if(bodyPositions.size() > perProc && procCntr != procs)
-    {       
-      tree->ICSend(procCntr,  &bodyPositions[0], &bodyVelocities[0],  &bodiesIDs[0], (int)bodyPositions.size());
-      procCntr++;
-      
-      bodyPositions.clear();
-      bodyVelocities.clear();
-      bodiesIDs.clear();
-    }
-  }//end while
-  
-  inputFile.close();
-  
-  //Clear the last one since its double
-  bodyPositions.resize(bodyPositions.size()-1);  
-  NTotal2 = particleCount-1;
-  
-  LOGF(stderr, "NTotal:  %d\tper proc: %d\tFor ourself: %d \n", NTotal, perProc, (int)bodiesIDs.size());
-}
-
 void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyVelocities,
                               vector<ullong> &bodiesIDs,  float eps2, string fileName,
                               int rank, int procs, int &NTotal2, int &NFirst, 
@@ -233,7 +117,6 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
   //Process 0 does the file reading and sends the data
   //to the other processes
   /* 
-
      Read in our custom version of the tipsy file format.
      Most important change is that we store particle id on the 
      location where previously the potential was stored.
@@ -320,14 +203,7 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
       //Force compatibility with older 32bit ID files by mapping the particle IDs
       if(fileFormatVersion == 0)
       {
-        int oldID = d.getID_V1();
-
-        #pragma TODO fix
-
-        //Convert by adding dark-matter start value
-
-//        printf("Old id: %ld new id: %d \n", idummy, d.getID_V1());
-
+        idummy    = s.getID_V1() + DARKMATTERID;
       }
       //end mapping
     }
@@ -348,12 +224,10 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
       //Force compatibility with older 32bit ID files by mapping the particle IDs
       if(fileFormatVersion == 0)
       {
-        int oldID = s.getID_V1();
-
-        #pragma TODO fix
-
-//        printf("Old id: %ld new id: %d \n", idummy, s.getID_V1());
-
+        if(s.getID_V1() >= 100000000)
+          idummy    = s.getID_V1() + BULGEID; //Bulge particles
+        else
+          idummy    = s.getID_V1();
       }
       //end mapping
     }
@@ -438,76 +312,84 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
 
 
 #ifdef GALACTICS
-void generateGalacticsModel(const int      procId,
-                            const int      nProcs,
-                            const int      nMilkyWay,
-                            const int      nMWfork,
-                            const bool     scaleMass,
-                            vector<real4>  &bodyPositions,
-                            vector<real4>  &bodyVelocities,
-                            vector<ullong> &bodyIDs)
-{
-  if (procId == 0) printf("Using MilkyWay model with n= %d per proc, forked %d times \n", nMilkyWay, nMWfork);
-  assert(nMilkyWay > 0);
-  assert(nMWfork > 0);
-
-
-
-  #if 1 /* in this setup all particles will be of equal mass (exact number are galactic-depednant)  */
-    const float fdisk  = 15.1;
-    const float fbulge = 5.1;
-    const float fhalo  = 242.31;
-  #else  /* here, bulge & mw particles have the same mass, but halo particles is 32x heavier */
-    const float fdisk  = 15.1;
-    const float fbulge = 5.1;
-    const float fhalo  = 7.5;
-  #endif
-
-  const float fsum = fdisk + fhalo + fbulge;
-
-  const int ndisk  = (int)(nMilkyWay * fdisk/fsum);
-  const int nbulge = (int)(nMilkyWay * fbulge/fsum);
-  const int nhalo  = (int)(nMilkyWay * fhalo/fsum);
-
-  assert(ndisk  > 0);
-  assert(nbulge > 0);
-  assert(nhalo  > 0);
-
-  const Galactics g(procId, nProcs, ndisk, nbulge, nhalo, nMWfork);
-  if (procId == 0)
-   printf("  ndisk= %d  nbulge= %d  nhalo= %d :: ntotal= %d\n",
-       g.get_ndisk(), g.get_nbulge(), g.get_nhalo(), g.get_ntot());
-
-  const int ntot = g.get_ntot();
-  bodyPositions.resize(ntot);
-  bodyVelocities.resize(ntot);
-  bodyIDs.resize(ntot);
-  for (int i= 0; i < ntot; i++)
+  void generateGalacticsModel(const int      procId,
+                              const int      nProcs,
+                              const int      nMilkyWay,
+                              const int      nMWfork,
+                              const bool     scaleMass,
+                              vector<real4>  &bodyPositions,
+                              vector<real4>  &bodyVelocities,
+                              vector<ullong> &bodyIDs)
   {
-   assert(!std::isnan(g[i].x));
-   assert(!std::isnan(g[i].y));
-   assert(!std::isnan(g[i].z));
-   assert(g[i].mass > 0.0);
-   bodyIDs[i] = g[i].id;
+    if (procId == 0) printf("Using MilkyWay model with n= %d per proc, forked %d times \n", nMilkyWay, nMWfork);
+    assert(nMilkyWay > 0);
+    assert(nMWfork > 0);
 
-   bodyPositions[i].x = g[i].x;
-   bodyPositions[i].y = g[i].y;
-   bodyPositions[i].z = g[i].z;
-   if(scaleMass)
-     bodyPositions[i].w = g[i].mass * 1.0/(double)nProcs;
-   else
-     bodyPositions[i].w = g[i].mass; // * 1.0/(double)nProcs ,scaled later ..
 
-   assert(!std::isnan(g[i].vx));
-   assert(!std::isnan(g[i].vy));
-   assert(!std::isnan(g[i].vz));
 
-   bodyVelocities[i].x = g[i].vx;
-   bodyVelocities[i].y = g[i].vy;
-   bodyVelocities[i].z = g[i].vz;
-   bodyVelocities[i].w = 0.0;
-  }
-} //generateGalacticsModel
+    #if 1 /* in this setup all particles will be of equal mass (exact number are galactic-depednant)  */
+      const float fdisk  = 15.1;
+      const float fbulge = 5.1;
+      const float fhalo  = 242.31;
+    #else  /* here, bulge & mw particles have the same mass, but halo particles is 32x heavier */
+      const float fdisk  = 15.1;
+      const float fbulge = 5.1;
+      const float fhalo  = 7.5;
+    #endif
+
+    const float fsum = fdisk + fhalo + fbulge;
+
+    const int ndisk  = (int)(nMilkyWay * fdisk/fsum);
+    const int nbulge = (int)(nMilkyWay * fbulge/fsum);
+    const int nhalo  = (int)(nMilkyWay * fhalo/fsum);
+
+    assert(ndisk  > 0);
+    assert(nbulge > 0);
+    assert(nhalo  > 0);
+
+    const Galactics g(procId, nProcs, ndisk, nbulge, nhalo, nMWfork);
+    if (procId == 0)
+     printf("  ndisk= %d  nbulge= %d  nhalo= %d :: ntotal= %d\n",
+         g.get_ndisk(), g.get_nbulge(), g.get_nhalo(), g.get_ntot());
+
+    const int ntot = g.get_ntot();
+    bodyPositions.resize(ntot);
+    bodyVelocities.resize(ntot);
+    bodyIDs.resize(ntot);
+    for (int i= 0; i < ntot; i++)
+    {
+     assert(!std::isnan(g[i].x));
+     assert(!std::isnan(g[i].y));
+     assert(!std::isnan(g[i].z));
+     assert(g[i].mass > 0.0);
+
+
+     //Convert old IDs to new ones
+     if( g[i].id >= 200000000)
+       bodyIDs[i] = g[i].id + DARKMATTERID;
+     else if( g[i].id >= 100000000 && g[i].id < 200000000)
+       bodyIDs[i] =  g[i].id + BULGEID;
+     else
+       bodyIDs[i] = g[i].id;
+
+     bodyPositions[i].x = g[i].x;
+     bodyPositions[i].y = g[i].y;
+     bodyPositions[i].z = g[i].z;
+     if(scaleMass)
+       bodyPositions[i].w = g[i].mass * 1.0/(double)nProcs;
+     else
+       bodyPositions[i].w = g[i].mass; // * 1.0/(double)nProcs ,scaled later ..
+
+     assert(!std::isnan(g[i].vx));
+     assert(!std::isnan(g[i].vy));
+     assert(!std::isnan(g[i].vz));
+
+     bodyVelocities[i].x = g[i].vx;
+     bodyVelocities[i].y = g[i].vy;
+     bodyVelocities[i].z = g[i].vz;
+     bodyVelocities[i].w = 0.0;
+    }
+  } //generateGalacticsModel
 #endif
 
 
@@ -1184,6 +1066,8 @@ int main(int argc, char** argv)
     tree->localTree.bodies_Ppos[i] = bodyPositions[i];
     tree->localTree.bodies_Pvel[i] = bodyVelocities[i];
     tree->localTree.bodies_time[i] = make_float2(tree->get_t_current(), tree->get_t_current());
+
+
   }
 
   tree->localTree.bodies_time.h2d();

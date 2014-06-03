@@ -178,7 +178,7 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, ulonglong1 *ids, int numPart
 	int tid = blockIdx.x * blockDim.x + threadIdx.x;
 	if( tid >= numParticles ) return;
 
-	int id =  ids[tid].x;
+	unsigned long long id =  ids[tid].x;
 
 	float r = frand(id);
 	//float4 color = { r, 1-r, 0.5f, 1.0f };
@@ -258,7 +258,7 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, ulonglong1 *ids, int numPart
 
 	float4 color;
 
-	if (id >= 0 && id < 40000000)     //Disk
+	if (id < 40000000)     //Disk
 	{
 		color = ((id % m_brightFreq) != 0) ? 
 			starColor :
@@ -300,11 +300,13 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, ulonglong1 *ids, int numPart
 	{
 		color = dustColor * make_float4(r, r, r, 1.0f);
 	} 
-	else if (id >= 70000000 && id < 100000000) // Glow massless dust particles
+	else if (id >= 70000000 && id < 2000000000000000000) // Glow massless dust particles
+	//else if (id >= 70000000 && id < 100000000) // Glow massless dust particles
 	{
 		color = color3;  /*  adds glow in purple */
 	}
-	else if (id >= 100000000 && id < 200000000) //Bulge
+	else if (id >= 2000000000000000000 && id < 3000000000000000000) //Bulge
+	//else if (id >= 100000000 && id < 200000000) //Bulge
 	{
 		//colors[i] = starColor;
 		color = bulgeColor;
@@ -315,7 +317,7 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, ulonglong1 *ids, int numPart
 		color = Cstar * make_float4(fdim, fdim, fdim, 2.0f);
 #endif
 	} 
-	else //>= 200000000, Dark matter
+	else //>= 3000000000000000000, Dark matter
 	{
 		color = darkMatterColor;
 		//colors[i] = darkMatterColor * make_float4(r, r, r, 1.0f);

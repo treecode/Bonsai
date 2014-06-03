@@ -1269,7 +1269,7 @@ public:
 		m_renderer.setColors((float*)colors);
 #else  /* eg: assign colours on the device */
 		const float Tcurrent = m_tree->get_t_current() * 9.78f;
-		assignColors( m_particleColorsDev, (int*)m_tree->localTree.bodies_ids.d(), n, 
+		assignColors( m_particleColorsDev, (ulonglong1*)m_tree->localTree.bodies_ids.d(), n,
 				color2, color3, color4, starColor, bulgeColor, darkMatterColor, dustColor, m_brightFreq, 
 				make_float4(
 					Tcurrent, TstartGlow,
