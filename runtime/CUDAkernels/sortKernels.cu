@@ -270,10 +270,10 @@ KERNEL_DECLARE(gpu_dataReorderCombined)(const int N, uint4 *keyAndPerm,
 
 
 KERNEL_DECLARE(dataReorderCombined4)(const int N, 
-                                      uint4 *keyAndPerm,
-                                      real4 *source1,  real4* destination1,
-                                      int *source2,    int*   destination2,
-                                      int *oldOrder) {
+                                     uint4 *keyAndPerm,
+                                     real4 *source1,  real4* destination1,
+                                     ulonglong1 *source2,    ulonglong1 *   destination2,
+                                     int *oldOrder) {
   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
   const int tid = threadIdx.y * blockDim.x + threadIdx.x;
   const int dim =  blockDim.x * blockDim.y;
@@ -347,7 +347,7 @@ KERNEL_DECLARE(dataReorderCombined3)(const int N, uint4 *keyAndPerm,
 
 KERNEL_DECLARE(gpu_dataReorderF2)(const int N, uint4 *keyAndPerm,
                                          float2 *source1, float2 *destination1,
-                                         int    *source2, int *destination2) {
+                                         ulonglong1    *source2, ulonglong1 *destination2) {
   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
   const int tid = threadIdx.y * blockDim.x + threadIdx.x;
   const int dim =  blockDim.x * blockDim.y;

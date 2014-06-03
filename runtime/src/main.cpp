@@ -105,7 +105,7 @@ extern void displayTimers()
 
 
 
-void read_dumbp_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyVelocities,  vector<int> &bodiesIDs,  float eps2,
+void read_dumbp_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyVelocities,  vector<ullong> &bodiesIDs,  float eps2,
                      string fileName, int rank, int procs, int &NTotal2, int &NFirst, int &NSecond, int &NThird, octree *tree, int reduce_bodies_factor)  
 {
   //Process 0 does the file reading and sends the data
@@ -222,11 +222,11 @@ void read_dumbp_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
 }
 
 void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyVelocities,
-                              vector<int> &bodiesIDs,  float eps2, string fileName, 
+                              vector<ullong> &bodiesIDs,  float eps2, string fileName,
                               int rank, int procs, int &NTotal2, int &NFirst, 
                               int &NSecond, int &NThird, octree *tree,
                               vector<real4> &dustPositions, vector<real4> &dustVelocities,
-                              vector<int> &dustIDs, int reduce_bodies_factor,
+                              vector<ullong> &dustIDs, int reduce_bodies_factor,
                               int reduce_dust_factor,
                               const bool restart)
 {
@@ -261,7 +261,7 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
   inputFile.read((char*)&h, sizeof(h));  
 
   int NTotal;
-  int idummy;
+  ullong idummy;
   real4 positions;
   real4 velocity;
 
@@ -322,6 +322,8 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
       {
         int oldID = d.getID_V1();
 
+        #pragma TODO fix
+
         //Convert by adding dark-matter start value
 
 //        printf("Old id: %ld new id: %d \n", idummy, d.getID_V1());
@@ -347,6 +349,8 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
       if(fileFormatVersion == 0)
       {
         int oldID = s.getID_V1();
+
+        #pragma TODO fix
 
 //        printf("Old id: %ld new id: %d \n", idummy, s.getID_V1());
 
@@ -439,9 +443,9 @@ void generateGalacticsModel(const int      procId,
                             const int      nMilkyWay,
                             const int      nMWfork,
                             const bool     scaleMass,
-                            vector<real4> &bodyPositions,
-                            vector<real4> &bodyVelocities,
-                            vector<int>   &bodyIDs)
+                            vector<real4>  &bodyPositions,
+                            vector<real4>  &bodyVelocities,
+                            vector<ullong> &bodyIDs)
 {
   if (procId == 0) printf("Using MilkyWay model with n= %d per proc, forked %d times \n", nMilkyWay, nMWfork);
   assert(nMilkyWay > 0);
@@ -525,13 +529,13 @@ int main(int argc, char** argv)
   my_dev::base_mem::currentMemUsage = 0;
   my_dev::base_mem::maxMemUsage     = 0;
 
-  vector<real4> bodyPositions;
-  vector<real4> bodyVelocities;
-  vector<int>   bodyIDs;
+  vector<real4>   bodyPositions;
+  vector<real4>   bodyVelocities;
+  vector<ullong>  bodyIDs;
 
-  vector<real4> dustPositions;
-  vector<real4> dustVelocities;
-  vector<int>   dustIDs;  
+  vector<real4>   dustPositions;
+  vector<real4>   dustVelocities;
+  vector<ullong>  dustIDs;
   
 
   float eps      = 0.05f;

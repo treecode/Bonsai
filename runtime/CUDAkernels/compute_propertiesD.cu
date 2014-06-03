@@ -101,7 +101,7 @@ KERNEL_DECLARE(compute_leaf)( const int n_leafs,
                               real4 *nodeLowerBounds,
                               real4 *nodeUpperBounds,
                               real4  *body_vel,
-                              uint *body_id) {
+                              ulonglong1 *body_id) {
 
   CUXTIMER("compute_leaf");
   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;

@@ -218,7 +218,7 @@ struct DENSITY
     DENSITY(const int _procId, const int _nProc, const int _n,
             const float4 *positions,
             const float4 *velocities,
-            const int    *IDs,
+            const unsigned long long    *IDs,
             double _xscale, double _mscale, double _xmax,
             const char *baseFilename,
             const double time) :
@@ -267,7 +267,7 @@ struct DENSITY
       for(uint i = 0; i < nParticles; i++)
       {
         //Only use star particles
-        if(IDs[i] < DMSTARTID)
+        if(IDs[i] < DARKMATTERID)
         {
           //Top view
           int x = (int)floor((positions[i].x*xscale-xmin)/dx);
@@ -345,9 +345,9 @@ struct DISKSTATS
     #define CUBE(x)         ((x)*(x)*(x))
     #define MAX(x,y)        (((x)>(y))?(x):(y))
 
-    #define DMSTARTID    200000000
-    #define BULGESTARTID 100000000
-
+    #define DARKMATTERID  3000000000000000000
+    #define DISKID        0
+    #define BULGEID       2000000000000000000
 
     const int procId, nProcs, nParticles;
 
@@ -523,7 +523,7 @@ struct DISKSTATS
     DISKSTATS(const int _procId, const int _nProc, const int _n,
               const float4 *positions,
               const float4 *velocities,
-              const int    *IDs,
+              const unsigned long long    *IDs,
               double _xscale, double _mscale,
               const char *baseFilename,
               const double tsim) :
@@ -551,7 +551,7 @@ struct DISKSTATS
         //Process the particles
         for(int j=0; j < nParticles; j++)
         {
-          if(IDs[j] >= 0 && IDs[j] < DMSTARTID)
+          if(IDs[j] >= 0 && IDs[j] < DARKMATTERID)
           {
             //Bluge+disk particles
             double R  =  sqrt(SQ(positions[j].x) + SQ(positions[j].y));

@@ -170,7 +170,7 @@ class StarSampler
 		}
 };
 
-KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles, 
+KERNEL_DECLARE(assignColorsKernel) (float4 *colors, ulonglong1 *ids, int numParticles,
 		float4 color2, float4 color3, float4 color4, 
 		float4 starColor, float4 bulgeColor, float4 darkMatterColor, float4 dustColor,
 		int m_brightFreq, float4 t_current)
@@ -178,7 +178,7 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles,
 	int tid = blockIdx.x * blockDim.x + threadIdx.x;
 	if( tid >= numParticles ) return;
 
-	int id =  ids[tid];
+	int id =  ids[tid].x;
 
 	float r = frand(id);
 	//float4 color = { r, 1-r, 0.5f, 1.0f };
@@ -327,7 +327,7 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles,
 #endif
 
 	extern "C"
-void assignColors(float4 *colors, int *ids, int numParticles, 
+void assignColors(float4 *colors, ulonglong1 *ids, int numParticles,
 		float4 color2, float4 color3, float4 color4, 
 		float4 starColor, float4 bulgeColor, float4 darkMatterColor, float4 dustColor,
 		int m_brightFreq, float4  t_current)

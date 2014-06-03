@@ -171,11 +171,11 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate, bool doFullS
   if(!doFullShuffle)
   {
     my_dev::dev_mem<real4>  real4Buffer1(devContext);
-    my_dev::dev_mem<int>    intBuffer1(devContext);
+    my_dev::dev_mem<ullong> ullBuffer1(devContext);
 
     
     int genBufOffset = real4Buffer1.cmalloc_copy(tree.generalBuffer1, tree.n, 0);
-        genBufOffset = intBuffer1.cmalloc_copy(tree.generalBuffer1, tree.n, genBufOffset);
+        genBufOffset = ullBuffer1.cmalloc_copy(tree.generalBuffer1, tree.n, genBufOffset);
 
     
     dataReorderR4.set_arg<int>(0,      &tree.n);
@@ -186,14 +186,14 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate, bool doFullS
     dataReorderR4.set_arg<cl_mem>(2,   tree.bodies_Ppos.p());
     dataReorderR4.set_arg<cl_mem>(3,   real4Buffer1.p()); 
     dataReorderR4.set_arg<cl_mem>(4,   tree.bodies_ids.p()); 
-    dataReorderR4.set_arg<cl_mem>(5,   intBuffer1.p()); 
+    dataReorderR4.set_arg<cl_mem>(5,   ullBuffer1.p());
     dataReorderR4.set_arg<cl_mem>(6,   tree.oriParticleOrder.p()); 
     dataReorderR4.execute(execStream->s());
     
 //    tree.bodies_Ppos.copy(real4Buffer1,  tree.n);
 //    tree.bodies_ids.copy (intBuffer1,    tree.n);
     tree.bodies_Ppos.copy_devonly(real4Buffer1,  tree.n);
-    tree.bodies_ids.copy_devonly (intBuffer1,    tree.n);
+    tree.bodies_ids.copy_devonly (ullBuffer1,    tree.n);
   }
   else
   {
@@ -243,9 +243,9 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate, bool doFullS
     tree.bodies_Pvel.copy(real4Buffer3, tree.n);   
 
 
-    //These can reuse the real4Buffer1 space :-)
+    //These can reuse the real4Buffer1 and 2 space :-)
     my_dev::dev_mem<float2>  float2Buffer(devContext);
-    my_dev::dev_mem<int> sortPermutation(devContext);
+    my_dev::dev_mem<ullong> sortPermutation(devContext);
     genBufOffset1 = float2Buffer.cmalloc_copy(tree.generalBuffer1, tree.n, 0);
     genBufOffset1 = sortPermutation.cmalloc_copy(tree.generalBuffer1, tree.n, genBufOffset1);
     

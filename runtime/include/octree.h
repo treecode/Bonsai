@@ -205,7 +205,7 @@ class tree_structure
     my_dev::dev_mem<real4> bodies_acc0;    //Acceleration
     my_dev::dev_mem<real4> bodies_acc1;    //Acceleration
     my_dev::dev_mem<float2> bodies_time;  //The timestep details (.x=tb, .y=te
-    my_dev::dev_mem<int>   bodies_ids;
+    my_dev::dev_mem<ullong>   bodies_ids;
     my_dev::dev_mem<int>   oriParticleOrder;  //Used in the correct function to speedup reorder
     
     my_dev::dev_mem<real4> bodies_Ppos;    //Predicted position
@@ -577,14 +577,14 @@ public:
 
    my_dev::context * getDevContext() { return &devContext; };        //Pointer so destructor is only called once  
 
-   void write_dumbp_snapshot_parallel(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName, float time) ;
+   void write_dumbp_snapshot_parallel(real4 *bodyPositions, real4 *bodyVelocities, ullong* bodyIds, int n, string fileName, float time) ;
    void write_dumbp_snapshot_parallel_tipsy(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName,
                                             int NCombTotal, int NCombFirst, int NCombSecond, int NCombThird, float time);
 
-   void write_dumbp_snapshot_parallel_tipsyV2(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName,
+   void write_dumbp_snapshot_parallel_tipsyV2(real4 *bodyPositions, real4 *bodyVelocities, ullong* bodyIds, int n, string fileName,
                                                int NCombTotal, int NCombFirst, int NCombSecond, int NCombThird, float time);
 
-   void write_snapshot_per_process(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName, float time);
+   void write_snapshot_per_process(real4 *bodyPositions, real4 *bodyVelocities, ullong* bodyIds, int n, string fileName, float time);
 
    void set_src_directory(string src_dir);
 
@@ -798,8 +798,8 @@ public:
    //Local Essential Tree related functions
 
 
-  void ICRecv(int procId, vector<real4> &bodyPositions, vector<real4> &bodyVelocities,  vector<int> &bodiesIDs);
-  void ICSend(int destination, real4 *bodyPositions, real4 *bodyVelocities,  int *bodiesIDs, int size);
+  void ICRecv(int procId, vector<real4> &bodyPositions, vector<real4> &bodyVelocities,  vector<ullong> &bodiesIDs);
+  void ICSend(int destination, real4 *bodyPositions, real4 *bodyVelocities,  ullong *bodiesIDs, int size);
 
   void build_NewTopLevels(int n_bodies,
                        uint4 *keys,

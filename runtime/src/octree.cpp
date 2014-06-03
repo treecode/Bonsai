@@ -81,7 +81,7 @@ int octree::getTextureAllignmentOffset(int n, int size)
 
 
 
-void octree::write_snapshot_per_process(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds,
+void octree::write_snapshot_per_process(real4 *bodyPositions, real4 *bodyVelocities, ullong* bodyIds,
                                         int n, string fileName, float time)
 {
     NTotal = n;
@@ -174,7 +174,7 @@ void octree::write_snapshot_per_process(real4 *bodyPositions, real4 *bodyVelocit
 
 }
 
-void octree::write_dumbp_snapshot_parallel_tipsyV2(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName,
+void octree::write_dumbp_snapshot_parallel_tipsyV2(real4 *bodyPositions, real4 *bodyVelocities, ullong* bodyIds, int n, string fileName,
                                                  int NCombTotal, int NCombFirst, int NCombSecond, int NCombThird, float time)
 {
   #ifdef TIPSYOUTPUT
@@ -213,9 +213,9 @@ void octree::write_dumbp_snapshot_parallel_tipsyV2(real4 *bodyPositions, real4 *
     allIds.insert(allIds.begin(), &bodyIds[0], &bodyIds[n]);
 
     //Now receive the data from the other processes
-    vector<real4> extPositions;
-    vector<real4> extVelocities;
-    vector<int>   extIds;
+    vector<real4>   extPositions;
+    vector<real4>   extVelocities;
+    vector<ullong>  extIds;
 
     for(int recvFrom=1; recvFrom < mpiGetNProcs(); recvFrom++)
     {
@@ -274,10 +274,10 @@ void octree::write_dumbp_snapshot_parallel_tipsyV2(real4 *bodyPositions, real4 *
 
     outputFile.close();
 
-    fprintf(stdout, "Wrote %d bodies to tipsy file \n", NCombTotal);
-    fprintf(stdout, "Test: %d %d  and long: %d \t header: %d %d  test: %d\n",
-        sizeof(dark_particle), sizeof(dark_particleV2),
-        sizeof(long), sizeof(dump), sizeof(dumpV2), sizeof(ulonglong1));
+//    fprintf(stdout, "Wrote %d bodies to tipsy file \n", NCombTotal);
+//    fprintf(stdout, "Test: %d %d  and long: %d \t header: %d %d  test: %d\n",
+//        sizeof(dark_particle), sizeof(dark_particleV2),
+//        sizeof(long), sizeof(dump), sizeof(dumpV2), sizeof(ulonglong1));
   }
   else
   {
@@ -287,7 +287,7 @@ void octree::write_dumbp_snapshot_parallel_tipsyV2(real4 *bodyPositions, real4 *
  #endif
 }
 
-void octree::write_dumbp_snapshot_parallel(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName, float time)
+void octree::write_dumbp_snapshot_parallel(real4 *bodyPositions, real4 *bodyVelocities, ullong* bodyIds, int n, string fileName, float time)
 {
     NTotal = n;
     NFirst = NSecond = NThird = 0;
