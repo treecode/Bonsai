@@ -406,21 +406,23 @@ void octree::load_kernels() {
 #ifdef USE_DUST
    define_dust_groups.setContext(devContext);
    define_dust_groups.load_source("./build_tree.ptx", pathName.c_str());
-   define_dust_groups.create("define_dust_groups");
+   define_dust_groups.create("define_dust_groups",(const void*)&gpu_define_dust_groups);
    
    store_dust_groups.setContext(devContext);
    store_dust_groups.load_source("./build_tree.ptx", pathName.c_str());
-   store_dust_groups.create("store_dust_groups");
+   store_dust_groups.create("store_dust_groups",(const void*)&gpu_store_dust_groups);
    
    predictDust.setContext(devContext);
    predictDust.load_source("./build_tree.ptx", pathName.c_str());
-   predictDust.create("predict_dust_particles");   
+   predictDust.create("predict_dust_particles",(const void*)&predict_dust_particles);
    
    correctDust.setContext(devContext);
    correctDust.load_source("./build_tree.ptx", pathName.c_str());
-   correctDust.create("correct_dust_particles");     
-   
-   
+   correctDust.create("correct_dust_particles",(const void*)&correct_dust_particles);
+
+   copyNodeDataToGroupData.setContext(devContext);
+   copyNodeDataToGroupData.load_source("./compute_propertiesD.ptx", pathName.c_str());
+   copyNodeDataToGroupData.create("setPHGroupData", (const void*)&gpu_setPHGroupData);
    
 #endif  
 

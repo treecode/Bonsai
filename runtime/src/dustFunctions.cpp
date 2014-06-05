@@ -207,7 +207,7 @@ void octree::sort_dust(tree_structure &tree)
 
   my_dev::dev_mem<int>     intBuffer(devContext);
   my_dev::dev_mem<float2>  float2Buffer(devContext);
-  my_dev::dev_mem<int>     sortPermutation(devContext);
+  my_dev::dev_mem<ullong>  sortPermutation(devContext);
   
   memOffset1 = float2Buffer.cmalloc_copy   (tree.generalBuffer1,tree.n_dust, 0);
   memOffset1 = sortPermutation.cmalloc_copy(tree.generalBuffer1,tree.n_dust, memOffset1);

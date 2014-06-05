@@ -282,7 +282,7 @@ class tree_structure
       my_dev::dev_mem<real4> dust_vel;    //Velocities
       my_dev::dev_mem<real4> dust_acc0;    //Acceleration
       my_dev::dev_mem<real4> dust_acc1;    //Acceleration
-      my_dev::dev_mem<int>   dust_ids;
+      my_dev::dev_mem<ullong>   dust_ids;
       
       my_dev::dev_mem<int>   dust2group_list;
       my_dev::dev_mem<int2>   dust_group_list;
@@ -933,6 +933,8 @@ public:
     my_dev::kernel store_dust_groups;
     my_dev::kernel predictDust;
     my_dev::kernel correctDust;
+    my_dev::kernel copyNodeDataToGroupData;
+
   #endif
   
   //

@@ -137,7 +137,7 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
   if(!inputFile.is_open())
   {
     LOG("Can't open input file \n");
-    exit(0);
+    ::exit(0);
   }
   
   dumpV2  h;
@@ -325,6 +325,8 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
     assert(nMilkyWay > 0);
     assert(nMWfork > 0);
 
+    //TODO modify galactics
+    //TODO read in number of particles required
 
 
     #if 1 /* in this setup all particles will be of equal mass (exact number are galactic-depednant)  */
@@ -578,7 +580,7 @@ int main(int argc, char** argv)
     {
       /* print usage if no options or requested help */
       opt.printUsage();
-      exit(0);
+      ::exit(0);
     }
 
     if (opt.getFlag("direct")) direct = true;
@@ -624,7 +626,7 @@ int main(int argc, char** argv)
     if (fileName.empty() && nPlummer == -1 && nSphere == -1 && nMilkyWay == -1 && nCube == -1)
     {
       opt.printUsage();
-      exit(0);
+      ::exit(0);
     }
 
 #undef ADDUSAGE
@@ -860,7 +862,8 @@ int main(int argc, char** argv)
                 procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
                 dustPositions, dustVelocities, dustIDs, reduce_bodies_factor, reduce_dust_factor, false);
       #else
-            read_dumbp_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, procId, nProcs, NTotal, NFirst, NSecond, NThird, tree, reduce_bodies_factor);
+            assert(0); //This file format is removed
+            //read_dumbp_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, procId, nProcs, NTotal, NFirst, NSecond, NThird, tree, reduce_bodies_factor);
       #endif
     }
     else
@@ -881,6 +884,7 @@ int main(int argc, char** argv)
         }
         else
         {
+          //Scale mass of previously generated model
           const int ntot = bodyPositions.size();
           for (int i= 0; i < ntot; i++)
             bodyPositions[i].w *= 1.0/(double)nProcs;
@@ -904,7 +908,7 @@ int main(int argc, char** argv)
       assert(!std::isnan(m.pos[i].y));
       assert(!std::isnan(m.pos[i].z));
       assert(m.mass[i] > 0.0);
-      bodyIDs[i]   = nPlummer*procId + i;
+      bodyIDs[i]   = ((unsigned long long) nPlummer)*procId + i;
 
       bodyPositions[i].x = m.pos[i].x;
       bodyPositions[i].y = m.pos[i].y;
@@ -938,7 +942,7 @@ int main(int argc, char** argv)
       const double r2 = x*x+y*y+z*z;
       if (r2 < 1)
       {
-        bodyIDs[np]   = nSphere*procId + np;
+        bodyIDs[np]   = ((unsigned long long) nSphere)*procId + np;
 
         bodyPositions[np].x = x;
         bodyPositions[np].y = y;
@@ -971,7 +975,7 @@ int main(int argc, char** argv)
       const double y = 2*drand48()-1.0;
       const double z = 2*drand48()-1.0;
 
-      bodyIDs[i]   = nCube*procId + i;
+      bodyIDs[i]   =  ((unsigned long long) nCube)*procId + i;
 
       bodyPositions[i].x = x;
       bodyPositions[i].y = y;
@@ -996,7 +1000,7 @@ int main(int argc, char** argv)
     bodyIDs.resize(np);
     for (int i= 0; i < np; i++)
     {
-      bodyIDs[i]   = np*procId + i;
+      bodyIDs[i]   =  ((unsigned long long) np)*procId + i;
 
       bodyPositions[i].x = disk.pos(i).x;
       bodyPositions[i].y = disk.pos (i).y;
@@ -1127,12 +1131,12 @@ int main(int argc, char** argv)
   catch(const std::exception &exc)
   {
       std::cerr << "Process: "  << procId << "\t" << exc.what() <<std::endl;
-      if(nProcs > 1) abort();
+      if(nProcs > 1) ::abort();
   }
   catch(...)
   {
       std::cerr << "Unknown exception on process: " << procId << std::endl;
-      if(nProcs > 1) abort();
+      if(nProcs > 1) ::abort();
   }
 
   LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);

@@ -107,4 +107,13 @@ extern "C" void  (gpu_segmentedSummaryBasic) (const int n_groups, uint     *vali
 
 extern "C" void  (gpu_domainCheckSFCAndAssign)(int    n_bodies, int    nProcs, uint4  lowBoundary, uint4  highBoundary, uint4  *boundaryList,  uint4  *body_key, uint    *validList,  uint   *idList, int procId);
 
+
+
+#ifdef USE_DUST
+  extern "C" void (gpu_define_dust_groups)(int    n_particles,real4  *dust_pos,uint  *validList);
+  extern "C" void (gpu_store_dust_groups)(int    n_groups,uint  *validList,uint  *body2group_list,uint2 *group_list,uint  *activeDustGroups);
+  extern "C" void (predict_dust_particles)(const int n_bodies,float tc,float tp,real4 *pos,real4 *vel,real4 *acc,uint  *body2grouplist,uint  *valid_list);
+  extern "C" void  (correct_dust_particles)(const int n_bodies,float dt_cb,uint   *active_list,real4 *vel,real4 *acc0,real4 *acc1);
+#endif
+
 #endif

@@ -708,7 +708,7 @@ KERNEL_DECLARE(store_group_list)(int    n_particles,
 
 //////////// Functions specific for dust //////////////////
 
-KERNEL_DECLARE(define_dust_groups)(int    n_particles,
+KERNEL_DECLARE(gpu_define_dust_groups)(int    n_particles,
 					      real4  *dust_pos,
                                               uint  *validList)
 {
@@ -773,7 +773,7 @@ KERNEL_DECLARE(define_dust_groups)(int    n_particles,
 //JB: This one is slightly different from the store_group_list
 //since  in my infinite wisdom I decided to make the comparisons
 //slightly different when making the new define_dust_groups
-KERNEL_DECLARE(store_dust_groups)(int    n_groups,
+KERNEL_DECLARE(gpu_store_dust_groups)(int    n_groups,
                                   uint  *validList,
                                   uint  *body2group_list,
                                   uint2 *group_list,

@@ -135,7 +135,7 @@ struct DENSITY
 
 #if 1
 
-      ofstream out;
+      std::ofstream out;
       out.open(fileName);
       if(out.is_open())
       {
