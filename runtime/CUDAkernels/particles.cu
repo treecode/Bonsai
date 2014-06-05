@@ -352,21 +352,21 @@ KERNEL_DECLARE(gpu_extractSampleParticlesSFC)(int     n_bodies,
   samplePosition[id] =  body_pos[idx];
 }
 
-KERNEL_DECLARE(extractOutOfDomainParticlesR4)(int n_extract,
-                                                       int *extractList,
-                                                       real4 *source,
-                                                       real4 *destination)
-{
-  CUXTIMER("extractOutOfDomainParticlesR4");
-  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
-  uint tid = threadIdx.x;
-  uint id  = bid * blockDim.x + tid;
-
-  if(id >= n_extract) return;
-
-  destination[id] = source[extractList[id]];
-
-}
+//KERNEL_DECLARE(extractOutOfDomainParticlesR4)(int n_extract,
+//                                                       int *extractList,
+//                                                       real4 *source,
+//                                                       real4 *destination)
+//{
+//  CUXTIMER("extractOutOfDomainParticlesR4");
+//  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
+//  uint tid = threadIdx.x;
+//  uint id  = bid * blockDim.x + tid;
+//
+//  if(id >= n_extract) return;
+//
+//  destination[id] = source[extractList[id]];
+//
+//}
 
 
 typedef struct bodyStruct
@@ -375,8 +375,9 @@ typedef struct bodyStruct
   real4  Ppos;
   real4  Pvel;
   float2 time;
-  int    id;
-  int    temp;
+  unsigned long long id;
+//  float    id;
+//  int    temp;
 
 #ifdef DO_BLOCK_TIMESTEP_EXCHANGE_MPI
   uint4 key;
@@ -601,7 +602,7 @@ KERNEL_DECLARE(gpu_internalMoveSFC2) (int       n_extract,
                                   real4     *acc0,
                                   real4     *acc1,
                                   float2    *time,
-                                  int       *body_id,
+                                  unsigned long long       *body_id,
                                   uint4     *body_key)
 {
   CUXTIMER("internalMoveSFC2");
@@ -651,7 +652,7 @@ KERNEL_DECLARE(gpu_internalMoveSFC) (int       n_extract,
                                   real4     *acc0,
                                   real4     *acc1,
                                   float2    *time,
-                                  int       *body_id,
+                                  unsigned long long        *body_id,
                                   uint4     *body_key)
 {
   CUXTIMER("internalMoveSFC");
@@ -699,7 +700,7 @@ KERNEL_DECLARE(gpu_extractOutOfDomainParticlesAdvancedSFC2)(
                                                        real4 *acc0,
                                                        real4 *acc1,
                                                        float2 *time,
-                                                       int   *body_id,
+                                                       unsigned long long    *body_id,
                                                        uint4 *body_key,
                                                        bodyStruct *destination)
 {
@@ -734,6 +735,7 @@ KERNEL_DECLARE(gpu_extractOutOfDomainParticlesAdvancedSFC2)(
     shmem[threadIdx.x].Pvel  = Pvel[extractList[offset+id].y];
     shmem[threadIdx.x].acc0  = acc0[extractList[offset+id].y];
     shmem[threadIdx.x].time  = time[extractList[offset+id].y];
+
     shmem[threadIdx.x].id    = body_id[extractList[offset+id].y];
 
 
@@ -1006,7 +1008,7 @@ KERNEL_DECLARE(gpu_insertNewParticlesSFC)(int       n_extract,
                                               real4     *acc0,
                                               real4     *acc1,
                                               float2    *time,
-                                              int       *body_id,
+                                              unsigned long long        *body_id,
                                               uint4     *body_key,
                                               bodyStruct *source)
 {

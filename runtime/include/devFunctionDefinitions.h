@@ -25,8 +25,8 @@ extern "C" void  cl_build_key_list(uint4  *body_key, real4  *body_pos, int   n_b
 extern "C" void  cl_build_valid_list(int n_bodies, int level, uint4  *body_key, uint *valid_list, const uint *workToDo);
 extern "C" void  cl_build_nodes(uint level, uint  *compact_list_len, uint  *level_offset, uint  *last_level, uint2 *level_list, uint  *compact_list, uint4 *bodies_key, uint4 *node_key, uint  *n_children, uint2 *node_bodies);
 extern "C" void  dataReorderCombined(const int N, uint4 *keyAndPerm, real4 *source1, real4* destination1, real4 *source2, real4* destination2,real4 *source3, real4* destination3);
-extern "C" void  dataReorderCombined4(const int N, uint4 *keyAndPerm, real4 *source1,  real4* destination1, int *source2, int* destination2, int *oldOrder);
-extern "C" void  dataReorderF2(const int N, uint4 *keyAndPerm, float2 *source1, float2 *destination1, int *source2, int *destination2);
+extern "C" void  dataReorderCombined4(const int N, uint4 *keyAndPerm, real4 *source1,  real4* destination1, unsigned long long *source2, unsigned long long* destination2, int *oldOrder);
+//extern "C" void  dataReorderF2(const int N, uint4 *keyAndPerm, float2 *source1, float2 *destination1, int *source2, int *destination2);
 
 extern "C" void  (sort_count)(volatile uint2 *valid, int *counts, const int N, setupParams sParam, int bitIdx);
 extern "C" void  (sort_move_stage_key_value)(uint2 *valid, int *output, uint2 *srcValues, uint *valuesOut, int *counts, const int N, setupParams sParam, int bitIdx);      
@@ -35,8 +35,8 @@ extern "C" void  (reOrderKeysValues_kernel)(uint4 *keysSrc, uint4 *keysDest, uin
 
 extern "C" void  (gpu_extractKeyAndPerm)(uint4 *newKeys, uint4 *keys, uint *permutation, const int N);
 extern "C" void  (gpu_convertKey64to96)(uint4 *keys,  uint4 *newKeys, const int N);
-extern "C" void  (dataReorderCombined4)(const int N, uint4 *keyAndPerm, real4 *source1,  real4* destination1, int *source2,    int*   destination2, int *oldOrder);
-extern "C" void  (gpu_dataReorderF2)(const int N, uint4 *keyAndPerm, float2 *source1, float2 *destination1, int    *source2, int *destination2);
+//extern "C" void  (dataReorderCombined4)(const int N, uint4 *keyAndPerm, real4 *source1,  real4* destination1, int *source2,    int*   destination2, int *oldOrder);
+extern "C" void  (gpu_dataReorderF2)(const int N, uint4 *keyAndPerm, float2 *source1, float2 *destination1, unsigned long long    *source2, unsigned long long *destination2);
 extern "C" void  (gpu_dataReorderI1)(const int n_particles, int *source, int *destination, uint  *permutation);
 extern "C" void  (gpu_dataReorderCombined)(const int N, uint4 *keyAndPerm, real4 *source1, real4* destination1, real4 *source2, real4* destination2, real4 *source3, real4* destination3);
 
@@ -90,13 +90,13 @@ extern "C" void  (gpu_internalMove)(int n_extract, int       n_bodies,double4  x
 
 //extern "C" void  (gpu_insertNewParticles)(int       n_extract, int       n_insert, int       n_oldbodies, int       offset, real4     *Ppos, real4     *Pvel, real4     *pos, real4     *vel, real4     *acc0, real4     *acc1, float2    *time, int       *body_id, bodyStruct *source);
 
-extern "C" void  (gpu_internalMoveSFC) (int       n_extract, int       n_bodies, uint4  lowBoundary, uint4  highBoundary, int       *extractList, int       *indexList, real4     *Ppos, real4     *Pvel, real4     *pos, real4     *vel, real4     *acc0, real4     *acc1, float2    *time, int       *body_id, uint4     *body_key);
-extern "C" void  (gpu_internalMoveSFC2) (int       n_extract, int       n_bodies, uint4  lowBoundary, uint4  highBoundary, int2       *extractList, int       *indexList, real4     *Ppos, real4     *Pvel, real4     *pos, real4     *vel, real4     *acc0, real4     *acc1, float2    *time, int       *body_id, uint4     *body_key);
+extern "C" void  (gpu_internalMoveSFC) (int       n_extract, int       n_bodies, uint4  lowBoundary, uint4  highBoundary, int       *extractList, int       *indexList, real4     *Ppos, real4     *Pvel, real4     *pos, real4     *vel, real4     *acc0, real4     *acc1, float2    *time,   unsigned long long        *body_id, uint4     *body_key);
+extern "C" void  (gpu_internalMoveSFC2) (int       n_extract, int       n_bodies, uint4  lowBoundary, uint4  highBoundary, int2       *extractList, int       *indexList, real4     *Ppos, real4     *Pvel, real4     *pos, real4     *vel, real4     *acc0, real4     *acc1, float2    *time, unsigned long long        *body_id, uint4     *body_key);
 
 //extern "C" void  (gpu_extractOutOfDomainParticlesAdvancedSFC)(int offset, int n_extract, int *extractList, real4 *Ppos, real4 *Pvel, real4 *pos, real4 *vel, real4 *acc0, real4 *acc1, float2 *time, int   *body_id, uint4 *body_key, bodyStruct *destination);
-extern "C" void  (gpu_extractOutOfDomainParticlesAdvancedSFC2)(int offset, int n_extract, uint2 *extractList, real4 *Ppos, real4 *Pvel, real4 *pos, real4 *vel, real4 *acc0, real4 *acc1, float2 *time, int   *body_id, uint4 *body_key, bodyStruct *destination);
+extern "C" void  (gpu_extractOutOfDomainParticlesAdvancedSFC2)(int offset, int n_extract, uint2 *extractList, real4 *Ppos, real4 *Pvel, real4 *pos, real4 *vel, real4 *acc0, real4 *acc1, float2 *time, unsigned long long *body_id, uint4 *body_key, bodyStruct *destination);
 
-extern "C" void  (gpu_insertNewParticlesSFC)(int       n_extract, int       n_insert, int       n_oldbodies, int       offset, real4     *Ppos, real4     *Pvel, real4     *pos, real4     *vel, real4     *acc0, real4     *acc1, float2    *time, int       *body_id, uint4     *body_key, bodyStruct *source);
+extern "C" void  (gpu_insertNewParticlesSFC)(int       n_extract, int       n_insert, int       n_oldbodies, int       offset, real4     *Ppos, real4     *Pvel, real4     *pos, real4     *vel, real4     *acc0, real4     *acc1, float2    *time, unsigned long long        *body_id, uint4     *body_key, bodyStruct *source);
 extern "C" void  (gpu_extractSampleParticlesSFC)(int    n_bodies, int    sample_freq, uint4  *body_pos, uint4  *samplePosition);
 
 

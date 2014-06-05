@@ -343,7 +343,7 @@ void octree::load_kernels() {
   //Parallel kernels
   domainCheck.setContext(devContext);  
   extractSampleParticles.setContext(devContext);  
-  extractOutOfDomainR4.setContext(devContext);  
+//  extractOutOfDomainR4.setContext(devContext);
 //  extractOutOfDomainBody.setContext(devContext);
 //  insertNewParticles.setContext(devContext);
   internalMove.setContext(devContext);  
@@ -363,7 +363,7 @@ void octree::load_kernels() {
 #ifdef USE_CUDA
   domainCheck.load_source("./parallel.ptx", pathName.c_str());
   extractSampleParticles.load_source("./parallel.ptx", pathName.c_str());
-  extractOutOfDomainR4.load_source("./parallel.ptx", pathName.c_str());
+//  extractOutOfDomainR4.load_source("./parallel.ptx", pathName.c_str());
 //  extractOutOfDomainBody.load_source("./parallel.ptx", pathName.c_str());
 //  insertNewParticles.load_source("./parallel.ptx", pathName.c_str());
   internalMove.load_source("./parallel.ptx", pathName.c_str());
@@ -382,7 +382,7 @@ void octree::load_kernels() {
 
   domainCheck.create("doDomainCheck", (const void*)&doDomainCheck);
   extractSampleParticles.create("extractSampleParticles", (const void*)&gpu_extractSampleParticles);
-  extractOutOfDomainR4.create("extractOutOfDomainParticlesR4", (const void*)&extractOutOfDomainParticlesR4);
+//  extractOutOfDomainR4.create("extractOutOfDomainParticlesR4", (const void*)&extractOutOfDomainParticlesR4);
 //  extractOutOfDomainBody.create("extractOutOfDomainParticlesAdvanced", (const void*)&extractOutOfDomainParticlesAdvanced);
 //  insertNewParticles.create("insertNewParticles", (const void*)&gpu_insertNewParticles);
   internalMove.create("internalMove", (const void*)&gpu_internalMove);

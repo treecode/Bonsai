@@ -125,8 +125,9 @@ typedef struct bodyStruct
   real4  Ppos;
   real4  Pvel;
   float2 time;
-  int    id;
-  int    temp;
+  unsigned long long id;
+//  float    id;
+//  int    temp;
 
 #ifdef DO_BLOCK_TIMESTEP_EXCHANGE_MPI
   uint4 key;
@@ -523,7 +524,7 @@ protected:
   //Parallel kernels
   my_dev::kernel domainCheck;
   my_dev::kernel extractSampleParticles;
-  my_dev::kernel extractOutOfDomainR4;
+//  my_dev::kernel extractOutOfDomainR4;
   //my_dev::kernel extractOutOfDomainBody;
   //my_dev::kernel insertNewParticles;
   my_dev::kernel internalMove;
