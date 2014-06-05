@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include "renderloop.h"
 
 #ifdef WIN32
 #define NOMINMAX
@@ -22,7 +23,7 @@
 #include <vector>
 #include <cassert>
 
-#include "renderloop.h"
+
 #include "render_particles.h"
 #include "SmokeRenderer.h"
 #include "vector_math.h"

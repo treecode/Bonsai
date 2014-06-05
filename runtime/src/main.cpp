@@ -325,25 +325,48 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
     assert(nMilkyWay > 0);
     assert(nMWfork > 0);
 
+    //Verify that all required files are available
+    const char* fileList[] = {"cordbh.dat", "dbh.dat", "freqdbh.dat", "mr.dat",
+                              "denspsibulge.dat", "denspsihalo.dat", "component_numbers.txt"};
+    const int nFiles       = sizeof(fileList) / sizeof(fileList[0]);
+
+    for(int i=0; i < nFiles; i++)
+    {
+      ifstream ifile(fileList[i]);
+      if (!ifile) {
+        fprintf(stderr,"Can not find the required input file: %s \n", fileList[i]);
+        ::exit(-1);
+      }
+    }
+
+    //Read in the particle ratios
+    int nHalo, nBulge,nDisk;
+    ifstream ifile("component_numbers.txt");
+    std::string line;
+    std::getline(ifile, line);
+    sscanf(line.c_str(),"%d %d %d\n", &nHalo, &nBulge, &nDisk);
+
+    fprintf(stderr,"Particle numbers: %d %d %d \n", nHalo, nBulge, nDisk);
+    ifile.close();
+
     //TODO modify galactics
-    //TODO read in number of particles required
 
 
-    #if 1 /* in this setup all particles will be of equal mass (exact number are galactic-depednant)  */
-      const float fdisk  = 15.1;
-      const float fbulge = 5.1;
-      const float fhalo  = 242.31;
-    #else  /* here, bulge & mw particles have the same mass, but halo particles is 32x heavier */
-      const float fdisk  = 15.1;
-      const float fbulge = 5.1;
-      const float fhalo  = 7.5;
-    #endif
+//    #if 1 /* in this setup all particles will be of equal mass (exact number are galactic-depednant)  */
+//      const float fdisk  = 15.1;
+//      const float fbulge = 5.1;
+//      const float fhalo  = 242.31;
+//    #else  /* here, bulge & mw particles have the same mass, but halo particles is 32x heavier */
+//      const float fdisk  = 15.1;
+//      const float fbulge = 5.1;
+//      const float fhalo  = 7.5;
+//    #endif
+//    const float fsum = fdisk + fhalo + fbulge;
 
-    const float fsum = fdisk + fhalo + fbulge;
-
-    const int ndisk  = (int)(nMilkyWay * fdisk/fsum);
-    const int nbulge = (int)(nMilkyWay * fbulge/fsum);
-    const int nhalo  = (int)(nMilkyWay * fhalo/fsum);
+    const float fsum = (float)(nHalo + nBulge + nDisk);
+    const int ndisk  = (int)(nMilkyWay * nDisk/fsum);
+    const int nbulge = (int)(nMilkyWay * nBulge/fsum);
+    const int nhalo  = (int)(nMilkyWay * nHalo/fsum);
 
     assert(ndisk  > 0);
     assert(nbulge > 0);
@@ -662,6 +685,12 @@ int main(int argc, char** argv)
   /*********************************/
 
   /************** end - command line arguments ********/
+
+  /* Overrule settings for the device */
+  //  const char * tempRankStr = getenv("OMPI_COMM_WORLD_RANK");
+  //  devID = renderDevID = atoi(tempRankStr);
+  //  fprintf(stderr,"Overruled ids: %d ", devID);
+  /* End overrule */
 
 
   int NTotal, NFirst, NSecond, NThird;
