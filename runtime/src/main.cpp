@@ -348,7 +348,7 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
     std::getline(ifile, line);
     sscanf(line.c_str(),"%d %d %d\n", &nHalo, &nBulge, &nDisk);
 
-    fprintf(stderr,"Particle numbers: %d %d %d \n", nHalo, nBulge, nDisk);
+    fprintf(stderr,"Particle numbers from config file: %d %d %d \n", nHalo, nBulge, nDisk);
     ifile.close();
 
 //    #if 1 /* in this setup all particles will be of equal mass (exact number are galactic-depednant)  */
@@ -371,9 +371,13 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
     assert(nbulge > 0);
     assert(nhalo  > 0);
 
+    if (procId == 0)
+      fprintf(stderr,"Requested numbers: ndisk= %d  nbulge= %d  nhalo= %d :: ntotal= %d\n",
+                      ndisk, nbulge, nhalo, ndisk+nbulge+nhalo);
+
     const Galactics g(procId, nProcs, ndisk, nbulge, nhalo, nMWfork);
     if (procId == 0)
-     printf("  ndisk= %d  nbulge= %d  nhalo= %d :: ntotal= %d\n",
+     printf("Generated numbers:  ndisk= %d  nbulge= %d  nhalo= %d :: ntotal= %d\n",
              g.get_ndisk(), g.get_nbulge(), g.get_nhalo(), g.get_ntot());
 
     const int ntot = g.get_ntot();
@@ -401,7 +405,6 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
         bodyIDs[i] = bulgeID++;
       else                                                  //Disk
         bodyIDs[i] = diskID++;
-
 
       bodyPositions[i].x = g[i].x;
       bodyPositions[i].y = g[i].y;

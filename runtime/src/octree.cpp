@@ -150,21 +150,24 @@ void octree::write_snapshot_per_process(real4 *bodyPositions, real4 *bodyVelocit
     //Next write the star particles
     for(int i=0; i < NCombTotal ; i++)
     {
-      //Set particle properties
-      star_particleV2 s;
-      //s.eps = bodyVelocities[i].w;
-      s.mass = bodyPositions[i].w;
-      s.pos[0] = bodyPositions[i].x;
-      s.pos[1] = bodyPositions[i].y;
-      s.pos[2] = bodyPositions[i].z;
-      s.vel[0] = bodyVelocities[i].x;
-      s.vel[1] = bodyVelocities[i].y;
-      s.vel[2] = bodyVelocities[i].z;
-      s.setID(bodyIds[i]);      //Custom change to tipsy format
+      if(bodyIds[i] < DARKMATTERID)
+      {
+        //Set particle properties
+        star_particleV2 s;
+        //s.eps = bodyVelocities[i].w;
+        s.mass = bodyPositions[i].w;
+        s.pos[0] = bodyPositions[i].x;
+        s.pos[1] = bodyPositions[i].y;
+        s.pos[2] = bodyPositions[i].z;
+        s.vel[0] = bodyVelocities[i].x;
+        s.vel[1] = bodyVelocities[i].y;
+        s.vel[2] = bodyVelocities[i].z;
+        s.setID(bodyIds[i]);      //Custom change to tipsy format
 
-      s.metals = 0;
-      s.tform = 0;
-      outputFile.write((char*)&s, sizeof(s));
+        s.metals = 0;
+        s.tform = 0;
+        outputFile.write((char*)&s, sizeof(s));
+      }
 
     } //end i loop
 
@@ -227,7 +230,6 @@ void octree::write_dumbp_snapshot_parallel_tipsyV2(real4 *bodyPositions, real4 *
     }
 
 
-
     //First write the dark matter particles
     for(int i=0; i < NCombTotal ; i++)
     {
@@ -236,7 +238,7 @@ void octree::write_dumbp_snapshot_parallel_tipsyV2(real4 *bodyPositions, real4 *
         //Set particle properties
         dark_particleV2 d;
         //d.eps = allVelocities[i].w;
-        d.mass = allPositions[i].w;
+        d.mass   = allPositions[i].w;
         d.pos[0] = allPositions[i].x;
         d.pos[1] = allPositions[i].y;
         d.pos[2] = allPositions[i].z;
@@ -254,6 +256,7 @@ void octree::write_dumbp_snapshot_parallel_tipsyV2(real4 *bodyPositions, real4 *
     //Next write the star particles
     for(int i=0; i < NCombTotal ; i++)
     {
+      if(allIds[i] < DARKMATTERID)
       {
         //Set particle properties
         star_particleV2 s;
