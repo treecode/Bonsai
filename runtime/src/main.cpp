@@ -200,6 +200,8 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
       velocity.z        = d.vel[2];
       idummy            = d.getID();
 
+      printf("%d\t%f\t%f\t%f\n", i, positions.x, positions.y, positions.z);
+
       //Force compatibility with older 32bit ID files by mapping the particle IDs
       if(fileFormatVersion == 0)
       {
@@ -349,9 +351,6 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
     fprintf(stderr,"Particle numbers: %d %d %d \n", nHalo, nBulge, nDisk);
     ifile.close();
 
-    //TODO modify galactics
-
-
 //    #if 1 /* in this setup all particles will be of equal mass (exact number are galactic-depednant)  */
 //      const float fdisk  = 15.1;
 //      const float fbulge = 5.1;
@@ -364,9 +363,9 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
 //    const float fsum = fdisk + fhalo + fbulge;
 
     const float fsum = (float)(nHalo + nBulge + nDisk);
-    const int ndisk  = (int)(nMilkyWay * nDisk/fsum);
-    const int nbulge = (int)(nMilkyWay * nBulge/fsum);
-    const int nhalo  = (int)(nMilkyWay * nHalo/fsum);
+    const int ndisk  = (int)  (nMilkyWay * nDisk /fsum);
+    const int nbulge = (int)  (nMilkyWay * nBulge/fsum);
+    const int nhalo  = (int)  (nMilkyWay * nHalo /fsum);
 
     assert(ndisk  > 0);
     assert(nbulge > 0);
@@ -375,44 +374,51 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
     const Galactics g(procId, nProcs, ndisk, nbulge, nhalo, nMWfork);
     if (procId == 0)
      printf("  ndisk= %d  nbulge= %d  nhalo= %d :: ntotal= %d\n",
-         g.get_ndisk(), g.get_nbulge(), g.get_nhalo(), g.get_ntot());
+             g.get_ndisk(), g.get_nbulge(), g.get_nhalo(), g.get_ntot());
 
     const int ntot = g.get_ntot();
     bodyPositions.resize(ntot);
     bodyVelocities.resize(ntot);
     bodyIDs.resize(ntot);
+
+    //Generate unique 64bit IDs, counter starts at individual boundaries
+    //Note that we get 32bit IDs back from the Galactics code
+    unsigned long long diskID  = ((unsigned long long) ndisk *procId) + DISKID;
+    unsigned long long bulgeID = ((unsigned long long) nbulge*procId) + BULGEID;
+    unsigned long long haloID  = ((unsigned long long) nhalo *procId) + DARKMATTERID;
+
     for (int i= 0; i < ntot; i++)
     {
-     assert(!std::isnan(g[i].x));
-     assert(!std::isnan(g[i].y));
-     assert(!std::isnan(g[i].z));
-     assert(g[i].mass > 0.0);
+      assert(!std::isnan(g[i].x));
+      assert(!std::isnan(g[i].y));
+      assert(!std::isnan(g[i].z));
+      assert(g[i].mass > 0.0);
+
+      //Generate unique IDS for each particle in the full model
+      if( g[i].id >= 200000000)                             //Dark matter
+        bodyIDs[i] = haloID++;
+      else if( g[i].id >= 100000000 && g[i].id < 200000000) //Bulge
+        bodyIDs[i] = bulgeID++;
+      else                                                  //Disk
+        bodyIDs[i] = diskID++;
 
 
-     //Convert old IDs to new ones
-     if( g[i].id >= 200000000)
-       bodyIDs[i] = g[i].id + DARKMATTERID;
-     else if( g[i].id >= 100000000 && g[i].id < 200000000)
-       bodyIDs[i] =  g[i].id + BULGEID;
-     else
-       bodyIDs[i] = g[i].id;
-
-     bodyPositions[i].x = g[i].x;
-     bodyPositions[i].y = g[i].y;
-     bodyPositions[i].z = g[i].z;
-     if(scaleMass)
+      bodyPositions[i].x = g[i].x;
+      bodyPositions[i].y = g[i].y;
+      bodyPositions[i].z = g[i].z;
+      if(scaleMass)
        bodyPositions[i].w = g[i].mass * 1.0/(double)nProcs;
-     else
+      else
        bodyPositions[i].w = g[i].mass; // * 1.0/(double)nProcs ,scaled later ..
 
-     assert(!std::isnan(g[i].vx));
-     assert(!std::isnan(g[i].vy));
-     assert(!std::isnan(g[i].vz));
+      assert(!std::isnan(g[i].vx));
+      assert(!std::isnan(g[i].vy));
+      assert(!std::isnan(g[i].vz));
 
-     bodyVelocities[i].x = g[i].vx;
-     bodyVelocities[i].y = g[i].vy;
-     bodyVelocities[i].z = g[i].vz;
-     bodyVelocities[i].w = 0.0;
+      bodyVelocities[i].x = g[i].vx;
+      bodyVelocities[i].y = g[i].vy;
+      bodyVelocities[i].z = g[i].vz;
+      bodyVelocities[i].w = 0.0;
     }
   } //generateGalacticsModel
 #endif

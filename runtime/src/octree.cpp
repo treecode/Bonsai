@@ -113,7 +113,7 @@ void octree::write_snapshot_per_process(real4 *bodyPositions, real4 *bodyVelocit
     if(!outputFile.is_open())
     {
       cout << "Can't open output file: "<< fileName << std::endl;
-      exit(0);
+      ::exit(0);
     }
 
     //Create Tipsy header
@@ -189,7 +189,7 @@ void octree::write_dumbp_snapshot_parallel_tipsyV2(real4 *bodyPositions, real4 *
     if(!outputFile.is_open())
     {
       cout << "Can't open output file: "<< fileName << std::endl;
-      exit(0);
+      ::exit(0);
     }
 
     //Create Tipsy header
@@ -204,9 +204,9 @@ void octree::write_dumbp_snapshot_parallel_tipsyV2(real4 *bodyPositions, real4 *
     outputFile.write((char*)&h, sizeof(h));
 
     //Buffer to store complete snapshot
-    vector<real4> allPositions;
-    vector<real4> allVelocities;
-    vector<int>   allIds;
+    vector<real4>   allPositions;
+    vector<real4>   allVelocities;
+    vector<ullong>  allIds;
 
     allPositions.insert(allPositions.begin(), &bodyPositions[0], &bodyPositions[n]);
     allVelocities.insert(allVelocities.begin(), &bodyVelocities[0], &bodyVelocities[n]);
@@ -226,7 +226,9 @@ void octree::write_dumbp_snapshot_parallel_tipsyV2(real4 *bodyPositions, real4 *
       allIds.insert(allIds.end(), extIds.begin(), extIds.end());
     }
 
-    //Frist write the dark matter particles
+
+
+    //First write the dark matter particles
     for(int i=0; i < NCombTotal ; i++)
     {
       if(allIds[i] >= DARKMATTERID)
