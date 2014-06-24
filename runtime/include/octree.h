@@ -182,6 +182,13 @@ struct cmp_ph_key{
   }
 };
 
+typedef struct sharedIOThreadStruct
+{
+  float t_current;
+  int   nBodies;
+
+}sharedIOThreadStruct;
+
 
 //Structure and properties of a tree
 class tree_structure

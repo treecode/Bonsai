@@ -437,6 +437,17 @@ double get_time_main()
 }
 
 
+//Buffers and flags used for the IO thread
+
+
+volatile bool ioWritingFinished;
+
+std::vector<real4>   ioThreadPos;
+std::vector<real4>   ioThreadVel;
+std::vector<ullong>  ioThreadIDs;
+sharedIOThreadStruct ioThreadProps;
+
+
 long long my_dev::base_mem::currentMemUsage;
 long long my_dev::base_mem::maxMemUsage;
 
@@ -1161,21 +1172,73 @@ int main(int argc, char** argv)
   tree->mpiSync();
   if (procId==0) fprintf(stderr, " Starting iterating\n");
 
-  //Catch exceptions to add some extra print info
-  try
+
+  bool simulationFinished = false;
+  ioWritingFinished       = true;
+
+  ioThreadPos.reserve(tree->localTree.n);
+  ioThreadVel.reserve(tree->localTree.n);
+  ioThreadIDs.reserve(tree->localTree.n);
+
+#pragma omp parallel num_threads(2)
+{
+  const int tid = omp_get_thread_num();
+  if (tid == 0)
   {
-      tree->iterate();
+    //Catch exceptions to add some extra print info
+    try
+    {
+        tree->iterate();
+    }
+    catch(const std::exception &exc)
+    {
+        std::cerr << "Process: "  << procId << "\t" << exc.what() <<std::endl;
+        if(nProcs > 1) ::abort();
+    }
+    catch(...)
+    {
+        std::cerr << "Unknown exception on process: " << procId << std::endl;
+        if(nProcs > 1) ::abort();
+    }
+    simulationFinished = true;
   }
-  catch(const std::exception &exc)
+  else
   {
-      std::cerr << "Process: "  << procId << "\t" << exc.what() <<std::endl;
-      if(nProcs > 1) ::abort();
+    /* IO */
+    sleep(1);
+    while(!simulationFinished)
+    {
+      if(ioWritingFinished == false)
+      {
+        const int n           = ioThreadPos.size();
+        const float t_current = ioThreadProps.t_current;
+
+        string fileName; fileName.resize(256);
+        sprintf(&fileName[0], "%s_%010.4f", snapshotFile.c_str(), t_current);
+
+//        if(nProcs <= 16)
+        if(0)
+         {
+           tree->write_dumbp_snapshot_parallel(&ioThreadPos[0], &ioThreadVel[0],
+               &ioThreadIDs[0], n, fileName.c_str(), t_current) ;
+         }
+         else
+         {
+           sprintf(&fileName[0], "%s_%010.4f-%d", snapshotFile.c_str(), t_current, procId);
+           tree->write_snapshot_per_process(&ioThreadPos[0], &ioThreadVel[0],
+                                      &ioThreadIDs[0], n,
+                                      fileName.c_str(), t_current) ;
+         }
+          assert(ioWritingFinished == false);
+          ioWritingFinished = true;
+      }
+      else
+      {
+        usleep(100);
+      }
+    }
   }
-  catch(...)
-  {
-      std::cerr << "Unknown exception on process: " << procId << std::endl;
-      if(nProcs > 1) ::abort();
-  }
+}
 
   LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
 
