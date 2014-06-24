@@ -1216,21 +1216,21 @@ int main(int argc, char** argv)
         string fileName; fileName.resize(256);
         sprintf(&fileName[0], "%s_%010.4f", snapshotFile.c_str(), t_current);
 
-//        if(nProcs <= 16)
-        if(0)
-         {
+        if(nProcs <= 16)
+        {
            tree->write_dumbp_snapshot_parallel(&ioThreadPos[0], &ioThreadVel[0],
                &ioThreadIDs[0], n, fileName.c_str(), t_current) ;
-         }
-         else
-         {
+
+        }
+        else
+        {
            sprintf(&fileName[0], "%s_%010.4f-%d", snapshotFile.c_str(), t_current, procId);
            tree->write_snapshot_per_process(&ioThreadPos[0], &ioThreadVel[0],
                                       &ioThreadIDs[0], n,
                                       fileName.c_str(), t_current) ;
-         }
-          assert(ioWritingFinished == false);
-          ioWritingFinished = true;
+        }
+        assert(ioWritingFinished == false);
+        ioWritingFinished = true;
       }
       else
       {

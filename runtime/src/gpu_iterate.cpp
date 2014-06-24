@@ -573,6 +573,7 @@ bool octree::iterate_once(IterationData &idata) {
         localTree.bodies_vel.d2h(nToWrite, &ioThreadVel[0]);
         localTree.bodies_ids.d2h(nToWrite, &ioThreadIDs[0]);
         ioWritingFinished = false;
+        if(nProcs <= 16) while (!ioWritingFinished);
 
 #if 0
         string fileName; fileName.resize(256);
@@ -802,6 +803,7 @@ void octree::iterate_setup(IterationData &idata) {
       localTree.bodies_vel.d2h(nToWrite, &ioThreadVel[0]);
       localTree.bodies_ids.d2h(nToWrite, &ioThreadIDs[0]);
       ioWritingFinished = false;
+      if(nProcs <= 16) while (!ioWritingFinished);
     }
   }
 
