@@ -920,6 +920,11 @@ int main(int argc, char** argv)
     {
       tree->ICRecv(0, bodyPositions, bodyVelocities,  bodyIDs);
     }
+    #if USE_MPI
+        float tCurrent = tree->get_t_current();
+        MPI_Bcast(&tCurrent, 1, MPI_FLOAT, 0,MPI_COMM_WORLD);
+        tree->set_t_current(tCurrent);
+    #endif
   }
   else if(nMilkyWay >= 0)
   {

@@ -765,12 +765,11 @@ void octree::iterate_setup(IterationData &idata) {
 
   if(snapshotIter > 0)
   {
-    float time = t_current;
+    float time   = t_current;
+    nextSnapTime = t_current;
     if((time >= nextSnapTime))
     {
       nextSnapTime += snapshotIter;
-
-      fprintf(stderr,"CUR value: %d \n", ioSharedData.writingFinished);
 
       while(!ioSharedData.writingFinished)
       {
