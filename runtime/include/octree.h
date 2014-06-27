@@ -1125,7 +1125,7 @@ struct IOSharedData_t
   volatile int   nBodies;
   unsigned long long * volatile  IDs;
   real4 * volatile Pos, * volatile Vel;
-  IOSharedData_t() : nBodies(0), IDs(NULL), Pos(NULL), Vel(NULL) {}
+  IOSharedData_t() : writingFinished(true), nBodies(0), IDs(NULL), Pos(NULL), Vel(NULL) {}
   void malloc(const int n) volatile
   {
     assert(nBodies == 0);
