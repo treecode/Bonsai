@@ -182,14 +182,6 @@ struct cmp_ph_key{
   }
 };
 
-typedef struct sharedIOThreadStruct
-{
-  float t_current;
-  int   nBodies;
-
-}sharedIOThreadStruct;
-
-
 //Structure and properties of a tree
 class tree_structure
 {
@@ -1123,6 +1115,41 @@ public:
   void setUseDirectGravity(bool s) { useDirectGravity = s;    }
   bool getUseDirectGravity() const { return useDirectGravity; }
 };
+
+/************* data exchange containers for async IO ***************/
+
+struct IOSharedData_t
+{
+  volatile bool writingFinished;
+  volatile float t_current;
+  volatile int   nBodies;
+  unsigned long long * volatile  IDs;
+  real4 * volatile Pos, * volatile Vel;
+  IOSharedData_t() : nBodies(0), IDs(NULL), Pos(NULL), Vel(NULL) {}
+  void malloc(const int n) volatile
+  {
+    assert(nBodies == 0);
+    nBodies = n;
+    IDs = (unsigned long long*volatile)::malloc(n*sizeof(unsigned long long));
+    Pos = (real4*volatile)::malloc(n*sizeof(real4));
+    Vel = (real4*volatile)::malloc(n*sizeof(real4));
+  }
+  void free() volatile
+  {
+    assert(nBodies > 0);
+    nBodies = 0;
+    ::free(IDs);
+    ::free(Pos);
+    ::free(Vel);
+  }
+  ~IOSharedData_t()
+  {
+    if (nBodies > 0)
+      free();
+  }
+};
+extern volatile IOSharedData_t ioSharedData;
+
 
 
 #endif // _OCTREE_H_

@@ -17,12 +17,11 @@ cudaEvent_t startRemoteGrav;
 cudaEvent_t endLocalGrav;
 cudaEvent_t endRemoteGrav;
 
-extern volatile bool ioWritingFinished;
 
-extern std::vector<real4>   ioThreadPos;
-extern std::vector<real4>   ioThreadVel;
-extern std::vector<ullong>  ioThreadIDs;
-extern sharedIOThreadStruct ioThreadProps;
+//extern std::vector<real4>   ioThreadPos;
+//extern std::vector<real4>   ioThreadVel;
+//extern std::vector<ullong>  ioThreadIDs;
+//extern volatile sharedIOThreadStruct ioThreadProps;
 
 float runningLETTimeSum;
 
@@ -546,21 +545,17 @@ bool octree::iterate_once(IterationData &idata) {
       {
         nextSnapTime += snapshotIter;
 
-        while(!ioWritingFinished)
+        while(!ioSharedData.writingFinished)
         {
           fprintf(stderr,"WAITING \n");
           usleep(100); //Wait till previous snapshot is written
         }
 
-        ioThreadProps.t_current = t_current + snapShotAdd;
+        ioSharedData.t_current = t_current + snapShotAdd;
         const int nToWrite      = localTree.n_dust + localTree.n;
 
-        if(ioThreadPos.size() < nToWrite)
-        {
-          ioThreadPos.resize(nToWrite);
-          ioThreadVel.resize(nToWrite);
-          ioThreadIDs.resize(nToWrite);
-        }
+        assert(ioSharedData.nBodies == 0);
+        ioSharedData.malloc(nToWrite);
 
         #ifdef USE_DUST
           //We move the dust data into the position data (on the device :) )
@@ -569,11 +564,11 @@ bool octree::iterate_once(IterationData &idata) {
           localTree.bodies_ids.copy_devonly(localTree.dust_ids, localTree.n_dust, localTree.n);
         #endif
 
-        localTree.bodies_pos.d2h(nToWrite, &ioThreadPos[0]);
-        localTree.bodies_vel.d2h(nToWrite, &ioThreadVel[0]);
-        localTree.bodies_ids.d2h(nToWrite, &ioThreadIDs[0]);
-        ioWritingFinished = false;
-        if(nProcs <= 16) while (!ioWritingFinished);
+        localTree.bodies_pos.d2h(nToWrite, ioSharedData.Pos);
+        localTree.bodies_vel.d2h(nToWrite, ioSharedData.Vel);
+        localTree.bodies_ids.d2h(nToWrite, ioSharedData.IDs);
+        ioSharedData.writingFinished = false;
+        if(nProcs <= 16) while (!ioSharedData.writingFinished);
 
 #if 0
         string fileName; fileName.resize(256);
@@ -775,22 +770,17 @@ void octree::iterate_setup(IterationData &idata) {
     {
       nextSnapTime += snapshotIter;
 
-      fprintf(stderr,"CUR value: %d \n", ioWritingFinished);
+      fprintf(stderr,"CUR value: %d \n", ioSharedData.writingFinished);
 
-      while(!ioWritingFinished)
+      while(!ioSharedData.writingFinished)
       {
         usleep(100); //Wait till previous snapshot is written
       }
 
-      ioThreadProps.t_current = t_current + snapShotAdd;
+      ioSharedData.t_current = t_current + snapShotAdd;
       const int nToWrite      = localTree.n_dust + localTree.n;
 
-      if(ioThreadPos.size() < nToWrite)
-      {
-        ioThreadPos.resize(nToWrite);
-        ioThreadVel.resize(nToWrite);
-        ioThreadIDs.resize(nToWrite);
-      }
+      ioSharedData.malloc(nToWrite);
 
       #ifdef USE_DUST
         //We move the dust data into the position data (on the device :) )
@@ -799,11 +789,12 @@ void octree::iterate_setup(IterationData &idata) {
         localTree.bodies_ids.copy_devonly(localTree.dust_ids, localTree.n_dust, localTree.n);
       #endif
 
-      localTree.bodies_pos.d2h(nToWrite, &ioThreadPos[0]);
-      localTree.bodies_vel.d2h(nToWrite, &ioThreadVel[0]);
-      localTree.bodies_ids.d2h(nToWrite, &ioThreadIDs[0]);
-      ioWritingFinished = false;
-      if(nProcs <= 16) while (!ioWritingFinished);
+      localTree.bodies_pos.d2h(nToWrite, ioSharedData.Pos);
+      localTree.bodies_vel.d2h(nToWrite, ioSharedData.Vel);
+      localTree.bodies_ids.d2h(nToWrite, ioSharedData.IDs);
+      ioSharedData.writingFinished = false;
+      if(nProcs <= 16) while (!ioSharedData.writingFinished);
+      while (!ioSharedData.writingFinished);
     }
   }
 

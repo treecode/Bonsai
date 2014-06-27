@@ -440,12 +440,13 @@ double get_time_main()
 //Buffers and flags used for the IO thread
 
 
-volatile bool ioWritingFinished;
+volatile IOSharedData_t ioSharedData;
 
-std::vector<real4>   ioThreadPos;
-std::vector<real4>   ioThreadVel;
-std::vector<ullong>  ioThreadIDs;
-sharedIOThreadStruct ioThreadProps;
+// std::vector<real4>   ioThreadPos;
+// std::vector<real4>   ioThreadVel;
+// std::vector<ullong>  ioThreadIDs;
+//volatile sharedIOThreadStruct ioThreadProps;
+
 
 
 long long my_dev::base_mem::currentMemUsage;
@@ -1174,11 +1175,7 @@ int main(int argc, char** argv)
 
 
   bool simulationFinished = false;
-  ioWritingFinished       = true;
-
-  ioThreadPos.reserve(tree->localTree.n);
-  ioThreadVel.reserve(tree->localTree.n);
-  ioThreadIDs.reserve(tree->localTree.n);
+  ioSharedData.writingFinished       = true;
 
 #pragma omp parallel num_threads(2)
 {
@@ -1208,29 +1205,29 @@ int main(int argc, char** argv)
     sleep(1);
     while(!simulationFinished)
     {
-      if(ioWritingFinished == false)
+      if(ioSharedData.writingFinished == false)
       {
-        const int n           = ioThreadPos.size();
-        const float t_current = ioThreadProps.t_current;
+        const int n           = ioSharedData.nBodies;
+        const float t_current = ioSharedData.t_current;
 
         string fileName; fileName.resize(256);
         sprintf(&fileName[0], "%s_%010.4f", snapshotFile.c_str(), t_current);
 
         if(nProcs <= 16)
         {
-           tree->write_dumbp_snapshot_parallel(&ioThreadPos[0], &ioThreadVel[0],
-               &ioThreadIDs[0], n, fileName.c_str(), t_current) ;
+           tree->write_dumbp_snapshot_parallel(ioSharedData.Pos, ioSharedData.Vel,
+               ioSharedData.IDs, n, fileName.c_str(), t_current) ;
 
         }
         else
         {
            sprintf(&fileName[0], "%s_%010.4f-%d", snapshotFile.c_str(), t_current, procId);
-           tree->write_snapshot_per_process(&ioThreadPos[0], &ioThreadVel[0],
-                                      &ioThreadIDs[0], n,
+           tree->write_snapshot_per_process(ioSharedData.Pos, ioSharedData.Vel,
+                                      ioSharedData.IDs, n,
                                       fileName.c_str(), t_current) ;
         }
-        assert(ioWritingFinished == false);
-        ioWritingFinished = true;
+        assert(ioSharedData.writingFinished == false);
+        ioSharedData.writingFinished = true;
       }
       else
       {
