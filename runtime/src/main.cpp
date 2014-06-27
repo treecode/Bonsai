@@ -1226,6 +1226,7 @@ int main(int argc, char** argv)
                                       ioSharedData.IDs, n,
                                       fileName.c_str(), t_current) ;
         }
+        ioSharedData.free();
         assert(ioSharedData.writingFinished == false);
         ioSharedData.writingFinished = true;
       }
