@@ -479,7 +479,6 @@ int main(int argc, char** argv)
   string snapshotFile      = "snapshot_";
   float snapshotIter       = -1;
   float  remoDistance      = -1.0;
-  int    snapShotAdd       =  0;
   int rebuild_tree_rate    = 2;
   int reduce_bodies_factor = 1;
   int reduce_dust_factor   = 1;
@@ -545,7 +544,6 @@ int main(int argc, char** argv)
 		ADDUSAGE("     --snapname #       snapshot base name (N-body time is appended in 000000 format) [" << snapshotFile << "]");
 		ADDUSAGE("     --snapiter #       snapshot iteration (N-body time) [" << snapshotIter << "]");
 		ADDUSAGE("     --rmdist #         Particle removal distance (-1 to disable) [" << remoDistance << "]");
-		ADDUSAGE("     --valueadd #       value to add to the snapshot [" << snapShotAdd << "]");
 		ADDUSAGE(" -r  --rebuild #        rebuild tree every # steps [" << rebuild_tree_rate << "]");
 		ADDUSAGE("     --reducebodies #   cut down bodies dataset by # factor ");
 #ifdef USE_DUST
@@ -657,7 +655,6 @@ int main(int argc, char** argv)
     if ((optarg = opt.getValue("snapname")))     snapshotFile       = string(optarg);
     if ((optarg = opt.getValue("snapiter")))     snapshotIter       = (float) atof  (optarg);
     if ((optarg = opt.getValue("rmdist")))       remoDistance       = (float) atof  (optarg);
-    if ((optarg = opt.getValue("valueadd")))     snapShotAdd        = atoi  (optarg);
     if ((optarg = opt.getValue("rebuild")))      rebuild_tree_rate  = atoi  (optarg);
     if ((optarg = opt.getValue("reducebodies"))) reduce_bodies_factor = atoi  (optarg);
     if ((optarg = opt.getValue("reducedust")))	 reduce_dust_factor = atoi  (optarg);
@@ -749,7 +746,7 @@ int main(int argc, char** argv)
 
   //Creat the octree class and set the properties
   octree *tree = new octree(argv, devID, theta, eps, snapshotFile, snapshotIter,  timeStep,
-                            tEnd, iterEnd, (int)remoDistance, snapShotAdd, rebuild_tree_rate, direct);
+                            tEnd, iterEnd, (int)remoDistance, rebuild_tree_rate, direct);
 
   double tStartup = tree->get_time();
 
@@ -769,7 +766,6 @@ int main(int argc, char** argv)
     cerr << "[INIT]\tsnapshotFile: \t"      << snapshotFile << "\tsnapshotIter: \t" << snapshotIter << endl;
     cerr << "[INIT]\tInput file: \t"        << fileName     << "\t\tdevID: \t\t"        << devID << endl;
     cerr << "[INIT]\tRemove dist: \t"   << remoDistance << endl;
-    cerr << "[INIT]\tSnapshot Addition: \t"  << snapShotAdd << endl;
     cerr << "[INIT]\tRebuild tree every " << rebuild_tree_rate << " timestep\n";
 
 

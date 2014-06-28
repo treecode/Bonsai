@@ -540,8 +540,7 @@ bool octree::iterate_once(IterationData &idata) {
 
     if(snapshotIter > 0)
     {
-      float time = t_current;
-      if((time >= nextSnapTime))
+      if((t_current >= nextSnapTime))
       {
         nextSnapTime += snapshotIter;
 
@@ -551,7 +550,7 @@ bool octree::iterate_once(IterationData &idata) {
           usleep(100); //Wait till previous snapshot is written
         }
 
-        ioSharedData.t_current = t_current + snapShotAdd;
+        ioSharedData.t_current  = t_current;
         const int nToWrite      = localTree.n_dust + localTree.n;
 
         assert(ioSharedData.nBodies == 0);
@@ -765,9 +764,8 @@ void octree::iterate_setup(IterationData &idata) {
 
   if(snapshotIter > 0)
   {
-    float time   = t_current;
     nextSnapTime = t_current;
-    if((time >= nextSnapTime))
+    if((t_current >= nextSnapTime))
     {
       nextSnapTime += snapshotIter;
 
@@ -776,7 +774,7 @@ void octree::iterate_setup(IterationData &idata) {
         usleep(100); //Wait till previous snapshot is written
       }
 
-      ioSharedData.t_current = t_current + snapShotAdd;
+      ioSharedData.t_current = t_current;
       const int nToWrite      = localTree.n_dust + localTree.n;
 
       ioSharedData.malloc(nToWrite);
