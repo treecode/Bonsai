@@ -200,7 +200,7 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
       velocity.z        = d.vel[2];
       idummy            = d.getID();
 
-      printf("%d\t%f\t%f\t%f\n", i, positions.x, positions.y, positions.z);
+      //printf("%d\t%f\t%f\t%f\n", i, positions.x, positions.y, positions.z);
 
       //Force compatibility with older 32bit ID files by mapping the particle IDs
       if(fileFormatVersion == 0)
