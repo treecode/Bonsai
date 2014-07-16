@@ -36,6 +36,7 @@ struct Density
   Density(const Particle::Vector &ptcl_in, const int Nuse, const int Nngb = 32)
   {
     const double t0 = wtime();
+    fprintf(stderr, "Nuse= %d  \n", Nuse);
 
     std::vector<Particle> &ptcl = Node::ptcl;
     ptcl.reserve(Nuse);

@@ -3,6 +3,8 @@
 #include "Particle.h"
 #include "boundary.h"
 
+#define NNBMAX 1024
+
 #if 0
 inline float Wkernel(const float q)
 {
@@ -146,11 +148,26 @@ struct Node{
     }
   }
 
-  void set_init_h(const float num, const float volume)
+  void set_init_h(const float num, float volume)
   {
     if(is_leaf()){
+#if 0
+      vec3 rmin(+HUGE), rmax(-HUGE);
+      for (int ip = 0; ip < np; ip++)
+      {
+        Particle &p = ptcl[ip+pfirst];
+        rmin = mineach(rmin, p.pos);
+        rmax = maxeach(rmax, p.pos);
+      }
+      const vec3  l = rmax - rmin;
+      assert(l.x >= 0.0);
+      assert(l.y >= 0.0);
+      assert(l.z >= 0.0);
+      volume = l.x*l.y*l.z; //*(3.0/4.0/M_PI);
+#endif
       const float roh = float(np) / volume;
       const float h0 = cbrtf(num / roh);
+      assert(h0 >= 0.0f);
       for(int ip=0; ip<np; ip++){
         Particle &p = ptcl[ip+pfirst];
         p.set_h(h0);
@@ -169,6 +186,8 @@ struct Node{
 #if 1
     for(int i=0; i<ileaf.np; i++){
       Particle &ip = ptcl[i+ileaf.pfirst];
+      if (ip.nnb > NNBMAX)
+        continue;
       Boundary ibound(ip.pos, ip.get_h());
       if(not_overlapped(ibound, jleaf.bound_inner)) continue;
       float h2 = ip.get_h() * ip.get_h();
@@ -288,6 +307,7 @@ struct Node{
     }
   }
   friend void operator << (Particle &ip, Node &jNode){
+    if (ip.nnb > NNBMAX) return;
     Boundary bi(ip.pos, ip.get_h());
     if(overlapped(bi, jNode.bound_inner)){
       if(jNode.is_leaf()){

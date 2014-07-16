@@ -6,6 +6,10 @@ std::vector<Particle> Node::ptcl;
 std::vector<Node>     Node::Node_heap;
 std::vector<std::pair<Node*, Node*> > Node::pair_list;
 
+#if 1
+#define DENSDM
+#endif
+
 int main(int argc, char * argv[])
 {
   ReadTipsy data;
@@ -30,13 +34,12 @@ int main(int argc, char * argv[])
 
 
   Node::allocate(nbody, nbody);
-  const int Ndesired = 100000;
-#if 1
-  const int N = std::min(Ndesired, (int)ptcl_star.size());
-  Density density(ptcl_star, N);
+#ifdef DENSDM
+  const int N = (int)ptcl_dm.size();
+  Density density(ptcl_dm, ptcl_dm.size(), 64);
 #else
-  const int N = std::min(Ndesired, (int)ptcl_dm.size());
-  Density density(ptcl_dm, N, 64);
+  const int N =(int)ptcl_star.size();
+  Density density(ptcl_star, N, 64);
 #endif
 
   int ngb_min = nbody;
@@ -45,6 +48,7 @@ int main(int argc, char * argv[])
   double ngb_mean2 = 0;
 
   int imax = 0;
+  int nzero = 0;
   for (int i = 0; i < N; i++)
   {
     std::vector<Particle> &ptcl = Node::ptcl;
@@ -63,12 +67,24 @@ int main(int argc, char * argv[])
     ngb_max = std::max(ngb_max, p.nnb);
     ngb_mean  += p.nnb;
     ngb_mean2 += p.nnb*p.nnb;
-    fprintf(stdout, " %d  %g %g %g   %g \n", p.ID, p.pos.x, p.pos.y, p.pos.z, p.density);
+    if (p.nnb < 3)
+    {
+      nzero++;
+      continue;
+    }
+    fprintf(stdout, " %d  %g %g %g   %g  %d %d\n", 
+        p.ID, p.pos.x, p.pos.y, p.pos.z, p.density, 
+#ifdef DENSDM
+        0,
+#else
+        1,
+#endif
+        p.nnb);
 
   }
-  ngb_mean  *= 1.0/(float)nbody;
-  ngb_mean2 *= 1.0/(float)nbody;
-  fprintf(stderr, " imax= %d \n", imax);
+  ngb_mean  *= 1.0/(float)N;
+  ngb_mean2 *= 1.0/(float)N;
+  fprintf(stderr, " imax= %d nzero= %d\n", imax, nzero);
   fprintf(stderr, " nmin= %d  nmax= %d   nmean= %g  <sigma>= %g\n",
       ngb_min, ngb_max,
       ngb_mean,
