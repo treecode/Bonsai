@@ -227,14 +227,32 @@ KERNEL_DECLARE(compute_leaf)( const int n_leafs,
   r_maxS.x -= r_minS.x;  r_maxS.y -= r_minS.y;  r_maxS.z -= r_minS.z;
   r_maxD.x -= r_minD.x;  r_maxD.y -= r_minD.y;  r_maxD.z -= r_minD.z;
 
+#if 0
   float volumeS = fudgeFactor*cbrtf(r_maxS.x*r_maxS.y*r_maxS.z); //pow(x,1.0/3);
   float volumeD = fudgeFactor*cbrtf(r_maxD.x*r_maxD.y*r_maxD.z); //, 1.0/3);
+#else
+  const float maxS = (max(r_maxS.x, r_maxS.y), r_maxS.z);
+  const float maxD = (max(r_maxD.x, r_maxD.y), r_maxD.z);
+  const float volS = maxS*maxS*maxS;
+  const float volD = maxD*maxD*maxD;
+  const int   npS  = lastChild - firstChild;
+  const int   npD  = npS;  /* must have correct count for npS & npD */
+  const int   nbS = 32;
+  const int   nbD = 64;
+  const float roS = float(npS) / volS;
+  const float roD = float(npD) / volD;
+  const float volumeS = cbrtf(nbS / roS);
+  const float volumeD = cbrtf(nbD / roD);
+  assert(volumeS >= 0.0f);
+//  assert(volumeD >= 0.0f);
+#endif
 
   for(int i=firstChild; i < lastChild; i++)
   {
     ulonglong1 id = body_id[i];
     if(id.x >= DARKMATTERID.x)
     {
+      assert(0);
 	    body_h[i] = volumeD;
     }
     else

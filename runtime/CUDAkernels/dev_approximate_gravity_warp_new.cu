@@ -31,7 +31,7 @@ PROF_MODULE(dev_approximate_gravity);
 /***********************************/
 /***** DENSITY   ******************/
 
-__device__ __forceinline__ float Wkernel(const float q)
+static __device__ __forceinline__ float Wkernel(const float q)
 {
   const float sigma = 8.0f/M_PI;
 
@@ -42,8 +42,35 @@ __device__ __forceinline__ float Wkernel(const float q)
   return 0.0f;
 }
 
+static __device__ __forceinline__  float computePartialDensity(
+    const float h, 
+    const float r2, 
+    const float mass)
+{
+  const float r     =  sqrtf(r2); //Can we combine this with the force sqrt?
+  const float hinv  =  1.0f/h; //Can we precompute this and keep in register?
+  const float q     =  r * hinv;
+  const float hinv3 =  hinv*hinv*hinv;
+
+  printf("ON DEV: Kernel: %f\tq: %f\tr: %f\thinv: %f\n",  Wkernel(q), q, r, hinv);
 
 
+  return mass * Wkernel(q) * hinv3;
+}
+
+static __device__ __forceinline__ void computeDensityAndNgb(
+    const float r2, const float h, const float mass, 
+    float &density, float &nb)
+{
+  if (h*h > r2)
+  {
+    nb++;
+    density += computePartialDensity(h,r2,mass);
+  }
+}
+
+
+#if 0
 __device__ __forceinline__  float addDensity(const float h, const float r2, const float density, const float mass)
 {
   const float r     =  sqrtf(r2); //Can we combine this with the force sqrt?
@@ -56,6 +83,7 @@ __device__ __forceinline__  float addDensity(const float h, const float r2, cons
 
   return density + (mass * Wkernel(q) * hinv3);
 }
+#endif
 
 
 
@@ -229,11 +257,15 @@ static __device__ __forceinline__ float4 add_acc(
 
 
   //Density
-  if(pos.w*pos.w  < r2)
+#if 0
+  if(r2 < pos.w*pos.w)
   {
         density.x  = addDensity(pos.w, r2, density.x, massj);
 	density.y += 1; //Increase nnb count
   }
+#else
+  computeDensityAndNgb(r2,pos.w,massj,density.x,density.y);
+#endif
 
 
 #endif
@@ -285,11 +317,15 @@ static __device__ __forceinline__ float4 add_acc(
 
 
   //Density
+#if 0
   if(pos.w*pos.w  < r2)
   {
         density.x  = addDensity(pos.w, r2, density.x, mass);
 	density.y += 1; //Increase nnb count, this should be nParticles in leaf or node instead of 1
   }
+#else
+  computeDensityAndNgb(r2,pos.w,mass,density.x,density.y);
+#endif
 
 
 
