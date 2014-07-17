@@ -262,7 +262,7 @@ if(WIN32)
      add_definitions( "-msse4")
 endif (WIN32)
 
-if (USE_MPI)
+#if (USE_MPI)
 	#The OpenMP Library and compiler flags
 	FIND_PACKAGE(OpenMP REQUIRED)
 	if(OPENMP_FOUND)
@@ -270,7 +270,7 @@ if (USE_MPI)
 		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
 		set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
 	endif()
-endif(USE_MPI)
+	#endif(USE_MPI)
 
 cuda_add_executable(${BINARY_NAME}
   ${CCFILES} 

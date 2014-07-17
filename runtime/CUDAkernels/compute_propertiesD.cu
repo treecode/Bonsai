@@ -101,7 +101,8 @@ KERNEL_DECLARE(compute_leaf)( const int n_leafs,
                               real4 *nodeLowerBounds,
                               real4 *nodeUpperBounds,
                               real4  *body_vel,
-                              ulonglong1 *body_id) {
+                              ulonglong1 *body_id,
+			      real  *body_h) {
 
   CUXTIMER("compute_leaf");
   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
@@ -182,6 +183,66 @@ KERNEL_DECLARE(compute_leaf)( const int n_leafs,
   //Store the node boundaries
   nodeLowerBounds[nodeID] = make_float4(r_min.x, r_min.y, r_min.z, 0.0f);
   nodeUpperBounds[nodeID] = make_float4(r_max.x, r_max.y, r_max.z, 1.0f);  //4th parameter is set to 1 to indicate this is a leaf
+
+
+
+  //Addition for density computation, we require seperate search radii
+  //for star particles and dark-matter particles. Note that we could 
+  //combine most of this with the loops above. But for clarity
+  //I kept them seperate untill it all is tested and functions correctly
+
+  ulonglong1 DARKMATTERID;
+  DARKMATTERID.x = 3000000000000000000ULL;
+
+//efine DARKMATTERID  3000000000000000000
+
+  float3 r_minS, r_maxS, r_minD, r_maxD;
+  r_minS = make_float3(+1e10f, +1e10f, +1e10f);
+  r_maxS = make_float3(-1e10f, -1e10f, -1e10f);
+  r_minD = make_float3(+1e10f, +1e10f, +1e10f);
+  r_maxD = make_float3(-1e10f, -1e10f, -1e10f);
+
+  int nStar = 0;
+  int nDark = 0;
+  for(int i=firstChild; i < lastChild; i++)
+  {
+    p             = body_pos[i];
+    ulonglong1 id = body_id[i];
+
+    if(id.x >= DARKMATTERID.x)
+    {
+	compute_bounds(r_minD, r_maxD, p);
+	nDark++;
+    }
+    else
+    {
+
+	compute_bounds(r_minS, r_maxS, p);
+	nStar++;
+    }
+  }
+  
+  float fudgeFactor = 1;
+
+  r_maxS.x -= r_minS.x;  r_maxS.y -= r_minS.y;  r_maxS.z -= r_minS.z;
+  r_maxD.x -= r_minD.x;  r_maxD.y -= r_minD.y;  r_maxD.z -= r_minD.z;
+
+  float volumeS = fudgeFactor*cbrtf(r_maxS.x*r_maxS.y*r_maxS.z); //pow(x,1.0/3);
+  float volumeD = fudgeFactor*cbrtf(r_maxD.x*r_maxD.y*r_maxD.z); //, 1.0/3);
+
+  for(int i=firstChild; i < lastChild; i++)
+  {
+    ulonglong1 id = body_id[i];
+    if(id.x >= DARKMATTERID.x)
+    {
+	    body_h[i] = volumeD;
+    }
+    else
+    {
+	    body_h[i] = volumeS;
+    }
+  }
+
 
   return;
 }

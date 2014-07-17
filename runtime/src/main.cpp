@@ -46,6 +46,7 @@ http://github.com/treecode/Bonsai
 #include <fstream>
 #include <sstream>
 #include <sys/time.h>
+#include <omp.h>
 #include "log.h"
 #include "anyoption.h"
 #include "renderloop.h"

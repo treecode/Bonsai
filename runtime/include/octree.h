@@ -53,6 +53,7 @@ using namespace std;
 
 
 typedef float              real;
+typedef float2             real2;
 typedef unsigned int       uint;
 typedef unsigned long long ullong; //ulonglong1
 
@@ -208,6 +209,10 @@ class tree_structure
     my_dev::dev_mem<ullong>   bodies_ids;
     my_dev::dev_mem<int>   oriParticleOrder;  //Used in the correct function to speedup reorder
     
+    //Density related buffers
+    my_dev::dev_mem<real>  bodies_h;       //The particles search radius
+    my_dev::dev_mem<real2> bodies_dens;    //The particles density (x) and nnb (y)
+    
     my_dev::dev_mem<real4> bodies_Ppos;    //Predicted position
     my_dev::dev_mem<real4> bodies_Pvel;    //Predicted velocity
 
@@ -350,6 +355,11 @@ class tree_structure
 
     bodies_Ppos.setContext(*devContext);
     bodies_Pvel.setContext(*devContext);
+
+    //Density
+    bodies_h.setContext(*devContext);
+    bodies_dens.setContext(*devContext);
+
 
     oriParticleOrder.setContext(*devContext);
     activeGrpList.setContext(*devContext);

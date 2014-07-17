@@ -78,6 +78,7 @@ void octree::compute_properties(tree_structure &tree) {
   propsLeafD.set_arg<cl_mem>(6, nodeUpperBounds.p());
   propsLeafD.set_arg<cl_mem>(7, tree.bodies_Pvel.p()); //Velocity to get max eps
   propsLeafD.set_arg<cl_mem>(8, tree.bodies_ids.p());  //Ids to distinguish DM and stars
+  propsLeafD.set_arg<cl_mem>(9, tree.bodies_h.p());  //Ids to distinguish DM and stars
   propsLeafD.setWork(tree.n_leafs, 128);
   LOG("PropsLeaf: on number of leaves: %d \n", tree.n_leafs); //propsLeafD.printWorkSize();
   propsLeafD.execute(execStream->s()); 

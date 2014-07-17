@@ -27,6 +27,37 @@ PROF_MODULE(dev_approximate_gravity);
 #define _QUADRUPOLE_
 #endif
 
+
+
+/***********************************/
+
+inline float Wkernel(const float q)
+{
+  const float sigma = 8.0f/M_PI;
+
+  const float qm = 1.0f - q;
+  if (q < 0.5f) return sigma * (1.0f + (-6.0f)*q*q*qm);
+  else if (q < 1.0f) return sigma * 2.0f*qm*qm*qm;
+
+  return 0.0f;
+}
+
+
+
+__device__ __forceinline__  void addDensity(const float h, const float r, float &density, const float mass)
+{
+  const float hinv =  1.0/h; //Can we precompute this and keep in register?
+  const float q = r * hinv;
+  const float hinv3 = hinv*hinv*hinv;
+
+  density += mass * Wkernel(q) * hinv3;
+}
+
+
+
+
+
+
 /************************************/
 /*********   PREFIX SUM   ***********/
 /************************************/
@@ -815,7 +846,8 @@ __launch_bounds__(NTHREAD)
       float4  *boxCenterInfo,
       float4  *groupCenterInfo,
       real4   *body_vel,
-      int     *MEM_BUF) 
+      int     *MEM_BUF,
+      float *body_h, float2 *body_dens) 
 {
   const int blockDim2 = NTHREAD2;
   const int shMemSize = 10 * (1 << blockDim2);
@@ -997,7 +1029,8 @@ __launch_bounds__(NTHREAD)
       float4  *boxCenterInfo,
       float4  *groupCenterInfo,
       real4   *body_vel,
-      int     *MEM_BUF) 
+      int     *MEM_BUF,
+      float *body_h, float2 *body_dens) 
 {
   const int blockDim2 = NTHREAD2;
   const int shMemSize = 10 * (1 << blockDim2);
