@@ -28,6 +28,7 @@ extern "C" void  dataReorderCombined(const int N, uint4 *keyAndPerm, real4 *sour
 extern "C" void  dataReorderCombined4(const int N, uint4 *keyAndPerm, real4 *source1,  real4* destination1, unsigned long long *source2, unsigned long long* destination2, int *oldOrder);
 //extern "C" void  dataReorderF2(const int N, uint4 *keyAndPerm, float2 *source1, float2 *destination1, int *source2, int *destination2);
 
+extern "C" void (gpu_dataReorderF1)(const int N, uint4 *keyAndPerm, float *source1, float *destination1);
 extern "C" void  (sort_count)(volatile uint2 *valid, int *counts, const int N, setupParams sParam, int bitIdx);
 extern "C" void  (sort_move_stage_key_value)(uint2 *valid, int *output, uint2 *srcValues, uint *valuesOut, int *counts, const int N, setupParams sParam, int bitIdx);      
 extern "C" void  (extractInt_kernel)(uint4 *keys,  uint *simpleKeys, uint *sequence, const int N, int keyIdx);
@@ -56,7 +57,7 @@ extern "C" void  (gpu_build_level_list)(const int n_nodes, const int n_leafs, ui
 extern "C" void  (cl_link_tree)(int n_nodes, uint *n_children, uint2 *node_bodies, real4 *bodies_pos, real4 corner, uint2 *level_list, uint* valid_list, uint4 *node_keys, uint4 *bodies_key,uint  levelMin);
 
 
-extern "C" void  (compute_leaf)(const int n_leafs, uint *leafsIdxs, uint2 *node_bodies, real4 *body_pos, double4 *multipole, real4 *nodeLowerBounds, real4 *nodeUpperBounds, real4  *body_vel, uint *body_id);
+extern "C" void  (compute_leaf)(const int n_leafs, uint *leafsIdxs, uint2 *node_bodies, real4 *body_pos, double4 *multipole, real4 *nodeLowerBounds, real4 *nodeUpperBounds, real4  *body_vel, uint *body_id, real *body_h, const real h_min);
 extern "C" void  (gpu_setPHGroupData)(const int n_groups, const int n_particles,   real4 *bodies_pos, int2  *group_list,real4 *groupCenterInfo, real4 *groupSizeInfo);
 extern "C" void  (compute_scaling)(const int node_count, double4 *multipole, real4 *nodeLowerBounds, real4 *nodeUpperBounds, uint  *n_children, real4 *multipoleF, float theta, real4 *boxSizeInfo, real4 *boxCenterInfo, uint2 *node_bodies);
 extern "C" void  (compute_non_leaf)(const int curLevel, uint  *leafsIdxs, uint  *node_level_list, uint  *n_children, double4 *multipole, real4 *nodeLowerBounds, real4 *nodeUpperBounds);

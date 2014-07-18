@@ -194,6 +194,20 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate, bool doFullS
 //    tree.bodies_ids.copy (intBuffer1,    tree.n);
     tree.bodies_Ppos.copy_devonly(real4Buffer1,  tree.n);
     tree.bodies_ids.copy_devonly (ullBuffer1,    tree.n);
+
+
+    //Shuffle the density values
+    //NOTE I reused this kernel for the gpu_dataReorderF1 function
+    my_dev::dev_mem<float>  realBuffer(devContext);
+    genBufOffset = realBuffer.cmalloc_copy(tree.generalBuffer1, tree.n, 0);
+    dataReorderI1.set_arg<int   >(0,      &tree.n);
+    dataReorderI1.set_arg<cl_mem>(1,      tree.bodies_key.p());
+    dataReorderI1.set_arg<cl_mem>(2,      tree.bodies_h.p());
+    dataReorderI1.set_arg<cl_mem>(3,      realBuffer.p());
+    dataReorderI1.setWork(tree.n, 512);   
+    dataReorderI1.execute(execStream->s());
+    tree.bodies_h.copy(realBuffer, realBuffer.get_size()); 
+
   }
   else
   {
@@ -263,6 +277,18 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate, bool doFullS
     
     tree.bodies_time.copy(float2Buffer, float2Buffer.get_size()); 
     tree.bodies_ids.copy(sortPermutation, sortPermutation.get_size());  
+    
+    //Shuffle the density values
+    //NOTE I reused this kernel for the gpu_dataReorderF1 function
+    my_dev::dev_mem<float>  realBuffer(devContext);
+    genBufOffset1 = realBuffer.cmalloc_copy(tree.generalBuffer1, tree.n, 0);
+    dataReorderI1.set_arg<int>(0,      &tree.n);
+    dataReorderI1.set_arg<cl_mem>(1,      tree.bodies_key.p());
+    dataReorderI1.set_arg<cl_mem>(2,      tree.bodies_h.p());
+    dataReorderI1.set_arg<cl_mem>(3,      realBuffer.p());
+    dataReorderI1.setWork(tree.n, 512);   
+    dataReorderI1.execute(execStream->s());
+    tree.bodies_h.copy(realBuffer, realBuffer.get_size()); 
 
   } //end if
   

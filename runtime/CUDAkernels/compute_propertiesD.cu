@@ -102,7 +102,8 @@ KERNEL_DECLARE(compute_leaf)( const int n_leafs,
                               real4 *nodeUpperBounds,
                               real4  *body_vel,
                               ulonglong1 *body_id,
-			      real  *body_h) {
+			      real  *body_h, 
+			      const float h_min) {
 
   CUXTIMER("compute_leaf");
   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
@@ -194,8 +195,6 @@ KERNEL_DECLARE(compute_leaf)( const int n_leafs,
   ulonglong1 DARKMATTERID;
   DARKMATTERID.x = 3000000000000000000ULL;
 
-//efine DARKMATTERID  3000000000000000000
-
   float3 r_minS, r_maxS, r_minD, r_maxD;
   r_minS = make_float3(+1e10f, +1e10f, +1e10f);
   r_maxS = make_float3(-1e10f, -1e10f, -1e10f);
@@ -231,8 +230,8 @@ KERNEL_DECLARE(compute_leaf)( const int n_leafs,
   float volumeS = fudgeFactor*cbrtf(r_maxS.x*r_maxS.y*r_maxS.z); //pow(x,1.0/3);
   float volumeD = fudgeFactor*cbrtf(r_maxD.x*r_maxD.y*r_maxD.z); //, 1.0/3);
 #else
-  const float maxS = (max(r_maxS.x, r_maxS.y), r_maxS.z);
-  const float maxD = (max(r_maxD.x, r_maxD.y), r_maxD.z);
+  const float maxS = max(max(r_maxS.x, r_maxS.y), r_maxS.z);
+  const float maxD = max(max(r_maxD.x, r_maxD.y), r_maxD.z);
   const float volS = maxS*maxS*maxS;
   const float volD = maxD*maxD*maxD;
   const int   npS  = lastChild - firstChild;
@@ -252,12 +251,16 @@ KERNEL_DECLARE(compute_leaf)( const int n_leafs,
     ulonglong1 id = body_id[i];
     if(id.x >= DARKMATTERID.x)
     {
-      assert(0);
+	    assert(0);
 	    body_h[i] = volumeD;
     }
     else
     {
-	    body_h[i] = volumeS;
+//	    if(i == 0) printf("STATD I goes from: %f  to %f gives: %f \n", body_h[i], volumeS, 0.5f*(volumeS + body_h[i]));
+	    if(body_h[i] >= 0) 
+	      body_h[i] = body_h[i]; // 0.5f*(volumeS + body_h[i]);
+	    else
+	      body_h[i] = max(h_min,volumeS);
     }
   }
 

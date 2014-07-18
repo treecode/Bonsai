@@ -355,11 +355,26 @@ KERNEL_DECLARE(gpu_dataReorderF2)(const int N, uint4 *keyAndPerm,
   int idx = bid * dim + tid;
   if (idx >= N) return;
 
+
   int newIndex      = keyAndPerm[idx].w;
   destination1[idx] = source1[newIndex];
   destination2[idx] = source2[newIndex];  
 }
 
+
+KERNEL_DECLARE(gpu_dataReorderF1)(const int N, uint4 *keyAndPerm,
+                                float *source1, float *destination1)
+{
+  const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
+  const int tid = threadIdx.y * blockDim.x + threadIdx.x;
+  const int dim =  blockDim.x * blockDim.y;
+  
+  int idx = bid * dim + tid;
+  if (idx >= N) return;
+  
+  int newIndex      = keyAndPerm[idx].w;
+  destination1[idx] = source1[newIndex];
+}
 
 
 

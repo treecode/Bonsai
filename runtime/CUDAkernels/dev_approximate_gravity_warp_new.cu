@@ -52,7 +52,7 @@ static __device__ __forceinline__  float computePartialDensity(
   const float q     =  r * hinv;
   const float hinv3 =  hinv*hinv*hinv;
 
-  printf("ON DEV: Kernel: %f\tq: %f\tr: %f\thinv: %f\n",  Wkernel(q), q, r, hinv);
+//  printf("ON DEV: Kernel: %f\tq: %f\tr: %f\thinv: %f\n",  Wkernel(q), q, r, hinv);
 
 
   return mass * Wkernel(q) * hinv3;
@@ -69,21 +69,13 @@ static __device__ __forceinline__ void computeDensityAndNgb(
   }
 }
 
-
-#if 0
-__device__ __forceinline__  float addDensity(const float h, const float r2, const float density, const float mass)
+static __device__ __forceinline__ float adjustH(const float h_old, const float nnb)
 {
-  const float r     =  sqrtf(r2); //Can we combine this with the force sqrt?
-  const float hinv  =  1.0/h; //Can we precompute this and keep in register?
-  const float q     = r * hinv;
-  const float hinv3 = hinv*hinv*hinv;
-
-  printf("ON DEV: Kernel: %f\tq: %f\tr: %f\thinv: %f\n",  Wkernel(q), q, r, hinv);
-
-
-  return density + (mass * Wkernel(q) * hinv3);
+	const float nbDesired 	= 42;
+	const float f      	= 0.5f * (1.0f + cbrtf(nbDesired / nnb));
+	const float fScale 	= max(min(f, 1.2), 0.8);
+	return (h_old*fScale);
 }
-#endif
 
 
 
@@ -812,6 +804,9 @@ bool treewalk(
     {
       acc_out      [addr] = acc_i[0];
       body_dens_out[addr] = dens_i[0];
+
+      body_h[addr] = adjustH(body_h[addr], dens_i[0].y);
+
     }
     //       ngb_out     [addr] = ngb_i;
     ngb_out     [addr] = addr; //JB Fixed this for demo 
@@ -843,6 +838,8 @@ bool treewalk(
       {
         acc_out      [addr] = acc_i[1];
         body_dens_out[addr] = dens_i[1];
+      
+	body_h[addr] = adjustH(body_h[addr], dens_i[1].y);
       }
 
       //         ngb_out     [addr] = ngb_i;

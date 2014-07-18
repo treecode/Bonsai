@@ -67,6 +67,21 @@ void octree::compute_properties(tree_structure &tree) {
 
   double tA = get_time();
 
+  //Density, compute h_min
+  //
+  float sizex = rMaxGlobal.x - rMinGlobal.x;
+  float sizey = rMaxGlobal.y - rMinGlobal.y;
+  float sizez = rMaxGlobal.z - rMinGlobal.z;
+
+  float sizeM = max(max(sizex,sizey), sizez);
+  float h_min = sizeM / (powf(2.0,tree.n_levels));
+  //fprintf(stderr,"HMIN: %f %f %f %f %f\n", h_min, sizex, sizey, sizez, sizeM);
+  
+  //End density
+
+
+
+
   //Computes the tree-properties (size, cm, monopole, quadrupole, etc)
   //start the kernel for the leaf-type nodes
   propsLeafD.set_arg<int>(0,    &tree.n_leafs);
@@ -79,6 +94,7 @@ void octree::compute_properties(tree_structure &tree) {
   propsLeafD.set_arg<cl_mem>(7, tree.bodies_Pvel.p()); //Velocity to get max eps
   propsLeafD.set_arg<cl_mem>(8, tree.bodies_ids.p());  //Ids to distinguish DM and stars
   propsLeafD.set_arg<cl_mem>(9, tree.bodies_h.p());  //Ids to distinguish DM and stars
+  propsLeafD.set_arg<float >(10, &h_min);  //Ids to distinguish DM and stars
   propsLeafD.setWork(tree.n_leafs, 128);
   LOG("PropsLeaf: on number of leaves: %d \n", tree.n_leafs); //propsLeafD.printWorkSize();
   propsLeafD.execute(execStream->s()); 

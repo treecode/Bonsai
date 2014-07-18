@@ -1136,27 +1136,37 @@ void octree::approximate_gravity(tree_structure &tree)
   approxGrav.execute(gravStream->s());  //First half
   cudaEventRecord(endLocalGrav, gravStream->s());
 
-#if 1
+#if 0
 	//Print density information
 	tree.bodies_dens.d2h();
 	tree.bodies_pos.d2h();
 	tree.bodies_h.d2h();
 
+	int nnbMin = 10e7;
+	int nnbMax = -10e7;
+	int nnbSum = 0;
+
+	static bool firstIter0 = true;
 	for(int i=0; i < tree.n; i++)
 	{
 		float r = sqrt(pow(tree.bodies_pos[i].x,2) + pow(tree.bodies_pos[i].y, 2) + pow(tree.bodies_pos[i].z,2));
 
-		fprintf(stderr, "DENS %d\t%f\t%f\t%f\tr: %f\th: %f\td: %f\tnnb: %f \n",
+		nnbMin =  std::min(nnbMin, (int)tree.bodies_dens[i].y);
+		nnbMax =  std::max(nnbMax, (int)tree.bodies_dens[i].y);
+		nnbSum += (int)tree.bodies_dens[i].y;
+if(firstIter0 == true || iter == 40){
+		fprintf(stderr, "DENS Iter: %d\t%d\t%f\t%f\t%f\tr: %f\th: %f\td: %f\tnnb: %f \n",
+			iter,
 			i, tree.bodies_pos[i].x, tree.bodies_pos[i].y, tree.bodies_pos[i].z,
 			r, 
 			tree.bodies_h[i],
 			tree.bodies_dens[i].x, tree.bodies_dens[i].y);
+}
 
 	}
-
-
-	exit(0);
-
+		firstIter0 = false;
+		fprintf(stderr,"STATD Iter: %d\tMin: %d\tMax: %d\tAvg: %f\n", iter, nnbMin, nnbMax, nnbSum / (float)tree.n);
+	//exit(0);
 #endif  
 
 

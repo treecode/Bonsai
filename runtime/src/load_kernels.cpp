@@ -144,7 +144,8 @@ void octree::load_kernels() {
   dataReorderF2.create("dataReorderF2", (const void*)&gpu_dataReorderF2);
 
   dataReorderI1.load_source("./sortKernels.ptx", pathName.c_str());
-  dataReorderI1.create("dataReorderI1", (const void*)&gpu_dataReorderI1);
+  //dataReorderI1.create("dataReorderI1", (const void*)&gpu_dataReorderI1);
+  dataReorderI1.create("dataReorderF1", (const void*)&gpu_dataReorderF1);
   
   dataReorderCombined.load_source("./sortKernels.ptx", pathName.c_str());
   dataReorderCombined.create("dataReorderCombined", (const void*)&gpu_dataReorderCombined);
