@@ -339,7 +339,8 @@ public:
       m_displayBodiesSec(true),
       m_cameraRollHome(0.0f),
       m_cameraRoll(0.0f),
-      m_enableStats(true)
+      m_enableStats(true),
+      m_densityRange(100)
   {
     m_windowDims = make_int2(1024, 768);
     m_cameraTrans = make_float3(0, -2, -100);
@@ -1181,6 +1182,14 @@ public:
                            m_tree->localTree.n_dust, m_tree->localTree.n);
     #endif    
 
+
+     //HACK to get max density
+     float maxDensity = 0;
+     m_tree->localTree.bodies_dens.d2h();
+     for(int i=0; i < m_tree->localTree.n; i++) maxDensity = max(maxDensity, m_tree->localTree.bodies_dens[i].x);
+
+
+
 	  float4 color2 = make_float4(starColor2.x*starColor2.w, starColor2.y*starColor2.w, starColor2.z*starColor2.w, 1.0f);
     float4 color3 = make_float4(starColor3.x*starColor3.w, starColor3.y*starColor3.w, starColor3.z*starColor3.w, 1.0f);
     float4 color4 = make_float4(starColor4.x*starColor4.w, starColor4.y*starColor4.w, starColor4.z*starColor4.w, 1.0f);
@@ -1390,6 +1399,7 @@ public:
     m_colorParams->AddParam(new Param<float>("screen Z", m_screenZ, 100.0, 2000.0, 450.0, &m_screenZ)); //I know  the scene bounds
     m_colorParams->AddParam(new Param<float>("iod", m_IOD, 1.0f, 20.0f, 4.0, &m_IOD));
     m_colorParams->AddParam(new Param<float>("cursor size", m_cursorSize, 0.0, 5.0, 0.5, &m_cursorSize));
+    m_colorParams->AddParam(new Param<int>("Density perc", m_densityRange, 0, 100, 1, &m_densityRange));
 
   }
 
@@ -1437,6 +1447,8 @@ public:
   float m_farZ;
   float m_screenZ;
   bool m_stereoEnabled;
+
+  int m_densityRange; //Density percentage range (0 to 100)
 
   bool m_paused;
   bool m_displayBoxes;
