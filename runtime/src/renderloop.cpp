@@ -1186,8 +1186,17 @@ public:
      //HACK to get max density
      float maxDensity = 0;
      m_tree->localTree.bodies_dens.d2h();
-     for(int i=0; i < m_tree->localTree.n; i++) maxDensity = max(maxDensity, m_tree->localTree.bodies_dens[i].x);
+     for(int i=0; i < m_tree->localTree.n; i++) 
+     {
+	     maxDensity = max(maxDensity, m_tree->localTree.bodies_dens[i].x);
+//	     printf("%d\t%f\t%f\n",
+//			     i, 
+//			     m_tree->localTree.bodies_dens[i].x,
+//			     m_tree->localTree.bodies_dens[i].y);
+     }
 
+//     fprintf(stderr,"Test: %f  %f \n", maxDensity, log10(maxDensity));
+  //   maxDensity = log10(maxDensity);
 
 
 	  float4 color2 = make_float4(starColor2.x*starColor2.w, starColor2.y*starColor2.w, starColor2.z*starColor2.w, 1.0f);
@@ -1280,6 +1289,7 @@ public:
 #else  /* eg: assign colours on the device */
 		const float Tcurrent = m_tree->get_t_current() * 9.78f;
 		assignColors( m_particleColorsDev, (ulonglong1*)m_tree->localTree.bodies_ids.d(), n,
+	(float2*)  m_tree->localTree.bodies_dens.d(), maxDensity, m_densityRange,
 				color2, color3, color4, starColor, bulgeColor, darkMatterColor, dustColor, m_brightFreq, 
 				make_float4(
 					Tcurrent, TstartGlow,
@@ -1382,6 +1392,7 @@ public:
     //dustColor = make_float4(0.0f, 0.0f, 0.0f, 0.0f);  // black
 
     darkMatterColor = make_float4(0.0f, 0.2f, 0.4f, 3.0f);      // blue
+    darkMatterColor = make_float4(0.0f, 0.2f, 0.4f, 0.0f);      // blue
 
     m_colorParams = new ParamListGL("colors");
 #if 0
