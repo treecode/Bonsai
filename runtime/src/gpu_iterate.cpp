@@ -1155,18 +1155,20 @@ void octree::approximate_gravity(tree_structure &tree)
 		nnbMax =  std::max(nnbMax, (int)tree.bodies_dens[i].y);
 		nnbSum += (int)tree.bodies_dens[i].y;
 if(firstIter0 == true || iter == 40){
-		fprintf(stderr, "DENS Iter: %d\t%d\t%f\t%f\t%f\tr: %f\th: %f\td: %f\tnnb: %f \n",
+		fprintf(stderr, "DENS Iter: %d\t%d\t%f\t%f\t%f\tr: %f\th: %f\td: %f\tnnb: %f\t logs: %f %f  \n",
 			iter,
 			i, tree.bodies_pos[i].x, tree.bodies_pos[i].y, tree.bodies_pos[i].z,
 			r, 
 			tree.bodies_h[i],
-			tree.bodies_dens[i].x, tree.bodies_dens[i].y);
+			tree.bodies_dens[i].x, tree.bodies_dens[i].y,
+			log10(tree.bodies_dens[i].x), log2(tree.bodies_dens[i].x)
+			);
 }
 
 	}
 		firstIter0 = false;
 		fprintf(stderr,"STATD Iter: %d\tMin: %d\tMax: %d\tAvg: %f\n", iter, nnbMin, nnbMax, nnbSum / (float)tree.n);
-	//exit(0);
+//	exit(0);
 #endif  
 
 
