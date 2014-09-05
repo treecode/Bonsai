@@ -264,6 +264,16 @@ void octree::dumpData()
     localTree.bodies_ids.d2h();
   }
 
+  auto getIDType = [&](const long long id)
+  {
+    IDType ID;
+    ID.setID(id);
+    if(id >= DISKID  && id < BULGEID)       ID.setType(1);
+    if(id >= BULGEID && id < DARKMATTERID)  ID.setType(1);
+    if(id >= DARKMATTERID)                  ID.setType(0);
+    return ID;
+  };
+
   if (t_current >= nextQuickDump && quickDump > 0)
   {
     nextQuickDump += quickDump;
@@ -287,6 +297,7 @@ void octree::dumpData()
     header.acquireLock(waittime);
     header[0].tCurrent = t_current;
     header[0].nBodies  = nQuick;
+    header[0].done_writing = false;
     char fn[1024];
     sprintf(fn,
         "%s_quick_%010.4f", 
@@ -316,7 +327,7 @@ void octree::dumpData()
       p.vy   = localTree.bodies_vel[i].y;
       p.vz   = localTree.bodies_vel[i].z;
       p.vw   = localTree.bodies_vel[i].w;
-      p.ID   = localTree.bodies_ids[i];
+      p.ID   = IDType(getIDType(localTree.bodies_ids[i]));
     }
     data.releaseLock();
   }
@@ -336,6 +347,7 @@ void octree::dumpData()
     header.acquireLock(waittime);
     header[0].tCurrent = t_current;
     header[0].nBodies  = nSnap;
+    header[0].done_writing = false;
     char fn[1024];
     sprintf(fn,
         "%s_full_%010.4f", 
@@ -363,7 +375,7 @@ void octree::dumpData()
       p.vy   = localTree.bodies_vel[i].y;
       p.vz   = localTree.bodies_vel[i].z;
       p.vw   = localTree.bodies_vel[i].w;
-      p.ID   = localTree.bodies_ids[i];
+      p.ID   = IDType(getIDType(localTree.bodies_ids[i]));
     }
     data.releaseLock();
   }

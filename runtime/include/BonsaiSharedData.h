@@ -1,10 +1,13 @@
 #pragma once
 
+#include "IDType.h"
+
 struct BonsaiSharedQuickHeader
 {
   float tCurrent;
   size_t nBodies;
   char fileName[256];
+  bool done_writing;
   static const char* sharedFile()
   {
     static const char fn[] = "/BonsaiQuickHeader";
@@ -14,7 +17,7 @@ struct BonsaiSharedQuickHeader
 
 struct BonsaiSharedQuickData
 {
-  long long ID;
+  IDType ID;
   float x,y,z,mass;
   float vx,vy,vz,vw;
   static const char* sharedFile()
@@ -29,6 +32,7 @@ struct BonsaiSharedSnapHeader
   float tCurrent;
   size_t nBodies;
   char fileName[256];
+  bool done_writing;
   static const char* sharedFile()
   {
     static const char fn[] = "/BonsaiSnapHeader";
@@ -38,7 +42,7 @@ struct BonsaiSharedSnapHeader
 
 struct BonsaiSharedSnapData
 {
-  long long ID;
+  IDType ID;
   float x,y,z,mass;
   float vx,vy,vz,vw;
   static const char* sharedFile()
