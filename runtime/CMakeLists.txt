@@ -89,6 +89,7 @@ set (CLR_CCFILES
 set(BINARY_IO_NAME  bonsai_io)
 set (IO_CCFILES
   src/bonsai_io.cpp
+  src/anyoption.cpp
   )
 
 set(CMAKE_DEBUG_POSTFIX "D")

@@ -1,6 +1,8 @@
 #undef NDEBUG
 #include <mpi.h>
 #include <cuda_runtime_api.h>
+#include <sstream>
+#include "anyoption.h"
 #include "SharedMemory.h"
 #include "BonsaiSharedData.h"
 #include "BonsaiIO.h"
@@ -38,7 +40,7 @@ static double write(
 }
 
 template<typename ShmHeader, typename ShmData>
-void writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank, const MPI_Comm &comm)
+bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank, const MPI_Comm &comm)
 {
   const float waittime = 10; /* ms */
   auto wait = [=]() { usleep(static_cast<int>(1e3*waittime)); };
@@ -193,8 +195,39 @@ int main(int argc, char * argv[])
   int rank, nrank;
   MPI_Comm_size(comm, &nrank);
   MPI_Comm_rank(comm, &rank);
+	
+  bool snapDump = true;
+  {
+		AnyOption opt;
+    
 
-  bool snapDump = false;
+#define ADDUSAGE(line) {{std::stringstream oss; oss << line; opt.addUsage(oss.str());}}
+
+		ADDUSAGE(" ");
+		ADDUSAGE("Usage");
+		ADDUSAGE(" ");
+		ADDUSAGE(" -h  --help             Prints this help ");
+		ADDUSAGE(" -q  --quick            Write a subsampled snapshot [default is a full restart-quality snapshots]");
+		
+    opt.setFlag( "help" ,   'h');
+    opt.setFlag( "quick",  'q');
+    
+    opt.processCommandArgs( argc, argv );
+
+    
+    if(opt.getFlag( "help" ) || opt.getFlag( 'h' ) )
+    {
+      /* print usage if no options or requested help */
+      opt.printUsage();
+      ::exit(0);
+    }
+
+    if (opt.getFlag("quick")) snapDump = false;
+  }
+
+
+  if (rank == 0)
+    fprintf(stderr, "BonsaIO :: %s mode. Use '-h' for help. \n", (snapDump  ? "SNAPSHOT" : "QUICKDUMP"));
 
   if (snapDump)
   {
