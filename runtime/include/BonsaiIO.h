@@ -370,6 +370,7 @@ namespace BonsaiIO
 
     public:
       Header const & getHeader() { return header; }
+      void setTime(const double t) { header.setTime(t); }
 
     public:
       Core(const int _myRank,

@@ -1206,7 +1206,7 @@ int main(int argc, char** argv)
   /* w/o MPI-IO use async fwrite, so use 2 threads
    * otherwise, use 1 threads
    */
-#pragma omp parallel num_threads(1 + (!useMPIIO))
+#pragma omp parallel num_threads(1+ (!useMPIIO))
   {
     const int tid = omp_get_thread_num();
     if (tid == 0)
@@ -1228,6 +1228,17 @@ int main(int argc, char** argv)
       }
       simulationFinished = true;
     }
+#if 0
+    else if (useMPIIO)
+    {
+      static const std::string ioexe(std::string(getenv("PWD"))+"./bonsai-io");
+      char * const argv[2] = {(char*)ioexe.c_str(), NULL};
+      fprintf(stderr, " -- rank= %d -- launch IO \n",procId);
+      execv(ioexe.c_str(), argv);
+      fprintf(stderr, " -- rank= %d -- stop IO \n", procId);
+      while(1);
+    }
+#endif
     else
     {
       assert(!useMPIIO);

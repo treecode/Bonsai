@@ -7,6 +7,7 @@ struct BonsaiSharedQuickHeader
   float tCurrent;
   size_t nBodies;
   char fileName[256];
+  bool handshake;
   bool done_writing;
   static const char* sharedFile()
   {
@@ -32,6 +33,7 @@ struct BonsaiSharedSnapHeader
   float tCurrent;
   size_t nBodies;
   char fileName[256];
+  bool handshake;
   bool done_writing;
   static const char* sharedFile()
   {

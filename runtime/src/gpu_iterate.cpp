@@ -1,3 +1,4 @@
+#undef NDEBUG
 #include "octree.h"
 #include  "postProcessModules.h"
 #include "SharedMemory.h"
@@ -240,10 +241,26 @@ void octree::makeLET()
   letRunning = false;
 }
 
+template<typename T>
+static void lHandShake(SharedMemoryBase<T> &header)
+{
+  header.acquireLock();
+  header[0].handshake = false;
+  header.releaseLock();
+
+  while (!header[0].handshake)
+    usleep(10000);
+  
+  header.acquireLock();
+  header[0].handshake = false;
+  header.releaseLock();
+}
 
 void octree::dumpData()
 {
-  const float waittime = 10.0f; /* ms */
+  const float waittime = 10.0f;  /* ms */
+  auto wait = [=]() { usleep(static_cast<int>(1e3*waittime)); };
+
   if (shmQHeader == NULL)
   {
     const size_t sCapacity  = 2*localTree.n;
@@ -255,6 +272,27 @@ void octree::dumpData()
     shmSHeader = new ShmSHeader(ShmSHeader::type::sharedFile(), 1);
     shmSData   = new ShmSData  (ShmSData  ::type::sharedFile(), sCapacity);
   }
+
+  static bool handShakeS = false;
+  if (!handShakeS && snapshotIter > 0)
+  {
+    auto &header = *shmSHeader;
+    header[0].tCurrent = t_current;
+    header[0].done_writing = true;
+    lHandShake(header);
+    handShakeS = true;
+  }
+  
+  static bool handShakeQ = false;
+  if (!handShakeQ && quickDump > 0)
+  {
+    auto &header = *shmQHeader;
+    header[0].tCurrent = t_current;
+    header[0].done_writing = true;
+    lHandShake(header);
+    handShakeQ = true;
+  }
+  
 
   if ((t_current >= nextQuickDump && quickDump    > 0) || 
       (t_current >= nextSnapTime  && snapshotIter > 0))
@@ -285,6 +323,9 @@ void octree::dumpData()
     auto &header = *shmQHeader;
     auto &data   = *shmQData;
 
+    while (!header[0].done_writing)
+      wait();
+
     /* write header */
 
     const size_t nSnap = localTree.n;
@@ -297,7 +338,6 @@ void octree::dumpData()
     header.acquireLock(waittime);
     header[0].tCurrent = t_current;
     header[0].nBodies  = nQuick;
-    header[0].done_writing = false;
     char fn[1024];
     sprintf(fn,
         "%s_quick_%010.4f", 
@@ -309,7 +349,6 @@ void octree::dumpData()
       if (fn[i] == 0)
         break;
     }
-    header.releaseLock();
 
     /* write data */
 
@@ -330,6 +369,9 @@ void octree::dumpData()
       p.ID   = IDType(getIDType(localTree.bodies_ids[i]));
     }
     data.releaseLock();
+
+    header[0].done_writing = false;
+    header.releaseLock();
   }
 
   if (t_current >= nextSnapTime && snapshotIter > 0)
@@ -337,17 +379,19 @@ void octree::dumpData()
     nextSnapTime += snapshotIter;
     nextSnapTime = std::max(nextSnapTime, t_current);
     if (procId == 0)
-      fprintf(stderr, "-- snapdump: nextSnapDump= %g \n", nextSnapTime);
+      fprintf(stderr, "-- snapdump: nextSnapDump= %g  %d\n", nextSnapTime, localTree.n);
 
     auto &header = *shmSHeader;
     auto &data   = *shmSData;
+    
+    while (!header[0].done_writing)
+      usleep(waittime*1000);
 
     const size_t nSnap = localTree.n;
 
     header.acquireLock(waittime);
     header[0].tCurrent = t_current;
     header[0].nBodies  = nSnap;
-    header[0].done_writing = false;
     char fn[1024];
     sprintf(fn,
         "%s_full_%010.4f", 
@@ -359,7 +403,6 @@ void octree::dumpData()
       if (fn[i] == 0)
         break;
     }
-    header.releaseLock();
 
     data.acquireLock(waittime);
     assert(data.resize(nSnap));
@@ -378,6 +421,9 @@ void octree::dumpData()
       p.ID   = IDType(getIDType(localTree.bodies_ids[i]));
     }
     data.releaseLock();
+    
+    header[0].done_writing = false;
+    header.releaseLock();
   }
 }
 
