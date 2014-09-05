@@ -280,16 +280,16 @@ cuda_add_executable(${BINARY_NAME}
   OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING} ${KEEP}
   )
 
-if (USE_GALACTICS)
+if (USE_GALACTICS OR USE_GALACTICS_IFORT)
   add_definitions("-DGALACTICS")
   if (USE_GALACTICS_IFORT)
     target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES} -L./ -lgengalaxy -lifcore)
   else(USE_GALACTICS_IFORT)
     target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES} -L./ -lgengalaxy -lgfortran)
   endif(USE_GALACTICS_IFORT)
-else(USE_GALACTICS)
+else(USE_GALACTICS OR USE_GALACTICS_IFORT)
   target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES})
-endif(USE_GALACTICS)
+endif(USE_GALACTICS OR USE_GALACTICS_IFORT)
 
 #copy test data file
 file(COPY ${CMAKE_SOURCE_DIR}/../inputExamples/model3_child_compact.tipsy DESTINATION ${CMAKE_BINARY_DIR})

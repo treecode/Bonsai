@@ -491,6 +491,9 @@ int main(int argc, char** argv)
   bool stereo     = false;
   bool restartSim = false;
 
+  float quickDump  = 0.0;
+  float quickRatio = 0.1;
+
 #if ENABLE_LOG
   ENABLE_RUNTIME_LOG = false;
   PREPEND_RANK       = false;
@@ -544,6 +547,8 @@ int main(int argc, char** argv)
 		ADDUSAGE(" -o  --theta #          opening angle (theta) [" <<theta << "]");
 		ADDUSAGE("     --snapname #       snapshot base name (N-body time is appended in 000000 format) [" << snapshotFile << "]");
 		ADDUSAGE("     --snapiter #       snapshot iteration (N-body time) [" << snapshotIter << "]");
+		ADDUSAGE("     --quickdump  #     how ofter to dump quick output (N-body time) [" << quickDump << "]");
+		ADDUSAGE("     --quickratio #     which fraction of data to dump (fraction) [" << quickRatio << "]");
 		ADDUSAGE("     --rmdist #         Particle removal distance (-1 to disable) [" << remoDistance << "]");
 		ADDUSAGE(" -r  --rebuild #        rebuild tree every # steps [" << rebuild_tree_rate << "]");
 		ADDUSAGE("     --reducebodies #   cut down bodies dataset by # factor ");
@@ -597,6 +602,8 @@ int main(int argc, char** argv)
     opt.setOption( "logfile" );
     opt.setOption( "snapname");
     opt.setOption( "snapiter");
+    opt.setOption( "quickdump");
+    opt.setOption( "quickratio");
     opt.setOption( "rmdist");
     opt.setOption( "valueadd");
     opt.setOption( "reducebodies");
@@ -655,6 +662,8 @@ int main(int argc, char** argv)
     if ((optarg = opt.getValue("theta")))        theta              = (float) atof  (optarg);
     if ((optarg = opt.getValue("snapname")))     snapshotFile       = string(optarg);
     if ((optarg = opt.getValue("snapiter")))     snapshotIter       = (float) atof  (optarg);
+    if ((optarg = opt.getValue("quickdump")))    quickDump          = (float) atof  (optarg);
+    if ((optarg = opt.getValue("quickratio")))   quickRatio         = (float) atof  (optarg);
     if ((optarg = opt.getValue("rmdist")))       remoDistance       = (float) atof  (optarg);
     if ((optarg = opt.getValue("rebuild")))      rebuild_tree_rate  = atoi  (optarg);
     if ((optarg = opt.getValue("reducebodies"))) reduce_bodies_factor = atoi  (optarg);
