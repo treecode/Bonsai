@@ -44,7 +44,7 @@ bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank
 {
   const float waittime = 10; /* ms */
   auto wait = [=]() { usleep(static_cast<int>(1e3*waittime)); };
-  static double tLast = -1;
+  double tLast = -1;
 
 
   /* handshake */
@@ -62,12 +62,13 @@ bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank
 
   /* handshake complete */
 
-  tLast = header[0].tCurrent;
-
   while (1)
   {
     while (header[0].done_writing)
       wait();
+
+    assert(tLast != header[0].tCurrent);
+    tLast = header[0].tCurrent;
 
     if (header[0].tCurrent == -1.0)
       break;
