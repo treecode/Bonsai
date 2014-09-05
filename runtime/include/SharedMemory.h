@@ -8,15 +8,16 @@
 #include <sys/shm.h>
 #include <unistd.h>
     
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 template<typename T>
 class SharedMemoryBase
 {
-  private:
-    enum {FTOKID = 1234};
   protected:
-    const key_t shmKey;
-    int shmid;
+    const std::string descriptor;
+    int shmfd;
     volatile void *shm;
 
     struct Header
@@ -30,7 +31,8 @@ class SharedMemoryBase
     volatile T      *data; 
 
   public:
-    SharedMemoryBase(const std::string &descriptor) : shmKey(ftok(descriptor.c_str(),FTOKID)), shmid(0), shm(NULL) {}
+    using type = T;
+    SharedMemoryBase(const std::string &_descriptor) : descriptor(_descriptor), shmfd(-1), shm(NULL) {}
     virtual ~SharedMemoryBase() {}
 
     struct Exception : public std::exception 
@@ -46,12 +48,21 @@ class SharedMemoryBase
     void detach()
     {
       assert(shm);
+      munmap((void*)shm, header->capacity);
       shm = NULL;
     }
-    void attach()
+    void attach(size_t capacity = 0)
     {
-      assert(!shm);
-      shm = shmat(shmid, NULL, 0);
+      assert(shmfd >= 0);
+      if (!capacity)
+      {
+        void *map = mmap(NULL,sizeof(Header),PROT_READ|PROT_WRITE, MAP_SHARED,shmfd,0);
+        if (map == NULL)
+          throw Exception("SharedMemory::attach - mmap failed to map Header.");
+        capacity = reinterpret_cast<Header*>(map)->capacity;
+        munmap(map,sizeof(Header));
+      }
+      shm = mmap(NULL,sizeof(Header) + capacity*sizeof(T),PROT_READ|PROT_WRITE, MAP_SHARED,shmfd,0);
       if (shm == NULL)
         throw Exception("SharedMemory::attach - shmat failed.");
       header = (Header*)shm;
@@ -81,9 +92,10 @@ class SharedMemoryBase
 
     ////////////////
   
-    bool aquireLock()
+    void acquireLock(const float sleep = 10.0f /* ms */)
     {
-      return __sync_bool_compare_and_swap(&header->locked, 0, 1);
+      while (!__sync_bool_compare_and_swap(&header->locked, 0, 1))
+        usleep(static_cast<int>(sleep*1000));
     } 
     void releaseLock()
     {
@@ -102,10 +114,14 @@ class SharedMemoryServer : public SharedMemoryBase<T>
   public:
     SharedMemoryServer(const std::string &descriptor, const size_t capacity) : p(descriptor)
     {
-      p::shmid = shmget(p::shmKey, sizeof(Header) + capacity*sizeof(T), IPC_CREAT | 0666);
-      if (p::shmid < 0)
-        throw Exception("SharedMemoryServer::Ctor - shmget failed with error " + std::to_string(p::shmid) + "\n");
-      p::attach();
+      p::shmfd = shm_open(p::descriptor.c_str(), O_CREAT|O_RDWR, S_IRUSR|S_IWUSR);
+      if (p::shmfd < 0)
+        throw Exception("SharedMemoryServer::Ctor - shm_open failed with error " + std::to_string(p::shmfd) + "\n");
+    
+      if (ftruncate(p::shmfd,sizeof(Header)+capacity*sizeof(T)))
+        throw Exception("SharedMemoryServer::Ctor = ftruncate failed.");
+
+      p::attach(capacity);
       p::header->capacity    = capacity;
       p::header->size        = 0;
       p::header->locked      = 0;
@@ -113,8 +129,9 @@ class SharedMemoryServer : public SharedMemoryBase<T>
     ~SharedMemoryServer() 
     {
       p::detach();
-      shmctl(p::shmid, IPC_RMID,0);
-      p::shmid = 0;
+      close(p::shmfd);
+      shm_unlink(p::descriptor.c_str());
+      p::shmfd = 0;
     }
 };
 
@@ -130,10 +147,9 @@ class SharedMemoryClient: public SharedMemoryBase<T>
     SharedMemoryClient(const std::string &descriptor, const double timeOut = HUGE) : p(descriptor) 
     {
       double dt = 0.0;
-      int shmid = 0;
-      while (shmid <= 0 && dt < timeOut)
+      while (p::shmfd < 0 && dt < timeOut)
       {
-        shmid = shmget(p::shmKey, sizeof(Header), 0666);
+        p::shmfd = shm_open(p::descriptor.c_str(), O_RDWR,0);
         usleep(100000);
         dt += 0.1;
       }
@@ -142,21 +158,13 @@ class SharedMemoryClient: public SharedMemoryBase<T>
 
       sleep(1);
 
-      void *shm = shmat(shmid, NULL, 0);
-      if (shm == NULL)
-        throw Exception("SharedMemoryClient::Ctor - shmat failed");
-
-      const auto header = *(Header*)shm;
-      shmdt(shm);
-
-      p::shmid = shmget(p::shmKey, sizeof(Header) + header.capacity*sizeof(T), 0666);
-      if (p::shmid < 0)
-        throw Exception("SharedMemoryClient::Ctor - shmget failed with error " + std::to_string(p::shmid) + "\n");
       p::attach();
     }
 
     ~SharedMemoryClient()
     {
       p::detach();
+      close(p::shmfd);
+      p::shmfd = 0;
     }
 };

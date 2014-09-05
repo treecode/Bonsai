@@ -81,6 +81,16 @@ else (USE_DUST)
   set(BINARY_NAME bonsai2_slowdust)
 endif (USE_DUST)
 
+set(BINARY_CLR_NAME bonsai_clrshm)
+set (CLR_CCFILES
+  src/bonsai_clrshm.cpp
+  )
+
+set(BINARY_IO_NAME  bonsai_io)
+set (IO_CCFILES
+  src/bonsai_io.cpp
+  )
+
 set(CMAKE_DEBUG_POSTFIX "D")
 
 include_directories(${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/renderer)
@@ -279,6 +289,14 @@ cuda_add_executable(${BINARY_NAME}
   ${CUFILES}
   ${PROFFILES}
   OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING} ${KEEP}
+  )
+
+add_executable(${BINARY_CLR_NAME}
+  ${CLR_CCFILES}
+  )
+
+add_executable(${BINARY_IO_NAME}
+  ${IO_CCFILES}
   )
 
 if (USE_GALACTICS OR USE_GALACTICS_IFORT)

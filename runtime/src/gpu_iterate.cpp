@@ -1,9 +1,22 @@
 #include "octree.h"
 #include  "postProcessModules.h"
+#include "SharedMemory.h"
+#include "BonsaiSharedData.h"
 
 #include <iostream>
 #include <algorithm>
 #include <iomanip>
+
+
+using ShmQHeader = SharedMemoryServer<BonsaiSharedQuickHeader>;
+using ShmQData   = SharedMemoryServer<BonsaiSharedQuickData>;
+using ShmSHeader = SharedMemoryServer<BonsaiSharedSnapHeader>;
+using ShmSData   = SharedMemoryServer<BonsaiSharedSnapData>;
+
+static ShmQHeader *shmQHeader = NULL;
+static ShmQData   *shmQData   = NULL;
+static ShmSHeader *shmSHeader = NULL;
+static ShmSData   *shmSData   = NULL;
 
 
 using namespace std;
@@ -228,7 +241,133 @@ void octree::makeLET()
 }
 
 
+void octree::dumpData()
+{
+  const float waittime = 10.0f; /* ms */
+  if (shmQHeader == NULL)
+  {
+    const size_t sCapacity  = 2*localTree.n;
+    const size_t qCapacity  = static_cast<size_t>(sCapacity*quickRatio);
 
+    shmQHeader = new ShmQHeader(ShmQHeader::type::sharedFile(), 1);
+    shmQData   = new ShmQData  (ShmQData  ::type::sharedFile(), qCapacity);
+
+    shmSHeader = new ShmSHeader(ShmSHeader::type::sharedFile(), 1);
+    shmSData   = new ShmSData  (ShmSData  ::type::sharedFile(), sCapacity);
+  }
+
+  if ((t_current >= nextQuickDump && quickDump    > 0) || 
+      (t_current >= nextSnapTime  && snapshotIter > 0))
+  {
+    localTree.bodies_pos.d2h();
+    localTree.bodies_vel.d2h();
+    localTree.bodies_ids.d2h();
+  }
+
+  if (t_current >= nextQuickDump && quickDump > 0)
+  {
+    nextQuickDump += quickDump;
+    nextQuickDump = std::max(nextQuickDump, t_current);
+    if (procId == 0)
+      fprintf(stderr, "-- quickdump: nextQuickDump= %g  quickRatio= %g\n",
+          nextQuickDump, quickRatio);
+
+    auto &header = *shmQHeader;
+    auto &data   = *shmQData;
+
+    /* write header */
+
+    const size_t nSnap = localTree.n;
+    const size_t dn = static_cast<size_t>(1.0/quickRatio);
+    assert(dn >= 1);
+    size_t nQuick = 0;
+    for (size_t i = 0; i < nSnap; i += dn)
+      nQuick++;
+
+    header.acquireLock(waittime);
+    header[0].tCurrent = t_current;
+    header[0].nBodies  = nQuick;
+    char fn[1024];
+    sprintf(fn,
+        "%s_quick_%010.4f", 
+        snapshotFile.c_str(), 
+        t_current);
+    for (int i = 0; i < 1024; i++)
+    {
+      header[0].fileName[i] = fn[i];
+      if (fn[i] == 0)
+        break;
+    }
+    header.releaseLock();
+
+    /* write data */
+
+    data.acquireLock(waittime);
+    assert(data.resize(nQuick));
+#pragma omp parallel for schedule(static)
+    for (size_t i = 0; i < nSnap; i += dn)
+    {
+      auto &p = data[i/dn];
+      p.x    = localTree.bodies_pos[i].x;
+      p.y    = localTree.bodies_pos[i].y;
+      p.z    = localTree.bodies_pos[i].z;
+      p.mass = localTree.bodies_pos[i].w;
+      p.vx   = localTree.bodies_vel[i].x;
+      p.vy   = localTree.bodies_vel[i].y;
+      p.vz   = localTree.bodies_vel[i].z;
+      p.vw   = localTree.bodies_vel[i].w;
+      p.ID   = localTree.bodies_ids[i];
+    }
+    data.releaseLock();
+  }
+
+  if (t_current >= nextSnapTime && snapshotIter > 0)
+  {
+    nextSnapTime += snapshotIter;
+    nextSnapTime = std::max(nextSnapTime, t_current);
+    if (procId == 0)
+      fprintf(stderr, "-- snapdump: nextSnapDump= %g \n", nextSnapTime);
+
+    auto &header = *shmSHeader;
+    auto &data   = *shmSData;
+
+    const size_t nSnap = localTree.n;
+
+    header.acquireLock(waittime);
+    header[0].tCurrent = t_current;
+    header[0].nBodies  = nSnap;
+    char fn[1024];
+    sprintf(fn,
+        "%s_full_%010.4f", 
+        snapshotFile.c_str(), 
+        t_current);
+    for (int i = 0; i < 1024; i++)
+    {
+      header[0].fileName[i] = fn[i];
+      if (fn[i] == 0)
+        break;
+    }
+    header.releaseLock();
+
+    data.acquireLock(waittime);
+    assert(data.resize(nSnap));
+#pragma omp parallel for schedule(static)
+    for (size_t i = 0; i < nSnap; i++)
+    {
+      auto &p = data[i];
+      p.x    = localTree.bodies_pos[i].x;
+      p.y    = localTree.bodies_pos[i].y;
+      p.z    = localTree.bodies_pos[i].z;
+      p.mass = localTree.bodies_pos[i].w;
+      p.vx   = localTree.bodies_vel[i].x;
+      p.vy   = localTree.bodies_vel[i].y;
+      p.vz   = localTree.bodies_vel[i].z;
+      p.vw   = localTree.bodies_vel[i].w;
+      p.ID   = localTree.bodies_ids[i];
+    }
+    data.releaseLock();
+  }
+}
 
 // returns true if this iteration is the last (t_current >= t_end), false otherwise
 bool octree::iterate_once(IterationData &idata) {
@@ -537,8 +676,11 @@ bool octree::iterate_once(IterationData &idata) {
     }//Statistics dumping
 
 
-
-    if(snapshotIter > 0)
+    if (useMPIIO)
+    {
+      dumpData();
+    }
+    else if (snapshotIter > 0)
     {
       if((t_current >= nextSnapTime))
       {
@@ -762,7 +904,13 @@ void octree::iterate_setup(IterationData &idata) {
   correct(this->localTree);
   compute_energies(this->localTree);
 
-  if(snapshotIter > 0)
+  if (useMPIIO)
+  {
+    nextSnapTime  = t_current;
+    nextQuickDump = t_current;
+    dumpData();
+  }
+  else if(snapshotIter > 0)
   {
     nextSnapTime = t_current;
     if((t_current >= nextSnapTime))

@@ -689,6 +689,7 @@ int main(int argc, char** argv)
 #endif
 
 
+
   /********** init galaxy before MPI initialization to prevent problems with forking **********/
   const char * argVal = getenv(taskVar.c_str());
   if (argVal == NULL)
@@ -759,8 +760,12 @@ int main(int argc, char** argv)
 
 
   //Creat the octree class and set the properties
-  octree *tree = new octree(argv, devID, theta, eps, snapshotFile, snapshotIter,  timeStep,
-                            tEnd, iterEnd, (int)remoDistance, rebuild_tree_rate, direct);
+  octree *tree = new octree(
+      argv, devID, theta, eps, 
+      snapshotFile, snapshotIter,  
+      quickDump, quickRatio, useMPIIO,
+      timeStep,
+      tEnd, iterEnd, (int)remoDistance, rebuild_tree_rate, direct);
 
   double tStartup = tree->get_time();
 
@@ -777,7 +782,12 @@ int main(int argc, char** argv)
     cerr << "[INIT]\tTheta: \t\t"             << theta        << "\t\teps: \t\t"          << eps << endl;
     cerr << "[INIT]\tTimestep: \t"          << timeStep     << "\t\ttEnd: \t\t"         << tEnd << endl;
     cerr << "[INIT]\titerEnd: \t" << iterEnd << endl;
+    cerr << "[INIT]\tUse MPI-IO: \t" << (useMPIIO ? "YES" : "NO") << endl;
     cerr << "[INIT]\tsnapshotFile: \t"      << snapshotFile << "\tsnapshotIter: \t" << snapshotIter << endl;
+    if (useMPIIO)
+    {
+      cerr << "[INIT]\t  quickDump: \t"      << quickDump << "\t\tquickRatio: \t" << quickRatio << endl;
+    }
     cerr << "[INIT]\tInput file: \t"        << fileName     << "\t\tdevID: \t\t"        << devID << endl;
     cerr << "[INIT]\tRemove dist: \t"   << remoDistance << endl;
     cerr << "[INIT]\tRebuild tree every " << rebuild_tree_rate << " timestep\n";
@@ -806,6 +816,7 @@ int main(int argc, char** argv)
     cerr << "[INIT]\tCode is built WITHOUT MPI Support \n";
 #endif
   }
+  assert(quickRatio > 0 && quickRatio <= 1);
 
 #ifdef USE_MPI
 
@@ -1192,66 +1203,70 @@ int main(int argc, char** argv)
   bool simulationFinished = false;
   ioSharedData.writingFinished       = true;
 
-#pragma omp parallel num_threads(2)
-{
-  const int tid = omp_get_thread_num();
-  if (tid == 0)
+  /* w/o MPI-IO use async fwrite, so use 2 threads
+   * otherwise, use 1 threads
+   */
+#pragma omp parallel num_threads(1 + (!useMPIIO))
   {
-    //Catch exceptions to add some extra print info
-    try
+    const int tid = omp_get_thread_num();
+    if (tid == 0)
     {
+      //Catch exceptions to add some extra print info
+      try
+      {
         tree->iterate();
-    }
-    catch(const std::exception &exc)
-    {
+      }
+      catch(const std::exception &exc)
+      {
         std::cerr << "Process: "  << procId << "\t" << exc.what() <<std::endl;
         if(nProcs > 1) ::abort();
-    }
-    catch(...)
-    {
+      }
+      catch(...)
+      {
         std::cerr << "Unknown exception on process: " << procId << std::endl;
         if(nProcs > 1) ::abort();
+      }
+      simulationFinished = true;
     }
-    simulationFinished = true;
-  }
-  else
-  {
-    /* IO */
-    sleep(1);
-    while(!simulationFinished)
+    else
     {
-      if(ioSharedData.writingFinished == false)
+      assert(!useMPIIO);
+      /* IO */
+      sleep(1);
+      while(!simulationFinished)
       {
-        const int n           = ioSharedData.nBodies;
-        const float t_current = ioSharedData.t_current;
-
-        string fileName; fileName.resize(256);
-        sprintf(&fileName[0], "%s_%010.4f", snapshotFile.c_str(), t_current);
-
-        if(nProcs <= 16)
+        if(ioSharedData.writingFinished == false)
         {
-           tree->write_dumbp_snapshot_parallel(ioSharedData.Pos, ioSharedData.Vel,
-               ioSharedData.IDs, n, fileName.c_str(), t_current) ;
+          const int n           = ioSharedData.nBodies;
+          const float t_current = ioSharedData.t_current;
 
+          string fileName; fileName.resize(256);
+          sprintf(&fileName[0], "%s_%010.4f", snapshotFile.c_str(), t_current);
+
+          if(nProcs <= 16)
+          {
+            tree->write_dumbp_snapshot_parallel(ioSharedData.Pos, ioSharedData.Vel,
+                ioSharedData.IDs, n, fileName.c_str(), t_current) ;
+
+          }
+          else
+          {
+            sprintf(&fileName[0], "%s_%010.4f-%d", snapshotFile.c_str(), t_current, procId);
+            tree->write_snapshot_per_process(ioSharedData.Pos, ioSharedData.Vel,
+                ioSharedData.IDs, n,
+                fileName.c_str(), t_current) ;
+          }
+          ioSharedData.free();
+          assert(ioSharedData.writingFinished == false);
+          ioSharedData.writingFinished = true;
         }
         else
         {
-           sprintf(&fileName[0], "%s_%010.4f-%d", snapshotFile.c_str(), t_current, procId);
-           tree->write_snapshot_per_process(ioSharedData.Pos, ioSharedData.Vel,
-                                      ioSharedData.IDs, n,
-                                      fileName.c_str(), t_current) ;
+          usleep(100);
         }
-        ioSharedData.free();
-        assert(ioSharedData.writingFinished == false);
-        ioSharedData.writingFinished = true;
-      }
-      else
-      {
-        usleep(100);
       }
     }
   }
-}
 
   LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
 
