@@ -60,6 +60,7 @@ option(CUDA_KEEP_INTERMEDIATE_FILES
 
 FIND_PACKAGE(CUDA REQUIRED)
 
+add_definitions(-std=c++11)
 if (USE_MPI)
   add_definitions(-DUSE_MPI)
 endif (USE_MPI)

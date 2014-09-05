@@ -2638,7 +2638,9 @@ inline int split_node_grav_impbh(
     const _v4sf boxCenter1,
     const _v4sf boxSize1)
 {
-  const _v4si mask = {0xffffffff, 0xffffffff, 0xffffffff, 0x0};
+  const int fullMask = static_cast<int>(0xFFFFFFFF);
+  const int zeroMask = static_cast<int>(0x0);
+  const _v4si mask = {fullMask, fullMask, fullMask, zeroMask};
   const _v4sf size = __abs(__builtin_ia32_shufps(nodeCOM1, nodeCOM1, 0xFF));
 
   //mask to prevent NaN signalling / Overflow ? Required to get good pre-SB performance
@@ -2841,7 +2843,7 @@ int getLEToptQuickTreevsTree(
     levelGroups.first().push_back(group);
 
   for (int cell = cellBeg; cell < cellEnd; cell++)
-    levelList.first().push_back((uint4){cell, 0, (int)levelGroups.first().size(),0});
+    levelList.first().push_back((uint4){(uint)cell, 0, (uint)levelGroups.first().size(),0});
 
   double tPrep = get_time2();
 
@@ -2926,7 +2928,7 @@ int getLEToptQuickTreevsTree(
           const int lchild  =    nodeInfo_y & 0x0FFFFFFF;            //Index to the first child of the node
           const int lnchild = (((nodeInfo_y & 0xF0000000) >> 28)) ;  //The number of children this node has
           for (int i = lchild; i < lchild + lnchild; i++)
-            levelList.second().push_back((uint4){i,groupNextBeg,(int)levelGroups.second().size()});
+            levelList.second().push_back((uint4){(uint)i,(uint)groupNextBeg,(uint)levelGroups.second().size()});
         }
         else
         {
@@ -3110,7 +3112,7 @@ int3 getLET1(
         }
       }
 
-      bufferStruct.LETBuffer_node.push_back((int2){nodeIdx, sizew});
+      bufferStruct.LETBuffer_node.push_back((int2){(int)nodeIdx, sizew});
       nExportCell++;
     }
     depth++;
@@ -3235,7 +3237,7 @@ int getLEToptQuickFullTree(
     levelGroups.first().push_back(group);
 
   for (int cell = cellBeg; cell < cellEnd; cell++)
-    levelList.first().push_back((uint4){cell, 0, (int)levelGroups.first().size(),0});
+    levelList.first().push_back((uint4){(uint)cell, 0, (uint)levelGroups.first().size(),0});
 
   double tPrep = get_time2();
 
@@ -3338,7 +3340,7 @@ int getLEToptQuickFullTree(
           sizew = (nExportCellOffset | (lnchild << LEAFBIT));
           nExportCellOffset += lnchild;
           for (int i = lchild; i < lchild + lnchild; i++)
-            levelList.second().push_back((uint4){i,groupNextBeg,(int)levelGroups.second().size()});
+            levelList.second().push_back((uint4){(uint)i,(uint)groupNextBeg,(uint)levelGroups.second().size()});
         }
         else
         {
@@ -3750,7 +3752,7 @@ int3 getLEToptFullTree(
     levelGroups.first().push_back(group);
 
   for (int cell = cellBeg; cell < cellEnd; cell++)
-    levelList.first().push_back((uint4){cell, 0, (int)levelGroups.first().size(),0});
+    levelList.first().push_back((uint4){(uint)cell, 0, (uint)levelGroups.first().size(),0});
 
   int depth = 0;
   while (!levelList.first().empty())
@@ -3838,7 +3840,7 @@ int3 getLEToptFullTree(
           sizew = (nExportCellOffset | (lnchild << LEAFBIT));
           nExportCellOffset += lnchild;
           for (int i = lchild; i < lchild + lnchild; i++)
-            levelList.second().push_back((uint4){i,groupNextBeg,(int)levelGroups.second().size()});
+            levelList.second().push_back((uint4){(uint)i,(uint)groupNextBeg,(uint)levelGroups.second().size()});
         }
         else
         {
@@ -3851,7 +3853,7 @@ int3 getLEToptFullTree(
         }
       }
 
-      bufferStruct.LETBuffer_node.push_back((int2){nodeIdx, sizew});
+      bufferStruct.LETBuffer_node.push_back((int2){(int)nodeIdx, sizew});
       nExportCell++;
     }
 
@@ -4582,7 +4584,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
         double tEndEx = get_time();
 
-        int2 usedStartEndNode = {node_begend.x, node_begend.y};
+        int2 usedStartEndNode = {(int)node_begend.x, (int)node_begend.y};
 
         assert(startGrp == 0);
         int3  nExport = getLET1(
