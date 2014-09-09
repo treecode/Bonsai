@@ -225,7 +225,7 @@ class RendererData
     float attributeMaxLoc(const Attribute_t p) const { return _attributeMaxL[p]; }
 
     template<typename Func>
-      void rescale(const Attribute_t p, const Func &scale, const bool preserveGlobal = true)
+      void rescale(const Attribute_t p, const Func &scale)
       {
         float min = +HUGE, max = -HUGE;
         const int _n = data.size();
@@ -236,14 +236,8 @@ class RendererData
           max = std::max(max, attribute(p,i));
         }
 
-        if (preserveGlobal)
-        {
-          min = scale(attributeMin(p));
-          max = scale(attributeMax(p));
-        }
         _attributeMinL[p] = min;
         _attributeMaxL[p] = max;
-
         minmaxAttributeGlb(p);
       }
 
@@ -284,16 +278,16 @@ class RendererData
       const float valMax = oldMax - right*oldRange;
       assert(valMin < valMax);
 
-      rescale(p,[&](const float x) {return std::max(valMin, std::min(valMax,x));}, false);
+      rescale(p,[&](const float x) {return std::max(valMin, std::min(valMax,x));});
     }
     void clampMinMax(const Attribute_t p, const float min, const float max)
     {
       rescale(p,[&](const float x) { return std::max(min, std::min(max, x)); });
 
-      _attributeMinL[p] = min;
-      _attributeMaxL[p] = max;
-      
-      minmaxAttributeGlb(p);
+#if 0
+      _attributeMin[p] = min;
+      _attributeMax[p] = max;
+#endif
     }
 
 

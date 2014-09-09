@@ -58,7 +58,6 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
     const size_t size = data.size();
     assert(size == nBodies);
 
-
     size_t nskip = 0;
     for (size_t i = 0; i < size; i++)
       if (data[i].rho == 0)
@@ -120,21 +119,6 @@ void rescaleData(RendererData &rData,
     const bool doDD = false,
     const int  nmaxsample = 200000)
 {
-  rData.clampMinMax(RendererData::RHO, 1e-5, 0.15);
-  rData.clampMinMax(RendererData::VEL, 0.1,  2.0);
-
-  fprintf(stderr, "vel: %g %g  rho= %g %g \n ",
-      rData.attributeMin(RendererData::VEL),
-      rData.attributeMax(RendererData::VEL),
-      rData.attributeMin(RendererData::RHO),
-      rData.attributeMax(RendererData::RHO));
-  if (rData.attributeMin(RendererData::RHO) > 0.0)
-  {
-    rData.rescaleLinear(RendererData::RHO, 0, 60000.0);
-    rData.scaleLog(RendererData::RHO);
-  }
-  rData.rescaleLinear(RendererData::VEL, 0, 3000.0);
-        
   if (doDD)
   {
     MPI_Barrier(comm);
@@ -150,6 +134,19 @@ void rescaleData(RendererData &rData,
       fprintf(stderr, " DD= %g sec \n", t1-t0);
   }
 
+  rData.clampMinMax(RendererData::RHO, 1e-5, 0.15);
+  rData.clampMinMax(RendererData::VEL, 0.1,  2.0);
+
+  fprintf(stderr, "vel: %g %g  rho= %g %g \n ",
+      rData.attributeMin(RendererData::VEL),
+      rData.attributeMax(RendererData::VEL),
+      rData.attributeMin(RendererData::RHO),
+      rData.attributeMax(RendererData::RHO));
+
+  rData.rescaleLinear(RendererData::RHO, 0, 60000.0);
+  rData.scaleLog(RendererData::RHO);
+
+  rData.rescaleLinear(RendererData::VEL, 0, 3000.0);
 }
 
 
@@ -503,7 +500,6 @@ int main(int argc, char * argv[])
   if (inSitu)
   {
     rDataPtr = new RendererDataT(rank,nranks,comm);
-    fetchSharedData(*rDataPtr, rank, nranks, comm);
   }
   else
   {
@@ -517,14 +513,31 @@ int main(int argc, char * argv[])
       exit(-1);
     }
     rDataPtr->computeMinMax();
+    rescaleData(*rDataPtr, rank,nranks,comm, doDD,nmaxsample);
   }
 
   assert(rDataPtr != 0);
-  
-  rescaleData(*rDataPtr, rank,nranks,comm, doDD,nmaxsample);
-  rDataPtr->setNewData();
+ 
 
+  auto updateDataSet = [&]() -> void 
+  {
+    if (inSitu)
+      if (fetchSharedData(*rDataPtr, rank, nranks, comm))
+      {
+        rescaleData(*rDataPtr, rank,nranks,comm, doDD,nmaxsample);
+        rDataPtr->setNewData();
+      }
+  };
+  std::function<void()> updateFunc = updateDataSet;
 
+  initAppRenderer(argc, argv, 
+      rank, nranks, comm,
+      *rDataPtr,
+      fullScreenMode.c_str(), 
+      stereo,
+      updateFunc);
+
+#if 0
 #pragma omp parallel num_threads(1 + inSitu)
   if (omp_get_thread_num() == 0)
   {
@@ -542,6 +555,7 @@ int main(int argc, char * argv[])
       rDataPtr->setNewData();
     }
   }
+#endif
  
 
   while(1) 

@@ -43,6 +43,7 @@
 #include <cassert>
 #include <fstream>
 
+
 #include <sys/time.h>
 static inline double rtc(void)
 {
@@ -109,6 +110,8 @@ struct Rand48
     stat = stat*0x5DEECE66D + 0xB;
   }
 };
+
+static std::function<void()> updateDataSet;
 
   template<typename T>
 static inline double4 lMatVec(const T _m[16], const double4 pos)
@@ -455,89 +458,8 @@ class Demo
 
     if (m_idata.isDistributed())
     {
-      float3 r0 = make_float3(
-          m_idata.getBoundBoxLow(0),
-          m_idata.getBoundBoxLow(1),
-          m_idata.getBoundBoxLow(2)
-          );
-      float3 r1 = make_float3(
-          m_idata.getBoundBoxHigh(0),
-          m_idata.getBoundBoxHigh(1),
-          m_idata.getBoundBoxHigh(2)
-          );
-
-      m_renderer.setXhighlow(r0, r1);
-
-      float3 dr = make_float3(
-          r1.x-r0.x,
-          r1.y-r0.y,
-          r1.z-r0.z);
-
-      assert(dr.x > 0.0);
-      assert(dr.y > 0.0);
-      assert(dr.z > 0.0);
-
-      const float f = 0.0;
-      r0.x -= f*dr.x;
-      r0.y -= f*dr.y;
-      r0.z -= f*dr.z;
-
-      r1.x += f*dr.x;
-      r1.y += f*dr.y;
-      r1.z += f*dr.z;
-
-      m_renderer.setClippingPlane(0, lPlaneEquation(
-            make_float3(r0.x,r0.y,r0.z),
-            make_float3(r0.x,r1.y,r0.z),
-            make_float3(r1.x,r1.y,r0.z)
-            ));
-
-      m_renderer.setClippingPlane(1, lPlaneEquation(
-            make_float3(r1.x,r0.y,r0.z),
-            make_float3(r1.x,r1.y,r0.z),
-            make_float3(r1.x,r1.y,r1.z)
-            ));
-
-      m_renderer.setClippingPlane(2, lPlaneEquation(
-            make_float3(r1.x,r0.y,r1.z),
-            make_float3(r1.x,r1.y,r1.z),
-            make_float3(r0.x,r1.y,r1.z)
-            ));
-
-      m_renderer.setClippingPlane(3, lPlaneEquation(
-            make_float3(r0.x,r0.y,r1.z),
-            make_float3(r0.x,r1.y,r1.z),
-            make_float3(r0.x,r1.y,r0.z)
-            ));
-
-      m_renderer.setClippingPlane(4, lPlaneEquation(
-            make_float3(r1.x,r1.y,r0.z),
-            make_float3(r0.x,r1.y,r0.z),
-            make_float3(r0.x,r1.y,r1.z)
-            ));
-
-      m_renderer.setClippingPlane(5, lPlaneEquation(
-            make_float3(r0.x,r0.y,r0.z),
-            make_float3(r1.x,r0.y,r0.z),
-            make_float3(r1.x,r0.y,r1.z)
-            ));
       m_renderer.enableClipping();
       m_clippingEnabled = true;
-    }
-    else
-    {
-      float3 r0 = make_float3(
-          m_idata.xmin(),
-          m_idata.ymin(),
-          m_idata.zmin()
-          );
-      float3 r1 = make_float3(
-          m_idata.xmax(),
-          m_idata.ymax(),
-          m_idata.zmax()
-          );
-
-      m_renderer.setXhighlow(r0, r1);
     }
 
 
@@ -624,6 +546,93 @@ class Demo
 
     void step() { 
       double startTime = GetTimer();
+
+      updateDataSet();
+      if (m_idata.isDistributed())
+      {
+        float3 r0 = make_float3(
+            m_idata.getBoundBoxLow(0),
+            m_idata.getBoundBoxLow(1),
+            m_idata.getBoundBoxLow(2)
+            );
+        float3 r1 = make_float3(
+            m_idata.getBoundBoxHigh(0),
+            m_idata.getBoundBoxHigh(1),
+            m_idata.getBoundBoxHigh(2)
+            );
+
+        m_renderer.setXhighlow(r0, r1);
+
+        float3 dr = make_float3(
+            r1.x-r0.x,
+            r1.y-r0.y,
+            r1.z-r0.z);
+
+        assert(dr.x > 0.0);
+        assert(dr.y > 0.0);
+        assert(dr.z > 0.0);
+
+        const float f = 0.0;
+        r0.x -= f*dr.x;
+        r0.y -= f*dr.y;
+        r0.z -= f*dr.z;
+
+        r1.x += f*dr.x;
+        r1.y += f*dr.y;
+        r1.z += f*dr.z;
+
+        m_renderer.setClippingPlane(0, lPlaneEquation(
+              make_float3(r0.x,r0.y,r0.z),
+              make_float3(r0.x,r1.y,r0.z),
+              make_float3(r1.x,r1.y,r0.z)
+              ));
+
+        m_renderer.setClippingPlane(1, lPlaneEquation(
+              make_float3(r1.x,r0.y,r0.z),
+              make_float3(r1.x,r1.y,r0.z),
+              make_float3(r1.x,r1.y,r1.z)
+              ));
+
+        m_renderer.setClippingPlane(2, lPlaneEquation(
+              make_float3(r1.x,r0.y,r1.z),
+              make_float3(r1.x,r1.y,r1.z),
+              make_float3(r0.x,r1.y,r1.z)
+              ));
+
+        m_renderer.setClippingPlane(3, lPlaneEquation(
+              make_float3(r0.x,r0.y,r1.z),
+              make_float3(r0.x,r1.y,r1.z),
+              make_float3(r0.x,r1.y,r0.z)
+              ));
+
+        m_renderer.setClippingPlane(4, lPlaneEquation(
+              make_float3(r1.x,r1.y,r0.z),
+              make_float3(r0.x,r1.y,r0.z),
+              make_float3(r0.x,r1.y,r1.z)
+              ));
+
+        m_renderer.setClippingPlane(5, lPlaneEquation(
+              make_float3(r0.x,r0.y,r0.z),
+              make_float3(r1.x,r0.y,r0.z),
+              make_float3(r1.x,r0.y,r1.z)
+              ));
+      }
+      else
+      {
+        float3 r0 = make_float3(
+            m_idata.xmin(),
+            m_idata.ymin(),
+            m_idata.zmin()
+            );
+        float3 r1 = make_float3(
+            m_idata.xmax(),
+            m_idata.ymax(),
+            m_idata.zmax()
+            );
+
+        m_renderer.setXhighlow(r0, r1);
+      }
+
       if (!m_paused && iterationsRemaining)
       {
         //iterationsRemaining = !m_tree->iterate_once(m_idata); 
@@ -907,6 +916,7 @@ class Demo
     void mainRender(EYE whichEye)
     {
       m_renderer.setMVP(m_modelView, m_projection);
+
       
 #if 1
       /* eg: code must be moved to RendererData.h. It doesn't belong here. 
@@ -1710,11 +1720,13 @@ class Demo
 
     void getBodyData()
     {
+
       if (!m_idata.isNewData())
       {
         m_renderer.depthSort(m_particlePos);
         return;
       }
+      
 #if 0
       if (rank == 0)
         fprintf(stderr, " getting body data ... \n");
@@ -2060,6 +2072,7 @@ static MPI_Comm thisComm;
 void display()
 {
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
 
   theDemo->step();
   MPI_Barrier(thisComm);
@@ -2429,8 +2442,10 @@ void initAppRenderer(int argc, char** argv,
     const int rank, const int nrank, const MPI_Comm &comm,
     RendererData &idata,
     const char *fullScreenMode,
-    const bool stereo)
+    const bool stereo,
+    std::function<void()> &updateFunc)
 {
+  updateDataSet = updateFunc;
   thisRank = rank;
   thisComm = comm;
   assert(rank < nrank);
