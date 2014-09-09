@@ -543,9 +543,10 @@ int main(int argc, char * argv[])
   assert(rDataPtr != 0);
  
 
+  static bool first = true;
   auto updateDataSet = [&]() -> void 
   {
-    if (inSitu)
+    if (inSitu && first)
     {
       if (fetchSharedData(*rDataPtr, rank, nranks, comm))
       {
@@ -555,6 +556,9 @@ int main(int argc, char * argv[])
     }
   };
   std::function<void()> updateFunc = updateDataSet;
+
+  updateFunc();
+//  first =false;
 
   initAppRenderer(argc, argv, 
       rank, nranks, comm,
