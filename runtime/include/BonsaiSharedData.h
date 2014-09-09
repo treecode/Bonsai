@@ -2,13 +2,25 @@
 
 #include "IDType.h"
 
-struct BonsaiSharedQuickHeader
+struct BonsaiSharedHeader
 {
   float tCurrent;
   size_t nBodies;
   char fileName[256];
   bool handshake;
   bool done_writing;
+};
+  
+struct BonsaiSharedData
+{
+  IDType ID;
+  float x,y,z,mass;
+  float vx,vy,vz,vw;
+  float rho,h;
+};
+
+struct BonsaiSharedQuickHeader : public BonsaiSharedHeader
+{
   static const char* sharedFile()
   {
     static const char fn[] = "/BonsaiQuickHeader";
@@ -16,11 +28,8 @@ struct BonsaiSharedQuickHeader
   }
 };
 
-struct BonsaiSharedQuickData
+struct BonsaiSharedQuickData : public BonsaiSharedData
 {
-  IDType ID;
-  float x,y,z,mass;
-  float vx,vy,vz,vw;
   static const char* sharedFile()
   {
     static const char fn[] = "/BonsaiQuickData";
@@ -28,13 +37,8 @@ struct BonsaiSharedQuickData
   }
 };
 
-struct BonsaiSharedSnapHeader
+struct BonsaiSharedSnapHeader : public BonsaiSharedHeader
 {
-  float tCurrent;
-  size_t nBodies;
-  char fileName[256];
-  bool handshake;
-  bool done_writing;
   static const char* sharedFile()
   {
     static const char fn[] = "/BonsaiSnapHeader";
@@ -42,11 +46,8 @@ struct BonsaiSharedSnapHeader
   }
 };
 
-struct BonsaiSharedSnapData
+struct BonsaiSharedSnapData : public BonsaiSharedData
 {
-  IDType ID;
-  float x,y,z,mass;
-  float vx,vy,vz,vw;
   static const char* sharedFile()
   {
     static const char fn[] = "/BonsaiSnapData";

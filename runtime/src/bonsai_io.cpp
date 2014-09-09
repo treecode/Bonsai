@@ -113,6 +113,8 @@ bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank
             nS++;
             break;
           default:
+            fprintf(stderr, "rank= %d: unkown type %d \n", 
+                data[i].ID.getType());
             assert(0);
         }
       }
@@ -120,16 +122,15 @@ bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank
       typedef float float4[4];
       typedef float float3[3];
       typedef float float2[2];
-      BonsaiIO::DataType<IDType> DM_id ("DM:IDType",       nDM);
-      BonsaiIO::DataType<float4> DM_pos("DM:POS:real4",    nDM);
-      BonsaiIO::DataType<float3> DM_vel("DM:VEL:float[3]", nDM);
+      BonsaiIO::DataType<IDType> DM_id ("DM:IDType",        nDM);
+      BonsaiIO::DataType<float4> DM_pos("DM:POS:real4",     nDM);
+      BonsaiIO::DataType<float3> DM_vel("DM:VEL:float[3]",  nDM);
+      BonsaiIO::DataType<float2> DM_rhoh("DM:RHOH:float[2]", nDM);
 
-      BonsaiIO::DataType<IDType> S_id ("Stars:IDType",       nS);
-      BonsaiIO::DataType<float4> S_pos("Stars:POS:real4",    nS);
-      BonsaiIO::DataType<float3> S_vel("Stars:VEL:float[3]", nS);
-
-      std::vector<BonsaiIO::DataTypeBase*> 
-        data2write = {&DM_id, &DM_pos, &DM_vel, &S_id, &S_pos, &S_vel};
+      BonsaiIO::DataType<IDType> S_id ("Stars:IDType",        nS);
+      BonsaiIO::DataType<float4> S_pos("Stars:POS:real4",     nS);
+      BonsaiIO::DataType<float3> S_vel("Stars:VEL:float[3]",  nS);
+      BonsaiIO::DataType<float2> S_rhoh("Stars:RHOH:float[2]", nS);
 
 
       size_t iDM = 0, iS = 0;
@@ -139,25 +140,29 @@ bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank
         switch (data[i].ID.getType())
         {
           case 0:
-            DM_id [iDM]    = data[i].ID;
-            DM_pos[iDM][0] = data[i].x;
-            DM_pos[iDM][1] = data[i].y;
-            DM_pos[iDM][2] = data[i].z;
-            DM_pos[iDM][3] = data[i].mass;
-            DM_vel[iDM][0] = data[i].vx;
-            DM_vel[iDM][1] = data[i].vy;
-            DM_vel[iDM][2] = data[i].vz;
+            DM_id  [iDM]    = data[i].ID;
+            DM_pos [iDM][0] = data[i].x;
+            DM_pos [iDM][1] = data[i].y;
+            DM_pos [iDM][2] = data[i].z;
+            DM_pos [iDM][3] = data[i].mass;
+            DM_vel [iDM][0] = data[i].vx;
+            DM_vel [iDM][1] = data[i].vy;
+            DM_vel [iDM][2] = data[i].vz;
+            DM_rhoh[iDM][0] = data[i].rho;
+            DM_rhoh[iDM][1] = data[i].h;
             iDM++;
             break;
           case 1:
-            S_id [iS]    = data[i].ID;
-            S_pos[iS][0] = data[i].x;
-            S_pos[iS][1] = data[i].y;
-            S_pos[iS][2] = data[i].z;
-            S_pos[iS][3] = data[i].mass;
-            S_vel[iS][0] = data[i].vx;
-            S_vel[iS][1] = data[i].vy;
-            S_vel[iS][2] = data[i].vz;
+            S_id  [iS]    = data[i].ID;
+            S_pos [iS][0] = data[i].x;
+            S_pos [iS][1] = data[i].y;
+            S_pos [iS][2] = data[i].z;
+            S_pos [iS][3] = data[i].mass;
+            S_vel [iS][0] = data[i].vx;
+            S_vel [iS][1] = data[i].vy;
+            S_vel [iS][2] = data[i].vz;
+            S_rhoh[iS][0] = data[i].rho;
+            S_rhoh[iS][1] = data[i].h;
             iS++;
             break;
           default:
@@ -165,7 +170,11 @@ bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank
         }
       }
 
-      const double dtWrite = write(rank, comm, data2write, out);
+      const double dtWrite = write(rank, comm, 
+          {
+            &DM_id, &DM_pos, &DM_vel, &DM_rhoh,  
+            &S_id, &S_pos, &S_vel, &S_rhoh
+          }, out);
 
       const double tClose = MPI_Wtime(); 
       out.close();
@@ -174,9 +183,15 @@ bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank
       const double writeBW = out.computeBandwidth();
       const double tEnd = MPI_Wtime();
 
+      long long nGlb[2], nLoc[2];
+      nLoc[0] = nDM;
+      nLoc[1] = nS;
+      MPI_Reduce(nLoc, nGlb, 2, MPI_LONG_LONG, MPI_SUM, 0, comm);
+
+
       if (rank == 0)
-        fprintf(stderr, " BonsaiIO:: total= %g sec  [open= %g  write= %g close= %g] BW= %g MB/s \n",
-            tEnd-tBeg, dtOpen, dtWrite, dtClose, writeBW/1e6);
+        fprintf(stderr, " BonsaiIO:: total= %g sec nDM= %gM  nS= %gM [open= %g  write= %g close= %g] BW= %g MB/s \n",
+            tEnd-tBeg, nGlb[0]/1e6, nGlb[1]/1e6, dtOpen, dtWrite, dtClose, writeBW/1e6);
     }
     header[0].done_writing = true;
 

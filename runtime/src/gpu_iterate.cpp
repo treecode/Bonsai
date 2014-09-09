@@ -300,12 +300,15 @@ void octree::dumpData()
     localTree.bodies_pos.d2h();
     localTree.bodies_vel.d2h();
     localTree.bodies_ids.d2h();
+    localTree.bodies_h.d2h();
+    localTree.bodies_dens.d2h();
   }
 
   auto getIDType = [&](const long long id)
   {
     IDType ID;
     ID.setID(id);
+    ID.setType(1);
     if(id >= DISKID  && id < BULGEID)       ID.setType(1);
     if(id >= BULGEID && id < DARKMATTERID)  ID.setType(1);
     if(id >= DARKMATTERID)                  ID.setType(0);
@@ -366,6 +369,8 @@ void octree::dumpData()
       p.vy   = localTree.bodies_vel[i].y;
       p.vz   = localTree.bodies_vel[i].z;
       p.vw   = localTree.bodies_vel[i].w;
+      p.rho  = localTree.bodies_dens[i].x;
+      p.h    = localTree.bodies_h[i];
       p.ID   = IDType(getIDType(localTree.bodies_ids[i]));
     }
     data.releaseLock();
@@ -418,6 +423,8 @@ void octree::dumpData()
       p.vy   = localTree.bodies_vel[i].y;
       p.vz   = localTree.bodies_vel[i].z;
       p.vw   = localTree.bodies_vel[i].w;
+      p.rho  = localTree.bodies_dens[i].x;
+      p.h    = localTree.bodies_h[i];
       p.ID   = IDType(getIDType(localTree.bodies_ids[i]));
     }
     data.releaseLock();
