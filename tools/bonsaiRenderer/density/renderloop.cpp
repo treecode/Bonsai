@@ -453,7 +453,7 @@ class Demo
     m_clippingEnabled = false;
     m_renderer.disableClipping();
 
-    if (1 && m_idata.isDistributed())
+    if (m_idata.isDistributed())
     {
       float3 r0 = make_float3(
           m_idata.getBoundBoxLow(0),
@@ -913,7 +913,7 @@ class Demo
        * suggested interface: 
        *    const std::vector<int>& m_idata.getVisibilityOrder(const float3 cameraPosition) 
        */
-      if (0 && m_idata.isDistributed())
+      if (m_idata.isDistributed())
       {
         const double t0 = MPI_Wtime();
         static std::vector<float3> bounds(nrank);
@@ -1076,7 +1076,7 @@ class Demo
         {
           //Update the particle count in the renderer
           m_renderer.setNumberOfParticles(m_idata.n());
-          fitCamera(); //Try to get the model back in view
+//          fitCamera(); //Try to get the model back in view
         }
 
 
@@ -1789,7 +1789,8 @@ class Demo
       m_renderer.setPositions((float*)pos);
       m_renderer.setColors((float*)colors);
       m_renderer.setSizes((float*)sizes);
-      m_renderer.depthSort(pos);
+
+      m_renderer.depthSort(m_particlePos);
       m_idata.unsetNewData();
     }
 

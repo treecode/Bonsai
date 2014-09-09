@@ -65,7 +65,6 @@ class RendererData
     float _attributeMinL[NPROP];
     float _attributeMaxL[NPROP];
   
-    bool  distributed; 
     float xlow[3], xhigh[3];
     int npx, npy, npz;
    
@@ -107,7 +106,6 @@ class RendererData
 
     float getBoundBoxLow (const int i) const {return  xlow[i];}
     float getBoundBoxHigh(const int i) const {return xhigh[i];}
-    bool isDistributed() const { return distributed; }
 
     int n() const { return data.size(); }
 
@@ -297,6 +295,16 @@ class RendererData
       
       minmaxAttributeGlb(p);
     }
+
+
+    // virtual methods
+   
+
+    bool distributed;
+    bool isDistributed() const { return distributed; }
+    virtual void setNMAXSAMPLE(const int n) {};
+    virtual void distribute() {}
+
 };
 
 class RendererDataDistribute : public RendererData
@@ -375,6 +383,7 @@ class RendererDataDistribute : public RendererData
   }
 
     void setNMAXSAMPLE(const int n) {NMAXSAMPLE = n;}
+    bool isDistributed() const { return true; }
 
   private:
 

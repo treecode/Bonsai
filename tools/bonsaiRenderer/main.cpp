@@ -20,8 +20,7 @@ using ShmQData   = SharedMemoryClient<BonsaiSharedQuickData>;
 static ShmQHeader *shmQHeader = NULL;
 static ShmQData   *shmQData   = NULL;
 
-template<typename T>
-void fetchSharedData(T &rData, const int rank, const int nrank, const MPI_Comm &comm)
+bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const MPI_Comm &comm)
 {
   if (shmQHeader == NULL)
   {
@@ -32,23 +31,25 @@ void fetchSharedData(T &rData, const int rank, const int nrank, const MPI_Comm &
   auto &header = *shmQHeader;
   auto &data   = *shmQData;
 
-#if 0
-  if (rank == 0)
-    fprintf(stderr, " attempting to fetch data \n");
-#endif
-
 
   static float tLast = -1.0f;
 
-  assert(!rData.isNewData());
+  if (rData.isNewData())
+    return false;
+
+#if 1
+  if (rank == 0)
+    fprintf(stderr, " attempting to fetch data \n");
+#endif
 
   // header
   header.acquireLock(1.0f /* ms */);
   const float tCurrent = header[0].tCurrent;
 
+  bool completed = false;
   if (tCurrent != tLast)
   {
-    tLast = tCurrent;
+    completed = true;
 
     // data
     const size_t nBodies = header[0].nBodies;
@@ -65,7 +66,7 @@ void fetchSharedData(T &rData, const int rank, const int nrank, const MPI_Comm &
 
     size_t nDM = 0, nS = 0;
     rData.resize(size-nskip);
-    for (size_t i = 0, ip = 0; i < size; i++, ip++)
+    for (size_t i = 0, ip = 0; i < size; i++)
     {
       if (data[i].rho == 0)
         continue;
@@ -94,12 +95,57 @@ void fetchSharedData(T &rData, const int rank, const int nrank, const MPI_Comm &
             data[i].vz*data[i].vz);
       rData.attribute(RendererData::RHO, ip) = data[i].rho;
       rData.attribute(RendererData::H,   ip)  = data[i].h;
+      ip++;
+      assert(ip <= size-nskip);
     }
 
     data.releaseLock();
   }
 
   header.releaseLock();
+  
+  rData.computeMinMax();
+
+  return completed;
+}
+
+void rescaleData(RendererData &rData, 
+    const int rank,
+    const int nrank,
+    const MPI_Comm &comm,
+    const bool doDD = false,
+    const int  nmaxsample = 200000)
+{
+  rData.clampMinMax(RendererData::RHO, 1e-5, 0.15);
+  rData.clampMinMax(RendererData::VEL, 0.1,  2.0);
+
+  fprintf(stderr, "vel: %g %g  rho= %g %g \n ",
+      rData.attributeMin(RendererData::VEL),
+      rData.attributeMax(RendererData::VEL),
+      rData.attributeMin(RendererData::RHO),
+      rData.attributeMax(RendererData::RHO));
+  if (rData.attributeMin(RendererData::RHO) > 0.0)
+  {
+    rData.rescaleLinear(RendererData::RHO, 0, 60000.0);
+    rData.scaleLog(RendererData::RHO);
+  }
+  rData.rescaleLinear(RendererData::VEL, 0, 3000.0);
+        
+  if (doDD)
+  {
+    MPI_Barrier(comm);
+    const double t0 = MPI_Wtime();
+    rData.randomShuffle();
+    rData.setNMAXSAMPLE(nmaxsample);
+    rData.distribute();
+    //    rData.distribute();
+    MPI_Barrier(comm);
+    const double t1 = MPI_Wtime();
+    fprintf(stderr, " rank= %d: n= %d\n", rank, rData.n());
+    if (rank == 0)
+      fprintf(stderr, " DD= %g sec \n", t1-t0);
+  }
+
 }
 
 
@@ -358,7 +404,7 @@ int main(int argc, char * argv[])
     char hostname[256];
     gethostname(hostname,256);
     char * display = getenv("DISPLAY");
-    fprintf(stderr, "root: %s  display: %s", hostname, display);
+    fprintf(stderr, "root: %s  display: %s \n", hostname, display);
   }
 
 
@@ -466,45 +512,12 @@ int main(int argc, char * argv[])
       MPI_Finalize();
       exit(-1);
     }
+    rDataPtr->computeMinMax();
   }
-
 
   assert(rDataPtr != 0);
-  rDataPtr->randomShuffle();
-  rDataPtr->computeMinMax();
-
-  fprintf(stderr, " rank= %d: n= %d\n", rank, rDataPtr->n());
-  if (doDD)
-  {
-    MPI_Barrier(comm);
-    const double t0 = MPI_Wtime();
-    rDataPtr->setNMAXSAMPLE(nmaxsample);
-    rDataPtr->distribute();
-//    rDataPtr->distribute();
-    MPI_Barrier(comm);
-    const double t1 = MPI_Wtime();
-    fprintf(stderr, " rank= %d: n= %d\n", rank, rDataPtr->n());
-    if (rank == 0)
-      fprintf(stderr, " DD= %g sec \n", t1-t0);
-  }
-#if 0
-  fprintf(stderr, "rank= %d: min= %g %g %g  max= %g %g %g \n",
-      rank, 
-      rDataPtr->xminLoc(), rDataPtr->yminLoc(), rDataPtr->zminLoc(),
-      rDataPtr->xmaxLoc(), rDataPtr->ymaxLoc(), rDataPtr->zmaxLoc());
-#endif
-
-  if (rDataPtr->attributeMin(RendererData::RHO) > 0.0)
-  {
-    rDataPtr->rescaleLinear(RendererData::RHO, 0, 60000.0);
-    rDataPtr->scaleLog(RendererData::RHO);
-  }
-  rDataPtr->rescaleLinear(RendererData::VEL, 0, 3000.0);
-//  rDataPtr->scaleLog(RendererData::VEL);
-
-//  rDataPtr->clamp(RendererData::VEL, 0.25, 0.25);
-//  rDataPtr->scaleExp(RendererData::VEL);
   
+  rescaleData(*rDataPtr, rank,nranks,comm, doDD,nmaxsample);
   rDataPtr->setNewData();
 
 
@@ -519,43 +532,9 @@ int main(int argc, char * argv[])
   else while (1)
   {
     usleep(1000);
-    if (!rDataPtr->isNewData())
+    if (fetchSharedData(*rDataPtr, rank, nranks, comm))
     {
-      fetchSharedData(*rDataPtr, rank, nranks, comm);
-      rDataPtr->randomShuffle();
-      rDataPtr->computeMinMax();
-
-      rDataPtr->clampMinMax(RendererData::RHO, 1e-5, 0.15);
-      rDataPtr->clampMinMax(RendererData::VEL, 0.1,  2.0);
-
-      fprintf(stderr, "vel: %g %g  rho= %g %g \n ",
-          rDataPtr->attributeMin(RendererData::VEL),
-          rDataPtr->attributeMax(RendererData::VEL),
-          rDataPtr->attributeMin(RendererData::RHO),
-          rDataPtr->attributeMax(RendererData::RHO));
-#if 0
-      if (doDD)
-      {
-        MPI_Barrier(comm);
-        const double t0 = MPI_Wtime();
-        rDataPtr->setNMAXSAMPLE(nmaxsample);
-        rDataPtr->distribute();
-        //    rDataPtr->distribute();
-        MPI_Barrier(comm);
-        const double t1 = MPI_Wtime();
-        fprintf(stderr, " rank= %d: n= %d\n", rank, rDataPtr->n());
-        if (rank == 0)
-          fprintf(stderr, " DD= %g sec \n", t1-t0);
-      }
-#endif
-
-      if (rDataPtr->attributeMin(RendererData::RHO) > 0.0)
-      {
-        rDataPtr->rescaleLinear(RendererData::RHO, 0, 60000.0);
-        rDataPtr->scaleLog(RendererData::RHO);
-      }
-      rDataPtr->rescaleLinear(RendererData::VEL, 0, 3000.0);
-
+      rescaleData(*rDataPtr, rank,nranks,comm, doDD,nmaxsample);
       rDataPtr->setNewData();
     }
   }

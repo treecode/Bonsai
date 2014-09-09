@@ -242,7 +242,7 @@ KERNEL_DECLARE(compute_leaf)( const int n_leafs,
   const float roD = float(npD) / volD;
   const float volumeS = cbrtf(nbS / roS);
   const float volumeD = cbrtf(nbD / roD);
-  assert(volumeS >= 0.0f);
+//  assert(volumeS >= 0.0f);
 //  assert(volumeD >= 0.0f);
 #endif
 
@@ -251,7 +251,7 @@ KERNEL_DECLARE(compute_leaf)( const int n_leafs,
     ulonglong1 id = body_id[i];
     if(id.x >= DARKMATTERID.x)
     {
-	    assert(0);
+//	    assert(0);
 	    body_h[i] = volumeD;
     }
     else
