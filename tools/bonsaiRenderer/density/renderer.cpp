@@ -13,6 +13,10 @@
    This class renders particles using OpenGL and GLSL shaders
    */
 
+#if 0
+#define __COMPOSITE_PROFILE
+#endif
+
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1508,11 +1512,14 @@ static void lCompose(
   {
     if (recvdispl[nrank] > 0)
       recvbuf.resize(recvdispl[nrank] / mpiImgDataSize);
+#ifdef __COMPOSITE_PROFILE
     const double t0 = MPI_Wtime();
+#endif
     MPI_Alltoallv(
         &sendbuf[0], &sendcount[0], &senddispl[0], MPI_FLOAT,
         &recvbuf[0], &recvcount[0], &recvdispl[0], MPI_FLOAT,
         comm);
+#ifdef __COMPOSITE_PROFILE
     double nsendrecvloc = (senddispl[nrank] + recvdispl[nrank])*sizeof(float);
     double nsendrecv;
     MPI_Allreduce(&nsendrecvloc, &nsendrecv, 1, MPI_DOUBLE, MPI_SUM, comm);
@@ -1523,6 +1530,7 @@ static void lCompose(
       const double bw = nsendrecv / dt;
       fprintf(stderr, " MPI_Alltoallv: dt= %g  BW= %g MB/s  mem= %g MB\n", dt, bw/1e6, nsendrecv/1e6);
     }
+#endif
   }
 
   /* pixel composition */
@@ -1589,8 +1597,11 @@ static void lCompose(
 
   /* gather composited part of images into a single image on the master rank */
   {
+#ifdef __COMPOSITE_PROFILE
     const double t0 = MPI_Wtime();
+#endif
     MPI_Gather(&imgLoc[0], nPixelsPerRank*4, MPI_FLOAT, imgDst, 4*nPixelsPerRank, MPI_FLOAT, master, comm);
+#ifdef __COMPOSITE_PROFILE
     const double t1 = MPI_Wtime();
     if (master == rank)
     {
@@ -1599,6 +1610,7 @@ static void lCompose(
       const double bw    = nrecv / dt;
       fprintf(stderr, " MPI_Gather: dt= %g  BW= %g MB/s  mem= %g MB\n", dt, bw/1e6, nrecv/1e6);
     }
+#endif
   }
 }
 
@@ -2265,9 +2277,6 @@ static void lCompose(
 
 void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
 {
-#if 1
-#define __PROFILE
-#endif
 
   m_fbo->Bind();
   m_fbo->AttachTexture(GL_TEXTURE_2D, imgTex, GL_COLOR_ATTACHMENT0_EXT);
@@ -2311,7 +2320,7 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
 
 
   GLvoid *rptr;
-#ifdef __PROFILE
+#ifdef __COMPOSITE_PROFILE
   glFinish();
   MPI_Barrier(comm);
   double t00 = MPI_Wtime();
@@ -2322,7 +2331,7 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
   {
     depth.resize(2*w*h);
     /***** fetch depth buffer *****/
-#ifdef __PROFILE
+#ifdef __COMPOSITE_PROFILE
     glFinish();
     MPI_Barrier(comm);
     t00 = MPI_Wtime();
@@ -2333,7 +2342,7 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
     glGetTexImage(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, GL_FLOAT, 0);
     GLvoid *rptr = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, w*h*sizeof(float), GL_MAP_READ_BIT);
 
-#ifdef __PROFILE
+#ifdef __COMPOSITE_PROFILE
     glFinish();
     MPI_Barrier(comm);
     t10 = MPI_Wtime();
@@ -2353,7 +2362,7 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
     glBindTexture(GL_TEXTURE_2D,0);
 
-#ifdef __PROFILE
+#ifdef __COMPOSITE_PROFILE
     glFinish();
     MPI_Barrier(comm);
     t20 = MPI_Wtime();
@@ -2385,7 +2394,7 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
     }
   }
 
-#ifdef __PROFILE
+#ifdef __COMPOSITE_PROFILE
   glFinish();
   MPI_Barrier(comm);
   const double t30 = MPI_Wtime();
@@ -2398,7 +2407,7 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
   if (wSize.x*wSize.y > 0)
     glReadPixels(wCrd.x, wCrd.y, wSize.x, wSize.y, GL_RGBA, GL_FLOAT, 0);
 
-#ifdef __PROFILE
+#ifdef __COMPOSITE_PROFILE
   glFinish();
   MPI_Barrier(comm);
   const double t40 = MPI_Wtime();
@@ -2418,7 +2427,7 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
     depthLoc.clear();
   }
 
-#ifdef __PROFILE
+#ifdef __COMPOSITE_PROFILE
   glFinish();
   MPI_Barrier(comm);
   const double t50 = MPI_Wtime();
@@ -2439,7 +2448,7 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
   glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
   glBindTexture(GL_TEXTURE_2D,0);
 
-#ifdef __PROFILE
+#ifdef __COMPOSITE_PROFILE
   glFinish();
   MPI_Barrier(comm);
   const double t60 = MPI_Wtime();
@@ -2465,7 +2474,7 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
         compositingOrder);
   }
 
-#ifdef __PROFILE
+#ifdef __COMPOSITE_PROFILE
   glFinish();
   MPI_Barrier(comm);
   const double t70 = MPI_Wtime();
@@ -2482,7 +2491,7 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
     for (int i = 0; i < w*h; i++)
       reinterpret_cast<float4*>(wptr)[i] = imgGlb[i];
 
-#ifdef __PROFILE
+#ifdef __COMPOSITE_PROFILE
     glFinish();
     const double t80 = MPI_Wtime();
 #endif
@@ -2495,7 +2504,7 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
     glBindTexture(GL_TEXTURE_2D,0);
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
-#ifdef __PROFILE
+#ifdef __COMPOSITE_PROFILE
     glFinish();
     const double t90 = MPI_Wtime();
 
@@ -2508,8 +2517,8 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
 #endif
   }
 
-#ifdef __PROFILE
-#undef __PROFILE
+#ifdef __COMPOSITE_PROFILE
+#undef __COMPOSITE_PROFILE
 #endif
   m_fbo->Disable();
 }

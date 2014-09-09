@@ -435,7 +435,7 @@ protected:
   float         t_current, t_previous;
   float         snapshotIter;   
   float         quickDump, quickRatio;
-  bool          useMPIIO;
+  bool          quickSync, useMPIIO;
   string        snapshotFile;
   float         nextSnapTime;
   float         nextQuickDump;
@@ -993,13 +993,14 @@ public:
          string snapF = "", float snapI = -1,  
          const float _quickDump = 0.0,
          const float _quickRatio = 0.1,
+         const bool  _quickSync = true,
          const bool  _useMPIIO   = false,
          float tempTimeStep = 1.0 / 16.0, float tempTend = 1000,
          int _iterEnd = (1<<30),
          int maxDistT = -1, const int _rebuild = 2,
          bool direct = false)
   : rebuild_tree_rate(_rebuild), procId(0), nProcs(1), thisPartLETExTime(0), useDirectGravity(direct),
-  quickDump(_quickDump), quickRatio(_quickRatio), useMPIIO(_useMPIIO), nextQuickDump(0.0)
+  quickDump(_quickDump), quickRatio(_quickRatio), quickSync(_quickSync), useMPIIO(_useMPIIO), nextQuickDump(0.0)
   {
 #if USE_B40C
     sorter = 0;

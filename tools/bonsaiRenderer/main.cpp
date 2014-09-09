@@ -6,11 +6,101 @@
 #include <sstream>
 #include <cmath>
 #include "IDType.h"
+#include "BonsaiSharedData.h"
 #include "BonsaiIO.h"
+#include "SharedMemory.h"
+#include <omp.h>
 
 #include "renderloop.h"
 #include "anyoption.h"
 #include "RendererData.h"
+
+using ShmQHeader = SharedMemoryClient<BonsaiSharedQuickHeader>;
+using ShmQData   = SharedMemoryClient<BonsaiSharedQuickData>;
+static ShmQHeader *shmQHeader = NULL;
+static ShmQData   *shmQData   = NULL;
+
+template<typename T>
+void fetchSharedData(T &rData, const int rank, const int nrank, const MPI_Comm &comm)
+{
+  if (shmQHeader == NULL)
+  {
+    shmQHeader = new ShmQHeader(ShmQHeader::type::sharedFile());
+    shmQData   = new ShmQData  (ShmQData  ::type::sharedFile());
+  }
+
+  auto &header = *shmQHeader;
+  auto &data   = *shmQData;
+
+#if 0
+  if (rank == 0)
+    fprintf(stderr, " attempting to fetch data \n");
+#endif
+
+
+  static float tLast = -1.0f;
+
+  assert(!rData.isNewData());
+
+  // header
+  header.acquireLock(1.0f /* ms */);
+  const float tCurrent = header[0].tCurrent;
+
+  if (tCurrent != tLast)
+  {
+    tLast = tCurrent;
+
+    // data
+    const size_t nBodies = header[0].nBodies;
+    data.acquireLock(1.0f /* ms */);
+
+    const size_t size = data.size();
+    assert(size == nBodies);
+
+
+    size_t nskip = 0;
+    for (size_t i = 0; i < size; i++)
+      if (data[i].rho == 0)
+        nskip++;
+
+    size_t nDM = 0, nS = 0;
+    rData.resize(size-nskip);
+    for (size_t i = 0, ip = 0; i < size; i++, ip++)
+    {
+      if (data[i].rho == 0)
+        continue;
+      rData.posx(ip) = data[i].x;
+      rData.posy(ip) = data[i].y;
+      rData.posz(ip) = data[i].z;
+      rData.ID  (ip) = data[i].ID.getID();
+      rData.type(ip) = data[i].ID.getType();
+      switch (rData.type(ip))
+      {
+        case 0:
+          nDM++;
+          break;
+        case 1:
+          nS++;
+          break;
+        default:
+          fprintf(stderr, "rank= %d: unkown type %d \n", rank, rData.type(ip));
+          assert(0);
+      }
+      //    rData.attribute(RendererData::MASS, ip) = posS[i][3];
+      rData.attribute(RendererData::VEL,  ip) =
+        std::sqrt(
+            data[i].vx*data[i].vx+
+            data[i].vy*data[i].vy+
+            data[i].vz*data[i].vz);
+      rData.attribute(RendererData::RHO, ip) = data[i].rho;
+      rData.attribute(RendererData::H,   ip)  = data[i].h;
+    }
+
+    data.releaseLock();
+  }
+
+  header.releaseLock();
+}
 
 
 template<typename T>
@@ -283,6 +373,8 @@ int main(int argc, char * argv[])
   bool doDD = false;
   std::string display;
 
+  bool inSitu = false;
+
   {
 		AnyOption opt;
 
@@ -293,6 +385,7 @@ int main(int argc, char * argv[])
 		ADDUSAGE(" ");
 		ADDUSAGE(" -h  --help             Prints this help ");
 		ADDUSAGE(" -i  --infile #         Input snapshot filename ");
+    ADDUSAGE(" -I  --insitu          Enable in-situ rendering ");
 		ADDUSAGE("     --reduceDM    #    cut down DM dataset by # factor [10]. 0-disable DM");
 		ADDUSAGE("     --reduceS     #    cut down stars dataset by # factor [1]. 0-disable S");
 #ifndef PARTICLESRENDERER
@@ -301,11 +394,11 @@ int main(int argc, char * argv[])
 #endif
 		ADDUSAGE(" -d  --doDD             enable domain decomposition  [disabled]");
     ADDUSAGE(" -s  --nmaxsample   #   set max number of samples for DD [" << nmaxsample << "]");
-    ADDUSAGE(" -D  --display      #   set DISPLAY=display, otherwise inherited from environment");
 
 
 		opt.setFlag  ( "help" ,        'h');
 		opt.setOption( "infile",       'i');
+		opt.setFlag  ( "insitu",       'I');
 		opt.setOption( "reduceDM");
 		opt.setOption( "reduceS");
     opt.setOption( "fullscreen");
@@ -325,6 +418,7 @@ int main(int argc, char * argv[])
     }
 
     char *optarg = NULL;
+    if (opt.getFlag("insitu"))  inSitu = true;
     if ((optarg = opt.getValue("infile")))       fileName           = std::string(optarg);
     if ((optarg = opt.getValue("reduceDM"))) reduceDM       = atoi(optarg);
     if ((optarg = opt.getValue("reduceS"))) reduceS       = atoi(optarg);
@@ -336,7 +430,7 @@ int main(int argc, char * argv[])
     if (opt.getFlag("doDD"))  doDD = true;
     if ((optarg = opt.getValue("display"))) display = std::string(optarg);
 
-    if (fileName.empty() ||
+    if ((fileName.empty() && !inSitu) ||
         reduceDM < 0 || reduceS < 0)
     {
       opt.printUsage();
@@ -356,14 +450,22 @@ int main(int argc, char * argv[])
 
   using RendererDataT = RendererDataDistribute;
   RendererDataT *rDataPtr;
-  if ((rDataPtr = readBonsai<RendererDataT>(rank, nranks, comm, fileName, reduceDM, reduceS))) {}
-  else if ((rDataPtr = readJamieSPH<RendererDataT>(rank, nranks, comm, fileName, reduceS,true))) {}
+  if (inSitu)
+  {
+    rDataPtr = new RendererDataT(rank,nranks,comm);
+    fetchSharedData(*rDataPtr, rank, nranks, comm);
+  }
   else
   {
-    if (rank == 0)
-      fprintf(stderr, " I don't recognize the format ... please try again , or recompile to use with old tipsy if that is what you use ..\n");
-    MPI_Finalize();
-    exit(-1);
+    if ((rDataPtr = readBonsai<RendererDataT>(rank, nranks, comm, fileName, reduceDM, reduceS))) {}
+    else if ((rDataPtr = readJamieSPH<RendererDataT>(rank, nranks, comm, fileName, reduceS,true))) {}
+    else
+    {
+      if (rank == 0)
+        fprintf(stderr, " I don't recognize the format ... please try again , or recompile to use with old tipsy if that is what you use ..\n");
+      MPI_Finalize();
+      exit(-1);
+    }
   }
 
 
@@ -371,12 +473,6 @@ int main(int argc, char * argv[])
   rDataPtr->randomShuffle();
   rDataPtr->computeMinMax();
 
-#if 0
-  fprintf(stderr, "rank= %d: min= %g %g %g  max= %g %g %g \n",
-      rank, 
-      rDataPtr->xminLoc(), rDataPtr->yminLoc(), rDataPtr->zminLoc(),
-      rDataPtr->xmaxLoc(), rDataPtr->ymaxLoc(), rDataPtr->zmaxLoc());
-#endif
   fprintf(stderr, " rank= %d: n= %d\n", rank, rDataPtr->n());
   if (doDD)
   {
@@ -409,21 +505,63 @@ int main(int argc, char * argv[])
 //  rDataPtr->clamp(RendererData::VEL, 0.25, 0.25);
 //  rDataPtr->scaleExp(RendererData::VEL);
   
+  rDataPtr->setNewData();
 
-#if 1
-  initAppRenderer(argc, argv, 
-      rank, nranks, comm,
-      *rDataPtr,
-      fullScreenMode.c_str(), stereo);
-#else
 
-  sleep(1);
-  MPI_Barrier(comm);
-  if (rank == 0)
-    fprintf(stderr, " -- Done -- \n");
-  MPI_Finalize();
+#pragma omp parallel num_threads(1 + inSitu)
+  if (omp_get_thread_num() == 0)
+  {
+    initAppRenderer(argc, argv, 
+        rank, nranks, comm,
+        *rDataPtr,
+        fullScreenMode.c_str(), stereo);
+  }
+  else while (1)
+  {
+    usleep(1000);
+    if (!rDataPtr->isNewData())
+    {
+      fetchSharedData(*rDataPtr, rank, nranks, comm);
+      rDataPtr->randomShuffle();
+      rDataPtr->computeMinMax();
+
+      rDataPtr->clampMinMax(RendererData::RHO, 1e-5, 0.15);
+      rDataPtr->clampMinMax(RendererData::VEL, 0.1,  2.0);
+
+      fprintf(stderr, "vel: %g %g  rho= %g %g \n ",
+          rDataPtr->attributeMin(RendererData::VEL),
+          rDataPtr->attributeMax(RendererData::VEL),
+          rDataPtr->attributeMin(RendererData::RHO),
+          rDataPtr->attributeMax(RendererData::RHO));
+#if 0
+      if (doDD)
+      {
+        MPI_Barrier(comm);
+        const double t0 = MPI_Wtime();
+        rDataPtr->setNMAXSAMPLE(nmaxsample);
+        rDataPtr->distribute();
+        //    rDataPtr->distribute();
+        MPI_Barrier(comm);
+        const double t1 = MPI_Wtime();
+        fprintf(stderr, " rank= %d: n= %d\n", rank, rDataPtr->n());
+        if (rank == 0)
+          fprintf(stderr, " DD= %g sec \n", t1-t0);
+      }
 #endif
-  while(1) {}
+
+      if (rDataPtr->attributeMin(RendererData::RHO) > 0.0)
+      {
+        rDataPtr->rescaleLinear(RendererData::RHO, 0, 60000.0);
+        rDataPtr->scaleLog(RendererData::RHO);
+      }
+      rDataPtr->rescaleLinear(RendererData::VEL, 0, 3000.0);
+
+      rDataPtr->setNewData();
+    }
+  }
+ 
+
+  while(1) 
   return 0;
 }
 

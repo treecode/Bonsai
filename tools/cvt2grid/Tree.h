@@ -71,6 +71,9 @@ struct Tree
       for (int iter = 0; iter< niter; iter++)
       {
         root.make_boundary();
+#pragma omp parallel for
+        for (int i = 0; i < nbody; i++)
+          ptcl[i].nnb = 0;
 
 #if 0  /* SLOW */
 #pragma omp parallel for
@@ -97,7 +100,6 @@ struct Tree
           nbMean += ptcl[i].nnb;
           nbMax   = std::max(nbMax, (long_t)ptcl[i].nnb);
           nbMin   = std::min(nbMin, (long_t)ptcl[i].nnb);
-          ptcl[i].nnb = 0;
         }
         fprintf(stderr, "iteration= %d : nbMin= %g  nbMean= %g  nbMax= %g\n", 
             iter, (float)nbMin, (float)nbMean/nbody, (float)nbMax);

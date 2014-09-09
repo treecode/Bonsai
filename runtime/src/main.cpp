@@ -493,6 +493,7 @@ int main(int argc, char** argv)
 
   float quickDump  = 0.0;
   float quickRatio = 0.1;
+  bool  quickSync  = true;
   bool  useMPIIO = false;
 
 #if ENABLE_LOG
@@ -550,6 +551,7 @@ int main(int argc, char** argv)
 		ADDUSAGE("     --snapiter #       snapshot iteration (N-body time) [" << snapshotIter << "]");
 		ADDUSAGE("     --quickdump  #     how ofter to dump quick output (N-body time) [" << quickDump << "]");
 		ADDUSAGE("     --quickratio #     which fraction of data to dump (fraction) [" << quickRatio << "]");
+    ADDUSAGE("     --noquicksync      disable syncing for quick dumping ");
     ADDUSAGE("     --usempiio         use MPI-IO [disabled]");
 		ADDUSAGE("     --rmdist #         Particle removal distance (-1 to disable) [" << remoDistance << "]");
 		ADDUSAGE(" -r  --rebuild #        rebuild tree every # steps [" << rebuild_tree_rate << "]");
@@ -607,6 +609,7 @@ int main(int argc, char** argv)
     opt.setOption( "quickdump");
     opt.setOption( "quickratio");
     opt.setFlag  ( "usempiio");
+    opt.setFlag  ( "noquicksync");
     opt.setOption( "rmdist");
     opt.setOption( "valueadd");
     opt.setOption( "reducebodies");
@@ -668,6 +671,7 @@ int main(int argc, char** argv)
     if ((optarg = opt.getValue("quickdump")))    quickDump          = (float) atof  (optarg);
     if ((optarg = opt.getValue("quickratio")))   quickRatio         = (float) atof  (optarg);
     if (opt.getValue("usempiio")) useMPIIO = true;
+    if (opt.getValue("noquicksync")) quickSync = false;
     if ((optarg = opt.getValue("rmdist")))       remoDistance       = (float) atof  (optarg);
     if ((optarg = opt.getValue("rebuild")))      rebuild_tree_rate  = atoi  (optarg);
     if ((optarg = opt.getValue("reducebodies"))) reduce_bodies_factor = atoi  (optarg);
@@ -763,7 +767,8 @@ int main(int argc, char** argv)
   octree *tree = new octree(
       argv, devID, theta, eps, 
       snapshotFile, snapshotIter,  
-      quickDump, quickRatio, useMPIIO,
+      quickDump, quickRatio, quickSync,
+      useMPIIO,
       timeStep,
       tEnd, iterEnd, (int)remoDistance, rebuild_tree_rate, direct);
 

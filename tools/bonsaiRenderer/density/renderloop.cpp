@@ -387,7 +387,8 @@ class Demo
       //       m_renderer(tree->localTree.n + tree->localTree.n_dust),
       m_renderer(idata.n(), MAX_PARTICLES, rank, nrank, comm),
       //m_displayMode(ParticleRenderer::PARTICLE_SPRITES_COLOR),
-      m_displayMode(SmokeRenderer::SPLOTCH_SORTED),
+      m_displayMode(SmokeRenderer::SPLOTCH),
+//      m_displayMode(SmokeRenderer::SPLOTCH_SORTED),
       //	    m_displayMode(SmokeRenderer::POINTS),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.2f),
       m_paused(false),
@@ -452,7 +453,7 @@ class Demo
     m_clippingEnabled = false;
     m_renderer.disableClipping();
 
-    if (m_idata.isDistributed())
+    if (1 && m_idata.isDistributed())
     {
       float3 r0 = make_float3(
           m_idata.getBoundBoxLow(0),
@@ -522,6 +523,21 @@ class Demo
             ));
       m_renderer.enableClipping();
       m_clippingEnabled = true;
+    }
+    else
+    {
+      float3 r0 = make_float3(
+          m_idata.xmin(),
+          m_idata.ymin(),
+          m_idata.zmin()
+          );
+      float3 r1 = make_float3(
+          m_idata.xmax(),
+          m_idata.ymax(),
+          m_idata.zmax()
+          );
+
+      m_renderer.setXhighlow(r0, r1);
     }
 
 
@@ -897,7 +913,7 @@ class Demo
        * suggested interface: 
        *    const std::vector<int>& m_idata.getVisibilityOrder(const float3 cameraPosition) 
        */
-      if (m_idata.isDistributed())
+      if (0 && m_idata.isDistributed())
       {
         const double t0 = MPI_Wtime();
         static std::vector<float3> bounds(nrank);
@@ -1063,16 +1079,8 @@ class Demo
           fitCamera(); //Try to get the model back in view
         }
 
-        static bool sortOnly = false;
-        static float oldSize = -1;
 
-        if (m_renderer.getParticleRadius() != oldSize)
-        {
-          sortOnly = false;
-          oldSize = m_renderer.getParticleRadius();
-        }
-        getBodyData(sortOnly);
-        sortOnly = true;
+        getBodyData();
         //getBodyDataTime = GetTimer();
 
         moveCamera();
@@ -1700,13 +1708,17 @@ class Demo
     }
 #endif
 
-    void getBodyData(const bool sortOnly = false)
+    void getBodyData()
     {
-      if (sortOnly)
+      if (!m_idata.isNewData())
       {
         m_renderer.depthSort(m_particlePos);
         return;
       }
+#if 0
+      if (rank == 0)
+        fprintf(stderr, " getting body data ... \n");
+#endif
       int n = m_idata.n();
       //Above is safe since it is 0 if we dont use dust
 
@@ -1778,6 +1790,7 @@ class Demo
       m_renderer.setColors((float*)colors);
       m_renderer.setSizes((float*)sizes);
       m_renderer.depthSort(pos);
+      m_idata.unsetNewData();
     }
 
 

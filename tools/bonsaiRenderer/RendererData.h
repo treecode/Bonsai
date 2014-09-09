@@ -52,6 +52,7 @@ class RendererData
       float attribute[NPROP];
     };
     std::vector<particle_t> data;
+    bool new_data;
 
     float _xmin, _ymin, _zmin, _rmin;
     float _xmax, _ymax, _zmax, _rmax;
@@ -83,7 +84,12 @@ class RendererData
       rank(rank), nrank(nrank), comm(comm), distributed(false)
   {
     assert(rank < nrank);
+    new_data = false;
   }
+
+    void setNewData() {new_data = true;}
+    void unsetNewData() { new_data = false; }
+    bool isNewData() const {return new_data;}
 
     std::array<int,3> getRankFactor() const
     {
@@ -220,6 +226,29 @@ class RendererData
     float attributeMinLoc(const Attribute_t p) const { return _attributeMinL[p]; }
     float attributeMaxLoc(const Attribute_t p) const { return _attributeMaxL[p]; }
 
+    template<typename Func>
+      void rescale(const Attribute_t p, const Func &scale, const bool preserveGlobal = true)
+      {
+        float min = +HUGE, max = -HUGE;
+        const int _n = data.size();
+        for (int i = 0; i < _n; i++)
+        {
+          attribute(p,i) = scale(attribute(p,i));
+          min = std::min(min, attribute(p,i));
+          max = std::max(max, attribute(p,i));
+        }
+
+        if (preserveGlobal)
+        {
+          min = scale(attributeMin(p));
+          max = scale(attributeMax(p));
+        }
+        _attributeMinL[p] = min;
+        _attributeMaxL[p] = max;
+
+        minmaxAttributeGlb(p);
+      }
+
 
     void rescaleLinear(const Attribute_t p, const float newMin, const float newMax)
     {
@@ -228,51 +257,19 @@ class RendererData
      
       const float oldRange = oldMax - oldMin ;
       assert(oldRange != 0.0);
-
+      
       const float slope = (newMax - newMin)/oldRange;
-      float min = +HUGE, max = -HUGE;
-      const int _n = data.size();
-      for (int i = 0; i < _n; i++)
-      {
-        attribute(p,i) = slope * (attribute(p,i) - oldMin) + newMin;  
-        min = std::min(min, attribute(p,i));
-        max = std::max(max, attribute(p,i));
-      }
-      _attributeMinL[p] = min;
-      _attributeMaxL[p] = max;
+      rescale(p,[&](const float x) { return slope * (x - oldMin) + newMin;});
 
-      minmaxAttributeGlb(p);
     }
 
     void scaleLog(const Attribute_t p, const float zeroPoint = 1.0f)
     {
-      float min = +HUGE, max = -HUGE;
-      const int _n = data.size();
-      for (int i = 0; i < _n; i++)
-      {
-        attribute(p,i) = std::log(attribute(p,i) + zeroPoint);
-        min = std::min(min, attribute(p,i));
-        max = std::max(max, attribute(p,i));
-      }
-      _attributeMinL[p] = min;
-      _attributeMaxL[p] = max;
-
-      minmaxAttributeGlb(p);
+      rescale(p, [&](const float x) {return std::log(x + zeroPoint);});
     }
     void scaleExp(const Attribute_t p, const float zeroPoint = 1.0f)
     {
-      float min = +HUGE, max = -HUGE;
-      const int _n = data.size();
-      for (int i = 0; i < _n; i++)
-      {
-        attribute(p,i) = std::exp(attribute(p,i)) - zeroPoint;
-        min = std::min(min, attribute(p,i));
-        max = std::max(max, attribute(p,i));
-      }
-      _attributeMinL[p] = min;
-      _attributeMaxL[p] = max;
-
-      minmaxAttributeGlb(p);
+      rescale(p,[&](const float x) {return std::exp(x) - zeroPoint;});
     }
 
     void clamp(const Attribute_t p, const float left, const float right)
@@ -289,17 +286,11 @@ class RendererData
       const float valMax = oldMax - right*oldRange;
       assert(valMin < valMax);
 
-      float min = +HUGE, max = -HUGE;
-      const int _n = data.size();
-      for (int i = 0; i < _n; i++)
-      {
-        float val = attribute(p,i);
-        val = std::max(valMin, std::min(valMax, val));
-        attribute(p,i) = val;
-
-        min = std::min(min, val);
-        max = std::max(max, val);
-      }
+      rescale(p,[&](const float x) {return std::max(valMin, std::min(valMax,x));}, false);
+    }
+    void clampMinMax(const Attribute_t p, const float min, const float max)
+    {
+      rescale(p,[&](const float x) { return std::max(min, std::min(max, x)); });
 
       _attributeMinL[p] = min;
       _attributeMaxL[p] = max;

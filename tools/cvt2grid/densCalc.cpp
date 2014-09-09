@@ -185,10 +185,10 @@ int main(int argc, char * argv[])
       dataDM.push_back(new BonsaiIO::DataType<IDType>("DM:IDType"));
       dataDM.push_back(new BonsaiIO::DataType<float4>("DM:POS:real4"));
       dataDM.push_back(new BonsaiIO::DataType<float3>("DM:VEL:float[3]"));
-      dataDM.push_back(new BonsaiIO::DataType<float2>("DM:RHOH:float[2]"));
 
       dtRead += read(myRank, comm, dataDM, in, reduceDM);
 
+      dataDM.push_back(new BonsaiIO::DataType<float2>("DM:RHOH:float[2]"));
       data.insert(data.end(), dataDM.begin(), dataDM.end());
 
     }
@@ -197,10 +197,10 @@ int main(int argc, char * argv[])
       dataStars.push_back(new BonsaiIO::DataType<IDType>("Stars:IDType"));
       dataStars.push_back(new BonsaiIO::DataType<float4>("Stars:POS:real4"));
       dataStars.push_back(new BonsaiIO::DataType<float3>("Stars:VEL:float[3]"));
-      dataStars.push_back(new BonsaiIO::DataType<float2>("Stars:RHOH:float[2]"));
 
       dtRead += read(myRank, comm, dataStars, in, reduceS);
 
+      dataStars.push_back(new BonsaiIO::DataType<float2>("Stars:RHOH:float[2]"));
       data.insert(data.end(), dataStars.begin(), dataStars.end());
     }
 

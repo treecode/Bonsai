@@ -284,7 +284,7 @@ void octree::dumpData()
   }
   
   static bool handShakeQ = false;
-  if (!handShakeQ && quickDump > 0)
+  if (!handShakeQ && quickDump > 0 && quickSync)
   {
     auto &header = *shmQHeader;
     header[0].tCurrent = t_current;
@@ -326,8 +326,9 @@ void octree::dumpData()
     auto &header = *shmQHeader;
     auto &data   = *shmQData;
 
-    while (!header[0].done_writing)
-      wait();
+    if (quickSync)
+      while (!header[0].done_writing)
+        wait();
 
     /* write header */
 
@@ -371,6 +372,12 @@ void octree::dumpData()
       p.vw   = localTree.bodies_vel[i].w;
       p.rho  = localTree.bodies_dens[i].x;
       p.h    = localTree.bodies_h[i];
+#if 0
+      fprintf(stderr," i= %d  h= %g  rho= %g\n",
+          i, 
+          localTree.bodies_dens[i].x,
+          localTree.bodies_h[i]);
+#endif
       p.ID   = IDType(getIDType(localTree.bodies_ids[i]));
     }
     data.releaseLock();
