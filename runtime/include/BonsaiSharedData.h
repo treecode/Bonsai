@@ -22,36 +22,36 @@ struct BonsaiSharedData
 
 struct BonsaiSharedQuickHeader : public BonsaiSharedHeader
 {
-  static const char* sharedFile(const int rank = 0)
+  static const char* sharedFile(const int rank)
   {
-    static const std::string fn = "/BonsaiQuickHeader-"+std::to_string(rank);
+    const std::string fn = "/BonsaiQuickHeader-"+std::to_string(rank);
     return fn.c_str();
   }
 };
 
 struct BonsaiSharedQuickData : public BonsaiSharedData
 {
-  static const char* sharedFile(const int rank = 0)
+  static const char* sharedFile(const int rank)
   {
-    static const std::string fn = "/BonsaiQuickData-"+std::to_string(rank);
+    const std::string fn = "/BonsaiQuickData-"+std::to_string(rank);
     return fn.c_str();
   }
 };
 
 struct BonsaiSharedSnapHeader : public BonsaiSharedHeader
 {
-  static const char* sharedFile(const int rank = 0)
+  static const char* sharedFile(const int rank)
   {
-    static const std::string fn = "/BonsaiSnapHeader-"+std::to_string(rank);
+    const std::string fn = "/BonsaiSnapHeader-"+std::to_string(rank);
     return fn.c_str();
   }
 };
 
 struct BonsaiSharedSnapData : public BonsaiSharedData
 {
-  static const char* sharedFile(const int rank = 0)
+  static const char* sharedFile(const int rank)
   {
-    static const std::string fn = "/BonsaiSnapData-"+std::to_string(rank);
+    const std::string fn = "/BonsaiSnapData-"+std::to_string(rank);
     return fn.c_str();
   }
 };

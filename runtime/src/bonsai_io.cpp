@@ -151,6 +151,7 @@ bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank
             DM_rhoh[iDM][0] = data[i].rho;
             DM_rhoh[iDM][1] = data[i].h;
             iDM++;
+            assert(iDM <= nDM);
             break;
           case 1:
             S_id  [iS]    = data[i].ID;
@@ -164,11 +165,17 @@ bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank
             S_rhoh[iS][0] = data[i].rho;
             S_rhoh[iS][1] = data[i].h;
             iS++;
+            assert(iS <= nS);
             break;
           default:
             assert(0);
         }
       }
+      
+      for (int i = 0; i < nDM; i++)
+        assert(DM_id[i].getType() == 0);
+      for (int i = 0; i < nS; i++)
+        assert(S_id[i].getType() == 1);
 
       const double dtWrite = write(rank, comm, 
           {
@@ -212,6 +219,10 @@ int main(int argc, char * argv[])
   MPI_Comm_size(comm, &nrank);
   MPI_Comm_rank(comm, &rank);
 	
+  char processor_name[MPI_MAX_PROCESSOR_NAME];
+  int namelen;
+  MPI_Get_processor_name(processor_name,&namelen);
+  fprintf(stderr, "Rank: %d @ %s , total ranks: %d (mpiInit) \n", rank, processor_name, nrank);
   bool snapDump = true;
   {
 		AnyOption opt;

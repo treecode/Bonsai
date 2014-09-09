@@ -271,6 +271,8 @@ static T* readBonsai(
     rData.posz(ip) = posS[i][2];
     rData.ID  (ip) = IDListS[i].getID();
     rData.type(ip) = IDListS[i].getType();
+    if (!(rData.type(ip) == 1)) /* sanity check */
+      fprintf(stderr, " unkown type : %d\n", rData.type(ip));
     assert(rData.type(ip) == 1); /* sanity check */
 //    rData.attribute(RendererData::MASS, ip) = posS[i][3];
     rData.attribute(RendererData::VEL,  ip) =

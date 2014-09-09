@@ -14,6 +14,12 @@ int main(int argc, char * argv[])
   fprintf(stderr, "cleaning for n= %d\n", n);
   for (int i = 0; i < n; i++)
   {
+#if 0
+    fprintf(stderr, "clear: %s \n", ShmQHeader::type::sharedFile(i));
+    fprintf(stderr, "clear: %s \n", ShmQData  ::type::sharedFile(i));
+    fprintf(stderr, "clear: %s \n", ShmSHeader::type::sharedFile(i));
+    fprintf(stderr, "clear: %s \n", ShmSData  ::type::sharedFile(i));
+#endif
     ShmQHeader shmQHeader(ShmQHeader::type::sharedFile(i), 1);
     ShmQData   shmQData  (ShmQData  ::type::sharedFile(i), 1);
 
