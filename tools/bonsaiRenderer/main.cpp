@@ -49,6 +49,7 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
   bool completed = false;
   if (tCurrent != tLast)
   {
+    tLast = tCurrent;
     completed = true;
 
     // data
@@ -58,23 +59,24 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
     const size_t size = data.size();
     assert(size == nBodies);
 
+    auto skipPtcl = [&](const int i)
+    {
+      return (data[i].rho == 0 || data[i].h == 0.0 || data[i].h > 100);
+    };
+
+#if 0
     size_t nskip = 0;
     for (size_t i = 0; i < size; i++)
-      if (data[i].rho == 0)
+      if (skipPtcl(i))
         nskip++;
+#endif
 
     size_t nDM = 0, nS = 0;
-    rData.resize(size-nskip);
     for (size_t i = 0, ip = 0; i < size; i++)
     {
-      if (data[i].rho == 0)
+      if (skipPtcl(i))
         continue;
-      rData.posx(ip) = data[i].x;
-      rData.posy(ip) = data[i].y;
-      rData.posz(ip) = data[i].z;
-      rData.ID  (ip) = data[i].ID.getID();
-      rData.type(ip) = data[i].ID.getType();
-      switch (rData.type(ip))
+      switch (data[i].ID.getType())
       {
         case 0:
           nDM++;
@@ -86,6 +88,22 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
           fprintf(stderr, "rank= %d: unkown type %d \n", rank, rData.type(ip));
           assert(0);
       }
+    }
+
+    rData.resize(nS);
+    for (size_t i = 0, ip = 0; i < size; i++)
+    {
+      if (skipPtcl(i))
+        continue;
+      if (data[i].ID.getType() != 1) /* not stars */
+        continue;
+
+      rData.posx(ip) = data[i].x;
+      rData.posy(ip) = data[i].y;
+      rData.posz(ip) = data[i].z;
+      rData.ID  (ip) = data[i].ID.getID();
+      rData.type(ip) = data[i].ID.getType();
+      assert(rData.type(ip) == 1);
       //    rData.attribute(RendererData::MASS, ip) = posS[i][3];
       rData.attribute(RendererData::VEL,  ip) =
         std::sqrt(
@@ -93,9 +111,10 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
             data[i].vy*data[i].vy+
             data[i].vz*data[i].vz);
       rData.attribute(RendererData::RHO, ip) = data[i].rho;
-      rData.attribute(RendererData::H,   ip)  = data[i].h;
+      rData.attribute(RendererData::H,   ip) = data[i].h;
+
       ip++;
-      assert(ip <= size-nskip);
+      assert(ip <= nS);
     }
 
     data.releaseLock();
@@ -134,8 +153,10 @@ void rescaleData(RendererData &rData,
       fprintf(stderr, " DD= %g sec \n", t1-t0);
   }
 
+#if 0
   rData.clampMinMax(RendererData::RHO, 1e-5, 0.15);
   rData.clampMinMax(RendererData::VEL, 0.1,  2.0);
+#endif
 
   fprintf(stderr, "vel: %g %g  rho= %g %g \n ",
       rData.attributeMin(RendererData::VEL),
@@ -514,6 +535,7 @@ int main(int argc, char * argv[])
     }
     rDataPtr->computeMinMax();
     rescaleData(*rDataPtr, rank,nranks,comm, doDD,nmaxsample);
+    rDataPtr->setNewData();
   }
 
   assert(rDataPtr != 0);
@@ -522,11 +544,13 @@ int main(int argc, char * argv[])
   auto updateDataSet = [&]() -> void 
   {
     if (inSitu)
+    {
       if (fetchSharedData(*rDataPtr, rank, nranks, comm))
       {
         rescaleData(*rDataPtr, rank,nranks,comm, doDD,nmaxsample);
         rDataPtr->setNewData();
       }
+    }
   };
   std::function<void()> updateFunc = updateDataSet;
 
