@@ -247,14 +247,14 @@ int main(int argc, char * argv[])
 
   if (snapDump)
   {
-    ShmSHeader shmSHeader(ShmSHeader::type::sharedFile());
-    ShmSData   shmSData  (ShmSData  ::type::sharedFile());
+    ShmSHeader shmSHeader(ShmSHeader::type::sharedFile(rank));
+    ShmSData   shmSData  (ShmSData  ::type::sharedFile(rank));
     writeLoop(shmSHeader, shmSData, rank, nrank, comm);
   }
   else
   {
-    ShmQHeader shmQHeader(ShmQHeader::type::sharedFile());
-    ShmQData   shmQData  (ShmQData  ::type::sharedFile());
+    ShmQHeader shmQHeader(ShmQHeader::type::sharedFile(rank));
+    ShmQData   shmQData  (ShmQData  ::type::sharedFile(rank));
     writeLoop(shmQHeader, shmQData, rank, nrank, comm);
   }
 

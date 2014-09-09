@@ -266,11 +266,11 @@ void octree::dumpData()
     const size_t sCapacity  = 2*localTree.n;
     const size_t qCapacity  = static_cast<size_t>(sCapacity*quickRatio);
 
-    shmQHeader = new ShmQHeader(ShmQHeader::type::sharedFile(), 1);
-    shmQData   = new ShmQData  (ShmQData  ::type::sharedFile(), qCapacity);
+    shmQHeader = new ShmQHeader(ShmQHeader::type::sharedFile(procId), 1);
+    shmQData   = new ShmQData  (ShmQData  ::type::sharedFile(procId), qCapacity);
 
-    shmSHeader = new ShmSHeader(ShmSHeader::type::sharedFile(), 1);
-    shmSData   = new ShmSData  (ShmSData  ::type::sharedFile(), sCapacity);
+    shmSHeader = new ShmSHeader(ShmSHeader::type::sharedFile(procId), 1);
+    shmSData   = new ShmSData  (ShmSData  ::type::sharedFile(procId), sCapacity);
   }
 
   static bool handShakeS = false;

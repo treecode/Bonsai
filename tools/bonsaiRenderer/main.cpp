@@ -24,8 +24,8 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
 {
   if (shmQHeader == NULL)
   {
-    shmQHeader = new ShmQHeader(ShmQHeader::type::sharedFile());
-    shmQData   = new ShmQData  (ShmQData  ::type::sharedFile());
+    shmQHeader = new ShmQHeader(ShmQHeader::type::sharedFile(rank));
+    shmQData   = new ShmQData  (ShmQData  ::type::sharedFile(rank));
   }
 
   auto &header = *shmQHeader;
@@ -104,6 +104,10 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
 
   header.releaseLock();
   
+#if 1
+  if (rank == 0)
+    fprintf(stderr, " done fetching data \n");
+#endif
   rData.computeMinMax();
 
   return completed;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include "IDType.h"
 
 struct BonsaiSharedHeader
@@ -21,36 +22,36 @@ struct BonsaiSharedData
 
 struct BonsaiSharedQuickHeader : public BonsaiSharedHeader
 {
-  static const char* sharedFile()
+  static const char* sharedFile(const int rank = 0)
   {
-    static const char fn[] = "/BonsaiQuickHeader";
-    return fn;
+    static const std::string fn = "/BonsaiQuickHeader-"+std::to_string(rank);
+    return fn.c_str();
   }
 };
 
 struct BonsaiSharedQuickData : public BonsaiSharedData
 {
-  static const char* sharedFile()
+  static const char* sharedFile(const int rank = 0)
   {
-    static const char fn[] = "/BonsaiQuickData";
-    return fn;
+    static const std::string fn = "/BonsaiQuickData-"+std::to_string(rank);
+    return fn.c_str();
   }
 };
 
 struct BonsaiSharedSnapHeader : public BonsaiSharedHeader
 {
-  static const char* sharedFile()
+  static const char* sharedFile(const int rank = 0)
   {
-    static const char fn[] = "/BonsaiSnapHeader";
-    return fn;
+    static const std::string fn = "/BonsaiSnapHeader-"+std::to_string(rank);
+    return fn.c_str();
   }
 };
 
 struct BonsaiSharedSnapData : public BonsaiSharedData
 {
-  static const char* sharedFile()
+  static const char* sharedFile(const int rank = 0)
   {
-    static const char fn[] = "/BonsaiSnapData";
-    return fn;
+    static const std::string fn = "/BonsaiSnapData-"+std::to_string(rank);
+    return fn.c_str();
   }
 };
