@@ -34,8 +34,16 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
 
   static float tLast = -1.0f;
 
+#if 0
+#define _TEST
+#else
+#undef _TEST
+#endif
+
+#ifndef _TEST
   if (rData.isNewData())
     return false;
+#endif
 
 #if 1
   if (rank == 0)
@@ -43,18 +51,24 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
 #endif
 
   // header
+#ifndef _TEST
   header.acquireLock(1.0f /* ms */);
+#endif
   const float tCurrent = header[0].tCurrent;
 
   bool completed = false;
+#ifndef _TEST
   if (tCurrent != tLast)
+#endif
   {
     tLast = tCurrent;
     completed = true;
 
     // data
     const size_t nBodies = header[0].nBodies;
+#ifndef _TEST
     data.acquireLock(1.0f /* ms */);
+#endif
 
     const size_t size = data.size();
     assert(size == nBodies);
@@ -126,7 +140,9 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
   if (rank == 0)
     fprintf(stderr, " done fetching data \n");
 #endif
-  rData.computeMinMax();
+
+  if (completed)
+    rData.computeMinMax();
 
   return completed;
 }
@@ -152,17 +168,18 @@ void rescaleData(RendererData &rData,
     if (rank == 0)
       fprintf(stderr, " DD= %g sec \n", t1-t0);
   }
-
-#if 0
-  rData.clampMinMax(RendererData::RHO, 1e-5, 0.15);
-  rData.clampMinMax(RendererData::VEL, 0.1,  2.0);
-#endif
-
+  
   fprintf(stderr, "vel: %g %g  rho= %g %g \n ",
       rData.attributeMin(RendererData::VEL),
       rData.attributeMax(RendererData::VEL),
       rData.attributeMin(RendererData::RHO),
       rData.attributeMax(RendererData::RHO));
+
+#if 1
+  rData.clampMinMax(RendererData::RHO, 1, 1e5);
+  rData.clampMinMax(RendererData::VEL, 0.1,  4.0);
+#endif
+
 
   rData.rescaleLinear(RendererData::RHO, 0, 60000.0);
   rData.scaleLog(RendererData::RHO);

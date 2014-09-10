@@ -467,7 +467,7 @@ void SmokeRenderer::setPositions(float *pos)
   {
     glGenBuffers(1, (GLuint*)&m_pbo);
     glBindBuffer(GL_ARRAY_BUFFER_ARB, m_pbo);
-    glBufferData(GL_ARRAY_BUFFER_ARB, mNumParticles * 4 * sizeof(float), pos, GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER_ARB, mMaxParticles * 4 * sizeof(float), pos, GL_DYNAMIC_DRAW);
   }
   assert(m_pbo);
   glBindBuffer(GL_ARRAY_BUFFER_ARB, m_pbo);
@@ -569,7 +569,7 @@ void SmokeRenderer::depthSort(float4 *pos)
   {
     glGenBuffersARB(1, (GLuint*)&mIndexBuffer);
     glBindBufferARB(GL_ARRAY_BUFFER_ARB, mIndexBuffer);
-    glBufferData(GL_ARRAY_BUFFER_ARB, mNumParticles * sizeof(uint), mParticleIndices, GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER_ARB, mMaxParticles * sizeof(uint), mParticleIndices, GL_DYNAMIC_DRAW);
   }
   glBindBuffer(GL_ARRAY_BUFFER_ARB, mIndexBuffer);
   glBufferSubData(GL_ARRAY_BUFFER_ARB, 0, mNumParticles * sizeof(uint), mParticleIndices);

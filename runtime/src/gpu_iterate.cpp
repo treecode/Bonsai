@@ -1771,17 +1771,19 @@ void octree::correct(tree_structure &tree)
   correctParticles.set_arg<cl_mem>(4, tree.bodies_vel.p());
   correctParticles.set_arg<cl_mem>(5, tree.bodies_acc0.p());
   correctParticles.set_arg<cl_mem>(6, tree.bodies_acc1.p());
-  correctParticles.set_arg<cl_mem>(7, tree.bodies_pos.p());
-  correctParticles.set_arg<cl_mem>(8, tree.bodies_Ppos.p());
-  correctParticles.set_arg<cl_mem>(9, tree.bodies_Pvel.p());
-  correctParticles.set_arg<cl_mem>(10, tree.oriParticleOrder.p());
-  correctParticles.set_arg<cl_mem>(11, real4Buffer1.p());
-  correctParticles.set_arg<cl_mem>(12, float2Buffer.p());
+  correctParticles.set_arg<cl_mem>(7, tree.bodies_h.p());
+  correctParticles.set_arg<cl_mem>(8, tree.bodies_dens.p());
+  correctParticles.set_arg<cl_mem>(9, tree.bodies_pos.p());
+  correctParticles.set_arg<cl_mem>(10, tree.bodies_Ppos.p());
+  correctParticles.set_arg<cl_mem>(11, tree.bodies_Pvel.p());
+  correctParticles.set_arg<cl_mem>(12, tree.oriParticleOrder.p());
+  correctParticles.set_arg<cl_mem>(13, real4Buffer1.p());
+  correctParticles.set_arg<cl_mem>(14, float2Buffer.p());
 
 #if 1
   //Buffers required for storing the position of selected particles
-  correctParticles.set_arg<cl_mem>(13, tree.bodies_ids.p());
-  correctParticles.set_arg<cl_mem>(14, specialParticles.p());
+  correctParticles.set_arg<cl_mem>(15, tree.bodies_ids.p());
+  correctParticles.set_arg<cl_mem>(16, specialParticles.p());
 
 #endif
 

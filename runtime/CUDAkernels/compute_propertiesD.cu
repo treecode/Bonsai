@@ -187,6 +187,7 @@ KERNEL_DECLARE(compute_leaf)( const int n_leafs,
 
 
 
+#if 0
   //Addition for density computation, we require seperate search radii
   //for star particles and dark-matter particles. Note that we could 
   //combine most of this with the loops above. But for clarity
@@ -210,8 +211,8 @@ KERNEL_DECLARE(compute_leaf)( const int n_leafs,
 
     if(id.x >= DARKMATTERID.x)
     {
-	compute_bounds(r_minD, r_maxD, p);
-	nDark++;
+      compute_bounds(r_minD, r_maxD, p);
+      nDark++;
     }
     else
     {
@@ -263,6 +264,21 @@ KERNEL_DECLARE(compute_leaf)( const int n_leafs,
 	      body_h[i] = max(h_min,volumeS);
     }
   }
+#else
+  {
+    const float3 len = make_float3(r_max.x-r_min.x, r_max.y-r_min.y, r_max.z-r_min.z);
+    const float  vol = cbrtf(len.x*len.y*len.z);
+    float hp  = 0;
+    if (vol > 0.0f)
+    {
+      const float nd  = float(lastChild - firstChild) / vol;
+      hp  = cbrtf(42.0f / nd);
+    }
+    hp = max(hp, h_min);
+    for(int i=firstChild; i < lastChild; i++)
+      body_h[i] = hp;
+  }
+#endif
 
 
   return;

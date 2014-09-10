@@ -1509,15 +1509,13 @@ class Demo
           m_renderer.setNumSlices(m_renderer.getNumSlices()/2);
           m_renderer.setNumDisplayedSlices(m_renderer.getNumSlices());
           break;
-#if 0
-        case 'D':
+        case 'T':
           //printf("%f %f %f %f %f %f\n", m_cameraTrans.x, m_cameraTrans.y, m_cameraTrans.z, m_cameraRot.x, m_cameraRot.y, m_cameraRot.z);
           writeCameras("cameras.txt");
           writeParams(m_renderer.getParams(), "params.txt");
           writeParams(m_colorParams, "colorparams.txt");
           glClearColor(0.0f, 1.0f, 0.0f, 1.0f); glClear(GL_COLOR_BUFFER_BIT); glClearColor(0.0f, 0.0f, 0.0f, 1.0f); glutSwapBuffers();
           break;
-#endif
         case 'j':
           if (m_params == m_colorParams) {
             m_params = m_renderer.getParams();
@@ -1731,6 +1729,7 @@ class Demo
       if (rank == 0)
         fprintf(stderr, " getting body data ... \n");
 #endif
+      
       int n = m_idata.n();
       //Above is safe since it is 0 if we dont use dust
 
@@ -1739,8 +1738,8 @@ class Demo
       float slope = +1.35; // reversed MF, low mass depleted
       slope = 0.1;
       float4 *colors = m_particleColors;
-      float4 *pos = m_particlePos;
-      float  *sizes = m_particleSizes;
+      float4 *pos    = m_particlePos;
+      float  *sizes  = m_particleSizes;
       //    darkMatterColor = make_float4(0.0f, 0.2f, 0.4f, 0.0f);      // blue
 
       float velMax = m_idata.attributeMax(RendererData::VEL);

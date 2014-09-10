@@ -238,7 +238,13 @@ class RendererData
 
         _attributeMinL[p] = min;
         _attributeMaxL[p] = max;
+
+#if 0
         minmaxAttributeGlb(p);
+#else
+        _attributeMin[p] = scale(attributeMin(p));
+        _attributeMax[p] = scale(attributeMax(p));
+#endif
       }
 
 
@@ -264,6 +270,7 @@ class RendererData
       rescale(p,[&](const float x) {return std::exp(x) - zeroPoint;});
     }
 
+#if 0
     void clamp(const Attribute_t p, const float left, const float right)
     {
       assert(left  >= 0.0f && left  < 0.5f);
@@ -280,11 +287,12 @@ class RendererData
 
       rescale(p,[&](const float x) {return std::max(valMin, std::min(valMax,x));});
     }
+#endif
     void clampMinMax(const Attribute_t p, const float min, const float max)
     {
       rescale(p,[&](const float x) { return std::max(min, std::min(max, x)); });
 
-#if 0
+#if 1
       _attributeMin[p] = min;
       _attributeMax[p] = max;
 #endif
@@ -848,7 +856,6 @@ class RendererDataDistribute : public RendererData
       assert(ip == nrecvloc);
 
 
-      randomShuffle();
       computeMinMax();
     }
 
