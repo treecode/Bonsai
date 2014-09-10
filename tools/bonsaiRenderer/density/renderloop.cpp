@@ -1405,8 +1405,7 @@ class Demo
           break;
         case 27: // escape
           //      displayTimers();
-//          dataSetFunc(-1);
-          assert(0); /* must exit before this */
+          dataSetFunc(-1);
           break;
         case 'p':
           cycleDisplayMode();

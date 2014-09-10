@@ -19,7 +19,6 @@ using ShmQHeader = SharedMemoryClient<BonsaiSharedQuickHeader>;
 using ShmQData   = SharedMemoryClient<BonsaiSharedQuickData>;
 static ShmQHeader *shmQHeader = NULL;
 static ShmQData   *shmQData   = NULL;
-static volatile bool quitFlag = false;
 
 bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const MPI_Comm &comm)
 {
@@ -46,7 +45,7 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
     return false;
 #endif
 
-#if 1
+#if 0
 //  if (rank == 0)
     fprintf(stderr, " rank= %d: attempting to fetch data \n",rank);
 #endif
@@ -143,17 +142,13 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
 
   header.releaseLock();
   
-#if 1
+#if 0
 //  if (rank == 0)
     fprintf(stderr, " rank= %d: done fetching data \n", rank);
 #endif
 
-    fprintf(stderr, " rank= %d: --- minmax beg  completed= %d\n", rank, completed);
   if (completed)
-  {
     rData.computeMinMax();
-    fprintf(stderr, " rank= %d: --- minmax end  completed \n", rank);
-  }
 
 
   return completed;
@@ -189,10 +184,10 @@ void rescaleData(RendererData &rData,
         rData.attributeMax(RendererData::RHO));
 
 #if 1
-  static auto rhoMin = rData.attributeMin(RendererData::RHO);
-  static auto rhoMax = rData.attributeMax(RendererData::RHO);
-  static auto velMin = rData.attributeMin(RendererData::VEL);
-  static auto velMax = rData.attributeMax(RendererData::VEL);
+  static auto rhoMin = rData.attributeMin(RendererData::RHO)*10.0;
+  static auto rhoMax = rData.attributeMax(RendererData::RHO)/10.0;
+  static auto velMin = rData.attributeMin(RendererData::VEL)*2;
+  static auto velMax = rData.attributeMax(RendererData::VEL)/2.0;
 
   rData.clampMinMax(RendererData::RHO, rhoMin, rhoMax);
   rData.clampMinMax(RendererData::VEL, velMin, velMax);
@@ -580,6 +575,15 @@ int main(int argc, char * argv[])
 
   auto dataSetFunc = [&](const int code) -> void 
   {
+    int quitL = (code == -1);  /* exit code */
+    int quitG;
+    MPI_Allreduce(&quitL, &quitG, 1, MPI_INT, MPI_SUM, comm);
+    if (quitG)
+    {
+      MPI_Finalize();
+      ::exit(0);
+    }
+
     if (inSitu )
       if (fetchSharedData(*rDataPtr, rank, nranks, comm))
       {
