@@ -168,16 +168,22 @@ void rescaleData(RendererData &rData,
     if (rank == 0)
       fprintf(stderr, " DD= %g sec \n", t1-t0);
   }
-  
-  fprintf(stderr, "vel: %g %g  rho= %g %g \n ",
-      rData.attributeMin(RendererData::VEL),
-      rData.attributeMax(RendererData::VEL),
-      rData.attributeMin(RendererData::RHO),
-      rData.attributeMax(RendererData::RHO));
+ 
+  if (rank == 0) 
+    fprintf(stderr, "vel: %g %g  rho= %g %g \n ",
+        rData.attributeMin(RendererData::VEL),
+        rData.attributeMax(RendererData::VEL),
+        rData.attributeMin(RendererData::RHO),
+        rData.attributeMax(RendererData::RHO));
 
 #if 1
-  rData.clampMinMax(RendererData::RHO, 1, 1e5);
-  rData.clampMinMax(RendererData::VEL, 0.1,  4.0);
+  static auto rhoMin = rData.attributeMin(RendererData::RHO);
+  static auto rhoMax = rData.attributeMax(RendererData::RHO);
+  static auto velMin = rData.attributeMin(RendererData::VEL);
+  static auto velMax = rData.attributeMax(RendererData::VEL);
+
+  rData.clampMinMax(RendererData::RHO, rhoMin, rhoMax);
+  rData.clampMinMax(RendererData::VEL, velMin, velMax);
 #endif
 
 
@@ -560,22 +566,18 @@ int main(int argc, char * argv[])
   assert(rDataPtr != 0);
  
 
-  static bool first = true;
   auto updateDataSet = [&]() -> void 
   {
-    if (inSitu && first)
-    {
+    if (inSitu )
       if (fetchSharedData(*rDataPtr, rank, nranks, comm))
       {
         rescaleData(*rDataPtr, rank,nranks,comm, doDD,nmaxsample);
         rDataPtr->setNewData();
       }
-    }
   };
   std::function<void()> updateFunc = updateDataSet;
 
   updateFunc();
-//  first =false;
 
   initAppRenderer(argc, argv, 
       rank, nranks, comm,
