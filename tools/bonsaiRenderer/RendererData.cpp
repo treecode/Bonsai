@@ -278,7 +278,8 @@ inline void RendererDataDistribute::which_boxes(
       boxes.push_back(p);
   }
 }
-    
+
+#if 0
 void RendererDataDistribute::alltoallv(std::vector<particle_t> psend[], std::vector<particle_t> precv[])
 {
   const double t00 = MPI_Wtime();
@@ -342,8 +343,10 @@ void RendererDataDistribute::alltoallv(std::vector<particle_t> psend[], std::vec
   fprintf(stderr, "a2av: rank= %d: dt= %g [ %g %g %g %g %g %g ]\n", rank, t60-t00,
       t10-t00,t20-t10,t30-t20,t40-t30,t50-t40,t60-t50);
 }
+#endif
 
 
+#if 0
 void RendererDataDistribute::exchange_particles_alltoall_vector(
     const vector3  xlow[],
     const vector3 xhigh[])
@@ -485,6 +488,114 @@ void RendererDataDistribute::exchange_particles_alltoall_vector(
   fprintf(stderr, "xcgh: rank= %d: dt= %g [ %g %g %g %g %g %g %g ]\n", rank, t70-t00,
       t10-t00,t20-t10,t30-t20,t40-t30,t50-t40,t60-t50,t70-t60);
 }
+#else
+void RendererDataDistribute::exchange_particles_alltoall_vector(
+    const vector3  xlow[],
+    const vector3 xhigh[])
+{
+  const double t00 = MPI_Wtime();
+
+  static std::vector<particle_t> sendbuf;
+  static std::vector<int> sendcount(nrank  ), recvcount(nrank  );
+  static std::vector<int> senddispl(nrank+1), recvdispl(nrank+1);
+  static std::vector<int> sendidx[NMAXPROC];
+ 
+  const int np = data.size();
+  for (int p = 0; p < nrank; p++)
+  {
+    sendidx[p].clear();
+    sendidx[p].reserve(128);
+  }
+
+  
+  const double t10 = MPI_Wtime();
+
+  const float hfac = 1.1f;
+  static std::vector<int> boxes(nrank);
+  for (int i = 0; i < np; i++)
+  {
+    boxes.clear();
+    which_boxes(
+        vector3{{data[i].posx,data[i].posy,data[i].posz}}, 
+        hfac*data[i].attribute[Attribute_t::H], 
+        xlow, xhigh, boxes);
+    assert(!boxes.empty());
+    for (auto ibox : boxes)
+      sendidx[ibox].push_back(i);
+  }
+  
+  const double t20 = MPI_Wtime();
+
+  senddispl[0] = 0;
+  int sendcountmax = 0;
+  for (int p = 0; p < nrank; p++)
+  {
+    sendcount[p  ] = sendidx  [p].size();
+    senddispl[p+1] = senddispl[p] + sendcount[p];
+    sendcountmax = std::max(sendcountmax, sendcount[p]);
+  }
+
+  MPI_Alltoall(&sendcount[0], 1, MPI_INT, &recvcount[0], 1, MPI_INT, comm);
+
+  recvdispl[0] = 0;
+  int recvcountmax = 0;
+  for (int p = 0; p < nrank; p++)
+  {
+    recvdispl[p+1] = recvdispl[p] + recvcount[p];
+    recvcountmax   = std::max(recvcountmax, recvcount[p]);
+  }
+
+  const double t30 = MPI_Wtime();
+
+  sendbuf.resize(senddispl[nrank]);
+  for (int p = 0; p < nrank; p++)
+    for (int i = 0; i < sendcount[p]; i++)
+      sendbuf[senddispl[p]+i] = data[sendidx[p][i]];
+
+
+  const double t40 = MPI_Wtime();
+
+  data.resize(recvdispl[nrank]);
+  auto recvbuf = &data[0];
+  {
+    const double t0 = MPI_Wtime();
+    static MPI_Datatype MPI_PARTICLE = 0;
+    if (!MPI_PARTICLE)
+    {
+      int ss = sizeof(particle_t) / sizeof(float);
+      assert(0 == sizeof(particle_t) % sizeof(float));
+      MPI_Type_contiguous(ss, MPI_FLOAT, &MPI_PARTICLE);
+      MPI_Type_commit(&MPI_PARTICLE);
+    }
+    MPI_Alltoallv(
+        &sendbuf[0], &sendcount[0], &senddispl[0], MPI_PARTICLE,
+        &recvbuf[0], &recvcount[0], &recvdispl[0], MPI_PARTICLE,
+        comm);
+    const double t1 = MPI_Wtime();
+    const double dtime = t1 - t0;
+
+    size_t nsendrecvloc = senddispl[nrank] + recvdispl[nrank];
+    size_t nsendrecv;
+    MPI_Allreduce(&nsendrecvloc,&nsendrecv,1, MPI_LONG_LONG, MPI_SUM,comm);
+    double bw =  double(sizeof(particle_t))*nsendrecv / dtime * 1.e-9;
+    if (isMaster())
+    {
+      std::cerr 
+        << "Exchanged particles= " << nsendrecv / 1e6 << "M, " << dtime << " sec || "
+        << "Global Bandwidth " << bw << " GB/s" << std::endl;
+    }
+  }
+  
+  const double t50 = MPI_Wtime();
+
+  computeMinMax();
+
+  const double t60 = MPI_Wtime();
+
+  fprintf(stderr, "xcgh: rank= %d: dt= %g [ %g %g %g %g %g %g  ]\n", rank, t60-t00,
+      t10-t00,t20-t10,t30-t20,t40-t30,t50-t40,t60-t50);
+}
+#endif
 
 ////// public
 //
