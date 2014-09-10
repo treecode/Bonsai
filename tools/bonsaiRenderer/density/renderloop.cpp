@@ -111,7 +111,7 @@ struct Rand48
   }
 };
 
-static std::function<void()> updateDataSet;
+static std::function<void(int)> dataSetFunc;
 
   template<typename T>
 static inline double4 lMatVec(const T _m[16], const double4 pos)
@@ -547,7 +547,7 @@ class Demo
     void step() { 
       double startTime = GetTimer();
 
-      updateDataSet();
+      dataSetFunc(0);
       if (m_idata.isDistributed())
       {
         float3 r0 = make_float3(
@@ -1405,7 +1405,8 @@ class Demo
           break;
         case 27: // escape
           //      displayTimers();
-          exit(0);
+//          dataSetFunc(-1);
+          assert(0); /* must exit before this */
           break;
         case 'p':
           cycleDisplayMode();
@@ -1533,9 +1534,6 @@ class Demo
           m_cameraRoll -= 2.0f;
           break;
 
-        case 'Q':
-          exit(-1);
-          break;
         case 'W':
         default:
           break;
@@ -2442,9 +2440,9 @@ void initAppRenderer(int argc, char** argv,
     RendererData &idata,
     const char *fullScreenMode,
     const bool stereo,
-    std::function<void()> &updateFunc)
+    std::function<void(int)> &func)
 {
-  updateDataSet = updateFunc;
+  dataSetFunc = func;
   thisRank = rank;
   thisComm = comm;
   assert(rank < nrank);

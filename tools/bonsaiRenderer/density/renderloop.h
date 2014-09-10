@@ -8,5 +8,5 @@ void initAppRenderer(int argc, char** argv,
                      RendererData &data,
                      const char *fulleScreenMode /* = "" */,
                      const bool stereo /* = false */,
-                     std::function<void()> &updateFunc);
+                     std::function<void(int)> &updateFunc);
 #endif // _RENDERLOOP_H_

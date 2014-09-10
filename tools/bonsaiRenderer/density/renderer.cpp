@@ -13,7 +13,7 @@
    This class renders particles using OpenGL and GLSL shaders
    */
 
-#if 0
+#if 1
 #define __COMPOSITE_PROFILE
 #endif
 

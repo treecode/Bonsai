@@ -19,6 +19,7 @@ using ShmQHeader = SharedMemoryClient<BonsaiSharedQuickHeader>;
 using ShmQData   = SharedMemoryClient<BonsaiSharedQuickData>;
 static ShmQHeader *shmQHeader = NULL;
 static ShmQData   *shmQData   = NULL;
+static volatile bool quitFlag = false;
 
 bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const MPI_Comm &comm)
 {
@@ -46,8 +47,8 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
 #endif
 
 #if 1
-  if (rank == 0)
-    fprintf(stderr, " attempting to fetch data \n");
+//  if (rank == 0)
+    fprintf(stderr, " rank= %d: attempting to fetch data \n",rank);
 #endif
 
   // header
@@ -55,10 +56,16 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
   header.acquireLock(1.0f /* ms */);
 #endif
   const float tCurrent = header[0].tCurrent;
+  
+
+  int sumL = tCurrent != tLast;
+  int sumG ;
+  MPI_Allreduce(&sumL, &sumG, 1, MPI_INT, MPI_SUM, comm);
+
 
   bool completed = false;
 #ifndef _TEST
-  if (tCurrent != tLast)
+  if (sumG == nrank) //tCurrent != tLast)
 #endif
   {
     tLast = tCurrent;
@@ -137,12 +144,17 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
   header.releaseLock();
   
 #if 1
-  if (rank == 0)
-    fprintf(stderr, " done fetching data \n");
+//  if (rank == 0)
+    fprintf(stderr, " rank= %d: done fetching data \n", rank);
 #endif
 
+    fprintf(stderr, " rank= %d: --- minmax beg  completed= %d\n", rank, completed);
   if (completed)
+  {
     rData.computeMinMax();
+    fprintf(stderr, " rank= %d: --- minmax end  completed \n", rank);
+  }
+
 
   return completed;
 }
@@ -556,7 +568,7 @@ int main(int argc, char * argv[])
       if (rank == 0)
         fprintf(stderr, " I don't recognize the format ... please try again , or recompile to use with old tipsy if that is what you use ..\n");
       MPI_Finalize();
-      exit(-1);
+      ::exit(-1);
     }
     rDataPtr->computeMinMax();
     rescaleData(*rDataPtr, rank,nranks,comm, doDD,nmaxsample);
@@ -566,7 +578,7 @@ int main(int argc, char * argv[])
   assert(rDataPtr != 0);
  
 
-  auto updateDataSet = [&]() -> void 
+  auto dataSetFunc = [&](const int code) -> void 
   {
     if (inSitu )
       if (fetchSharedData(*rDataPtr, rank, nranks, comm))
@@ -575,9 +587,10 @@ int main(int argc, char * argv[])
         rDataPtr->setNewData();
       }
   };
-  std::function<void()> updateFunc = updateDataSet;
+  std::function<void(int)> updateFunc = dataSetFunc;
 
-  updateFunc();
+
+  dataSetFunc(0);
 
   initAppRenderer(argc, argv, 
       rank, nranks, comm,
