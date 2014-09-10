@@ -281,6 +281,7 @@ inline void RendererDataDistribute::which_boxes(
     
 void RendererDataDistribute::alltoallv(std::vector<particle_t> psend[], std::vector<particle_t> precv[])
 {
+  const double t00 = MPI_Wtime();
   static MPI_Datatype MPI_PARTICLE = 0;
   if (!MPI_PARTICLE)
   {
@@ -290,6 +291,7 @@ void RendererDataDistribute::alltoallv(std::vector<particle_t> psend[], std::vec
     MPI_Type_commit(&MPI_PARTICLE);
   }
 
+  const double t10 = MPI_Wtime();
   static std::vector<int> nsend(nrank), senddispl(nrank+1,0);
   int nsendtot = 0;
   for (int p = 0; p < nrank; p++)
@@ -301,6 +303,7 @@ void RendererDataDistribute::alltoallv(std::vector<particle_t> psend[], std::vec
 
   static std::vector<int> nrecv(nrank), recvdispl(nrank+1,0);
   MPI_Alltoall(&nsend[0], 1, MPI_INT, &nrecv[0], 1, MPI_INT, comm);
+  const double t20 = MPI_Wtime();
 
   int nrecvtot = 0;
   for (int p = 0; p < nrank; p++)
@@ -313,12 +316,13 @@ void RendererDataDistribute::alltoallv(std::vector<particle_t> psend[], std::vec
   static std::vector<particle_t> sendbuf, recvbuf;
   sendbuf.resize(nsendtot); 
   recvbuf.resize(nrecvtot);
+  const double t30 = MPI_Wtime();
 
-  int iloc = 0;
   for (int p = 0; p < nrank; p++)
     for (int i = 0; i < nsend[p]; i++)
-      sendbuf[iloc++] = psend[p][i];
+      sendbuf[senddispl[p] + i] = psend[p][i];
 
+  const double t40 = MPI_Wtime();
   assert(senddispl[nrank] == nsendtot);
   assert(recvdispl[nrank] == nrecvtot);
 
@@ -326,13 +330,17 @@ void RendererDataDistribute::alltoallv(std::vector<particle_t> psend[], std::vec
       &sendbuf[0], &nsend[0], &senddispl[0], MPI_PARTICLE,
       &recvbuf[0], &nrecv[0], &recvdispl[0], MPI_PARTICLE, 
       comm);
+  const double t50 = MPI_Wtime();
 
   for (int p = 0; p < nrank; p++)
-  {
     precv[p].resize(nrecv[p]);
+  for (int p = 0; p < nrank; p++)
     for (int i = 0; i < nrecv[p]; i++)
       precv[p][i] = recvbuf[recvdispl[p] + i];
-  }
+
+  const double t60 = MPI_Wtime();
+  fprintf(stderr, "a2av: rank= %d: dt= %g [ %g %g %g %g %g %g ]\n", rank, t60-t00,
+      t10-t00,t20-t10,t30-t20,t40-t30,t50-t40,t60-t50);
 }
 
 
@@ -340,6 +348,7 @@ void RendererDataDistribute::exchange_particles_alltoall_vector(
     const vector3  xlow[],
     const vector3 xhigh[])
 {
+  const double t00 = MPI_Wtime();
   int myid = rank;
   int nprocs = nrank;
 
@@ -357,12 +366,15 @@ void RendererDataDistribute::exchange_particles_alltoall_vector(
       precv[p].reserve(64);
     }
   }
+  const double t10 = MPI_Wtime();
 
   int iloc = 0;
   Boundary boundary(xlow[myid], xhigh[myid]);
   for(int i=0; i<nbody; i++)
     if(boundary.isinbox(vector3{{data[i].posx, data[i].posy, data[i].posz}}))
       std::swap(data[i],data[iloc++]);
+  
+  const double t20 = MPI_Wtime();
 
   for(int p=0; p<nprocs; p++)
   {
@@ -411,6 +423,8 @@ void RendererDataDistribute::exchange_particles_alltoall_vector(
       psend[ibox].push_back(data[i]);
   }
 #endif
+  
+  const double t30 = MPI_Wtime();
 
   double dtime = 1.e9;
   {
@@ -421,6 +435,8 @@ void RendererDataDistribute::exchange_particles_alltoall_vector(
     if (isMaster())
       fprintf(stderr, "alltoallv= %g sec \n", t1-t0);
   }
+  
+  const double t40 = MPI_Wtime();
 
 #if 0 
   {
@@ -450,6 +466,7 @@ void RendererDataDistribute::exchange_particles_alltoall_vector(
     std::cout << "Exchanged particles = " << nsendtot << ", " << dtime << "sec" << std::endl;
     std::cout << "Global Bandwidth " << bw << " GB/s" << std::endl;
   }
+  const double t50 = MPI_Wtime();
   data.clear();
   data.resize(nrecvloc);
   int ip = 0;
@@ -460,9 +477,13 @@ void RendererDataDistribute::exchange_particles_alltoall_vector(
       data[ip++] = precv[p][i];
   }
   assert(ip == nrecvloc);
+  const double t60 = MPI_Wtime();
 
 
   computeMinMax();
+  const double t70 = MPI_Wtime();
+  fprintf(stderr, "xcgh: rank= %d: dt= %g [ %g %g %g %g %g %g %g ]\n", rank, t70-t00,
+      t10-t00,t20-t10,t30-t20,t40-t30,t50-t40,t60-t50,t70-t60);
 }
 
 ////// public
@@ -470,9 +491,12 @@ void RendererDataDistribute::exchange_particles_alltoall_vector(
 
 void RendererDataDistribute::distribute()
 {
+  const double t00 = MPI_Wtime();
   initialize_division();
+  const double t10 = MPI_Wtime();
   std::vector<vector3> sample_array;
   collect_sample_particles(sample_array, sample_freq);
+  const double t20 = MPI_Wtime();
 
   /* determine division */
   vector3  xlow[NMAXPROC];
@@ -486,10 +510,12 @@ void RendererDataDistribute::distribute()
 #pragma omp parallel for schedule(static)
   for (int i = 0; i < nsample; i++)
     pos[i] = float4(sample_array[i][0], sample_array[i][1], sample_array[i][2],0.0f);
+  const double t30 = MPI_Wtime();
 
   if (rank == 0)
     determine_division(pos, rmax, xlow, xhigh);
 
+  const double t40 = MPI_Wtime();
 
   const int nwords=nrank*3;
   MPI_Bcast(& xlow[0],nwords,MPI_DOUBLE,getMaster(),comm);
@@ -507,7 +533,9 @@ void RendererDataDistribute::distribute()
 
   }
 #endif
+  const double t50 = MPI_Wtime();
   exchange_particles_alltoall_vector(xlow, xhigh);
+  const double t60 = MPI_Wtime();
 
   for (int k = 0; k < 3; k++)
   {
@@ -524,4 +552,8 @@ void RendererDataDistribute::distribute()
   }
 #endif
   distributed = true;
+  const double t70 = MPI_Wtime();
+  MPI_Barrier(comm);
+  fprintf(stderr, "rank= %d: dt= %g [ %g %g %g %g %g %g %g ]\n", rank, t70-t00,
+      t10-t00,t20-t10,t30-t20,t40-t30,t50-t40,t60-t50,t70-t60);
 }
