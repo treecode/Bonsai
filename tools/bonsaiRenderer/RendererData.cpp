@@ -307,7 +307,7 @@ void RendererDataDistribute::exchange_particles_alltoall_vector(
 
   const float hfac = 1.1f;
 
-#if 1
+#if 0
 #define _ORIGDD
 
   static std::vector<int> boxes(nrank);
@@ -490,7 +490,7 @@ void RendererDataDistribute::exchange_particles_alltoall_vector(
 
   const double t60 = MPI_Wtime();
 
-#if 0
+#if 1
   fprintf(stderr, "xchg: rank= %d: dt= %g [ %g %g %g %g %g %g  ]\n", rank, t60-t00,
       t10-t00,t20-t10,t30-t20,t40-t30,t50-t40,t60-t50);
 #endif

@@ -167,11 +167,12 @@ void rescaleData(RendererData &rData,
     const double t0 = MPI_Wtime();
     rData.randomShuffle();
     rData.setNMAXSAMPLE(nmaxsample);
+    fprintf(stderr, " rank= %d: pre n= %d\n", rank, rData.n());
     rData.distribute();
     //    rData.distribute();
     MPI_Barrier(comm);
     const double t1 = MPI_Wtime();
-    fprintf(stderr, " rank= %d: n= %d\n", rank, rData.n());
+    fprintf(stderr, " rank= %d: post n= %d\n", rank, rData.n());
     if (rank == 0)
       fprintf(stderr, " DD= %g sec \n", t1-t0);
   }
