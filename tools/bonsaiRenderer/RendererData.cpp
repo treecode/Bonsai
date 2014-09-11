@@ -152,7 +152,7 @@ void RendererDataDistribute::determine_division( // nitadori's version
     double buf[NMAXPROC+1];
     double *xoff = buf; // xoff[nx+1]
     __gnu_parallel::sort(&pos[addr.off(0, 0, 0)], &pos[addr.off(nx, 0, 0)], 
-        [](const float4 &rhs, const float4 &lhs)  {
+        [](const float4 &lhs, const float4 &rhs)  {
           constexpr int mask = 1;
           return mask & __builtin_ia32_movmskps(
             (float4::v4sf)__builtin_ia32_cmpltps(lhs.v, rhs.v));
@@ -185,7 +185,7 @@ void RendererDataDistribute::determine_division( // nitadori's version
       double buf[NMAXPROC+1];
       double *yoff = buf; // yoff[ny+1];
       std::sort(&pos[addr.off(ix, 0, 0)], &pos[addr.off(ix, ny, 0)], 
-        [](const float4 &rhs, const float4 &lhs)  {
+        [](const float4 &lhs, const float4 &rhs)  {
           constexpr int mask = 2;
           return mask & __builtin_ia32_movmskps(
             (float4::v4sf)__builtin_ia32_cmpltps(lhs.v, rhs.v));
@@ -218,7 +218,7 @@ void RendererDataDistribute::determine_division( // nitadori's version
         double *zoff = buf; // zoff[nz+1];
 
         std::sort(&pos[addr.off(ix, iy, 0)], &pos[addr.off(ix, iy, nz)], 
-        [](const float4 &rhs, const float4 &lhs)  {
+        [](const float4 &lhs, const float4 &rhs)  {
           constexpr int mask = 4;
           return mask & __builtin_ia32_movmskps(
             (float4::v4sf)__builtin_ia32_cmpltps(lhs.v, rhs.v));
@@ -416,7 +416,7 @@ void RendererDataDistribute::exchange_particles_alltoall_vector(
      sendcount[p] += sendcount_thread[p];
   }
   __gnu_parallel::sort(ptcl2send.begin(), ptcl2send.end(),
-        [](const pair_t  &rhs, const pair_t &lhs) { return rhs.first < lhs.first; });
+        [](const pair_t  &lhs, const pair_t &rhs) { return lhs.first < rhs.first; });
 
   senddispl[0] = 0;
   for (int p = 0; p < nrank; p++)

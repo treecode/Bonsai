@@ -263,8 +263,8 @@ void octree::dumpData()
 
   if (shmQHeader == NULL)
   {
-    const size_t sCapacity  = 2*localTree.n;
-    const size_t qCapacity  = static_cast<size_t>(sCapacity*quickRatio);
+    const size_t sCapacity  = 5*localTree.n;
+    const size_t qCapacity  = static_cast<size_t>(sCapacity);
 
     shmQHeader = new ShmQHeader(ShmQHeader::type::sharedFile(procId), 1);
     shmQData   = new ShmQData  (ShmQData  ::type::sharedFile(procId), qCapacity);
