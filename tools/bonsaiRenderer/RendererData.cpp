@@ -153,7 +153,7 @@ void RendererDataDistribute::determine_division( // nitadori's version
     double *xoff = buf; // xoff[nx+1]
     __gnu_parallel::sort(&pos[addr.off(0, 0, 0)], &pos[addr.off(nx, 0, 0)], 
         [](const float4 &rhs, const float4 &lhs)  {
-          const int mask = 1;
+          constexpr int mask = 1;
           return mask & __builtin_ia32_movmskps(
             (float4::v4sf)__builtin_ia32_cmpltps(lhs.v, rhs.v));
         });
@@ -186,7 +186,7 @@ void RendererDataDistribute::determine_division( // nitadori's version
       double *yoff = buf; // yoff[ny+1];
       std::sort(&pos[addr.off(ix, 0, 0)], &pos[addr.off(ix, ny, 0)], 
         [](const float4 &rhs, const float4 &lhs)  {
-          const int mask = 2;
+          constexpr int mask = 2;
           return mask & __builtin_ia32_movmskps(
             (float4::v4sf)__builtin_ia32_cmpltps(lhs.v, rhs.v));
         });
@@ -219,7 +219,7 @@ void RendererDataDistribute::determine_division( // nitadori's version
 
         std::sort(&pos[addr.off(ix, iy, 0)], &pos[addr.off(ix, iy, nz)], 
         [](const float4 &rhs, const float4 &lhs)  {
-          const int mask = 4;
+          constexpr int mask = 4;
           return mask & __builtin_ia32_movmskps(
             (float4::v4sf)__builtin_ia32_cmpltps(lhs.v, rhs.v));
         });
