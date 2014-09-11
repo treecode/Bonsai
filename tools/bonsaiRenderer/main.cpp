@@ -447,21 +447,6 @@ static T* readJamieSPH(
 
 int main(int argc, char * argv[])
 {
-  MPI_Comm comm = MPI_COMM_WORLD;
-  MPI_Init(&argc, &argv);
-    
-  int nranks, rank;
-  MPI_Comm_size(comm, &nranks);
-  MPI_Comm_rank(comm, &rank);
-
-  if (rank == 0)
-  {
-    char hostname[256];
-    gethostname(hostname,256);
-    char * display = getenv("DISPLAY");
-    fprintf(stderr, "root: %s  display: %s \n", hostname, display);
-  }
-
 
   std::string fileName;
   int reduceDM    =  10;
@@ -540,6 +525,22 @@ int main(int argc, char * argv[])
 
 #undef ADDUSAGE
   }
+  
+  MPI_Comm comm = MPI_COMM_WORLD;
+  MPI_Init(&argc, &argv);
+
+  int nranks, rank;
+  MPI_Comm_size(comm, &nranks);
+  MPI_Comm_rank(comm, &rank);
+
+  if (rank == 0)
+  {
+    char hostname[256];
+    gethostname(hostname,256);
+    char * display = getenv("DISPLAY");
+    fprintf(stderr, "root: %s  display: %s \n", hostname, display);
+  }
+
 
   if (!display.empty())
   {
