@@ -15,6 +15,8 @@ OPT += -O3 -g
 CFLAGS += $(OPT)
 CXXFLAGS += $(OPT)
 
+CXXFLAGS += -mavx
+
 
 NVCC=$(CUDATK)/bin/nvcc
 NVCCFLAGS=-arch=sm_35
