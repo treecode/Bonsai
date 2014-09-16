@@ -32,6 +32,9 @@ const char *particleVS = STRINGIFY(
     uniform float dustAlpha;
     uniform float fogDist;
     uniform float cullDarkMatter;
+    out varying vec4 vpos;                                 \n
+    out varying vec4 vcol;                                 \n
+    out varying float vsize;                               \n
     void main()                                                 \n
     {                                                           \n
     vec4 wpos = vec4(gl_Vertex.xyz, 1.0);                   \n
@@ -70,7 +73,8 @@ const char *particleVS = STRINGIFY(
     }
 
     //gl_PointSize = pointRadius1*(pointScale / dist);       \n
-    gl_PointSize = max(1.0, pointRadius1 * (pointScale / dist)); \n
+    //gl_PointSize = max(1.0, pointRadius1 * (pointScale / dist)); \n
+    gl_PointSize = max(1.0, pointRadius1 * (2*pointScale / dist)); \n
       //float pointSize = pointRadius1 * (pointScale / dist);
       //if (pointSize < 1.0) col.rgb *= pointSize;
       //gl_PointSize = max(1.0, pointSize);
@@ -84,6 +88,9 @@ const char *particleVS = STRINGIFY(
     //gl_FrontColor = gl_Color;                               \n
     gl_FrontColor = vec4(col.rgb*fog, col.a);       \n
       //gl_FrontColor = vec4(gl_Color.xyz, 1.0);                \n
+      vpos   = wpos;  \n
+      vcol   = gl_FrontColor;                           \n
+      vsize  = gl_PointSize*dist;                       \n
     }                                                           \n
 );
 

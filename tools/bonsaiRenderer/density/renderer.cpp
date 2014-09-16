@@ -13,10 +13,6 @@
    This class renders particles using OpenGL and GLSL shaders
    */
 
-#if 1
-#define __COMPOSITE_PROFILE
-#endif
-
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,13 +36,26 @@
 #define USE_HALF_ANGLE 0
 #define MOTION_BLUR 0
 
+
+#if 0
+#define USE_ICET
+#endif
+
+#ifdef USE_ICET
+#include <IceT.h>
+#include <IceTGL.h>
+#include <IceTMPI.h>
+#endif
+
+
+
 //#define NOCOPY
 
 //extern int renderDevID;
 //extern int devID;
 
 using namespace nv;
-  
+
   template<typename T>
 static inline double4 lMatVec(const T _m[16], const double4 pos)
 {
@@ -89,6 +98,7 @@ SmokeRendererParams::SmokeRendererParams() :
   m_dmScaleLog(-0.4f),
   m_dmAlpha(0.1f),
   m_spriteAlpha(0.02f),
+  m_spriteAlpha_volume(0.1f),
   m_transmission(0.001f),
   m_imageBrightnessPre(0.08f),
   m_gammaPre(0.4f),
@@ -112,7 +122,7 @@ SmokeRendererParams::SmokeRendererParams() :
   m_glowIntensity(0.5f),
   m_ageScale(10.0f),
   m_enableVolume(false),
-//  m_enableFilters(true),
+  //  m_enableFilters(true),
   m_enableFilters(true),
   m_noiseFreq(0.05f),
   m_noiseAmp(1.0f),
@@ -184,7 +194,7 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles, const int _rank
   m_glowIntensity(0.5f),
   m_ageScale(10.0f),
   m_enableVolume(false),
-//  m_enableFilters(true),
+  //  m_enableFilters(true),
   m_enableFilters(true),
   m_noiseFreq(0.05f),
   m_noiseAmp(1.0f),
@@ -213,7 +223,10 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles, const int _rank
 #else
   m_particleProg = new GLSLProgram(particleVS, particlePS);
   m_particleAAProg = new GLSLProgram(particleVS, particleAAPS);
-  m_particleShadowProg = new GLSLProgram(particleVS, particleShadowPS);
+  //m_particleAAProg = new GLSLProgram(particleVS, splotchGS, particleAAPS, GL_POINTS, GL_TRIANGLE_STRIP);
+  //m_particleShadowProg = new GLSLProgram(particleVS, particleShadowPS);
+  m_particleShadowProg = new GLSLProgram(particleVS, splotchGS, particleShadowPS, GL_POINTS, GL_TRIANGLE_STRIP);
+
 #endif
 
   //m_blurProg = new GLSLProgram(passThruVS, blur2PS);
@@ -223,6 +236,7 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles, const int _rank
 
   m_starFilterProg = new GLSLProgram(passThruVS, starFilterPS);
   m_volumeProg = new GLSLProgram(volumeVS, volumePS);
+  //m_volumeProg = new GLSLProgram(volumeVS, splotchGS, volumePS, GL_POINTS, GL_TRIANGLE_STRIP);
 
   //m_downSampleProg = new GLSLProgram(passThruVS, downSample4PS);
   m_downSampleProg = new GLSLProgram(passThruVS, downSample2PS);
@@ -441,7 +455,7 @@ void SmokeRenderer::setNumberOfParticles(uint n_particles)
   if(n_particles > this->mMaxParticles)
   {
     //Uhohhh too many particles
-    fprintf(stderr, "Sorry increase the number of maxParticles \n");
+    fprintf(stderr, "rank= %d -- Sorry increase the number of maxParticles \n", rank);
     this->mNumParticles = this->mMaxParticles;
   }
   else
@@ -673,6 +687,8 @@ void SmokeRenderer::drawPointSprites(GLSLProgram *prog, int start, int count, bo
   glBindVertexArray(mSizeVao);
   prog->setUniform1f("pointRadius", mParticleRadius);
   prog->setUniform1f("ageScale", m_ageScale);
+  //  prog->setUniform1f("ageScale", 0);
+  // prog->setUniform1f("dustAlpha", 0);
   prog->setUniform1f("dustAlpha", m_dustAlpha);
   prog->setUniform1f("overBright", m_overBright);
   prog->setUniform1f("overBrightThreshold", m_overBrightThreshold);
@@ -691,7 +707,7 @@ void SmokeRenderer::drawPointSprites(GLSLProgram *prog, int start, int count, bo
     //prog->setUniform2f("shadowTexScale", 1.0f, 1.0f);
 #endif
     prog->setUniform1f("indirectAmount", m_indirectAmount);
-    prog->setUniform1f("alphaScale", m_spriteAlpha);
+    prog->setUniform1f("alphaScale", m_spriteAlpha_volume);
 
   } else {
     prog->setUniform1f("alphaScale", m_shadowAlpha);
@@ -710,6 +726,17 @@ void SmokeRenderer::drawPointSprites(GLSLProgram *prog, int start, int count, bo
   glEnable(GL_VERTEX_PROGRAM_POINT_SIZE_ARB);
   glEnable(GL_POINT_SPRITE_ARB);
 #endif
+  prog->setUniform1f("resx", m_imageW);
+  prog->setUniform1f("resy", m_imageH);
+
+  prog->setUniformfv("p0o", (GLfloat*)&m_clippingPlane[0], 4, 1);
+  prog->setUniformfv("p1o", (GLfloat*)&m_clippingPlane[1], 4, 1);
+  prog->setUniformfv("p2o", (GLfloat*)&m_clippingPlane[2], 4, 1);
+  prog->setUniformfv("p3o", (GLfloat*)&m_clippingPlane[3], 4, 1);
+  prog->setUniformfv("p4o", (GLfloat*)&m_clippingPlane[4], 4, 1);
+  prog->setUniformfv("p5o", (GLfloat*)&m_clippingPlane[5], 4, 1);
+
+  prog->setUniform1f("sorted", 0);
 
   // draw points
   drawPoints(start, count, sorted);
@@ -821,6 +848,7 @@ void SmokeRenderer::drawVolumeSlice(int i, bool shadowed)
 
   m_volumeProg->disable();
 
+
   //glPopMatrix();
   glDisable(GL_BLEND);
 }
@@ -841,11 +869,13 @@ void SmokeRenderer::drawSlice(int i)
 #endif
   glViewport(0, 0, m_imageW, m_imageH);
 
+
+
   if (m_enableVolume) {
     drawVolumeSlice(i, true);
   }
 
-  glColor4f(1.0, 1.0, 1.0, m_spriteAlpha);
+  glColor4f(1.0, 1.0, 1.0, m_spriteAlpha_volume);
   if (m_invertedView) {
     // front-to-back
     glBlendFunc(GL_ONE_MINUS_DST_ALPHA, GL_ONE);
@@ -1029,6 +1059,7 @@ void SmokeRenderer::drawSlices()
 
   // render slices
   if (m_numDisplayedSlices > m_numSlices) m_numDisplayedSlices = m_numSlices;
+
 
   for(int i=0; i<m_numDisplayedSlices; i++) {
 #if 0
@@ -1316,7 +1347,7 @@ void SmokeRenderer::renderSprites(bool sort)
   //    drawSkybox(m_cubemapTex);
 #endif
 
-  glColor4f(1.0, 1.0, 1.0, m_spriteAlpha);
+  glColor4f(1.0, 1.0, 1.0, m_spriteAlpha_volume);
   if (sort) {
     calcVectors();
     depthSortCopy();
@@ -1356,16 +1387,16 @@ void SmokeRenderer::render()
     case SPRITES_SORTED:
       renderSprites(true);
       break;
-
+#endif
     case VOLUMETRIC:
       calcVectors();
       depthSortCopy();
       drawSlices();
+      composeImages(m_imageTex[0]);
       compositeResult();
       //drawBounds();
       break;
-#endif
-    
+
     case SPLOTCH:
       splotchDraw();
       break;
@@ -1390,7 +1421,7 @@ void SmokeRenderer::render()
 
   glutReportErrors();
 }
-   
+
 static void lCompose(
     float4* imgSrc,
     float4* imgDst,
@@ -1430,7 +1461,7 @@ static void lCompose(
   }
 
   /* compute which parts of img are sent to which rank */
-  
+
   const int nPixels = viewportSize.x*viewportSize.y;
   const int nPixelsPerRank = (nPixels+nrank-1)/nrank; 
 
@@ -1478,7 +1509,7 @@ static void lCompose(
       const int dxbtm = std::max(0,std::min(x1-i1-1, imgWidth));
       sendcount = (j1-j0+1)*imgWidth - dxtop - dxbtm;
     }
-    
+
     srcMetaData[p] = imgMetaData_t{{x0,y0,x1,y1,totalSendCount,sendcount}};
     totalSendCount += sendcount;
   }
@@ -1538,7 +1569,7 @@ static void lCompose(
 
   constexpr int NRANKMAX = 1024;
   assert(nrank <= NRANKMAX);
-    
+
   for (int p = 0; p < nrank+1; p++)
     recvdispl[p] /= mpiImgDataSize;
 
@@ -1666,7 +1697,7 @@ static void lCompose(
   }
 
   /* compute which parts of img are sent to which rank */
-  
+
   const int nPixels = viewportSize.x*viewportSize.y;
   const int nPixelsPerRank = (nPixels+nrank-1)/nrank; 
 
@@ -1714,7 +1745,7 @@ static void lCompose(
       const int dxbtm = std::max(0,std::min(x1-i1-1, imgWidth));
       sendcount = (j1-j0+1)*imgWidth - dxtop - dxbtm;
     }
-    
+
     srcMetaData[p] = imgMetaData_t{{x0,y0,x1,y1,totalSendCount,sendcount}};
     totalSendCount += sendcount;
   }
@@ -1764,7 +1795,7 @@ static void lCompose(
 
   constexpr int NRANKMAX = 1024;
   assert(nrank <= NRANKMAX);
-    
+
   for (int p = 0; p < nrank+1; p++)
     recvdispl[p] /= mpiImgDataSize;
 
@@ -1779,7 +1810,7 @@ static void lCompose(
   {
     imgData_t imgData[NBLOCK][NRANKMAX];
     int pcount[NBLOCK] = {0};
-    
+
     const int idx0 = idxb;
     const int idx1 = std::min(idxb+NBLOCK,pixelEnd);
 
@@ -1893,7 +1924,7 @@ static void lCompose(
 
     const int winxloc = (viewPort.x + npx - 1) / npx;
     const int winyloc = (viewPort.y + npy - 1) / npy;
-    
+
     localTile.x = irank * winxloc;
     localTile.y = jrank * winyloc;
     localTile.z = winxloc;
@@ -1904,7 +1935,7 @@ static void lCompose(
     imgGlb.resize(winxloc*winyloc*nrank);
     assert((int)imgGlb.size() >= viewPort.x*viewPort.y);
   }
-  
+
   using vec5 = std::array<float,5>;  /* rgb, alpha, depth */
   constexpr int mpiDataSize = sizeof(vec5)/sizeof(float);
 
@@ -1976,7 +2007,7 @@ static void lCompose(
         const int xmax  = tilesBnd[p].z + xmin;
         const int ymax  = tilesBnd[p].w + ymin;
         const int displ = senddispl[p] / mpiDataSize;
-//#pragma omp for schedule(static) collapse(2) nowait
+        //#pragma omp for schedule(static) collapse(2) nowait
         for (int j = ymin; j < ymax; j++)
           for (int i = xmin; i < xmax; i++)
           {
@@ -1994,7 +2025,7 @@ static void lCompose(
           }
       }
   }
-  
+
   /***************************/
   /* exchange tiles metadata */
   /***************************/
@@ -2005,7 +2036,7 @@ static void lCompose(
   static std::vector<int> recvcount(nrank), recvdispl(nrank+1);
   for (int p = 0; p < nrank; p++)
     recvcount[p] = tilesBndRecv[p].z*tilesBndRecv[p].w * mpiDataSize;
-     
+
   recvdispl[0] = 0; 
   for (int p = 0; p < nrank; p++)
     recvdispl[p+1] = recvdispl[p] + recvcount[p];
@@ -2017,9 +2048,9 @@ static void lCompose(
   /***********************/
   /* exchange pixel data */
   /***********************/
-  
+
   {
-//    MPI_Barrier(comm);
+    //    MPI_Barrier(comm);
     const double t0 = MPI_Wtime();
     MPI_Alltoallv(
         &sendbuf[0], &sendcount[0], &senddispl[0], MPI_FLOAT,
@@ -2036,14 +2067,14 @@ static void lCompose(
       fprintf(stderr, " MPI_Alltoallv: dt= %g  BW= %g MB/s  mem= %g MB\n", dt, bw/1e6, sizeof(float)*nsendrecv/1e6);
     }
   }
-  
+
   for (int p = 0; p < nrank; p++)
   {
     recvcount[p] /= mpiDataSize;
     recvdispl[p] /= mpiDataSize;
   }
   recvdispl[nrank] /= mpiDataSize;
-  
+
 
   /********************/
   /* compositing step */
@@ -2110,7 +2141,7 @@ static void lCompose(
         imgLoc[(j-ymin)*(xmax-xmin)+(i-xmin)] = dst;
       }
   }
-  
+
   /******************************************/
   /* gather local images on the master rank */
   /******************************************/
@@ -2119,7 +2150,7 @@ static void lCompose(
       &imgLoc[0], imgLoc.size()*4, MPI_FLOAT, 
       &imgGlb[0], imgLoc.size()*4, MPI_FLOAT, 
       master, comm);
-  
+
   /* combine times together */
   const int winxloc = localTile.z;
   const int winyloc = localTile.w;
@@ -2138,7 +2169,7 @@ static void lCompose(
       const int rank  = jrank * npx + irank;
       dst[j*viewPort.x+i] = imgGlb[winxloc*winyloc*rank + jloc*winxloc + iloc];
     }
-  
+
 }
 #endif
 
@@ -2223,60 +2254,177 @@ static void lCompose(
           }};
       }
 
-   
-   if (showDomain == -1)
-   { 
+
+    if (showDomain == -1)
+    { 
 #pragma omp parallel for schedule(static)
-     for (int i = 0; i < nsend; i++)
-     {
-       const int stride = i*nrank;
-       if (doPixelLevel)
-       {
-         std::sort(
-             colorArrayDepth.begin() + stride, 
-             colorArrayDepth.begin() + stride + nrank,
-             [](const vec5 &a, const vec5 &b){ return a[4] < b[4]; }
-             );
-       }
+      for (int i = 0; i < nsend; i++)
+      {
+        const int stride = i*nrank;
+        if (doPixelLevel)
+        {
+          std::sort(
+              colorArrayDepth.begin() + stride, 
+              colorArrayDepth.begin() + stride + nrank,
+              [](const vec5 &a, const vec5 &b){ return a[4] < b[4]; }
+              );
+        }
 
-       float4 _dst = make_float4(0.0);
-       for (auto p : compositingOrder)
-       {
-         float4 _src = make_float4(
-             colorArrayDepth[stride+p][0],
-             colorArrayDepth[stride+p][1],
-             colorArrayDepth[stride+p][2],
-             colorArrayDepth[stride+p][3]
-             );
+        float4 _dst = make_float4(0.0);
+        for (auto p : compositingOrder)
+        {
+          float4 _src = make_float4(
+              colorArrayDepth[stride+p][0],
+              colorArrayDepth[stride+p][1],
+              colorArrayDepth[stride+p][2],
+              colorArrayDepth[stride+p][3]
+              );
 
-         _src.x *= 1.0f - _dst.w;
-         _src.y *= 1.0f - _dst.w;
-         _src.z *= 1.0f - _dst.w;
-         _src.w *= 1.0f - _dst.w;
+          _src.x *= 1.0f - _dst.w;
+          _src.y *= 1.0f - _dst.w;
+          _src.z *= 1.0f - _dst.w;
+          _src.w *= 1.0f - _dst.w;
 
-         _dst.x += _src.x;
-         _dst.y += _src.y;
-         _dst.z += _src.z;
-         _dst.w += _src.w;
-         _dst.w = std::min(1.0f, _dst.w);
-         assert(_dst.w >= 0.0f);
-       }
-       colorArray[i] = _dst;
-     }
-   }
-   else
-     std::copy(
-         colorArray.begin() + showDomain*nsend,
-         colorArray.begin() + showDomain*nsend + nsend,
-         colorArray.begin());
+          _dst.x += _src.x;
+          _dst.y += _src.y;
+          _dst.z += _src.z;
+          _dst.w += _src.w;
+          _dst.w = std::min(1.0f, _dst.w);
+          assert(_dst.w >= 0.0f);
+        }
+        colorArray[i] = _dst;
+      }
+    }
+    else
+      std::copy(
+          colorArray.begin() + showDomain*nsend,
+          colorArray.begin() + showDomain*nsend + nsend,
+          colorArray.begin());
   }
 
   MPI_Gather(&colorArray[0], nsend*4, MPI_FLOAT, dst, 4*nsend, MPI_FLOAT, master, comm);
 }
 #endif
 
+
+//This function is called by icet to draw stuff
+#ifdef USE_ICET
+static void drawCallback(
+    const IceTDouble *projection_matrix, 
+    const IceTDouble *modelview_matrix,
+    const IceTFloat *background_color,
+    const IceTInt *readback_viewport,
+    IceTImage result)
+{
+
+  IceTSizeType width  = icetImageGetWidth(result);
+  //	 IceTSizeType height = icetImageGetHeight(result);
+  GLint gl_viewport[4];
+  glGetIntegerv(GL_VIEWPORT, gl_viewport);
+
+  IceTSizeType x_offset = gl_viewport[0] + readback_viewport[0];
+  IceTSizeType y_offset = gl_viewport[1] + readback_viewport[1]; 
+
+#if 0
+  fprintf(stderr,"W,H: %d, %d  view: %d %d %d %d || %d %d %d %d \n", 
+      width, height, 
+      gl_viewport[0],
+      gl_viewport[1],
+      gl_viewport[2],
+      gl_viewport[3],
+      readback_viewport[0],
+      readback_viewport[1],
+      readback_viewport[2],
+      readback_viewport[3]);
+#endif
+
+  IceTFloat *colors_float = NULL;
+  colors_float = icetImageGetColorf(result);
+#if 0
+  float4 *colorBuff = (float4*)colors_float;
+  int storeOffset = ( readback_viewport[0] + width*readback_viewport[1]);
+
+  if(globalImgLoc != NULL)
+  {
+#pragma omp parallel for schedule(static)
+    //for (int i = 0; i < wSize.x*wSize.y; i++)
+    for (int i = 0; i < globalNPixels; i++)
+    {
+      colorBuff[i+storeOffset] = globalImgLoc[i];
+    }
+  }
+#else
+  glPixelStorei(GL_PACK_ROW_LENGTH, (GLint)icetImageGetWidth(result));
+  glReadPixels((GLint)x_offset,
+      (GLint)y_offset,
+      (GLsizei)readback_viewport[2],
+      (GLsizei)readback_viewport[3],
+      GL_RGBA,
+      GL_FLOAT,
+      colors_float + 4*( readback_viewport[0] + width*readback_viewport[1]));	
+  glPixelStorei(GL_PACK_ROW_LENGTH, 0);
+#endif
+}
+#endif
+
+
 void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
 {
+#if 1
+#define __PROFILE
+#endif
+
+  bool useIceT = false;
+
+#ifdef USE_ICET
+  if(useIceT)
+  {
+    //Setup the rendering configuration
+    //TODO we only have to do this if things have changed
+    //But Always set bunding boxes and composite order
+    GLint physical_viewport[4];
+    glGetIntegerv(GL_VIEWPORT, physical_viewport);
+    icetPhysicalRenderSize(physical_viewport[2], physical_viewport[3]);
+
+    icetDrawCallback(drawCallback); //Calls our display func
+
+    IceTInt winX, winY;	
+    icetGetIntegerv(ICET_PHYSICAL_RENDER_WIDTH,  &winX);
+    icetGetIntegerv(ICET_PHYSICAL_RENDER_HEIGHT, &winY);
+
+    //Setup a single tile
+    icetResetTiles();
+    icetAddTile(0, 0, winX, winY, 0);
+
+    icetStrategy(ICET_STRATEGY_SEQUENTIAL);
+
+#if 1
+    //Use the below if we use Volume rendering
+    icetCompositeMode(ICET_COMPOSITE_MODE_BLEND);
+    icetSetColorFormat(ICET_IMAGE_COLOR_RGBA_FLOAT);
+    icetSetDepthFormat(ICET_IMAGE_DEPTH_NONE);
+
+    icetEnable(ICET_ORDERED_COMPOSITE);
+    icetCompositeOrder(&compositingOrder[0]);
+#endif
+
+    //set the bounding boxes, should already converted with projection matrix
+#if 1	
+    const float3 r0 = m_xlow;
+    const float3 r1 = m_xhigh;
+    icetBoundingBoxf(r0.x,
+        r1.x,
+        r0.y,
+        r1.y,
+        r0.z,
+        r1.z);
+#endif
+
+
+  } //if useIceT
+#endif
+
+
 
   m_fbo->Bind();
   m_fbo->AttachTexture(GL_TEXTURE_2D, imgTex, GL_COLOR_ATTACHMENT0_EXT);
@@ -2317,6 +2465,11 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
   int2 wCrd  = make_int2(visibleViewport[0], visibleViewport[1]);
   int2 wSize = make_int2(visibleViewport[2], visibleViewport[3]);
   const int2 viewPort = make_int2(mWindowW,mWindowH);
+
+
+#if 0
+  fprintf(stderr,"VISIBLE viewport: %d %d %d %d \n", wCrd.x, wCrd.y, wSize.x, wSize.y);
+#endif
 
 
   GLvoid *rptr;
@@ -2404,8 +2557,9 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
 
   glBindTexture(GL_TEXTURE_2D, imgTex);
   glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_id[0]);
-  if (wSize.x*wSize.y > 0)
-    glReadPixels(wCrd.x, wCrd.y, wSize.x, wSize.y, GL_RGBA, GL_FLOAT, 0);
+  if(!useIceT)
+    if (wSize.x*wSize.y > 0)
+      glReadPixels(wCrd.x, wCrd.y, wSize.x, wSize.y, GL_RGBA, GL_FLOAT, 0);
 
 #ifdef __COMPOSITE_PROFILE
   glFinish();
@@ -2413,8 +2567,9 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
   const double t40 = MPI_Wtime();
 #endif
 
-  if (wSize.x*wSize.y > 0)
-    rptr = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, wSize.x*wSize.y*sizeof(float4), GL_MAP_READ_BIT);
+  if(!useIceT)
+    if (wSize.x*wSize.y > 0)
+      rptr = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, wSize.x*wSize.y*sizeof(float4), GL_MAP_READ_BIT);
 
   if (wSize.x*wSize.y > 0)
   {
@@ -2436,15 +2591,17 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
 #pragma omp parallel for schedule(static)
   for (int i = 0; i < wSize.x*wSize.y; i++)
   {
-    imgLoc[i] = reinterpret_cast<float4*>(rptr)[i];
+    if(!useIceT) //For iceT we do this in the drawCallback
+      imgLoc[i] = reinterpret_cast<float4*>(rptr)[i];
     const int ix = i % wSize.x;
     const int iy = i / wSize.x;
     if (!depth.empty())
       depthLoc[i] = depth[(iy+wCrd.y)*w+(ix+wCrd.x)];
   }
 
-  if (wSize.x*wSize.y > 0)
-    glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+  if(!useIceT)
+    if (wSize.x*wSize.y > 0)
+      glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
   glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
   glBindTexture(GL_TEXTURE_2D,0);
 
@@ -2454,6 +2611,8 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
   const double t60 = MPI_Wtime();
 #endif
 
+  float4 *finalResult = nullptr;
+
   if (compositingOrder.empty() && !depth.empty())
   {
     lCompose(
@@ -2462,16 +2621,47 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
         wCrd, wSize, viewPort,
         m_domainView ? m_domainViewIdx : -1,
         compositingOrder);
+
+    finalResult = &imgGlb[0];
   }
+  /* if global visibility order is known, use this more efficienty compositor */
+#ifdef USE_ICET
+  else if (useIceT)
+  {
+
+    IceTDouble projection_matrix[16];
+    IceTDouble modelview_matrix[16];
+    IceTFloat background_color[4];
+
+    glGetDoublev(GL_PROJECTION_MATRIX, projection_matrix);
+    glGetDoublev(GL_MODELVIEW_MATRIX, modelview_matrix);
+    glGetFloatv(GL_COLOR_CLEAR_VALUE, background_color);
+
+    //Launch the composing
+    IceTImage image =  icetDrawFrame(projection_matrix, modelview_matrix, background_color);
+
+
+    // exit(0);
+
+    if(rank == 0)
+    {
+      IceTFloat *colors_float = NULL;
+      colors_float = icetImageGetColorf(image);
+      float4 *colorBuff = (float4*)colors_float;
+
+      finalResult = &colorBuff[0];
+    }
+  }
+#endif
   else
   {
-    /* if global visibility order is known, use this more efficienty compositor */
     lCompose(
         &imgLoc[0], &imgGlb[0], 
         rank, nrank, comm,
         wCrd, wSize, viewPort,
         m_domainView ? m_domainViewIdx : -1,
         compositingOrder);
+    finalResult = &imgGlb[0];
   }
 
 #ifdef __COMPOSITE_PROFILE
@@ -2489,7 +2679,8 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
 
 #pragma omp parallel for schedule(static)
     for (int i = 0; i < w*h; i++)
-      reinterpret_cast<float4*>(wptr)[i] = imgGlb[i];
+      reinterpret_cast<float4*>(wptr)[i] = finalResult[i];
+    //reinterpret_cast<float4*>(wptr)[i] = imgGlb[i];
 
 #ifdef __COMPOSITE_PROFILE
     glFinish();
@@ -2538,7 +2729,7 @@ std::array<int,4> SmokeRenderer::getVisibleViewport() const
     make_double4(r0.x,r1.y,r1.z,1.0),
     make_double4(r1.x,r1.y,r1.z,1.0)
   };
-  
+
   int viewport[4];
   glGetIntegerv( GL_VIEWPORT, viewport);
 
@@ -2566,9 +2757,9 @@ std::array<int,4> SmokeRenderer::getVisibleViewport() const
 
   std::array<double,4> window{{
     static_cast<double>(viewport[0]+viewport[2]),
-    static_cast<double>(viewport[1]+viewport[3]),
-    static_cast<double>(viewport[0]),
-    static_cast<double>(viewport[1])
+      static_cast<double>(viewport[1]+viewport[3]),
+      static_cast<double>(viewport[0]),
+      static_cast<double>(viewport[1])
   }};
 
   for (auto &v : bBoxVtx)
@@ -2582,8 +2773,10 @@ std::array<int,4> SmokeRenderer::getVisibleViewport() const
   {
     window[0] = std::min(window[0], x);
     window[1] = std::min(window[1], y);
-    window[2] = std::max(window[2], x+1);
-    window[3] = std::max(window[3], y+1);
+    window[2] = std::max(window[2], x);
+    //window[2] = std::max(window[2], x+1);
+    window[3] = std::max(window[3], y);
+    //window[3] = std::max(window[3], y+1);
   };
 
 
@@ -2732,7 +2925,7 @@ void SmokeRenderer::splotchDraw()
   drawPoints(start,count,false);
 
   prog->disable();
-    
+
   glDisable(GL_CLIP_DISTANCE0);
   glDisable(GL_CLIP_DISTANCE1);
   glDisable(GL_CLIP_DISTANCE2);
@@ -3113,7 +3306,7 @@ void SmokeRenderer::createBuffers(int w, int h)
 
   // create texture for image buffer
   GLint format = GL_RGBA32F;
-//  format = GL_RGBA16F_ARB;
+  //  format = GL_RGBA16F_ARB;
   //GLint format = GL_LUMINANCE16F_ARB;
   //GLint format = GL_RGBA8;
   m_imageTex[0] = createTexture(GL_TEXTURE_2D, m_imageW, m_imageH, format, GL_RGBA);
@@ -3122,7 +3315,7 @@ void SmokeRenderer::createBuffers(int w, int h)
   m_imageTex[3] = createTexture(GL_TEXTURE_2D, m_imageW, m_imageH, format, GL_RGBA);
   m_imageTex[4] = createTexture(GL_TEXTURE_2D, m_imageW, m_imageH, format, GL_RGBA);
 
-//  m_depthTex = createTexture(GL_TEXTURE_2D, m_imageW, m_imageH, GL_DEPTH_COMPONENT24_ARB, GL_DEPTH_COMPONENT);
+  //  m_depthTex = createTexture(GL_TEXTURE_2D, m_imageW, m_imageH, GL_DEPTH_COMPONENT24_ARB, GL_DEPTH_COMPONENT);
   m_depthTex = createTexture(GL_TEXTURE_2D, m_imageW, m_imageH, GL_DEPTH_COMPONENT32_ARB, GL_DEPTH_COMPONENT);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -3310,37 +3503,61 @@ void SmokeRenderer::initParams()
   //  m_gaussiaBlurProg
   //  -----------
   //  radius
-  m_params = new ParamListGL("render_params");
+  m_params[POINTS] = new ParamListGL("render_params_points");
 
-  m_params->AddParam(new Param<float>("star scale [log]", m_starScaleLog,     -1.0f, 1.0f, 0.001f, &m_starScaleLog));
-  m_params->AddParam(new Param<float>("star alpha      ", m_starAlpha,         0.0f, 1.0f, 0.001f, &m_starAlpha));
+  //Paramters for the non-sorted Splotch rendering
+  m_params[SPLOTCH] = new ParamListGL("render_params_splotch");
 
-  m_params->AddParam(new Param<float>("dm scale   [log]", m_dmScaleLog,       -1.0f, 1.0f, 0.001f, &m_dmScaleLog));
-  m_params->AddParam(new Param<float>("dm alpha        ", m_dmAlpha,           0.0f, 1.0f, 0.001f, &m_dmAlpha));
+  m_params[SPLOTCH]->AddParam(new Param<float>("star scale [log]", m_starScaleLog,     -1.0f, 1.0f, 0.001f, &m_starScaleLog));
+  m_params[SPLOTCH]->AddParam(new Param<float>("star alpha      ", m_starAlpha,         0.0f, 1.0f, 0.001f, &m_starAlpha));
 
-  m_params->AddParam(new Param<float>("max size [log]  ", m_spriteSizeMaxLog, -1.0f, 1.0f, 0.001f, &m_spriteSizeMaxLog));
-  m_params->AddParam(new Param<float>("alpha           ", m_spriteAlpha,       0.0f, 1.0f, 0.001f, &m_spriteAlpha));
-  m_params->AddParam(new Param<float>("transmission    ", m_transmission,      0.0f, 0.1f, 0.001f, &m_transmission));
+  m_params[SPLOTCH]->AddParam(new Param<float>("dm scale   [log]", m_dmScaleLog,       -1.0f, 1.0f, 0.001f, &m_dmScaleLog));
+  m_params[SPLOTCH]->AddParam(new Param<float>("dm alpha        ", m_dmAlpha,           0.0f, 1.0f, 0.001f, &m_dmAlpha));
 
-  m_params->AddParam(new Param<float>("brightness [pre]",  m_imageBrightnessPre, 0.0f, 1.0f, 0.001f, &m_imageBrightnessPre));
-  m_params->AddParam(new Param<float>("gamma [pre]",       m_gammaPre,           0.0f, 2.0f, 0.001f, &m_gammaPre));
-  m_params->AddParam(new Param<float>("brightness [post]", m_imageBrightnessPost, 0.0f, 1.0f, 0.001f, &m_imageBrightnessPost));
-  m_params->AddParam(new Param<float>("gamma [post]",      m_gammaPost,           0.0f, 2.0f, 0.001f, &m_gammaPost));
- 
-#if 0 
-  m_params->AddParam(new Param<int>("slices", m_numSlices, 1, 256, 1, &m_numSlices));
-  m_params->AddParam(new Param<int>("displayed slices", m_numDisplayedSlices, 1, 256, 1, &m_numDisplayedSlices));
-  
+  m_params[SPLOTCH]->AddParam(new Param<float>("max size [log]  ", m_spriteSizeMaxLog, -1.0f, 1.0f, 0.001f, &m_spriteSizeMaxLog));
+  m_params[SPLOTCH]->AddParam(new Param<float>("alpha           ", m_spriteAlpha,       0.0f, 1.0f, 0.001f, &m_spriteAlpha));
+  m_params[SPLOTCH]->AddParam(new Param<float>("transmission    ", m_transmission,      0.0f, 0.1f, 0.001f, &m_transmission));
+  m_params[SPLOTCH]->AddParam(new Param<float>("brightness [pre]",  m_imageBrightnessPre, 0.0f, 1.0f, 0.001f, &m_imageBrightnessPre));
+  m_params[SPLOTCH]->AddParam(new Param<float>("gamma [pre]",       m_gammaPre,           0.0f, 2.0f, 0.001f, &m_gammaPre));
+  m_params[SPLOTCH]->AddParam(new Param<float>("brightness [post]", m_imageBrightnessPost, 0.0f, 1.0f, 0.001f, &m_imageBrightnessPost));
+  m_params[SPLOTCH]->AddParam(new Param<float>("gamma [post]",      m_gammaPost,           0.0f, 2.0f, 0.001f, &m_gammaPost));
 
-  m_params->AddParam(new Param<float>("sprite size", mParticleRadius, 0.0f, 0.2f, 0.001f, &mParticleRadius));
-  m_params->AddParam(new Param<float>("scale [log]", mParticleScaleLog, -1.0f, 1.0f, 0.01f, &mParticleScaleLog));
-   
-  m_params->AddParam(new Param<float>("dust scale", m_ageScale, 0.0f, 50.0f, 0.1f, &m_ageScale));
-  m_params->AddParam(new Param<float>("dust alpha", m_dustAlpha, 0.0f, 0.1f, 0.01f, &m_dustAlpha));
+  //Splotch sorted parameters (note they are similar to splotch non-sorted parameters)
 
-  m_params->AddParam(new Param<float>("light color r", m_lightColor[0], 0.0f, 1.0f, 0.01f, &m_lightColor[0]));
-  m_params->AddParam(new Param<float>("light color g", m_lightColor[1], 0.0f, 1.0f, 0.01f, &m_lightColor[1]));
-  m_params->AddParam(new Param<float>("light color b", m_lightColor[2], 0.0f, 1.0f, 0.01f, &m_lightColor[2]));
+
+  m_params[SPLOTCH_SORTED] = new ParamListGL("render_params_splotch_sorted");
+
+  m_params[SPLOTCH_SORTED]->AddParam(new Param<float>("star scale [log]", m_starScaleLog,     -1.0f, 1.0f, 0.001f, &m_starScaleLog));
+  m_params[SPLOTCH_SORTED]->AddParam(new Param<float>("star alpha      ", m_starAlpha,         0.0f, 1.0f, 0.001f, &m_starAlpha));
+
+  m_params[SPLOTCH_SORTED]->AddParam(new Param<float>("dm scale   [log]", m_dmScaleLog,       -1.0f, 1.0f, 0.001f, &m_dmScaleLog));
+  m_params[SPLOTCH_SORTED]->AddParam(new Param<float>("dm alpha        ", m_dmAlpha,           0.0f, 1.0f, 0.001f, &m_dmAlpha));
+
+  m_params[SPLOTCH_SORTED]->AddParam(new Param<float>("max size [log]  ", m_spriteSizeMaxLog, -1.0f, 1.0f, 0.001f, &m_spriteSizeMaxLog));
+  m_params[SPLOTCH_SORTED]->AddParam(new Param<float>("alpha           ", m_spriteAlpha,       0.0f, 1.0f, 0.001f, &m_spriteAlpha));
+  m_params[SPLOTCH_SORTED]->AddParam(new Param<float>("transmission    ", m_transmission,      0.0f, 0.1f, 0.001f, &m_transmission));
+
+  m_params[SPLOTCH_SORTED]->AddParam(new Param<float>("brightness [pre]",  m_imageBrightnessPre, 0.0f, 1.0f, 0.001f, &m_imageBrightnessPre));
+  m_params[SPLOTCH_SORTED]->AddParam(new Param<float>("gamma [pre]",       m_gammaPre,           0.0f, 2.0f, 0.001f, &m_gammaPre));
+  m_params[SPLOTCH_SORTED]->AddParam(new Param<float>("brightness [post]", m_imageBrightnessPost, 0.0f, 1.0f, 0.001f, &m_imageBrightnessPost));
+  m_params[SPLOTCH_SORTED]->AddParam(new Param<float>("gamma [post]",      m_gammaPost,           0.0f, 2.0f, 0.001f, &m_gammaPost));
+
+
+  m_params[VOLUMETRIC] = new ParamListGL("render_params_volumetric");
+#if 1 
+  m_params[VOLUMETRIC]->AddParam(new Param<int>("slices", m_numSlices, 1, 256, 1, &m_numSlices));
+  m_params[VOLUMETRIC]->AddParam(new Param<int>("displayed slices", m_numDisplayedSlices, 1, 256, 1, &m_numDisplayedSlices));
+
+
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("sprite size", mParticleRadius, 0.0f, 0.2f, 0.001f, &mParticleRadius));
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("scale [log]", mParticleScaleLog, -1.0f, 1.0f, 0.01f, &mParticleScaleLog));
+
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("dust scale", m_ageScale, 0.0f, 50.0f, 0.1f, &m_ageScale));
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("dust alpha", m_dustAlpha, 0.0f, 1.0f, 0.01f, &m_dustAlpha));
+
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("light color r", m_lightColor[0], 0.0f, 1.0f, 0.01f, &m_lightColor[0]));
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("light color g", m_lightColor[1], 0.0f, 1.0f, 0.01f, &m_lightColor[1]));
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("light color b", m_lightColor[2], 0.0f, 1.0f, 0.01f, &m_lightColor[2]));
 
 #if 0
   m_params->AddParam(new Param<float>("color opacity r", m_colorOpacity[0], 0.0f, 1.0f, 0.01f, &m_colorOpacity[0]));
@@ -3348,10 +3565,10 @@ void SmokeRenderer::initParams()
   m_params->AddParam(new Param<float>("color opacity b", m_colorOpacity[2], 0.0f, 1.0f, 0.01f, &m_colorOpacity[2]));
 #endif
 
-  m_params->AddParam(new Param<float>("alpha", m_spriteAlpha, 0.0f, 1.0f, 0.001f, &m_spriteAlpha));
-  m_params->AddParam(new Param<float>("shadow alpha", m_shadowAlpha, 0.0f, 1.0f, 0.001f, &m_shadowAlpha));
-  m_params->AddParam(new Param<float>("transmission", m_transmission, 0.0f, 0.1f, 0.001f, &m_transmission));
-  m_params->AddParam(new Param<float>("indirect lighting", m_indirectAmount, 0.0f, 1.0f, 0.001f, &m_indirectAmount));
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("alpha", m_spriteAlpha_volume, 0.0f, 1.0f, 0.001f, &m_spriteAlpha_volume));
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("shadow alpha", m_shadowAlpha, 0.0f, 1.0f, 0.001f, &m_shadowAlpha));
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("transmission", m_transmission, 0.0f, 0.1f, 0.001f, &m_transmission));
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("indirect lighting", m_indirectAmount, 0.0f, 1.0f, 0.001f, &m_indirectAmount));
 
 #if 0
   // volume stuff
@@ -3367,28 +3584,28 @@ void SmokeRenderer::initParams()
   m_params->AddParam(new Param<float>("volume width", m_volumeWidth, 0.0f, 1.0f, 0.01f, &m_volumeWidth));
 #endif
 
-  m_params->AddParam(new Param<float>("fog", m_fog, 0.0f, 0.1f, 0.001f, &m_fog));
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("fog", m_fog, 0.0f, 0.1f, 0.001f, &m_fog));
 
-  m_params->AddParam(new Param<float>("over bright multiplier", m_overBright, 0.0f, 100.0f, 1.0f, &m_overBright));
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("over bright multiplier", m_overBright, 0.0f, 100.0f, 1.0f, &m_overBright));
   //m_params->AddParam(new Param<float>("over bright threshold", m_overBrightThreshold, 0.0f, 1.0f, 0.001f, &m_overBrightThreshold));
-  m_params->AddParam(new Param<float>("star brightness", m_overBrightThreshold, 0.0f, 10.0f, 0.001f, &m_overBrightThreshold));
-  m_params->AddParam(new Param<float>("image brightness", m_imageBrightness, 0.0f, 2.0f, 0.1f, &m_imageBrightness));
-  m_params->AddParam(new Param<float>("image gamma", m_gamma, 0.0f, 2.0f, 0.0f, &m_gamma));
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("star brightness", m_overBrightThreshold, 0.0f, 10.0f, 0.001f, &m_overBrightThreshold));
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("image brightness", m_imageBrightness, 0.0f, 2.0f, 0.1f, &m_imageBrightness));
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("image gamma", m_gamma, 0.0f, 2.0f, 0.0f, &m_gamma));
 
-  m_params->AddParam(new Param<float>("blur radius", m_blurRadius, 0.0f, 10.0f, 0.1f, &m_blurRadius));
-  m_params->AddParam(new Param<int>("blur passes", m_blurPasses, 0, 10, 1, &m_blurPasses));
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("blur radius", m_blurRadius, 0.0f, 10.0f, 0.1f, &m_blurRadius));
+  m_params[VOLUMETRIC]->AddParam(new Param<int>("blur passes", m_blurPasses, 0, 10, 1, &m_blurPasses));
 
-  m_params->AddParam(new Param<float>("source intensity", m_sourceIntensity, 0.0f, 1.0f, 0.01f, &m_sourceIntensity));
-  m_params->AddParam(new Param<float>("star blur radius", m_starBlurRadius, 0.0f, 100.0f, 1.0f, &m_starBlurRadius));
-  m_params->AddParam(new Param<float>("star threshold", m_starThreshold, 0.0f, 100.0f, 0.1f, &m_starThreshold));
-  m_params->AddParam(new Param<float>("star power", m_starPower, 0.0f, 100.0f, 0.1f, &m_starPower));
-  m_params->AddParam(new Param<float>("star intensity", m_starIntensity, 0.0f, 1.0f, 0.1f, &m_starIntensity));
-  m_params->AddParam(new Param<float>("glow radius", m_glowRadius, 0.0f, 100.0f, 1.0f, &m_glowRadius));
-  m_params->AddParam(new Param<float>("glow intensity", m_glowIntensity, 0.0f, 1.0f, 0.01f, &m_glowIntensity));
-  m_params->AddParam(new Param<float>("flare intensity", m_flareIntensity, 0.0f, 1.0f, 0.01f, &m_flareIntensity));
-  m_params->AddParam(new Param<float>("flare threshold", m_flareThreshold, 0.0f, 10.0f, 0.01f, &m_flareThreshold));
-  m_params->AddParam(new Param<float>("flare radius", m_flareRadius, 0.0f, 100.0f, 0.01f, &m_flareRadius));
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("source intensity", m_sourceIntensity, 0.0f, 1.0f, 0.01f, &m_sourceIntensity));
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("star blur radius", m_starBlurRadius, 0.0f, 100.0f, 1.0f, &m_starBlurRadius));
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("star threshold", m_starThreshold, 0.0f, 100.0f, 0.1f, &m_starThreshold));
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("star power", m_starPower, 0.0f, 100.0f, 0.1f, &m_starPower));
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("star intensity", m_starIntensity, 0.0f, 1.0f, 0.1f, &m_starIntensity));
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("glow radius", m_glowRadius, 0.0f, 100.0f, 1.0f, &m_glowRadius));
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("glow intensity", m_glowIntensity, 0.0f, 1.0f, 0.01f, &m_glowIntensity));
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("flare intensity", m_flareIntensity, 0.0f, 1.0f, 0.01f, &m_flareIntensity));
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("flare threshold", m_flareThreshold, 0.0f, 10.0f, 0.01f, &m_flareThreshold));
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("flare radius", m_flareRadius, 0.0f, 100.0f, 0.01f, &m_flareRadius));
 
-  m_params->AddParam(new Param<float>("skybox brightness", m_skyboxBrightness, 0.0f, 1.0f, 0.01f, &m_skyboxBrightness));
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("skybox brightness", m_skyboxBrightness, 0.0f, 1.0f, 0.01f, &m_skyboxBrightness));
 #endif
 }

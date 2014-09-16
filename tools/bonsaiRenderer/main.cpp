@@ -15,6 +15,16 @@
 #include "anyoption.h"
 #include "RendererData.h"
 
+#if 0
+#define USE_ICET
+#endif
+
+#ifdef USE_ICET
+  #include <IceT.h>
+  #include <IceTGL.h>
+  #include <IceTMPI.h>
+#endif
+
 using ShmQHeader = SharedMemoryClient<BonsaiSharedQuickHeader>;
 using ShmQData   = SharedMemoryClient<BonsaiSharedQuickData>;
 static ShmQHeader *shmQHeader = NULL;
@@ -480,6 +490,7 @@ int main(int argc, char * argv[])
 #endif
 		ADDUSAGE(" -d  --doDD             enable domain decomposition  [disabled]");
     ADDUSAGE(" -s  --nmaxsample   #   set max number of samples for DD [" << nmaxsample << "]");
+    ADDUSAGE(" -D  --display      #   set DISPLAY=display, otherwise inherited from environment");
 
 
 		opt.setFlag  ( "help" ,        'h');
@@ -597,6 +608,14 @@ int main(int argc, char * argv[])
 
 
   dataSetFunc(0);
+
+#ifdef USE_ICET
+  //Setup the IceT context and communicators
+  IceTCommunicator icetComm =   icetCreateMPICommunicator(MPI_COMM_WORLD);
+/*IceTContext   icetContext =*/ icetCreateContext(icetComm);
+  icetDestroyMPICommunicator(icetComm); //Save since the comm is copied to the icetContext
+  icetDiagnostics(ICET_DIAG_FULL);
+#endif
 
   initAppRenderer(argc, argv, 
       rank, nranks, comm,

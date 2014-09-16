@@ -303,7 +303,15 @@ class ParamList : public ParamBase
 
         void Read(std::istream &stream)
         {
-            stream >> m_name;
+	    std::string nameT;
+	    stream >> nameT;
+
+	    if(nameT.compare(m_name) != 0) 
+	    {
+		    fprintf(stderr,"Parameters expected: %s  found : %s . Please fix/delete your config file\n",
+				    m_name.c_str(), nameT.c_str());
+	    }
+//            stream >> m_name;
 
             for (std::vector<ParamBase *>::const_iterator p = m_params.begin(); p != m_params.end(); ++p)
             {

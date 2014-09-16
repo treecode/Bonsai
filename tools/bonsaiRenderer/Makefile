@@ -5,10 +5,11 @@ F90  = mpif90
 
 CUDA_TK  = /usr/local/cuda
 # CUDA_TK = $(HOME)/usr/local/cuda-5.5
-CXXFLAGS = -Wall -fopenmp -std=c++11
+CXXFLAGS = -Wall -fopenmp -std=c++11 -Werror
 CXXFLAGS += -Wno-reorder
 CXXFLAGS += -Wno-write-strings
-CFLAGS =  -Wall
+CFLAGS =  -Wall -Werror
+
 
 OPT += -O3 -g
 
@@ -27,10 +28,18 @@ ENGINE=density
 #ENGINE=splotch
 
 
+
 INCLUDE_FLAGS= -I./ -I./$(ENGINE)/
 INCLUDE_FLAGS += -I$(CUDA_TK)/include 
 LDFLAGS = -lGL -lGLU -lglut -lGLEW -fopenmp
 #-L$(PWD)/lib/linux -lGLEW_x86_64
+
+ifeq ($(ICET),1)
+	ICETPATH=../../IceT
+	INCLUDE_FLAGS += -I$(ICETPATH)/include  
+	LDFLAGS += -L$(ICETPATH)/lib -lIceTCore -lIceTMPI  
+	CXXFLAGS += -DUSE_ICET
+endif
 
 ifeq ($(APPLEOSX),1)
 	INCLUDE_FLAGS += -I/opt/local/include

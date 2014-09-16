@@ -33,15 +33,13 @@ class SmokeRendererParams
 #if 0
       SPRITES,
       SPRITES_SORTED,
+#endif      
       VOLUMETRIC,
-#endif
       SPLOTCH,
       SPLOTCH_SORTED,
       NUM_MODES
     };
   protected:
-    float               mParticleRadius;
-    float               mParticleScaleLog;
     DisplayMode	        mDisplayMode;
 
     // window
@@ -54,22 +52,16 @@ class SmokeRendererParams
     int                 m_imageW, m_imageH;
     int                 m_downSampledW, m_downSampledH;
 
-    int                 m_numSlices;
-    int                 m_numDisplayedSlices;
     int                 m_batchSize;
     int                 m_sliceNo;
 
     // parameters
-    float               m_shadowAlpha;
-    float               m_dustAlpha;
     bool                m_doBlur;
-    float               m_blurRadius;
     bool                m_displayLightBuffer;
     bool                m_domainView;
     int                 m_domainViewIdx;
 
     nv::vec3f               m_lightVector, m_lightPos, m_lightTarget;
-    nv::vec3f               m_lightColor;
     nv::vec3f               m_colorOpacity;
     float               m_lightDistance;
 
@@ -85,7 +77,13 @@ class SmokeRendererParams
     bool				m_enableVolume;
     bool				m_enableFilters;
 
-    /****************/
+    /***********************
+     *			   *
+     *  SPLOTCH PARAMETERS *
+     *			   *
+     ***********************
+    */  
+
     float m_starScaleLog;
     float m_starAlpha;
 
@@ -101,31 +99,58 @@ class SmokeRendererParams
     float m_imageBrightnessPost;
     float m_gammaPost;
 
-    /****************/
+    /**************************
+     *			      *
+     *  VOLUMETRIC PARAMETERS *
+     *			      *
+     **************************
+    */ 
 
+
+    int                 m_numSlices;
+    int                 m_numDisplayedSlices;
+
+    float               mParticleRadius;
+    float               mParticleScaleLog;
+
+    float               m_dustAlpha;
+    float m_ageScale;
+
+    nv::vec3f           m_lightColor;
+    float 		m_spriteAlpha_volume;
+    float               m_shadowAlpha;
+
+    float m_indirectAmount;
+    float m_fog;
     float m_overBright;
     float m_overBrightThreshold;
     float m_imageBrightness;
-    int m_blurPasses;
-    float m_indirectAmount;
 
+    float m_gamma;
+    int m_blurPasses;
+    float               m_blurRadius;
+
+    float m_sourceIntensity;
     float m_starBlurRadius;
     float m_starPower;
     float m_starIntensity;
     float m_starThreshold;
-
+    
     float m_glowRadius;
     float m_glowIntensity;
-    float m_gamma;
 
-    float m_sourceIntensity;
     float m_flareIntensity;
     float m_flareThreshold;
     float m_flareRadius;
 
-    float m_ageScale;
-    float m_fog;
     float m_skyboxBrightness;
+
+
+
+    /********************************/
+
+
+
 
     float m_volumeAlpha;
     nv::vec3f m_volumeColor;
@@ -233,7 +258,8 @@ class SmokeRenderer : public SmokeRendererParams
     bool getCullDarkMatter() { return m_cullDarkMatter; }
     void setCullDarkMatter(bool b) { m_cullDarkMatter = b; }
 
-    ParamListGL *getParams() { return m_params; }
+    ParamListGL *getParams() { return m_params[(int)mDisplayMode]; }
+    ParamListGL **getAllParams() { return m_params; }
 
     void render();
     void debugVectors();
@@ -409,7 +435,7 @@ class SmokeRenderer : public SmokeRendererParams
     } params;
 #endif
 
-    ParamListGL         *m_params;
+    ParamListGL         *m_params[NUM_MODES];
 
     // programs
     GLSLProgram         *m_simpleProg;
