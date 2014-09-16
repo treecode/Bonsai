@@ -42,8 +42,6 @@ static double write(
 template<typename ShmHeader, typename ShmData>
 bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank, const MPI_Comm &comm)
 {
-  const float waittime = 10; /* ms */
-  auto wait = [=]() { usleep(static_cast<int>(1e3*waittime)); };
   double tLast = -1;
 
 
@@ -64,8 +62,7 @@ bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank
 
   while (1)
   {
-    while (header[0].done_writing)
-      wait();
+    while (header[0].done_writing);
 
     assert(tLast != header[0].tCurrent);
     tLast = header[0].tCurrent;
@@ -73,7 +70,7 @@ bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank
     if (header[0].tCurrent == -1.0)
       break;
 
-    header.acquireLock(waittime);
+    header.acquireLock();
     const float tCurrent = header[0].tCurrent;
     const size_t nBodies = header[0].nBodies;
     char fn[1024];
@@ -84,7 +81,7 @@ bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank
         break;
     }
 
-    data.acquireLock(waittime);
+    data.acquireLock();
     const size_t size = data.size();
     assert(size == nBodies);
 

@@ -258,9 +258,6 @@ static void lHandShake(SharedMemoryBase<T> &header)
 
 void octree::dumpData()
 {
-  const float waittime = 10.0f;  /* ms */
-  auto wait = [=]() { usleep(static_cast<int>(1e3*waittime)); };
-
   if (shmQHeader == NULL)
   {
     const size_t sCapacity  = 5*localTree.n;
@@ -327,8 +324,7 @@ void octree::dumpData()
     auto &data   = *shmQData;
 
     if (quickSync)
-      while (!header[0].done_writing)
-        wait();
+      while (!header[0].done_writing);
 
     /* write header */
 
@@ -339,7 +335,7 @@ void octree::dumpData()
     for (size_t i = 0; i < nSnap; i += dn)
       nQuick++;
 
-    header.acquireLock(waittime);
+    header.acquireLock();
     header[0].tCurrent = t_current;
     header[0].nBodies  = nQuick;
     char fn[1024];
@@ -356,7 +352,7 @@ void octree::dumpData()
 
     /* write data */
 
-    data.acquireLock(waittime);
+    data.acquireLock();
     assert(data.resize(nQuick));
 #pragma omp parallel for schedule(static)
     for (size_t i = 0; i < nSnap; i += dn)
@@ -396,12 +392,11 @@ void octree::dumpData()
     auto &header = *shmSHeader;
     auto &data   = *shmSData;
     
-    while (!header[0].done_writing)
-      usleep(waittime*1000);
+    while (!header[0].done_writing);
 
     const size_t nSnap = localTree.n;
 
-    header.acquireLock(waittime);
+    header.acquireLock();
     header[0].tCurrent = t_current;
     header[0].nBodies  = nSnap;
     char fn[1024];
@@ -416,7 +411,7 @@ void octree::dumpData()
         break;
     }
 
-    data.acquireLock(waittime);
+    data.acquireLock();
     assert(data.resize(nSnap));
 #pragma omp parallel for schedule(static)
     for (size_t i = 0; i < nSnap; i++)
