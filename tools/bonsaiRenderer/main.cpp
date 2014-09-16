@@ -81,13 +81,6 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
       return (data[i].rho == 0 || data[i].h == 0.0 || data[i].h > 100);
     };
 
-#if 0
-    size_t nskip = 0;
-    for (size_t i = 0; i < size; i++)
-      if (skipPtcl(i))
-        nskip++;
-#endif
-
     size_t nDM = 0, nS = 0;
     for (size_t i = 0, ip = 0; i < size; i++)
     {

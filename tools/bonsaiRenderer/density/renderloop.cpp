@@ -1,6 +1,7 @@
 #include <mpi.h>
 #include <stdio.h>
 #include "renderloop.h"
+#include <array>
 
 #if 1
 #define WINX 1024
@@ -935,117 +936,19 @@ class Demo
   {
     m_renderer.setMVP(m_modelView, m_projection);
 
-#if 1
-    /* eg: code must be moved to RendererData.h. It doesn't belong here. 
-     * suggested interface: 
-     *    const std::vector<int>& m_idata.getVisibilityOrder(const float3 cameraPosition) 
-     */
-    if (m_idata.isDistributed())
+
+    auto getCamPos = [&]()
     {
-      const double t0 = MPI_Wtime();
-      static std::vector<float3> bounds(nrank);
-      float3 xlow = make_float3(
-          m_idata.getBoundBoxLow(0),
-          m_idata.getBoundBoxLow(1),
-          m_idata.getBoundBoxLow(2));
-      MPI_Allgather(&xlow, 3, MPI_FLOAT, &bounds[0], 3, MPI_FLOAT, comm);
-
-      const double t1 = MPI_Wtime();
-      auto getCamPos = [&]()
-      {
-        double inv[16];
-        gluInvertMatrix(m_modelView, inv);
-        const double4 cam = lMatVec(inv, make_double4(0,0,0,1));
-        return make_float3(cam.x,cam.y,cam.z);
-      };
-      const float3 camPos = getCamPos();
-
-      const auto &nPartitions = m_idata.getRankFactor();
-      const int npx = nPartitions[0];
-      const int npy = nPartitions[1];
-      const int npz = nPartitions[2];
-
-      auto xdi = [=](int ix, int iy, int iz)
-      {
-        return iz + npz*(iy + npy*(ix));
-      };
-
-      auto locate = [](float splits[], const int n, const float val)
-      {
-        auto up = std::upper_bound(splits, splits+n, val);
-        const int idx = up - splits;
-        return std::max(0, std::min(n-1,idx-1));
-      };
-
-      auto map = [](const int i, const int pxc, const int npx)
-      {
-        const int px = i <= pxc ? pxc-i : i;
-        assert(px >= 0 && px < npx);
-        return px;
-      };
-
-
-      static std::vector<int> compositingOrder(nrank);
-      {
-        constexpr int NRANKMAX = 1024;
-        assert(npx <= NRANKMAX);
-        assert(npy <= NRANKMAX);
-        assert(npz <= NRANKMAX);
-
-        float xsplits[NRANKMAX];
-        for (int px = 0; px < npx; px++)
-          xsplits[px] = bounds[xdi(px,0,0)].x;
-        const int pxc = locate(xsplits, npx, camPos.x);
-
-#if 0
-        if (rank == 0)
-        {
-          fprintf(stderr, "cam= %g %g %g \n", camPos.x, camPos.y, camPos.z);
-          fprintf(stderr, "xsplit= %g %g %g \n",
-              xsplits[0], xsplits[1], xsplits[2]);
-          for (int i = 0; i < npx; i++)
-          {
-            const int px = map(i,pxc,npx);
-            if (rank == 0)
-              fprintf(stderr, "pxc= %d | i= %d  px= %d\n", pxc,i ,px);
-          }
-        }
-#endif
-
-#pragma omp parallel for schedule(static)
-        for (int i = 0; i < npx; i++)
-        {
-          const int px = map(i,pxc,npx);
-
-          float ysplits[NRANKMAX];
-          for (int py = 0; py < npy; py++)
-            ysplits[py] = bounds[xdi(px,py,0)].y;
-          const int pyc = locate(ysplits, npy, camPos.y);
-
-          for (int j = 0; j < npy; j++)
-          {
-            const int py = map(j,pyc,npy);
-
-            float zsplits[NRANKMAX];
-            for (int pz = 0; pz < npz; pz++)
-              zsplits[pz] = bounds[xdi(px,py,pz)].z;
-            const int pzc = locate(zsplits, npz, camPos.z);
-
-            for (int k = 0; k < npz; k++)
-            {
-              const int pz = map(k,pzc,npz);
-              compositingOrder[xdi(i,j,k)] = xdi(px,py,pz);
-            }
-          }
-        }
-      }
-      const double t2 = MPI_Wtime();
-      if (isMaster())
-        fprintf(stderr, " globalOrder: tot= %g  algorithm %g sec \n", t2-t0, t2-t1);
-      m_renderer.setCompositingOrder(compositingOrder);
-    }
-#endif
-
+      double inv[16];
+      gluInvertMatrix(m_modelView, inv);
+      const double4 cam = lMatVec(inv, make_double4(0,0,0,1));
+      std::array<float,3> camPos;
+      camPos[0] = static_cast<float>(cam.x);
+      camPos[1] = static_cast<float>(cam.y);
+      camPos[2] = static_cast<float>(cam.z);
+      return camPos;
+    };
+    m_renderer.setCompositingOrder(m_idata.getVisibilityOrder(getCamPos()));
     m_renderer.render();
 
 #if 0

@@ -47,7 +47,7 @@ ifeq ($(APPLEOSX),1)
 	LDFLAGS = -framework OpenGL -L/opt/local/lib -lglut -lglew -fopenmp
 endif
 
-OBJ = main.o $(ENGINE)/renderloop.o anyoption.o $(ENGINE)/renderer.o paramgl.o RendererData.o
+OBJ = main.o $(ENGINE)/renderloop.o anyoption.o $(ENGINE)/renderer.o paramgl.o RendererData.o RendererDataDistribute.o
 ifeq ($(ENGINE),smoke)
 	OBJ += tr.o
 	OBJ += smoke/GLSLProgram.o

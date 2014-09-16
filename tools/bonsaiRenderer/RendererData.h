@@ -65,22 +65,14 @@ class RendererData
     float _attributeMinL[NPROP];
     float _attributeMaxL[NPROP];
   
-    float xlow[3], xhigh[3];
-    int npx, npy, npz;
-   
-    void minmaxAttributeGlb(const Attribute_t p)   
-    {
-      MPI_Allreduce(&_attributeMinL[p], &_attributeMin[p], 1, MPI_FLOAT, MPI_MIN, comm);
-      MPI_Allreduce(&_attributeMaxL[p], &_attributeMax[p], 1, MPI_FLOAT, MPI_MAX, comm);
-    }
-
+    void minmaxAttributeGlb(const Attribute_t p);
     int  getMaster() const { return 0; }
     bool isMaster() const { return getMaster() == rank; }
 
 
   public:
     RendererData(const int rank, const int nrank, const MPI_Comm &comm) : 
-      rank(rank), nrank(nrank), comm(comm), distributed(false)
+      rank(rank), nrank(nrank), comm(comm)
   {
     assert(rank < nrank);
     new_data = false;
@@ -90,24 +82,9 @@ class RendererData
     void unsetNewData() { new_data = false; }
     bool isNewData() const {return new_data;}
 
-    std::array<int,3> getRankFactor() const
-    {
-      return {{npx,npy,npz}};
-    }
-
-    void resize(const int n)
-    {
-      data.resize(n);
-    }
-
-    ~RendererData()
-    {
-    }
-
-    float getBoundBoxLow (const int i) const {return  xlow[i];}
-    float getBoundBoxHigh(const int i) const {return xhigh[i];}
-
     int n() const { return data.size(); }
+    void resize(const int n) { data.resize(n); }
+    ~RendererData() {}
 
     float  posx(const int i) const { return data[i].posx; }
     float& posx(const int i)       { return data[i].posx; }
@@ -124,82 +101,12 @@ class RendererData
 
     long_t  ID(const long_t i) const { return data[i].ID; }
     long_t& ID(const long_t i)       { return data[i].ID; }
-   
-    void randomShuffle()   
-    {
-      std::random_shuffle(data.begin(), data.end());
-    }
-
-    void computeMinMax()
-    {
-      _xminl=_yminl=_zminl=_rminl = +HUGE;
-      _xmaxl=_ymaxl=_zmaxl=_rmaxl = -HUGE;
-      for (int p = 0; p < NPROP; p++)
-      {
-        _attributeMinL[p] = +HUGE;
-        _attributeMaxL[p] = -HUGE;
-      }
-
-      const int _n = data.size();
-      for (int i = 0; i < _n; i++)
-      {
-        _xminl = std::min(_xminl, posx(i));
-        _yminl = std::min(_yminl, posy(i));
-        _zminl = std::min(_zminl, posz(i));
-        _xmaxl = std::max(_xmaxl, posx(i));
-        _ymaxl = std::max(_ymaxl, posy(i));
-        _zmaxl = std::max(_zmaxl, posz(i));
-        for (int p = 0; p < NPROP; p++)
-        {
-          _attributeMinL[p] = std::min(_attributeMinL[p], attribute(static_cast<Attribute_t>(p),i));
-          _attributeMaxL[p] = std::max(_attributeMaxL[p], attribute(static_cast<Attribute_t>(p),i));
-        }
-      }
-      _rminl = std::min(_rminl, _xminl);
-      _rminl = std::min(_rminl, _yminl);
-      _rminl = std::min(_rminl, _zminl);
-      _rmaxl = std::max(_rmaxl, _xmaxl);
-      _rmaxl = std::max(_rmaxl, _ymaxl);
-      _rmaxl = std::max(_rmaxl, _zmaxl);
-
-      for (int i = 0; i < _n; i++)
-      {
-        assert(posx(i) >= _xminl && posx(i) <= _xmaxl);
-        assert(posy(i) >= _yminl && posy(i) <= _ymaxl);
-        assert(posz(i) >= _zminl && posz(i) <= _zmaxl);
-        assert(posx(i) >= _rminl && posx(i) <= _rmaxl);
-        assert(posy(i) >= _rminl && posy(i) <= _rmaxl);
-        assert(posz(i) >= _rminl && posz(i) <= _rmaxl);
-      }
-
-
-      float minloc[] = {_xminl, _yminl, _zminl, _rminl};
-      float minglb[] = {_xminl, _yminl, _zminl, _rminl};
-
-      float maxloc[] = {_xmaxl, _ymaxl, _zmaxl, _rmaxl};
-      float maxglb[] = {_xmaxl, _ymaxl, _zmaxl, _rmaxl};
-
-      MPI_Allreduce(minloc, minglb, 4, MPI_FLOAT, MPI_MIN, comm);
-      MPI_Allreduce(maxloc, maxglb, 4, MPI_FLOAT, MPI_MAX, comm);
-
-      _xmin = minglb[0];
-      _ymin = minglb[1];
-      _zmin = minglb[2];
-      _rmin = minglb[3];
-      _xmax = maxglb[0];
-      _ymax = maxglb[1];
-      _zmax = maxglb[2];
-      _rmax = maxglb[3];
-      
-      for (int p = 0; p < NPROP; p++)
-        minmaxAttributeGlb(static_cast<Attribute_t>(p));
-    }
 
     float xmin() const { return _xmin;} 
     float ymin() const { return _ymin;} 
     float zmin() const { return _zmin;} 
     float rmin() const { return _rmin;} 
-    
+
     float xmax() const { return _xmax;} 
     float ymax() const { return _ymax;} 
     float zmax() const { return _zmax;} 
@@ -207,15 +114,15 @@ class RendererData
 
     float attributeMin(const Attribute_t p) const { return _attributeMin[p]; }
     float attributeMax(const Attribute_t p) const { return _attributeMax[p]; }
-    
+
     void setAttributeMin(const Attribute_t p, const float val) { _attributeMin[p] = val; }
     void setAttributeMax(const Attribute_t p, const float val) { _attributeMax[p] = val; }
-    
+
     float xminLoc() const { return _xminl;} 
     float yminLoc() const { return _yminl;} 
     float zminLoc() const { return _zminl;} 
     float rminLoc() const { return _rminl;} 
-    
+
     float xmaxLoc() const { return _xmaxl;} 
     float ymaxLoc() const { return _ymaxl;} 
     float zmaxLoc() const { return _zmaxl;} 
@@ -223,89 +130,45 @@ class RendererData
 
     float attributeMinLoc(const Attribute_t p) const { return _attributeMinL[p]; }
     float attributeMaxLoc(const Attribute_t p) const { return _attributeMaxL[p]; }
+    
+    void randomShuffle();
+    void computeMinMax();
 
-    template<typename Func>
-      void rescale(const Attribute_t p, const Func &scale)
-      {
-        float min = +HUGE, max = -HUGE;
-        const int _n = data.size();
-        for (int i = 0; i < _n; i++)
-        {
-          attribute(p,i) = scale(attribute(p,i));
-          min = std::min(min, attribute(p,i));
-          max = std::max(max, attribute(p,i));
-        }
-
-        _attributeMinL[p] = min;
-        _attributeMaxL[p] = max;
-
-#if 0
-        minmaxAttributeGlb(p);
-#else
-        _attributeMin[p] = scale(attributeMin(p));
-        _attributeMax[p] = scale(attributeMax(p));
-#endif
-      }
-
-
-    void rescaleLinear(const Attribute_t p, const float newMin, const float newMax)
-    {
-      const float oldMin = attributeMin(p);
-      const float oldMax = attributeMax(p);
-     
-      const float oldRange = oldMax - oldMin ;
-      assert(oldRange != 0.0);
-      
-      const float slope = (newMax - newMin)/oldRange;
-      rescale(p,[&](const float x) { return slope * (x - oldMin) + newMin;});
-
-    }
-
-    void scaleLog(const Attribute_t p, const float zeroPoint = 1.0f)
-    {
-      rescale(p, [&](const float x) {return std::log(x + zeroPoint);});
-    }
-    void scaleExp(const Attribute_t p, const float zeroPoint = 1.0f)
-    {
-      rescale(p,[&](const float x) {return std::exp(x) - zeroPoint;});
-    }
-
-#if 0
-    void clamp(const Attribute_t p, const float left, const float right)
-    {
-      assert(left  >= 0.0f && left  < 0.5f);
-      assert(right >= 0.0f && right < 0.5f);
-
-      const float oldMin = attributeMin(p);
-      const float oldMax = attributeMax(p);
-      const float oldRange = oldMax - oldMin ;
-      assert(oldRange > 0.0f);
-
-      const float valMin = oldMin + left *oldRange;
-      const float valMax = oldMax - right*oldRange;
-      assert(valMin < valMax);
-
-      rescale(p,[&](const float x) {return std::max(valMin, std::min(valMax,x));});
-    }
-#endif
-    void clampMinMax(const Attribute_t p, const float min, const float max)
-    {
-      rescale(p,[&](const float x) { return std::max(min, std::min(max, x)); });
-
-#if 1
-      _attributeMin[p] = min;
-      _attributeMax[p] = max;
-#endif
-    }
-
+    template<typename Func> void rescale(const Attribute_t p, const Func &scale);
+    void rescaleLinear(const Attribute_t p, const float newMin, const float newMax);
+    void scaleLog(const Attribute_t p, const float zeroPoint = 1.0f);
+    void scaleExp(const Attribute_t p, const float zeroPoint = 1.0f);
+    void clampMinMax(const Attribute_t p, const float min, const float max);
 
     // virtual methods
-   
 
-    bool distributed;
-    bool isDistributed() const { return distributed; }
-    virtual void setNMAXSAMPLE(const int n) {};
-    virtual void distribute() {}
+    virtual bool  isDistributed() const { return false; }
+    virtual void  setNMAXSAMPLE(const int n) {};
+    virtual void  distribute() {}
+    virtual float getBoundBoxLow (const int i) const 
+    {
+      switch (i)
+      {
+        case  0: return xmin(); 
+        case  1: return ymin();
+        case  2: return zmin();
+        default: return rmin();
+      }
+    }
+    virtual float getBoundBoxHigh(const int i) const 
+    {
+      switch (i)
+      {
+        case  0: return xmax(); 
+        case  1: return ymax();
+        case  2: return zmax();
+        default: return rmax();
+      }
+    }
+    virtual std::vector<int> getVisibilityOrder(const std::array<float,3> camPos) const
+    {
+      return std::vector<int>();
+    }
 
 };
 
@@ -315,6 +178,10 @@ class RendererDataDistribute : public RendererData
     enum { NMAXPROC   = 1024};
     int NMAXSAMPLE;
     int sample_freq;
+
+    float xlow[3], xhigh[3];
+    int npx, npy, npz;
+    bool distributed;
 
     using vector3 = std::array<double,3>;
     struct float4
@@ -392,13 +259,13 @@ class RendererDataDistribute : public RendererData
   public:
 
     RendererDataDistribute(const int rank, const int nrank, const MPI_Comm &comm) : 
-      RendererData(rank,nrank,comm), NMAXSAMPLE(200000)
+      RendererData(rank,nrank,comm), NMAXSAMPLE(200000), distributed(false)
   {
     assert(nrank <= NMAXPROC);
   }
 
-    void setNMAXSAMPLE(const int n) {NMAXSAMPLE = n;}
-    bool isDistributed() const { return true; }
+    virtual void setNMAXSAMPLE(const int n) {NMAXSAMPLE = n;}
+    virtual bool isDistributed() const { return distributed; }
 
   private:
 
@@ -417,7 +284,7 @@ class RendererDataDistribute : public RendererData
         const vector3 &pos,
         const vector3 xlow[],
         const vector3 xhigh[]);
-    
+
     inline void which_boxes(
         const vector3 &pos,
         const float h,
@@ -437,5 +304,8 @@ class RendererDataDistribute : public RendererData
     //
   public:
 
-    void distribute();
+    virtual void distribute();
+    virtual float getBoundBoxLow (const int i) const {return  xlow[i];}
+    virtual float getBoundBoxHigh(const int i) const {return xhigh[i];}
+    virtual std::vector<int> getVisibilityOrder(const std::array<float,3> camPos) const;
 };
