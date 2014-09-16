@@ -6,6 +6,7 @@
 #include <array>
 #include <parallel/algorithm>
 #include <iostream>
+#include "IDType.h"
 
 #if 0
 struct float2 { float x, y; };
@@ -48,8 +49,7 @@ class RendererData
     struct particle_t
     {
       float posx, posy, posz;
-      long_t ID;
-      int type;
+      IDType ID;
       float attribute[NPROP];
     };
     std::vector<particle_t> data;
@@ -97,11 +97,9 @@ class RendererData
     float  attribute(const Attribute_t p, const int i) const {return data[i].attribute[p]; }
     float& attribute(const Attribute_t p, const int i)       {return data[i].attribute[p]; }
 
-    int  type(const int i) const { return data[i].type; }
-    int& type(const int i)       { return data[i].type; }
 
-    long_t  ID(const long_t i) const { return data[i].ID; }
-    long_t& ID(const long_t i)       { return data[i].ID; }
+    IDType  ID(const long_t i) const { return data[i].ID; }
+    IDType& ID(const long_t i)       { return data[i].ID; }
 
     float xmin() const { return _xmin;} 
     float ymin() const { return _ymin;} 

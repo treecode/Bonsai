@@ -109,8 +109,7 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
       rData.posx(ip) = data[i].x;
       rData.posy(ip) = data[i].y;
       rData.posz(ip) = data[i].z;
-      rData.ID  (ip) = data[i].ID.getID();
-      rData.type(ip) = data[i].ID.getType();
+      rData.ID  (ip) = data[i].ID;
       rData.attribute(RendererData::MASS, ip) = data[i].mass;
       rData.attribute(RendererData::VEL,  ip) =
         std::sqrt(
@@ -288,9 +287,8 @@ static T* readBonsai(
     rData.posx(ip) = posS[i][0];
     rData.posy(ip) = posS[i][1];
     rData.posz(ip) = posS[i][2];
-    rData.ID  (ip) = IDListS[i].getID();
-    rData.type(ip) = IDListS[i].getType();
-    assert(rData.type(ip) > 0); /* sanity check */
+    rData.ID  (ip) = IDListS[i];
+    assert(rData.ID(ip).getType() > 0); /* sanity check */
     rData.attribute(RendererData::MASS, ip) = posS[i][3];
     rData.attribute(RendererData::VEL,  ip) =
       std::sqrt(
@@ -314,9 +312,8 @@ static T* readBonsai(
     rData.posx(ip) = posDM[i][0];
     rData.posy(ip) = posDM[i][1];
     rData.posz(ip) = posDM[i][2];
-    rData.ID  (ip) = IDListDM[i].getID();
-    rData.type(ip) = IDListDM[i].getType();
-    assert(rData.type(ip) == 0); /* sanity check */
+    rData.ID  (ip) = IDListDM[i];
+    assert(rData.ID(ip).getType() == 0); /* sanity check */
     rData.attribute(RendererData::MASS, ip) = posDM[i][3];
     rData.attribute(RendererData::VEL,  ip) =
       std::sqrt(
@@ -411,8 +408,8 @@ static T* readJamieSPH(
     rData.posx(ip) = sph[i].x;
     rData.posy(ip) = sph[i].y;
     rData.posz(ip) = sph[i].z;
-    rData.ID  (ip) = i;
-    rData.type(ip) = 1;
+    rData.ID  (ip).setID(i);
+    rData.ID  (ip).setType(1);
 #if 1
     rData.attribute(RendererData::VEL,  ip) =
       std::sqrt(

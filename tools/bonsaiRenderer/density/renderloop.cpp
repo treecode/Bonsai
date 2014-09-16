@@ -1682,8 +1682,10 @@ class Demo
         if (sizes[i] <= 0.0)
           sizes[i] = m_renderer.getParticleRadius();
 
+        const IDType &ID = m_idata.ID(i);
+
         /* assign color */
-        int type =  m_idata.type(i);
+        const int type =  ID.getType();
         float4 color = make_float4(0.0f);
         if (hasRHO)
         {
