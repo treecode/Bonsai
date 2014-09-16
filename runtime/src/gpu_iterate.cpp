@@ -306,9 +306,21 @@ void octree::dumpData()
     IDType ID;
     ID.setID(id);
     ID.setType(4);     /* Everything is Dust until told otherwise */
-    if(id >= DISKID  && id < BULGEID)       ID.setType(2);  /* Disk */
-    if(id >= BULGEID && id < DARKMATTERID)  ID.setType(1);  /* Bulge */
-    if(id >= DARKMATTERID)                  ID.setType(0);  /* DM */
+    if(id >= DISKID  && id < BULGEID)       
+    {
+      ID.setType(2);  /* Disk */
+      ID.setID(id - DISKID);
+    }
+    else if(id >= BULGEID && id < DARKMATTERID)  
+    {
+      ID.setType(1);  /* Bulge */
+      ID.setID(id - BULGEID);
+    }
+    else if (id >= DARKMATTERID)
+    {
+      ID.setType(0);  /* DM */
+      ID.setID(id - DARKMATTERID);
+    }
     return ID;
   };
 
