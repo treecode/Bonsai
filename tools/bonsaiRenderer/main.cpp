@@ -76,6 +76,7 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
     const size_t size = data.size();
     assert(size == nBodies);
 
+    /* skip particles that failed to get density, or with too big h */
     auto skipPtcl = [&](const int i)
     {
       return (data[i].rho == 0 || data[i].h == 0.0 || data[i].h > 100);
@@ -97,11 +98,12 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
     }
 
     rData.resize(nS);
-    for (size_t i = 0, ip = 0; i < size; i++)
+    size_t ip = 0;
+    for (size_t i = 0; i < size; i++)
     {
       if (skipPtcl(i))
         continue;
-      if (data[i].ID.getType() == 0) /* pick stars only */
+      if (data[i].ID.getType() == 0 )  /* pick stars only */
         continue;
 
       rData.posx(ip) = data[i].x;
@@ -121,6 +123,7 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
       ip++;
       assert(ip <= nS);
     }
+    rData.resize(ip);
 
     data.releaseLock();
   }
