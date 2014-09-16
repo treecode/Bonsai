@@ -305,7 +305,7 @@ void octree::dumpData()
   {
     IDType ID;
     ID.setID(id);
-    ID.setType(4);     /* Everything is Dust until told otherwise */
+    ID.setType(3);     /* Everything is Dust until told otherwise */
     if(id >= DISKID  && id < BULGEID)       
     {
       ID.setType(2);  /* Disk */
@@ -380,13 +380,7 @@ void octree::dumpData()
       p.vw   = localTree.bodies_vel[i].w;
       p.rho  = localTree.bodies_dens[i].x;
       p.h    = localTree.bodies_h[i];
-#if 0
-      fprintf(stderr," i= %d  h= %g  rho= %g\n",
-          i, 
-          localTree.bodies_dens[i].x,
-          localTree.bodies_h[i]);
-#endif
-      p.ID   = IDType(getIDType(localTree.bodies_ids[i]));
+      p.ID   = getIDType(localTree.bodies_ids[i]);
     }
     data.releaseLock();
 
@@ -439,7 +433,7 @@ void octree::dumpData()
       p.vw   = localTree.bodies_vel[i].w;
       p.rho  = localTree.bodies_dens[i].x;
       p.h    = localTree.bodies_h[i];
-      p.ID   = IDType(getIDType(localTree.bodies_ids[i]));
+      p.ID   = getIDType(localTree.bodies_ids[i]);
     }
     data.releaseLock();
     

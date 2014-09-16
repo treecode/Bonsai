@@ -7,6 +7,7 @@ class IDType
   public:
     IDType() : _IDTypePacked(0) {}
     IDType(const uint64_t ID) : _IDTypePacked(ID) {}
+    uint64_t getPacked() const { return _IDTypePacked; }
     void operator=(const IDType &id)  volatile
     {
       _IDTypePacked = id._IDTypePacked;

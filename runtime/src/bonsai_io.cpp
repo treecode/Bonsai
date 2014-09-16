@@ -106,13 +106,8 @@ bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank
           case 0:
             nDM++;
             break;
-          case 1:
-            nS++;
-            break;
           default:
-            fprintf(stderr, "rank= %d: unkown type %d \n", 
-                data[i].ID.getType());
-            assert(0);
+            nS++;
         }
       }
 
@@ -150,7 +145,7 @@ bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank
             iDM++;
             assert(iDM <= nDM);
             break;
-          case 1:
+          default:
             S_id  [iS]    = data[i].ID;
             S_pos [iS][0] = data[i].x;
             S_pos [iS][1] = data[i].y;
@@ -163,16 +158,13 @@ bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank
             S_rhoh[iS][1] = data[i].h;
             iS++;
             assert(iS <= nS);
-            break;
-          default:
-            assert(0);
         }
       }
       
       for (int i = 0; i < nDM; i++)
         assert(DM_id[i].getType() == 0);
       for (int i = 0; i < nS; i++)
-        assert(S_id[i].getType() == 1);
+        assert(S_id[i].getType() > 0);
 
       const double dtWrite = write(rank, comm, 
           {

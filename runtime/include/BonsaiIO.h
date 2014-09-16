@@ -179,7 +179,7 @@ namespace BonsaiIO
     public:
       DataTypeBase(const std::string _name) : name(_name), numElements(0) {};
       const std::string& getName() const {return name;}
-      size_t size() { return numElements; }
+      size_t size() const { return numElements; }
 
       virtual void   resize(const size_t)   = 0;
       virtual size_t getElementSize() const = 0;
@@ -251,7 +251,7 @@ namespace BonsaiIO
 
     public:
       void   setTime(const double _time) { time = _time;}
-      double getTime() { return time; }
+      double getTime() const { return time; }
 
       void printFields() const
       {
@@ -323,7 +323,7 @@ namespace BonsaiIO
         int nData = data.size();
         fh.write(&nData, sizeof(int), "Error writing nData.");
         fh.write(&data[0], sizeof(DataInfo)*nData, "Error writing dataInfo.");
-        fh.write(&time, sizeof(float), "Error writing time.");
+        fh.write(&time, sizeof(double), "Error writing time.");
       }
 
       void read(FileIO &fh)
@@ -338,7 +338,7 @@ namespace BonsaiIO
         data.resize(nData);
         fh.read(&data[0], sizeof(DataInfo)*nData, "Error reading dataInfo.");
 
-        fh.read(&time, sizeof(float), "Error reading time.");
+        fh.read(&time, sizeof(double), "Error reading time.");
       }
   };
 
@@ -371,6 +371,7 @@ namespace BonsaiIO
     public:
       Header const & getHeader() { return header; }
       void setTime(const double t) { header.setTime(t); }
+      double getTime() const { return header.getTime(); }
 
     public:
       Core(const int _myRank,
