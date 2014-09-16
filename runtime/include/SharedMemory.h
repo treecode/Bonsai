@@ -92,7 +92,11 @@ class SharedMemoryBase
 
     ////////////////
   
-    void acquireLock(const float sleep = 10.0f /* ms */)
+    void acquireLock()
+    {
+      while (!__sync_bool_compare_and_swap(&header->locked, 0, 1));
+    } 
+    void acquireLock(const float sleep)
     {
       while (!__sync_bool_compare_and_swap(&header->locked, 0, 1))
         usleep(static_cast<int>(sleep*1000));

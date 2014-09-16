@@ -1742,24 +1742,6 @@ class Demo
     }
   }
 
-
-#if 0 
-  static void lCompressRange(
-      const float compressMin,
-      const float compressMax,
-      float &minRange,
-      float &maxRange)
-  {
-    assert(compressMin >= 0.0f && compressMin < 0.5f);
-    assert(compressMax >= 0.0f && compressMax < 0.5f);
-    const float min = minRange;
-    const float max = maxRange;
-    maxRange = max - (max-min)*compressMax;
-    minRange = min + (max-min)*compressMin;
-    assert(minRange < maxRange);
-  }
-#endif
-
   void getBodyData()
   {
 
@@ -1768,17 +1750,12 @@ class Demo
       m_renderer.depthSort(m_particlePos);
       return;
     }
+
     int n = m_idata.n();
-    //Above is safe since it is 0 if we dont use dust
 
-    //    darkMatterColor = make_float4(0.0f, 1.0f, 1.0f, 0.0f);      // blue
-
-    float slope = +1.35; // reversed MF, low mass depleted
-    slope = 0.1;
     float4 *colors = m_particleColors;
     float4 *pos    = m_particlePos;
     float  *sizes  = m_particleSizes;
-    //    darkMatterColor = make_float4(0.0f, 0.2f, 0.4f, 0.0f);      // blue
 
     float velMax = m_idata.attributeMax(RendererData::VEL);
     float velMin = m_idata.attributeMin(RendererData::VEL);
@@ -1790,15 +1767,21 @@ class Demo
 
 #pragma omp parallel
     {
+      float slope = +1.35; // reversed MF, low mass depleted
+      slope = 0.1;
       StarSampler sSampler (slope-1);
 #pragma omp for schedule(guided,1000)
       for (int i = 0; i < n; i++)
       {
-        pos[i] = make_float4(m_idata.posx(i), m_idata.posy(i), m_idata.posz(i),0);
+        /* assign position and size */
+        pos  [i] = make_float4(m_idata.posx(i), m_idata.posy(i), m_idata.posz(i),0.0f);
         sizes[i] = m_idata.attribute(RendererData::H,i);
         if (sizes[i] <= 0.0)
           sizes[i] = m_renderer.getParticleRadius();
+
+        /* assign color */
         int type =  m_idata.type(i);
+        float4 color = make_float4(0.0f);
         if (hasRHO)
         {
           float vel = m_idata.attribute(RendererData::VEL,i);
@@ -1814,23 +1797,33 @@ class Demo
           Cstar.y = colorMap[iy][ix][1];
           Cstar.z = colorMap[iy][ix][2];
           Cstar.w = type;
-          colors[i] = Cstar;
+          color   = Cstar;
         }
         else
         {
-          if (type == 0)
+          switch(type)
           {
-            colors[i] = darkMatterColor;
-            colors[i].w = 0;
-          }
-          else
-          {
-            const float  Mstar = sSampler.sampleMass();
-            float4 Cstar = sSampler.getColour(Mstar);
-            colors[i] = Cstar;
-            colors[i].w = 1.0;
+            case 0:   /* DM */
+              color = darkMatterColor;
+              color.w = 0;
+              break;
+            case 1:   /* Bulge */
+              /* to-do */
+              // break;
+            case 2:   /* Disk */
+              /* to-do */
+              // break;
+            case 3:   /* Dust */
+              /* to-do */
+              // break;
+            default:
+              const float  Mstar = sSampler.sampleMass();
+              const float4 Cstar = sSampler.getColour(Mstar);
+              color = Cstar;
+              color.w = 1.0;
           }
         }
+        colors[i] = color;
       }
     }
 

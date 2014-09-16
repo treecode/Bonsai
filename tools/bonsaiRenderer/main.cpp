@@ -30,7 +30,8 @@ using ShmQData   = SharedMemoryClient<BonsaiSharedQuickData>;
 static ShmQHeader *shmQHeader = NULL;
 static ShmQData   *shmQData   = NULL;
 
-bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const MPI_Comm &comm)
+bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const MPI_Comm &comm,
+    const int reduceDM = 1, const int reduceS = 1)
 {
   if (shmQHeader == NULL)
   {
@@ -44,28 +45,18 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
 
   static float tLast = -1.0f;
 
-#if 0
-#define _TEST
-#else
-#undef _TEST
-#endif
-
-#ifndef _TEST
   if (rData.isNewData())
     return false;
-#endif
 
 #if 0
-//  if (rank == 0)
-    fprintf(stderr, " rank= %d: attempting to fetch data \n",rank);
+  //  if (rank == 0)
+  fprintf(stderr, " rank= %d: attempting to fetch data \n",rank);
 #endif
 
   // header
-#ifndef _TEST
-  header.acquireLock(1.0f /* ms */);
-#endif
+  header.acquireLock();
   const float tCurrent = header[0].tCurrent;
-  
+
 
   int sumL = tCurrent != tLast;
   int sumG ;
@@ -73,18 +64,14 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
 
 
   bool completed = false;
-#ifndef _TEST
   if (sumG == nrank) //tCurrent != tLast)
-#endif
   {
     tLast = tCurrent;
     completed = true;
 
     // data
     const size_t nBodies = header[0].nBodies;
-#ifndef _TEST
-    data.acquireLock(1.0f /* ms */);
-#endif
+    data.acquireLock();
 
     const size_t size = data.size();
     assert(size == nBodies);
@@ -151,10 +138,10 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
   }
 
   header.releaseLock();
-  
+
 #if 0
-//  if (rank == 0)
-    fprintf(stderr, " rank= %d: done fetching data \n", rank);
+  //  if (rank == 0)
+  fprintf(stderr, " rank= %d: done fetching data \n", rank);
 #endif
 
   if (completed)
@@ -598,7 +585,7 @@ int main(int argc, char * argv[])
     }
 
     if (inSitu )
-      if (fetchSharedData(*rDataPtr, rank, nranks, comm))
+      if (fetchSharedData(*rDataPtr, rank, nranks, comm, reduceDM, reduceS))
       {
         rescaleData(*rDataPtr, rank,nranks,comm, doDD,nmaxsample);
         rDataPtr->setNewData();
@@ -623,27 +610,6 @@ int main(int argc, char * argv[])
       fullScreenMode.c_str(), 
       stereo,
       updateFunc);
-
-#if 0
-#pragma omp parallel num_threads(1 + inSitu)
-  if (omp_get_thread_num() == 0)
-  {
-    initAppRenderer(argc, argv, 
-        rank, nranks, comm,
-        *rDataPtr,
-        fullScreenMode.c_str(), stereo);
-  }
-  else while (1)
-  {
-    usleep(1000);
-    if (fetchSharedData(*rDataPtr, rank, nranks, comm))
-    {
-      rescaleData(*rDataPtr, rank,nranks,comm, doDD,nmaxsample);
-      rDataPtr->setNewData();
-    }
-  }
-#endif
- 
 
   while(1) 
   return 0;
