@@ -261,7 +261,7 @@ template<typename THeader, typename TData>
 void octree::dumpDataCommon(
     SharedMemoryBase<THeader> &header, SharedMemoryBase<TData> &data,
     const std::string &fileNameBase,
-    const float quickRatio,
+    const float ratio,
     const bool sync)
 {
   /********/
@@ -303,7 +303,7 @@ void octree::dumpDataCommon(
       t_current);
     
   const size_t nSnap = localTree.n;
-  const size_t dn = static_cast<size_t>(1.0/quickRatio);
+  const size_t dn = static_cast<size_t>(1.0/ratio);
   assert(dn >= 1);
   size_t nQuick = 0;
   for (size_t i = 0; i < nSnap; i += dn)

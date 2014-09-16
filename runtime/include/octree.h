@@ -709,7 +709,7 @@ public:
     void dumpDataCommon(
         SharedMemoryBase<THeader> &header, SharedMemoryBase<TData> &data,
         const std::string &fileNameBase,
-        const float quickRatio,
+        const float ratio,
         const bool sync);
   void dumpData();
 
