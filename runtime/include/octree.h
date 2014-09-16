@@ -32,6 +32,7 @@
 #include <fstream>
 #include <sys/types.h>
 #include "logFileWriter.h"
+#include "SharedMemory.h"
 
 #ifdef USE_MPI
   #include "MPIComm.h"
@@ -704,6 +705,12 @@ public:
   void iterate_setup(IterationData &idata); 
   void iterate_teardown(IterationData &idata); 
   bool iterate_once(IterationData &idata); 
+  template<typename THeader, typename TData>
+    void dumpDataCommon(
+        SharedMemoryBase<THeader> &header, SharedMemoryBase<TData> &data,
+        const std::string &fileNameBase,
+        const float quickRatio,
+        const bool sync);
   void dumpData();
 
   //Subfunctions of iterate, should probally be private 

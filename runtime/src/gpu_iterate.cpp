@@ -256,50 +256,15 @@ static void lHandShake(SharedMemoryBase<T> &header)
   header.releaseLock();
 }
 
-void octree::dumpData()
+
+template<typename THeader, typename TData>
+void octree::dumpDataCommon(
+    SharedMemoryBase<THeader> &header, SharedMemoryBase<TData> &data,
+    const std::string &fileNameBase,
+    const float quickRatio,
+    const bool sync)
 {
-  if (shmQHeader == NULL)
-  {
-    const size_t sCapacity  = 5*localTree.n;
-    const size_t qCapacity  = static_cast<size_t>(sCapacity);
-
-    shmQHeader = new ShmQHeader(ShmQHeader::type::sharedFile(procId), 1);
-    shmQData   = new ShmQData  (ShmQData  ::type::sharedFile(procId), qCapacity);
-
-    shmSHeader = new ShmSHeader(ShmSHeader::type::sharedFile(procId), 1);
-    shmSData   = new ShmSData  (ShmSData  ::type::sharedFile(procId), sCapacity);
-  }
-
-  static bool handShakeS = false;
-  if (!handShakeS && snapshotIter > 0)
-  {
-    auto &header = *shmSHeader;
-    header[0].tCurrent = t_current;
-    header[0].done_writing = true;
-    lHandShake(header);
-    handShakeS = true;
-  }
-  
-  static bool handShakeQ = false;
-  if (!handShakeQ && quickDump > 0 && quickSync)
-  {
-    auto &header = *shmQHeader;
-    header[0].tCurrent = t_current;
-    header[0].done_writing = true;
-    lHandShake(header);
-    handShakeQ = true;
-  }
-  
-
-  if ((t_current >= nextQuickDump && quickDump    > 0) || 
-      (t_current >= nextSnapTime  && snapshotIter > 0))
-  {
-    localTree.bodies_pos.d2h();
-    localTree.bodies_vel.d2h();
-    localTree.bodies_ids.d2h();
-    localTree.bodies_h.d2h();
-    localTree.bodies_dens.d2h();
-  }
+  /********/
 
   auto getIDType = [&](const long long id)
   {
@@ -324,121 +289,139 @@ void octree::dumpData()
     return ID;
   };
 
+  /********/
+
+  if (sync)
+    while (!header[0].done_writing);
+    
+  /* write header */
+
+  char fn[1024];
+  sprintf(fn,
+      "%s_%010.4f", 
+      fileNameBase.c_str(), 
+      t_current);
+    
+  const size_t nSnap = localTree.n;
+  const size_t dn = static_cast<size_t>(1.0/quickRatio);
+  assert(dn >= 1);
+  size_t nQuick = 0;
+  for (size_t i = 0; i < nSnap; i += dn)
+    nQuick++;
+
+  header.acquireLock();
+  header[0].tCurrent = t_current;
+  header[0].nBodies  = nQuick;
+  for (int i = 0; i < 1024; i++)
+  {
+    header[0].fileName[i] = fn[i];
+    if (fn[i] == 0)
+      break;
+  }
+
+  data.acquireLock();
+  if (!data.resize(nQuick))
+  {
+    std::cerr << "rank= " << procId << ": failed to resize. ";
+    std::cerr << "Request " << nQuick << " but capacity is  " << data.capacity() << "." << std::endl;
+    MPI_Finalize();
+    ::exit(0);
+  }
+#pragma omp parallel for schedule(static)
+  for (size_t i = 0; i < nSnap; i += dn)
+  {
+    auto &p = data[i/dn];
+    p.x    = localTree.bodies_pos[i].x;
+    p.y    = localTree.bodies_pos[i].y;
+    p.z    = localTree.bodies_pos[i].z;
+    p.mass = localTree.bodies_pos[i].w;
+    p.vx   = localTree.bodies_vel[i].x;
+    p.vy   = localTree.bodies_vel[i].y;
+    p.vz   = localTree.bodies_vel[i].z;
+    p.vw   = localTree.bodies_vel[i].w;
+    p.rho  = localTree.bodies_dens[i].x;
+    p.h    = localTree.bodies_h[i];
+    p.ID   = getIDType(localTree.bodies_ids[i]);
+  }
+  data.releaseLock();
+
+  header[0].done_writing = false;
+  header.releaseLock();
+}
+
+void octree::dumpData()
+{
+  if (shmQHeader == NULL)
+  {
+    const size_t capacity  = min(4*localTree.n, 24*1024*1024);
+
+    shmQHeader = new ShmQHeader(ShmQHeader::type::sharedFile(procId), 1);
+    shmQData   = new ShmQData  (ShmQData  ::type::sharedFile(procId), capacity);
+
+    shmSHeader = new ShmSHeader(ShmSHeader::type::sharedFile(procId), 1);
+    shmSData   = new ShmSData  (ShmSData  ::type::sharedFile(procId), capacity);
+  }
+  
+  if ((t_current >= nextQuickDump && quickDump    > 0) || 
+      (t_current >= nextSnapTime  && snapshotIter > 0))
+  {
+    localTree.bodies_pos.d2h();
+    localTree.bodies_vel.d2h();
+    localTree.bodies_ids.d2h();
+    localTree.bodies_h.d2h();
+    localTree.bodies_dens.d2h();
+  }
+
+
   if (t_current >= nextQuickDump && quickDump > 0)
   {
+
+    static bool handShakeQ = false;
+    if (!handShakeQ && quickDump > 0 && quickSync)
+    {
+      auto &header = *shmQHeader;
+      header[0].tCurrent = t_current;
+      header[0].done_writing = true;
+      lHandShake(header);
+      handShakeQ = true;
+    }
+
     nextQuickDump += quickDump;
     nextQuickDump = std::max(nextQuickDump, t_current);
     if (procId == 0)
       fprintf(stderr, "-- quickdump: nextQuickDump= %g  quickRatio= %g\n",
           nextQuickDump, quickRatio);
 
-    auto &header = *shmQHeader;
-    auto &data   = *shmQData;
 
-    if (quickSync)
-      while (!header[0].done_writing);
-
-    /* write header */
-
-    const size_t nSnap = localTree.n;
-    const size_t dn = static_cast<size_t>(1.0/quickRatio);
-    assert(dn >= 1);
-    size_t nQuick = 0;
-    for (size_t i = 0; i < nSnap; i += dn)
-      nQuick++;
-
-    header.acquireLock();
-    header[0].tCurrent = t_current;
-    header[0].nBodies  = nQuick;
-    char fn[1024];
-    sprintf(fn,
-        "%s_quick_%010.4f", 
-        snapshotFile.c_str(), 
-        t_current);
-    for (int i = 0; i < 1024; i++)
-    {
-      header[0].fileName[i] = fn[i];
-      if (fn[i] == 0)
-        break;
-    }
-
-    /* write data */
-
-    data.acquireLock();
-    assert(data.resize(nQuick));
-#pragma omp parallel for schedule(static)
-    for (size_t i = 0; i < nSnap; i += dn)
-    {
-      auto &p = data[i/dn];
-      p.x    = localTree.bodies_pos[i].x;
-      p.y    = localTree.bodies_pos[i].y;
-      p.z    = localTree.bodies_pos[i].z;
-      p.mass = localTree.bodies_pos[i].w;
-      p.vx   = localTree.bodies_vel[i].x;
-      p.vy   = localTree.bodies_vel[i].y;
-      p.vz   = localTree.bodies_vel[i].z;
-      p.vw   = localTree.bodies_vel[i].w;
-      p.rho  = localTree.bodies_dens[i].x;
-      p.h    = localTree.bodies_h[i];
-      p.ID   = getIDType(localTree.bodies_ids[i]);
-    }
-    data.releaseLock();
-
-    header[0].done_writing = false;
-    header.releaseLock();
+    dumpDataCommon(
+        *shmQHeader, *shmQData, 
+        snapshotFile + "_quick",
+        quickRatio,
+        quickSync);
   }
 
   if (t_current >= nextSnapTime && snapshotIter > 0)
   {
+    static bool handShakeS = false;
+    if (!handShakeS && snapshotIter > 0)
+    {
+      auto &header = *shmSHeader;
+      header[0].tCurrent = t_current;
+      header[0].done_writing = true;
+      lHandShake(header);
+      handShakeS = true;
+    }
+
     nextSnapTime += snapshotIter;
     nextSnapTime = std::max(nextSnapTime, t_current);
     if (procId == 0)
       fprintf(stderr, "-- snapdump: nextSnapDump= %g  %d\n", nextSnapTime, localTree.n);
 
-    auto &header = *shmSHeader;
-    auto &data   = *shmSData;
-    
-    while (!header[0].done_writing);
-
-    const size_t nSnap = localTree.n;
-
-    header.acquireLock();
-    header[0].tCurrent = t_current;
-    header[0].nBodies  = nSnap;
-    char fn[1024];
-    sprintf(fn,
-        "%s_full_%010.4f", 
-        snapshotFile.c_str(), 
-        t_current);
-    for (int i = 0; i < 1024; i++)
-    {
-      header[0].fileName[i] = fn[i];
-      if (fn[i] == 0)
-        break;
-    }
-
-    data.acquireLock();
-    assert(data.resize(nSnap));
-#pragma omp parallel for schedule(static)
-    for (size_t i = 0; i < nSnap; i++)
-    {
-      auto &p = data[i];
-      p.x    = localTree.bodies_pos[i].x;
-      p.y    = localTree.bodies_pos[i].y;
-      p.z    = localTree.bodies_pos[i].z;
-      p.mass = localTree.bodies_pos[i].w;
-      p.vx   = localTree.bodies_vel[i].x;
-      p.vy   = localTree.bodies_vel[i].y;
-      p.vz   = localTree.bodies_vel[i].z;
-      p.vw   = localTree.bodies_vel[i].w;
-      p.rho  = localTree.bodies_dens[i].x;
-      p.h    = localTree.bodies_h[i];
-      p.ID   = getIDType(localTree.bodies_ids[i]);
-    }
-    data.releaseLock();
-    
-    header[0].done_writing = false;
-    header.releaseLock();
+    dumpDataCommon(
+        *shmSHeader, *shmSData,
+        snapshotFile,
+        1.0,  /* fraction of particles to store */
+        true  /* force sync between IO and simulator */);
   }
 }
 
