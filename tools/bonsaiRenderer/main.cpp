@@ -82,7 +82,7 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
     };
 
     size_t nDM = 0, nS = 0;
-    for (size_t i = 0, ip = 0; i < size; i++)
+    for (size_t i = 0; i < size; i++)
     {
       if (skipPtcl(i))
         continue;
@@ -91,12 +91,8 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
         case 0:
           nDM++;
           break;
-        case 1:
-          nS++;
-          break;
         default:
-          fprintf(stderr, "rank= %d: unkown type %d \n", rank, rData.type(ip));
-          assert(0);
+          nS++;
       }
     }
 
@@ -105,7 +101,7 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
     {
       if (skipPtcl(i))
         continue;
-      if (data[i].ID.getType() != 1) /* not stars */
+      if (data[i].ID.getType() == 0) /* pick stars only */
         continue;
 
       rData.posx(ip) = data[i].x;
@@ -113,8 +109,7 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
       rData.posz(ip) = data[i].z;
       rData.ID  (ip) = data[i].ID.getID();
       rData.type(ip) = data[i].ID.getType();
-      assert(rData.type(ip) == 1);
-      //    rData.attribute(RendererData::MASS, ip) = posS[i][3];
+      rData.attribute(RendererData::MASS, ip) = data[i].mass;
       rData.attribute(RendererData::VEL,  ip) =
         std::sqrt(
             data[i].vx*data[i].vx+
@@ -292,10 +287,8 @@ static T* readBonsai(
     rData.posz(ip) = posS[i][2];
     rData.ID  (ip) = IDListS[i].getID();
     rData.type(ip) = IDListS[i].getType();
-    if (!(rData.type(ip) == 1)) /* sanity check */
-      fprintf(stderr, " unkown type : %d\n", rData.type(ip));
-    assert(rData.type(ip) == 1); /* sanity check */
-//    rData.attribute(RendererData::MASS, ip) = posS[i][3];
+    assert(rData.type(ip) > 0); /* sanity check */
+    rData.attribute(RendererData::MASS, ip) = posS[i][3];
     rData.attribute(RendererData::VEL,  ip) =
       std::sqrt(
           velS[i][0]*velS[i][0] +
@@ -321,7 +314,7 @@ static T* readBonsai(
     rData.ID  (ip) = IDListDM[i].getID();
     rData.type(ip) = IDListDM[i].getType();
     assert(rData.type(ip) == 0); /* sanity check */
-//    rData.attribute(RendererData::MASS, ip) = posDM[i][3];
+    rData.attribute(RendererData::MASS, ip) = posDM[i][3];
     rData.attribute(RendererData::VEL,  ip) =
       std::sqrt(
           velDM[i][0]*velDM[i][0] +

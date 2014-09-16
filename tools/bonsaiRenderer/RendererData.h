@@ -37,6 +37,7 @@ class RendererData
   public:
     typedef unsigned long long long_t;
     enum Attribute_t {
+      MASS,
       VEL,
       RHO,
       H,
