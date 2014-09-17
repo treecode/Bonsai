@@ -298,7 +298,7 @@ void octree::dumpDataCommon(
 
   char fn[1024];
   sprintf(fn,
-      "%s_%010.4f", 
+      "%s_%010.4f.bonsai", 
       fileNameBase.c_str(), 
       t_current);
     
