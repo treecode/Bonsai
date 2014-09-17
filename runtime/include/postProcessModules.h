@@ -17,8 +17,8 @@ struct DENSITY
     #define M_SUN     1.989e33
     #define PARSEC    3.08567802e18
     #define ONE_YEAR  3.1558149984e7
-    #define DMSTARTID 200000000
-    #define BULGESTARTID 100000000
+//    #define DMSTARTID 200000000
+//    #define BULGESTARTID 100000000
 
     #define N_MESH      1024
     #define N_MESH_R    20
@@ -577,7 +577,7 @@ struct DISKSTATS
 
             offset = iMax;
             //Bulge only
-            if(IDs[j] >= BULGESTARTID && IDs[j] < DMSTARTID)
+            if(IDs[j] >= BULGEID && IDs[j] < DARKMATTERID)
             {
               perProcRes[NS  ][offset+i] += 1;
               perProcRes[SIGS][offset+i] += (float)positions[j].w;
@@ -591,7 +591,7 @@ struct DISKSTATS
             }//Bulge
             offset = 2*iMax;
             //Disk only
-            if(IDs[j] >= 0 && IDs[j] < BULGESTARTID)
+            if(IDs[j] >= 0 && IDs[j] < BULGEID)
             {
               perProcRes[NS  ][offset+i] += 1;
               perProcRes[SIGS][offset+i] += (float)positions[j].w;

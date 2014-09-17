@@ -79,13 +79,52 @@ struct dark_particleV2 {
     int getID_V1() const {return _ID[1];}
 //    Real eps;
 } ;
+
+//JB: Use orignal structure otherwise reading of 
+//particle ID fails
+struct star_particleV2 {
+    Real mass;
+    Real pos[MAXDIM];
+    Real vel[MAXDIM];
+    Real metals ;
+    Real tform ;
+  private:
+    int _ID[2]; //replaces phi and eps
+  public:
+    unsigned long long getID() const 
+    {
+      union
+      {
+        int ID[2];
+        unsigned long long IDl;
+      } t;
+      t.ID[0] = _ID[0];
+      t.ID[1] = _ID[1];
+      return t.IDl;
+    }
+    void setID(unsigned  long long ID) 
+    { 
+      union
+      {
+        int ID[2];
+        unsigned long long IDl;
+      } t;
+      t.IDl = ID;
+      _ID[0] = t.ID[0];
+      _ID[1] = t.ID[1];
+    }
+    int getID_V1() const {return _ID[1];}
+//    Real eps;
+} ;
+
+#if 0
 struct star_particleV2 : public dark_particleV2 {
     Real metals ;
     Real tform ;
 private:
 public:
 } ;
-
+#endif
 
 struct dump {
     double time ;

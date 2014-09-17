@@ -236,7 +236,7 @@ static void lReadBonsaiFile(
     auto &ID  = bodyIDs[i];
     pos = DM_Pos[i];
     vel = make_float4(DM_Vel[i][0], DM_Vel[i][1], DM_Vel[i][2],0.0f);
-    ID  = DM_IDType[i].getPacked() + DARKMATTERID;
+    ID  = DM_IDType[i].getPacked(); // + DARKMATTERID;
   }
   
   for (int i = 0; i < nS; i++)
@@ -247,6 +247,7 @@ static void lReadBonsaiFile(
     pos = S_Pos[i];
     vel = make_float4(S_Vel[i][0], S_Vel[i][1], S_Vel[i][2],0.0f);
     ID  = S_IDType[i].getPacked();
+#if 0
     switch (S_IDType[i].getType())
     {
       case 1:  /*  Bulge */
@@ -256,6 +257,7 @@ static void lReadBonsaiFile(
         ID += DISKID;
         break;
     }
+#endif    
   }
   
   tree->set_t_current(static_cast<float>(in->getTime()));

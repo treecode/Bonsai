@@ -274,17 +274,20 @@ void octree::dumpDataCommon(
     if(id >= DISKID  && id < BULGEID)       
     {
       ID.setType(2);  /* Disk */
-      ID.setID(id - DISKID);
+      //ID.setID(id - DISKID);
+      ID.setID(id);
     }
     else if(id >= BULGEID && id < DARKMATTERID)  
     {
       ID.setType(1);  /* Bulge */
-      ID.setID(id - BULGEID);
+      ID.setID(id);
+      //ID.setID(id - BULGEID);
     }
     else if (id >= DARKMATTERID)
     {
       ID.setType(0);  /* DM */
-      ID.setID(id - DARKMATTERID);
+      //ID.setID(id - DARKMATTERID);
+      ID.setID(id);
     }
     return ID;
   };

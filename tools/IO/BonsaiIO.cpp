@@ -5,10 +5,10 @@ struct real2 { float x,y;};
 struct real4 { float x,y,z,w;};
 typedef unsigned long long uulong;
 
-#define DISKID  1000000000
-#define BULGEID 2000000000
-#define DARKMATTERID 3000000000
 
+#define DARKMATTERID  3000000000000000000
+#define DISKID        0
+#define BULGEID       2000000000000000000
 
 void writeSnapshot(
     real4 *bodyPositions,
