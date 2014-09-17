@@ -55,6 +55,8 @@ http://github.com/treecode/Bonsai
 #ifdef GALACTICS
 #include "galactics.h"
 #endif
+#include "IDType.h"
+#include "BonsaiIO.h"
 
 
 #if ENABLE_LOG
@@ -104,6 +106,167 @@ extern void displayTimers()
 #include <cuda_gl_interop.h>
 #endif
 
+static double lReadBonsaiFields(
+    const int rank, const MPI_Comm &comm,
+    const std::vector<BonsaiIO::DataTypeBase*> &data, 
+    BonsaiIO::Core &in, 
+    const int reduce, 
+    const bool restartFlag = true)
+{
+  double dtRead = 0;
+  for (auto &type : data)
+  {
+    double t0 = MPI_Wtime();
+    if (rank == 0)
+      fprintf(stderr, " Reading %s ...\n", type->getName().c_str());
+    if (in.read(*type, restartFlag, reduce))
+    {
+      long long int nLoc = type->getNumElements();
+      long long int nGlb;
+      MPI_Allreduce(&nLoc, &nGlb, 1, MPI_DOUBLE, MPI_SUM, comm);
+      if (rank == 0)
+      {
+        fprintf(stderr, " Read %lld of type %s\n",
+            nGlb, type->getName().c_str());
+        fprintf(stderr, " ---- \n");
+      }
+    } 
+    else 
+    {
+      if (rank == 0)
+      {
+        fprintf(stderr, " %s  is not found, skipping\n", type->getName().c_str());
+        fprintf(stderr, " ---- \n");
+      }
+      MPI_Finalize();
+      ::exit(-1);
+    }
+      
+    dtRead += MPI_Wtime() - t0;
+  }
+
+  return dtRead;
+}
+
+template<typename T>
+static inline T& lBonsaiSafeCast(BonsaiIO::DataTypeBase* ptrBase)
+{
+  T* ptr = dynamic_cast<T*>(ptrBase);
+  assert(ptr != NULL);
+  return *ptr;
+}
+
+static void lReadBonsaiFile(
+    std::vector<real4 > &bodyPositions,
+    std::vector<real4 > &bodyVelocities,
+    std::vector<ullong> &bodyIDs,
+    int &NFirst, int &NSecond, int &NThird,
+    octree *tree,
+    const std::string &fileName,
+    const int rank, const int nrank, const MPI_Comm &comm,
+    const bool restart = true,
+    const int reduceFactor = 1)
+{
+  if (rank == 0)
+    std::cerr << " >>> Reading Bonsai file format : " << fileName <<  std::endl;
+
+  BonsaiIO::Core *in;
+  try
+  {
+    in = new BonsaiIO::Core(rank, nrank, comm, BonsaiIO::READ, fileName);
+  }
+  catch (const std::exception &e)
+  {
+    if (rank == 0)
+      fprintf(stderr, "Something went wrong: %s \n", e.what());
+    MPI_Finalize();
+    ::exit(-1);
+  }
+
+  if (rank == 0)
+    in->getHeader().printFields();
+
+  std::vector<BonsaiIO::DataTypeBase*> data;
+  typedef float float3[3];
+  typedef float float2[2];
+
+  using IDType = BonsaiIO::DataType<IDType>;
+  using Pos    = BonsaiIO::DataType<real4>;
+  using Vel    = BonsaiIO::DataType<float3>;
+  using RhoH   = BonsaiIO::DataType<float2>;
+  data.push_back(new IDType("DM:IDType"));
+  data.push_back(new Pos   ("DM:POS:real4"));
+  data.push_back(new Vel   ("DM:VEL:float[3]"));
+  data.push_back(new IDType("Stars:IDType"));
+  data.push_back(new Pos   ("Stars:POS:real4"));
+  data.push_back(new Vel   ("Stars:VEL:float[3]"));
+
+  const double dtRead = lReadBonsaiFields(rank, comm, data, *in, reduceFactor, restart);
+
+  const auto &DM_IDType = lBonsaiSafeCast<IDType>(data[0]);
+  const auto &DM_Pos    = lBonsaiSafeCast<Pos   >(data[1]);
+  const auto &DM_Vel    = lBonsaiSafeCast<Vel   >(data[2]);
+  const auto &S_IDType  = lBonsaiSafeCast<IDType>(data[3]);
+  const auto &S_Pos     = lBonsaiSafeCast<Pos   >(data[4]);
+  const auto &S_Vel     = lBonsaiSafeCast<Vel   >(data[5]);
+
+  const size_t nDM = DM_IDType.size();
+  assert(nDM == DM_Pos.size());
+  assert(nDM == DM_Vel.size());
+  
+  const size_t nS = S_IDType.size();
+  assert(nS == S_Pos.size());
+  assert(nS == S_Vel.size());
+
+
+  NFirst  = static_cast<std::remove_reference<decltype(NFirst )>::type>(nDM);
+  NSecond = static_cast<std::remove_reference<decltype(NSecond)>::type>(nS);
+  NThird  = 0;
+
+  bodyPositions.resize(nDM+nS);
+  bodyVelocities.resize(nDM+nS);
+  bodyIDs.resize(nDM+nS);
+
+  /* store DM */
+
+  for (int i = 0; i < nDM; i++)
+  {
+    auto &pos = bodyPositions[i];
+    auto &vel = bodyVelocities[i];
+    auto &ID  = bodyIDs[i];
+    pos = DM_Pos[i];
+    vel = make_float4(DM_Vel[i][0], DM_Vel[i][1], DM_Vel[i][2],0.0f);
+    ID  = DM_IDType[i].getPacked() + DARKMATTERID;
+  }
+  
+  for (int i = 0; i < nS; i++)
+  {
+    auto &pos = bodyPositions[nDM+i];
+    auto &vel = bodyVelocities[nDM+i];
+    auto &ID  = bodyIDs[nDM+i];
+    pos = S_Pos[i];
+    vel = make_float4(S_Vel[i][0], S_Vel[i][1], S_Vel[i][2],0.0f);
+    ID  = S_IDType[i].getPacked();
+    switch (S_IDType[i].getType())
+    {
+      case 1:  /*  Bulge */
+        ID += BULGEID;
+        break;
+      case 2:  /*  Disk */
+        ID += DISKID;
+        break;
+    }
+  }
+  
+  tree->set_t_current(static_cast<float>(in->getTime()));
+
+  const double bw = in->computeBandwidth()/1e6;
+  for (auto d : data)
+    delete d;
+  delete in;
+  if (rank == 0)
+    fprintf(stderr, " :: dtRead= %g  sec readBW= %g MB/s \n", dtRead, bw);
+}
 
 
 void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyVelocities,
@@ -478,6 +641,7 @@ int main(int argc, char** argv)
   string fileName          =  "";
   string logFileName       = "gpuLog.log";
   string snapshotFile      = "snapshot_";
+  std::string bonsaiFileName;
   float snapshotIter       = -1;
   float  remoDistance      = -1.0;
   int rebuild_tree_rate    = 2;
@@ -490,6 +654,11 @@ int main(int argc, char** argv)
   bool diskmode   = false;
   bool stereo     = false;
   bool restartSim = false;
+
+  float quickDump  = 0.0;
+  float quickRatio = 0.1;
+  bool  quickSync  = true;
+  bool  useMPIIO = false;
 
 #if ENABLE_LOG
   ENABLE_RUNTIME_LOG = false;
@@ -532,7 +701,8 @@ int main(int argc, char** argv)
 		ADDUSAGE("Usage");
 		ADDUSAGE(" ");
 		ADDUSAGE(" -h  --help             Prints this help ");
-		ADDUSAGE(" -i  --infile #         Input snapshot filename ");
+		ADDUSAGE(" -i  --infile #         Input snapshot filename in Tipsy format");
+		ADDUSAGE(" -f  --bonsaifile #     Input snapshot filename in Bonsai format [muse be used with --usempiio]");
 		ADDUSAGE("     --restart          Let each process restart from a snapshot as specified by 'infile'");
 		ADDUSAGE("     --logfile #        Log filename [" << logFileName << "]");
 		ADDUSAGE("     --dev #            Device ID [" << devID << "]");
@@ -544,6 +714,10 @@ int main(int argc, char** argv)
 		ADDUSAGE(" -o  --theta #          opening angle (theta) [" <<theta << "]");
 		ADDUSAGE("     --snapname #       snapshot base name (N-body time is appended in 000000 format) [" << snapshotFile << "]");
 		ADDUSAGE("     --snapiter #       snapshot iteration (N-body time) [" << snapshotIter << "]");
+		ADDUSAGE("     --quickdump  #     how ofter to dump quick output (N-body time) [" << quickDump << "]");
+		ADDUSAGE("     --quickratio #     which fraction of data to dump (fraction) [" << quickRatio << "]");
+    ADDUSAGE("     --noquicksync      disable syncing for quick dumping ");
+    ADDUSAGE("     --usempiio         use MPI-IO [disabled]");
 		ADDUSAGE("     --rmdist #         Particle removal distance (-1 to disable) [" << remoDistance << "]");
 		ADDUSAGE(" -r  --rebuild #        rebuild tree every # steps [" << rebuild_tree_rate << "]");
 		ADDUSAGE("     --reducebodies #   cut down bodies dataset by # factor ");
@@ -577,6 +751,7 @@ int main(int argc, char** argv)
 		opt.setFlag( "help" ,   'h');
 		opt.setFlag( "diskmode");
 		opt.setOption( "infile",  'i');
+		opt.setOption( "bonsaifile",  'f');
 		opt.setFlag  ( "restart");
 		opt.setOption( "dt",      't' );
 		opt.setOption( "tend",    'T' );
@@ -597,6 +772,10 @@ int main(int argc, char** argv)
     opt.setOption( "logfile" );
     opt.setOption( "snapname");
     opt.setOption( "snapiter");
+    opt.setOption( "quickdump");
+    opt.setOption( "quickratio");
+    opt.setFlag  ( "usempiio");
+    opt.setFlag  ( "noquicksync");
     opt.setOption( "rmdist");
     opt.setOption( "valueadd");
     opt.setOption( "reducebodies");
@@ -638,6 +817,7 @@ int main(int argc, char** argv)
 #endif    
     char *optarg = NULL;
     if ((optarg = opt.getValue("infile")))       fileName           = string(optarg);
+    if ((optarg = opt.getValue("bonsaifile")))   bonsaiFileName     = std::string(optarg);
     if ((optarg = opt.getValue("plummer")))      nPlummer           = atoi(optarg);
     if ((optarg = opt.getValue("milkyway")))     nMilkyWay          = atoi(optarg);
     if ((optarg = opt.getValue("mwfork")))       nMWfork            = atoi(optarg);
@@ -655,6 +835,10 @@ int main(int argc, char** argv)
     if ((optarg = opt.getValue("theta")))        theta              = (float) atof  (optarg);
     if ((optarg = opt.getValue("snapname")))     snapshotFile       = string(optarg);
     if ((optarg = opt.getValue("snapiter")))     snapshotIter       = (float) atof  (optarg);
+    if ((optarg = opt.getValue("quickdump")))    quickDump          = (float) atof  (optarg);
+    if ((optarg = opt.getValue("quickratio")))   quickRatio         = (float) atof  (optarg);
+    if (opt.getValue("usempiio")) useMPIIO = true;
+    if (opt.getValue("noquicksync")) quickSync = false;
     if ((optarg = opt.getValue("rmdist")))       remoDistance       = (float) atof  (optarg);
     if ((optarg = opt.getValue("rebuild")))      rebuild_tree_rate  = atoi  (optarg);
     if ((optarg = opt.getValue("reducebodies"))) reduce_bodies_factor = atoi  (optarg);
@@ -665,7 +849,12 @@ int main(int argc, char** argv)
     if ((optarg = opt.getValue("dTglow")))	 dTstartGlow  = (float)atof(optarg);
     dTstartGlow = std::max(dTstartGlow, 1.0f);
 #endif
-    if (fileName.empty() && nPlummer == -1 && nSphere == -1 && nMilkyWay == -1 && nCube == -1)
+    if (bonsaiFileName.empty() && fileName.empty() && nPlummer == -1 && nSphere == -1 && nMilkyWay == -1 && nCube == -1)
+    {
+      opt.printUsage();
+      ::exit(0);
+    }
+    if (!bonsaiFileName.empty() && !useMPIIO)
     {
       opt.printUsage();
       ::exit(0);
@@ -674,6 +863,7 @@ int main(int argc, char** argv)
 #undef ADDUSAGE
   }
 #endif
+
 
 
   /********** init galaxy before MPI initialization to prevent problems with forking **********/
@@ -746,8 +936,13 @@ int main(int argc, char** argv)
 
 
   //Creat the octree class and set the properties
-  octree *tree = new octree(argv, devID, theta, eps, snapshotFile, snapshotIter,  timeStep,
-                            tEnd, iterEnd, (int)remoDistance, rebuild_tree_rate, direct);
+  octree *tree = new octree(
+      argv, devID, theta, eps, 
+      snapshotFile, snapshotIter,  
+      quickDump, quickRatio, quickSync,
+      useMPIIO,
+      timeStep,
+      tEnd, iterEnd, (int)remoDistance, rebuild_tree_rate, direct);
 
   double tStartup = tree->get_time();
 
@@ -759,12 +954,18 @@ int main(int argc, char** argv)
   {
     //Note can't use LOGF here since MPI isn't initialized yet
     cerr << "[INIT]\tUsed settings: \n";
-    cerr << "[INIT]\tInput filename " << fileName << endl;
+    cerr << "[INIT]\tInput  filename " << fileName << endl;
+    cerr << "[INIT]\tBonsai filename " << bonsaiFileName << endl;
     cerr << "[INIT]\tLog filename " << logFileName << endl;
     cerr << "[INIT]\tTheta: \t\t"             << theta        << "\t\teps: \t\t"          << eps << endl;
     cerr << "[INIT]\tTimestep: \t"          << timeStep     << "\t\ttEnd: \t\t"         << tEnd << endl;
     cerr << "[INIT]\titerEnd: \t" << iterEnd << endl;
+    cerr << "[INIT]\tUse MPI-IO: \t" << (useMPIIO ? "YES" : "NO") << endl;
     cerr << "[INIT]\tsnapshotFile: \t"      << snapshotFile << "\tsnapshotIter: \t" << snapshotIter << endl;
+    if (useMPIIO)
+    {
+      cerr << "[INIT]\t  quickDump: \t"      << quickDump << "\t\tquickRatio: \t" << quickRatio << endl;
+    }
     cerr << "[INIT]\tInput file: \t"        << fileName     << "\t\tdevID: \t\t"        << devID << endl;
     cerr << "[INIT]\tRemove dist: \t"   << remoDistance << endl;
     cerr << "[INIT]\tRebuild tree every " << rebuild_tree_rate << " timestep\n";
@@ -793,6 +994,7 @@ int main(int argc, char** argv)
     cerr << "[INIT]\tCode is built WITHOUT MPI Support \n";
 #endif
   }
+  assert(quickRatio > 0 && quickRatio <= 1);
 
 #ifdef USE_MPI
 
@@ -892,7 +1094,21 @@ int main(int argc, char** argv)
 
   double tStartup2 = tree->get_time();  
 
-  if(restartSim)
+  if (!bonsaiFileName.empty() && useMPIIO)
+  {
+    const MPI_Comm &comm = MPI_COMM_WORLD;
+    lReadBonsaiFile(
+        bodyPositions, 
+        bodyVelocities,
+        bodyIDs,
+        NFirst,NSecond,NThird,
+        tree,
+        bonsaiFileName,
+        procId, nProcs, comm,
+        restartSim,
+        reduce_bodies_factor);
+  }
+  else if(restartSim)
   {
     //The input snapshot file are many files with each process reading its own particles
     read_tipsy_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName,
@@ -1081,7 +1297,7 @@ int main(int argc, char** argv)
   tree->setDataSetProperties(NTotal, NFirst, NSecond, NThird);
 
   if(procId == 0)  
-    LOG("Dataset particle information: Ntotal: %d\tNFirst: %d\tNSecond: %d\tNThird: %d \n",
+    fprintf(stderr, "Dataset particle information: Ntotal: %d\tNFirst: %d\tNSecond: %d\tNThird: %d \n",
         NTotal, NFirst, NSecond, NThird);
 
 
@@ -1179,66 +1395,81 @@ int main(int argc, char** argv)
   bool simulationFinished = false;
   ioSharedData.writingFinished       = true;
 
-#pragma omp parallel num_threads(2)
-{
-  const int tid = omp_get_thread_num();
-  if (tid == 0)
+  /* w/o MPI-IO use async fwrite, so use 2 threads
+   * otherwise, use 1 threads
+   */
+#pragma omp parallel num_threads(1+ (!useMPIIO))
   {
-    //Catch exceptions to add some extra print info
-    try
+    const int tid = omp_get_thread_num();
+    if (tid == 0)
     {
+      //Catch exceptions to add some extra print info
+      try
+      {
         tree->iterate();
-    }
-    catch(const std::exception &exc)
-    {
+      }
+      catch(const std::exception &exc)
+      {
         std::cerr << "Process: "  << procId << "\t" << exc.what() <<std::endl;
         if(nProcs > 1) ::abort();
-    }
-    catch(...)
-    {
+      }
+      catch(...)
+      {
         std::cerr << "Unknown exception on process: " << procId << std::endl;
         if(nProcs > 1) ::abort();
+      }
+      simulationFinished = true;
     }
-    simulationFinished = true;
-  }
-  else
-  {
-    /* IO */
-    sleep(1);
-    while(!simulationFinished)
+#if 0
+    else if (useMPIIO)
     {
-      if(ioSharedData.writingFinished == false)
+      static const std::string ioexe(std::string(getenv("PWD"))+"./bonsai-io");
+      char * const argv[2] = {(char*)ioexe.c_str(), NULL};
+      fprintf(stderr, " -- rank= %d -- launch IO \n",procId);
+      execv(ioexe.c_str(), argv);
+      fprintf(stderr, " -- rank= %d -- stop IO \n", procId);
+      while(1);
+    }
+#endif
+    else
+    {
+      assert(!useMPIIO);
+      /* IO */
+      sleep(1);
+      while(!simulationFinished)
       {
-        const int n           = ioSharedData.nBodies;
-        const float t_current = ioSharedData.t_current;
-
-        string fileName; fileName.resize(256);
-        sprintf(&fileName[0], "%s_%010.4f", snapshotFile.c_str(), t_current);
-
-        if(nProcs <= 16)
+        if(ioSharedData.writingFinished == false)
         {
-           tree->write_dumbp_snapshot_parallel(ioSharedData.Pos, ioSharedData.Vel,
-               ioSharedData.IDs, n, fileName.c_str(), t_current) ;
+          const int n           = ioSharedData.nBodies;
+          const float t_current = ioSharedData.t_current;
 
+          string fileName; fileName.resize(256);
+          sprintf(&fileName[0], "%s_%010.4f", snapshotFile.c_str(), t_current);
+
+          if(nProcs <= 16)
+          {
+            tree->write_dumbp_snapshot_parallel(ioSharedData.Pos, ioSharedData.Vel,
+                ioSharedData.IDs, n, fileName.c_str(), t_current) ;
+
+          }
+          else
+          {
+            sprintf(&fileName[0], "%s_%010.4f-%d", snapshotFile.c_str(), t_current, procId);
+            tree->write_snapshot_per_process(ioSharedData.Pos, ioSharedData.Vel,
+                ioSharedData.IDs, n,
+                fileName.c_str(), t_current) ;
+          }
+          ioSharedData.free();
+          assert(ioSharedData.writingFinished == false);
+          ioSharedData.writingFinished = true;
         }
         else
         {
-           sprintf(&fileName[0], "%s_%010.4f-%d", snapshotFile.c_str(), t_current, procId);
-           tree->write_snapshot_per_process(ioSharedData.Pos, ioSharedData.Vel,
-                                      ioSharedData.IDs, n,
-                                      fileName.c_str(), t_current) ;
+          usleep(100);
         }
-        ioSharedData.free();
-        assert(ioSharedData.writingFinished == false);
-        ioSharedData.writingFinished = true;
-      }
-      else
-      {
-        usleep(100);
       }
     }
   }
-}
 
   LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
 

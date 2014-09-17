@@ -1,9 +1,23 @@
+#undef NDEBUG
 #include "octree.h"
 #include  "postProcessModules.h"
+#include "SharedMemory.h"
+#include "BonsaiSharedData.h"
 
 #include <iostream>
 #include <algorithm>
 #include <iomanip>
+
+
+using ShmQHeader = SharedMemoryServer<BonsaiSharedQuickHeader>;
+using ShmQData   = SharedMemoryServer<BonsaiSharedQuickData>;
+using ShmSHeader = SharedMemoryServer<BonsaiSharedSnapHeader>;
+using ShmSData   = SharedMemoryServer<BonsaiSharedSnapData>;
+
+static ShmQHeader *shmQHeader = NULL;
+static ShmQData   *shmQData   = NULL;
+static ShmSHeader *shmSHeader = NULL;
+static ShmSData   *shmSData   = NULL;
 
 
 using namespace std;
@@ -227,8 +241,189 @@ void octree::makeLET()
   letRunning = false;
 }
 
+template<typename T>
+static void lHandShake(SharedMemoryBase<T> &header)
+{
+  header.acquireLock();
+  header[0].handshake = false;
+  header.releaseLock();
+
+  while (!header[0].handshake)
+    usleep(10000);
+  
+  header.acquireLock();
+  header[0].handshake = false;
+  header.releaseLock();
+}
 
 
+template<typename THeader, typename TData>
+void octree::dumpDataCommon(
+    SharedMemoryBase<THeader> &header, SharedMemoryBase<TData> &data,
+    const std::string &fileNameBase,
+    const float ratio,
+    const bool sync)
+{
+  /********/
+
+  auto getIDType = [&](const long long id)
+  {
+    IDType ID;
+    ID.setID(id);
+    ID.setType(3);     /* Everything is Dust until told otherwise */
+    if(id >= DISKID  && id < BULGEID)       
+    {
+      ID.setType(2);  /* Disk */
+      ID.setID(id - DISKID);
+    }
+    else if(id >= BULGEID && id < DARKMATTERID)  
+    {
+      ID.setType(1);  /* Bulge */
+      ID.setID(id - BULGEID);
+    }
+    else if (id >= DARKMATTERID)
+    {
+      ID.setType(0);  /* DM */
+      ID.setID(id - DARKMATTERID);
+    }
+    return ID;
+  };
+
+  /********/
+
+  if (sync)
+    while (!header[0].done_writing);
+    
+  /* write header */
+
+  char fn[1024];
+  sprintf(fn,
+      "%s_%010.4f.bonsai", 
+      fileNameBase.c_str(), 
+      t_current);
+    
+  const size_t nSnap = localTree.n;
+  const size_t dn = static_cast<size_t>(1.0/ratio);
+  assert(dn >= 1);
+  size_t nQuick = 0;
+  for (size_t i = 0; i < nSnap; i += dn)
+    nQuick++;
+
+  header.acquireLock();
+  header[0].tCurrent = t_current;
+  header[0].nBodies  = nQuick;
+  for (int i = 0; i < 1024; i++)
+  {
+    header[0].fileName[i] = fn[i];
+    if (fn[i] == 0)
+      break;
+  }
+
+  data.acquireLock();
+  if (!data.resize(nQuick))
+  {
+    std::cerr << "rank= " << procId << ": failed to resize. ";
+    std::cerr << "Request " << nQuick << " but capacity is  " << data.capacity() << "." << std::endl;
+    MPI_Finalize();
+    ::exit(0);
+  }
+#pragma omp parallel for schedule(static)
+  for (size_t i = 0; i < nSnap; i += dn)
+  {
+    auto &p = data[i/dn];
+    p.x    = localTree.bodies_pos[i].x;
+    p.y    = localTree.bodies_pos[i].y;
+    p.z    = localTree.bodies_pos[i].z;
+    p.mass = localTree.bodies_pos[i].w;
+    p.vx   = localTree.bodies_vel[i].x;
+    p.vy   = localTree.bodies_vel[i].y;
+    p.vz   = localTree.bodies_vel[i].z;
+    p.vw   = localTree.bodies_vel[i].w;
+    p.rho  = localTree.bodies_dens[i].x;
+    p.h    = localTree.bodies_h[i];
+    p.ID   = getIDType(localTree.bodies_ids[i]);
+  }
+  data.releaseLock();
+
+  header[0].done_writing = false;
+  header.releaseLock();
+}
+
+void octree::dumpData()
+{
+  if (shmQHeader == NULL)
+  {
+    const size_t capacity  = min(4*localTree.n, 24*1024*1024);
+
+    shmQHeader = new ShmQHeader(ShmQHeader::type::sharedFile(procId), 1);
+    shmQData   = new ShmQData  (ShmQData  ::type::sharedFile(procId), capacity);
+
+    shmSHeader = new ShmSHeader(ShmSHeader::type::sharedFile(procId), 1);
+    shmSData   = new ShmSData  (ShmSData  ::type::sharedFile(procId), capacity);
+  }
+  
+  if ((t_current >= nextQuickDump && quickDump    > 0) || 
+      (t_current >= nextSnapTime  && snapshotIter > 0))
+  {
+    localTree.bodies_pos.d2h();
+    localTree.bodies_vel.d2h();
+    localTree.bodies_ids.d2h();
+    localTree.bodies_h.d2h();
+    localTree.bodies_dens.d2h();
+  }
+
+
+  if (t_current >= nextQuickDump && quickDump > 0)
+  {
+
+    static bool handShakeQ = false;
+    if (!handShakeQ && quickDump > 0 && quickSync)
+    {
+      auto &header = *shmQHeader;
+      header[0].tCurrent = t_current;
+      header[0].done_writing = true;
+      lHandShake(header);
+      handShakeQ = true;
+    }
+
+    nextQuickDump += quickDump;
+    nextQuickDump = std::max(nextQuickDump, t_current);
+    if (procId == 0)
+      fprintf(stderr, "-- quickdump: nextQuickDump= %g  quickRatio= %g\n",
+          nextQuickDump, quickRatio);
+
+
+    dumpDataCommon(
+        *shmQHeader, *shmQData, 
+        snapshotFile + "_quick",
+        quickRatio,
+        quickSync);
+  }
+
+  if (t_current >= nextSnapTime && snapshotIter > 0)
+  {
+    static bool handShakeS = false;
+    if (!handShakeS && snapshotIter > 0)
+    {
+      auto &header = *shmSHeader;
+      header[0].tCurrent = t_current;
+      header[0].done_writing = true;
+      lHandShake(header);
+      handShakeS = true;
+    }
+
+    nextSnapTime += snapshotIter;
+    nextSnapTime = std::max(nextSnapTime, t_current);
+    if (procId == 0)
+      fprintf(stderr, "-- snapdump: nextSnapDump= %g  %d\n", nextSnapTime, localTree.n);
+
+    dumpDataCommon(
+        *shmSHeader, *shmSData,
+        snapshotFile,
+        1.0,  /* fraction of particles to store */
+        true  /* force sync between IO and simulator */);
+  }
+}
 
 // returns true if this iteration is the last (t_current >= t_end), false otherwise
 bool octree::iterate_once(IterationData &idata) {
@@ -537,8 +732,11 @@ bool octree::iterate_once(IterationData &idata) {
     }//Statistics dumping
 
 
-
-    if(snapshotIter > 0)
+    if (useMPIIO)
+    {
+      dumpData();
+    }
+    else if (snapshotIter > 0)
     {
       if((t_current >= nextSnapTime))
       {
@@ -762,7 +960,13 @@ void octree::iterate_setup(IterationData &idata) {
   correct(this->localTree);
   compute_energies(this->localTree);
 
-  if(snapshotIter > 0)
+  if (useMPIIO)
+  {
+    nextSnapTime  = t_current;
+    nextQuickDump = t_current;
+    dumpData();
+  }
+  else if(snapshotIter > 0)
   {
     nextSnapTime = t_current;
     if((t_current >= nextSnapTime))
@@ -1551,17 +1755,19 @@ void octree::correct(tree_structure &tree)
   correctParticles.set_arg<cl_mem>(4, tree.bodies_vel.p());
   correctParticles.set_arg<cl_mem>(5, tree.bodies_acc0.p());
   correctParticles.set_arg<cl_mem>(6, tree.bodies_acc1.p());
-  correctParticles.set_arg<cl_mem>(7, tree.bodies_pos.p());
-  correctParticles.set_arg<cl_mem>(8, tree.bodies_Ppos.p());
-  correctParticles.set_arg<cl_mem>(9, tree.bodies_Pvel.p());
-  correctParticles.set_arg<cl_mem>(10, tree.oriParticleOrder.p());
-  correctParticles.set_arg<cl_mem>(11, real4Buffer1.p());
-  correctParticles.set_arg<cl_mem>(12, float2Buffer.p());
+  correctParticles.set_arg<cl_mem>(7, tree.bodies_h.p());
+  correctParticles.set_arg<cl_mem>(8, tree.bodies_dens.p());
+  correctParticles.set_arg<cl_mem>(9, tree.bodies_pos.p());
+  correctParticles.set_arg<cl_mem>(10, tree.bodies_Ppos.p());
+  correctParticles.set_arg<cl_mem>(11, tree.bodies_Pvel.p());
+  correctParticles.set_arg<cl_mem>(12, tree.oriParticleOrder.p());
+  correctParticles.set_arg<cl_mem>(13, real4Buffer1.p());
+  correctParticles.set_arg<cl_mem>(14, float2Buffer.p());
 
 #if 1
   //Buffers required for storing the position of selected particles
-  correctParticles.set_arg<cl_mem>(13, tree.bodies_ids.p());
-  correctParticles.set_arg<cl_mem>(14, specialParticles.p());
+  correctParticles.set_arg<cl_mem>(15, tree.bodies_ids.p());
+  correctParticles.set_arg<cl_mem>(16, specialParticles.p());
 
 #endif
 

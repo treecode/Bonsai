@@ -60,6 +60,7 @@ option(CUDA_KEEP_INTERMEDIATE_FILES
 
 FIND_PACKAGE(CUDA REQUIRED)
 
+add_definitions(-std=c++11)
 if (USE_MPI)
   add_definitions(-DUSE_MPI)
 endif (USE_MPI)
@@ -79,6 +80,17 @@ if (USE_DUST)
 else (USE_DUST)
   set(BINARY_NAME bonsai2_slowdust)
 endif (USE_DUST)
+
+set(BINARY_CLR_NAME bonsai_clrshm)
+set (CLR_CCFILES
+  src/bonsai_clrshm.cpp
+  )
+
+set(BINARY_IO_NAME  bonsai_io)
+set (IO_CCFILES
+  src/bonsai_io.cpp
+  src/anyoption.cpp
+  )
 
 set(CMAKE_DEBUG_POSTFIX "D")
 
@@ -280,16 +292,24 @@ cuda_add_executable(${BINARY_NAME}
   OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING} ${KEEP}
   )
 
-if (USE_GALACTICS)
+add_executable(${BINARY_CLR_NAME}
+  ${CLR_CCFILES}
+  )
+
+add_executable(${BINARY_IO_NAME}
+  ${IO_CCFILES}
+  )
+
+if (USE_GALACTICS OR USE_GALACTICS_IFORT)
   add_definitions("-DGALACTICS")
   if (USE_GALACTICS_IFORT)
     target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES} -L./ -lgengalaxy -lifcore)
   else(USE_GALACTICS_IFORT)
     target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES} -L./ -lgengalaxy -lgfortran)
   endif(USE_GALACTICS_IFORT)
-else(USE_GALACTICS)
+else(USE_GALACTICS OR USE_GALACTICS_IFORT)
   target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES})
-endif(USE_GALACTICS)
+endif(USE_GALACTICS OR USE_GALACTICS_IFORT)
 
 #copy test data file
 file(COPY ${CMAKE_SOURCE_DIR}/../inputExamples/model3_child_compact.tipsy DESTINATION ${CMAKE_BINARY_DIR})

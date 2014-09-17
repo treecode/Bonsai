@@ -55,7 +55,9 @@ static __device__ __forceinline__  float computePartialDensity(
 //  printf("ON DEV: Kernel: %f\tq: %f\tr: %f\thinv: %f\n",  Wkernel(q), q, r, hinv);
 
 
-  return mass * Wkernel(q) * hinv3;
+  const float m = 0 ? mass : 1.0f;
+  return m * Wkernel(q) * hinv3;
+  
 }
 
 static __device__ __forceinline__ void computeDensityAndNgb(
@@ -69,6 +71,7 @@ static __device__ __forceinline__ void computeDensityAndNgb(
   }
 }
 
+#if 0
 static __device__ __forceinline__ float adjustH(const float h_old, const float nnb)
 {
 	const float nbDesired 	= 42;
@@ -76,6 +79,7 @@ static __device__ __forceinline__ float adjustH(const float h_old, const float n
 	const float fScale 	= max(min(f, 1.2), 0.8);
 	return (h_old*fScale);
 }
+#endif
 
 
 
@@ -316,7 +320,7 @@ static __device__ __forceinline__ float4 add_acc(
 	density.y += 1; //Increase nnb count, this should be nParticles in leaf or node instead of 1
   }
 #else
-  computeDensityAndNgb(r2,pos.w,mass,density.x,density.y);
+//  computeDensityAndNgb(r2,pos.w,mass,density.x,density.y);
 #endif
 
 
@@ -751,6 +755,7 @@ bool treewalk(
   }
 
   acc_i[0] = acc_i[1] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+  dens_i[0] = dens_i[1] = make_float2(0.0f, 0.0f);
 
 
 #if 0
@@ -802,10 +807,11 @@ bool treewalk(
     }
     else
     {
-      acc_out      [addr] = acc_i[0];
+      acc_out      [addr] =  acc_i[0];
       body_dens_out[addr] = dens_i[0];
 
-      body_h[addr] = adjustH(body_h[addr], dens_i[0].y);
+      // eg: moved to correct_particles
+//      body_h[addr] = adjustH(body_h[addr], dens_i[0].y);
 
     }
     //       ngb_out     [addr] = ngb_i;
@@ -831,15 +837,15 @@ bool treewalk(
         acc_out     [addr].z += acc_i[1].z;
         acc_out     [addr].w += acc_i[1].w;
       
-	body_dens_out[addr].x += dens_i[0].x;
-      	body_dens_out[addr].y += dens_i[0].y;
+        body_dens_out[addr].x += dens_i[1].x;
+      	body_dens_out[addr].y += dens_i[1].y;
       }
       else
       {
-        acc_out      [addr] = acc_i[1];
+        acc_out      [addr] =  acc_i[1];
         body_dens_out[addr] = dens_i[1];
       
-	body_h[addr] = adjustH(body_h[addr], dens_i[1].y);
+//	body_h[addr] = adjustH(body_h[addr], dens_i[1].y);
       }
 
       //         ngb_out     [addr] = ngb_i;

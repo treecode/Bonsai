@@ -32,6 +32,7 @@
 #include <fstream>
 #include <sys/types.h>
 #include "logFileWriter.h"
+#include "SharedMemory.h"
 
 #ifdef USE_MPI
   #include "MPIComm.h"
@@ -434,8 +435,11 @@ protected:
   int           iter;
   float         t_current, t_previous;
   float         snapshotIter;   
+  float         quickDump, quickRatio;
+  bool          quickSync, useMPIIO;
   string        snapshotFile;
   float         nextSnapTime;
+  float         nextQuickDump;
 
   float        statisticsIter;
   float        nextStatsTime;
@@ -701,6 +705,13 @@ public:
   void iterate_setup(IterationData &idata); 
   void iterate_teardown(IterationData &idata); 
   bool iterate_once(IterationData &idata); 
+  template<typename THeader, typename TData>
+    void dumpDataCommon(
+        SharedMemoryBase<THeader> &header, SharedMemoryBase<TData> &data,
+        const std::string &fileNameBase,
+        const float ratio,
+        const bool sync);
+  void dumpData();
 
   //Subfunctions of iterate, should probally be private 
   void predict(tree_structure &tree);
@@ -986,11 +997,17 @@ public:
 	}
 
   octree(char **argv, const int device = 0, const float _theta = 0.75, const float eps = 0.05,
-         string snapF = "", float snapI = -1,  float tempTimeStep = 1.0 / 16.0, float tempTend = 1000,
+         string snapF = "", float snapI = -1,  
+         const float _quickDump = 0.0,
+         const float _quickRatio = 0.1,
+         const bool  _quickSync = true,
+         const bool  _useMPIIO   = false,
+         float tempTimeStep = 1.0 / 16.0, float tempTend = 1000,
          int _iterEnd = (1<<30),
          int maxDistT = -1, const int _rebuild = 2,
          bool direct = false)
-  : rebuild_tree_rate(_rebuild), procId(0), nProcs(1), thisPartLETExTime(0), useDirectGravity(direct)
+  : rebuild_tree_rate(_rebuild), procId(0), nProcs(1), thisPartLETExTime(0), useDirectGravity(direct),
+  quickDump(_quickDump), quickRatio(_quickRatio), quickSync(_quickSync), useMPIIO(_useMPIIO), nextQuickDump(0.0)
   {
 #if USE_B40C
     sorter = 0;

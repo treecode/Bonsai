@@ -191,18 +191,27 @@ KERNEL_DECLARE(setActiveGroups)(const int n_bodies,
 }
 
 
+static __device__ __forceinline__ float adjustH(const float h_old, const float nnb)
+{
+	const float nbDesired 	= 42;
+	const float f      	= 0.5f * (1.0f + cbrtf(nbDesired / nnb));
+	const float fScale 	= max(min(f, 1.2), 0.8);
+	return (h_old*fScale);
+}
 KERNEL_DECLARE(correct_particles)(const int n_bodies,
-                                             float tc,
-                                             float2 *time,
-                                             uint   *active_list,
-                                             real4 *vel,
-                                             real4 *acc0,
-                                             real4 *acc1,
-                                             real4 *pos,
-                                             real4 *pPos,
-                                             real4 *pVel,
-                                             uint  *unsorted,
-                                             real4 *acc0_new,
+                                  /*  1 */   float tc,
+                                  /*  2 */   float2 *time,
+                                  /*  3 */   uint   *active_list,
+                                  /*  4 */   real4 *vel,
+                                  /*  5 */   real4 *acc0,
+                                  /*  6 */   real4 *acc1,
+                                  /*  7 */   float   *body_h,
+                                  /*  8 */   float2  *body_dens,
+                                  /*  9 */   real4 *pos,
+                                  /* 10 */   real4 *pPos,
+                                  /* 11 */   real4 *pVel,
+                                  /* 12 */   uint  *unsorted,
+                                  /* 13 */   real4 *acc0_new,
 #if 1
 					     float2 *time_new,
 					     int *pIDS,
@@ -269,6 +278,9 @@ KERNEL_DECLARE(correct_particles)(const int n_bodies,
   acc0_new[idx] = a1;
   time_new[idx] = time[unsortedIdx];
   unsorted[idx] = idx;  //Have to reset it in case we do not resort the particles
+ 
+
+  body_h[idx] = adjustH(body_h[idx], body_dens[idx].y);
 
   //   time[idx] = (float2){tc, tc + dt};
 }
