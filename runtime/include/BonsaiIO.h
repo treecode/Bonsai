@@ -305,7 +305,7 @@ namespace BonsaiIO
         if (find(dataVec.getName()) == -1)
         {
           DataInfo d;
-          sprintf(d.name, dataVec.getName().c_str());
+          sprintf(d.name, "%s", dataVec.getName().c_str());
           d.offset      = offset;
           d.elementSize = dataVec.getElementSize();
           d.nRank       = nRank;
