@@ -118,7 +118,7 @@ bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank
         }
       }
     
-      MPI_Reduce(&ntypeloc, &ntypeglb, 10, MPI_LONG_LONG, MPI_SUM, 0, comm);
+      MPI_Reduce(&ntypeloc, &ntypeglb, ntypecount, MPI_LONG_LONG, MPI_SUM, 0, comm);
       if (rank == 0)
       {
         fprintf(stderr, "writing to %s \n", fn);

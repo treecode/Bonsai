@@ -104,7 +104,7 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
       }
     }
   
-    MPI_Reduce(&ntypeloc, &ntypeglb, 10, MPI_LONG_LONG, MPI_SUM, 0, comm);
+    MPI_Reduce(&ntypeloc, &ntypeglb, ntypecount, MPI_LONG_LONG, MPI_SUM, 0, comm);
     if (rank == 0)
     {
       for (int type = 0; type < ntypecount; type++)
