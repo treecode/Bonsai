@@ -5,7 +5,7 @@ F90  = mpif90
 
 CUDA_TK  = /usr/local/cuda
 # CUDA_TK = $(HOME)/usr/local/cuda-5.5
-CXXFLAGS = -Wall -fopenmp -std=c++11 -Werror
+CXXFLAGS = -Wall -fopenmp -std=c++11 -Werror -Wno-literal-suffix
 CXXFLAGS += -Wno-reorder
 CXXFLAGS += -Wno-write-strings
 CFLAGS =  -Wall -Werror

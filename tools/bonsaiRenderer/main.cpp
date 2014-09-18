@@ -10,6 +10,7 @@
 #include "BonsaiIO.h"
 #include "SharedMemory.h"
 #include <omp.h>
+#include <functional>
 
 #include "renderloop.h"
 #include "anyoption.h"
