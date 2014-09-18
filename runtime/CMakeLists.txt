@@ -311,6 +311,10 @@ else(USE_GALACTICS OR USE_GALACTICS_IFORT)
   target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES})
 endif(USE_GALACTICS OR USE_GALACTICS_IFORT)
 
+target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES} -lrt)
+target_link_libraries(${BINARY_CLR_NAME}  -lrt)
+target_link_libraries(${BINARY_IO_NAME}  -lrt)
+
 #copy test data file
 file(COPY ${CMAKE_SOURCE_DIR}/../inputExamples/model3_child_compact.tipsy DESTINATION ${CMAKE_BINARY_DIR})
 file(COPY ${CMAKE_SOURCE_DIR}/../images/ DESTINATION ${CMAKE_BINARY_DIR}/../images/)
