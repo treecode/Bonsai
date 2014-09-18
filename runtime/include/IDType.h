@@ -6,8 +6,10 @@ class IDType
     uint64_t _IDTypePacked;
   public:
     IDType() : _IDTypePacked(0) {}
+#if 0  /* eg: unsafe methods. Marked for removal in future commits */
     IDType(const uint64_t ID) : _IDTypePacked(ID) {}
     uint64_t getPacked() const { return _IDTypePacked; }
+#endif
     void operator=(const IDType &id)  volatile
     {
       _IDTypePacked = id._IDTypePacked;
