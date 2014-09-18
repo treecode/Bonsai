@@ -8,7 +8,9 @@ OMPFLAGS  = -fopenmp
 OFLAGS = -O3 -g -Wall 
 # OMPFLAGS=
 
-CXXFLAGS =  -fPIC $(OFLAGS) $(OMPFLAGS) -std=c++11
+CXXFLAGS =  -fPIC $(OFLAGS) $(OMPFLAGS) -std=c++11 
+CXXFLAGS += -Werror
+CXXFLAGS += -Wno-literal-suffix  # ignores warrning in openmpi 1.6.5
 
 
 
