@@ -1464,7 +1464,7 @@ class Demo
     m_keyDown[key] = true;
   }
 
-  void writeParams(ParamList **params, char *filename)
+  void writeParams(ParamList **params, const char *filename)
   {
     std::ofstream stream;
     stream.open(filename);
@@ -1477,7 +1477,7 @@ class Demo
     }
     stream.close();
   }
-  void writeParams(ParamList *params, char *filename)
+  void writeParams(ParamList *params, const char *filename)
   {
     std::ofstream stream;
     stream.open(filename);
@@ -1488,7 +1488,7 @@ class Demo
     stream.close();
   }
 
-  void readParams(ParamList *params, char *filename)
+  void readParams(ParamList *params, const char *filename)
   {
     std::ifstream stream;
     stream.open(filename);
@@ -1499,7 +1499,7 @@ class Demo
     }
   }
 
-  void readParams(ParamList **params, char *filename)
+  void readParams(ParamList **params, const char *filename)
   {
     std::ifstream stream;
     stream.open(filename);
@@ -1958,7 +1958,7 @@ class Demo
   static const int maxCameras = 8;
   Camera m_camera[maxCameras];
 
-  void writeCameras(char *filename)
+  void writeCameras(const char *filename)
   {
     FILE *fp = fopen(filename, "w");
     if (!fp) {
@@ -1972,7 +1972,7 @@ class Demo
     printf("Wrote camera file '%s'\n", filename);
   }
 
-  bool readCameras(char *filename)
+  bool readCameras(const char *filename)
   {
     FILE *fp = fopen(filename, "r");
     if (!fp) {
