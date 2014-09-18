@@ -241,7 +241,7 @@ static void lReadBonsaiFile(
     auto &ID  = bodyIDs[i];
     pos = DM_Pos[i];
     vel = make_float4(DM_Vel[i][0], DM_Vel[i][1], DM_Vel[i][2],0.0f);
-    ID  = DM_IDType[i].getPacked(); // + DARKMATTERID;
+    ID  = DM_IDType[i].getID() + DARKMATTERID;
   }
   
   for (int i = 0; i < nS; i++)
@@ -251,8 +251,7 @@ static void lReadBonsaiFile(
     auto &ID  = bodyIDs[nDM+i];
     pos = S_Pos[i];
     vel = make_float4(S_Vel[i][0], S_Vel[i][1], S_Vel[i][2],0.0f);
-    ID  = S_IDType[i].getPacked();
-#if 0
+    ID  = S_IDType[i].getID();
     switch (S_IDType[i].getType())
     {
       case 1:  /*  Bulge */
@@ -262,7 +261,6 @@ static void lReadBonsaiFile(
         ID += DISKID;
         break;
     }
-#endif    
     if (S_IDType[i].getType() < ntypecount)
       ntypeloc[S_IDType[i].getType()]++;
   }

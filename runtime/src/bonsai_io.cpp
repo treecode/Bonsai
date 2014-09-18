@@ -7,6 +7,7 @@
 #include "BonsaiSharedData.h"
 #include "BonsaiIO.h"
 #include "IDType.h"
+#include <array>
 
 using ShmQHeader = SharedMemoryClient<BonsaiSharedQuickHeader>;
 using ShmQData   = SharedMemoryClient<BonsaiSharedQuickData>;
@@ -99,9 +100,15 @@ bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank
       /* prepare data */ 
 
       size_t nDM = 0, nS = 0;
+      constexpr int ntypecount = 10;
+      std::array<size_t,ntypecount> ntypeloc, ntypeglb;
+      std::fill(ntypeloc.begin(), ntypeloc.end(), 0);
       for (size_t i = 0; i < size; i++)
       {
-        switch(data[i].ID.getType())
+        const int type = data[i].ID.getType();
+        if  (type < ntypecount)
+          ntypeloc[type]++;
+        switch(type)
         {
           case 0:
             nDM++;
@@ -109,6 +116,15 @@ bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank
           default:
             nS++;
         }
+      }
+    
+      MPI_Reduce(&ntypeloc, &ntypeglb, 10, MPI_LONG_LONG, MPI_SUM, 0, comm);
+      if (rank == 0)
+      {
+        fprintf(stderr, "writing to %s \n", fn);
+        for (int type = 0; type < ntypecount; type++)
+          if (ntypeglb[type] > 0)
+            fprintf(stderr, "bonsai_io:: ptype= %d:  np= %zu \n",type, ntypeglb[type]);
       }
 
       typedef float float4[4];
