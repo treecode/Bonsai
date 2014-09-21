@@ -57,6 +57,7 @@ http://github.com/treecode/Bonsai
 #endif
 #include "IDType.h"
 #include "BonsaiIO.h"
+#include <array>
 
 
 #if ENABLE_LOG
@@ -229,14 +230,18 @@ static void lReadBonsaiFile(
 
   /* store DM */
 
+  constexpr int ntypecount = 10;
+  std::array<size_t,ntypecount> ntypeloc, ntypeglb;
+  std::fill(ntypeloc.begin(), ntypeloc.end(), 0);
   for (int i = 0; i < nDM; i++)
   {
+    ntypeloc[0]++;
     auto &pos = bodyPositions[i];
     auto &vel = bodyVelocities[i];
     auto &ID  = bodyIDs[i];
     pos = DM_Pos[i];
     vel = make_float4(DM_Vel[i][0], DM_Vel[i][1], DM_Vel[i][2],0.0f);
-    ID  = DM_IDType[i].getPacked(); // + DARKMATTERID;
+    ID  = DM_IDType[i].getID() + DARKMATTERID;
   }
   
   for (int i = 0; i < nS; i++)
@@ -246,8 +251,7 @@ static void lReadBonsaiFile(
     auto &ID  = bodyIDs[nDM+i];
     pos = S_Pos[i];
     vel = make_float4(S_Vel[i][0], S_Vel[i][1], S_Vel[i][2],0.0f);
-    ID  = S_IDType[i].getPacked();
-#if 0
+    ID  = S_IDType[i].getID();
     switch (S_IDType[i].getType())
     {
       case 1:  /*  Bulge */
@@ -257,8 +261,18 @@ static void lReadBonsaiFile(
         ID += DISKID;
         break;
     }
-#endif    
+    if (S_IDType[i].getType() < ntypecount)
+      ntypeloc[S_IDType[i].getType()]++;
   }
+
+  MPI_Reduce(&ntypeloc, &ntypeglb, ntypecount, MPI_LONG_LONG, MPI_SUM, 0, comm);
+  if (rank == 0)
+  {
+    for (int type = 0; type < ntypecount; type++)
+      if (ntypeglb[type] > 0)
+        fprintf(stderr, "bonsai-read: ptype= %d:  np= %zu \n",type, ntypeglb[type]);
+  }
+
   
   tree->set_t_current(static_cast<float>(in->getTime()));
 
@@ -350,6 +364,9 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
   int bodyCount = 0;
   int dustCount = 0;
   
+  constexpr int ntypecount = 10;
+  std::array<size_t,ntypecount> ntypeloc, ntypeglb;
+  std::fill(ntypeloc.begin(), ntypeloc.end(), 0);
   for(int i=0; i < NTotal; i++)
   {
     if(i < NFirst)
@@ -407,8 +424,21 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
        continue;
     }
 
+    const auto id = idummy;
+    if(id >= DISKID  && id < BULGEID)       
+    {
+      ntypeloc[2]++;
+    }
+    else if(id >= BULGEID && id < DARKMATTERID)  
+    {
+      ntypeloc[1]++;
+    }
+    else if (id >= DARKMATTERID)
+    {
+      ntypeloc[0]++;
+    }
 
-	globalParticleCount++;
+    globalParticleCount++;
    
     #ifdef USE_DUST
       if(idummy >= 50000000 && idummy < 100000000)
@@ -446,8 +476,9 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
       bodyPositions.push_back(positions);
       bodyVelocities.push_back(velocity);
       bodiesIDs.push_back(idummy);  
+
     #endif
-    
+
     particleCount++;
 
 
@@ -475,6 +506,27 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
   NTotal2 = particleCount;
   LOGF(stderr,"NTotal: %d\tper proc: %d\tFor ourself: %d \tNDust: %d \n",
                NTotal, perProc, (int)bodiesIDs.size(), (int)dustPositions.size());
+
+  /* this check was added to test whether particle type was failed to identified.
+   * sometimed DM particles are treated as nonDM on 
+   * MW+M31 4.6M particle snapshot 
+   */
+  if (restart)
+  {
+    const MPI_Comm &comm = MPI_COMM_WORLD;
+    MPI_Reduce(&ntypeloc, &ntypeglb, 10, MPI_LONG_LONG, MPI_SUM, 0, comm);
+  }
+  else
+  {
+    std::copy(ntypeloc.begin(), ntypeloc.end(), ntypeglb.begin());
+  }
+
+  if (rank == 0)
+  {
+    for (int type = 0; type < ntypecount; type++)
+      if (ntypeglb[type] > 0)
+        fprintf(stderr, "tispy-read: ptype= %d:  np= %zu \n",type, ntypeglb[type]);
+  }
 }
 
 

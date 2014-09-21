@@ -3,13 +3,16 @@ CC  = mpicc
 LD  = mpicxx
 F90  = mpif90
 
+CFLAGS =  -Wall -Werror
 CUDA_TK  = /usr/local/cuda
 # CUDA_TK = $(HOME)/usr/local/cuda-5.5
-CXXFLAGS = -Wall -fopenmp -std=c++11 -Werror
-#CXXFLAGS = -Wall -fopenmp -std=c++11 
+
+CXXFLAGS = -Wall -fopenmp -std=c++11 
+CXXFLAGS += -Werror
+#ignore warnings caused by openmpi
+CXXFLAGS += -Wno-literal-suffix
+#ignore warnings in a constructor when intialization is not done in the order the variables are declared
 CXXFLAGS += -Wno-reorder
-CXXFLAGS += -Wno-write-strings
-CFLAGS =  -Wall -Werror
 
 
 OPT += -O3 -g

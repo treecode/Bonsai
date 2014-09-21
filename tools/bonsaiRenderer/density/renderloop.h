@@ -2,6 +2,7 @@
 #define _RENDERLOOP_H_
 
 #include "RendererData.h"
+#include <functional>
 
 void initAppRenderer(int argc, char** argv, 
                      const int rank, const int nrank, const MPI_Comm &comm,

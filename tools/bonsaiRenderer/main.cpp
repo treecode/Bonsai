@@ -10,6 +10,7 @@
 #include "BonsaiIO.h"
 #include "SharedMemory.h"
 #include <omp.h>
+#include <functional>
 
 #include "renderloop.h"
 #include "anyoption.h"
@@ -83,11 +84,17 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
     };
 
     size_t nDM = 0, nS = 0;
+    constexpr int ntypecount = 10;
+    std::array<size_t,ntypecount> ntypeloc, ntypeglb;
+    std::fill(ntypeloc.begin(), ntypeloc.end(), 0);
     for (size_t i = 0; i < size; i++)
     {
+      const int type = data[i].ID.getType();
+      if  (type < ntypecount)
+        ntypeloc[type]++;
       if (skipPtcl(i))
         continue;
-      switch (data[i].ID.getType())
+      switch (type)
       {
         case 0:
           nDM++;
@@ -96,6 +103,15 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
           nS++;
       }
     }
+  
+    MPI_Reduce(&ntypeloc, &ntypeglb, ntypecount, MPI_LONG_LONG, MPI_SUM, 0, comm);
+    if (rank == 0)
+    {
+      for (int type = 0; type < ntypecount; type++)
+        if (ntypeglb[type] > 0)
+          fprintf(stderr, " ptype= %d:  np= %zu \n",type, ntypeglb[type]);
+    }
+
 
     rData.resize(nS);
     size_t ip = 0;
