@@ -33,6 +33,7 @@ struct DENSITY
     float perProcResRPhi [N_MESH_PHI][2*N_MESH_R]; //First half is np, second half is mass
     float combinedResRPhi[N_MESH_PHI][2*N_MESH_R]; //First half is np, second half is mass
 
+    const MPI_Comm &mpiCommWorld;
     const int procId, nProcs, nParticles;
 
     const double xscale, mscale, xmax;
@@ -68,8 +69,8 @@ struct DENSITY
       //Sum over all processes
       double t0 = get_time2();
       #ifdef USE_MPI
-        MPI_Reduce(dataIn,     dataOut,     4*(N_MESH*N_MESH),       MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
-        MPI_Reduce(dataInRPhi, dataOutRPhi, 2*(N_MESH_PHI*N_MESH_R), MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
+        MPI_Reduce(dataIn,     dataOut,     4*(N_MESH*N_MESH),       MPI_FLOAT, MPI_SUM, 0, mpiCommWorld);
+        MPI_Reduce(dataInRPhi, dataOutRPhi, 2*(N_MESH_PHI*N_MESH_R), MPI_FLOAT, MPI_SUM, 0, mpiCommWorld);
       #else
         memcpy(dataOut,     dataIn,     4*(N_MESH*N_MESH)*sizeof(float));
         memcpy(dataOutRPhi, dataInRPhi, 2*(N_MESH_PHI*N_MESH_R)*sizeof(float));        
@@ -215,13 +216,15 @@ struct DENSITY
   public:
 
     //Create two density plots and write results to file
-    DENSITY(const int _procId, const int _nProc, const int _n,
+    DENSITY(const MPI_Comm &comm,
+            const int _procId, const int _nProc, const int _n,
             const float4 *positions,
             const float4 *velocities,
             const unsigned long long    *IDs,
             double _xscale, double _mscale, double _xmax,
             const char *baseFilename,
             const double time) :
+            mpiCommWorld(comm),
             procId(_procId), nProcs(_nProc), nParticles(_n),
             xscale(_xscale), mscale(_mscale), xmax(_xmax),
             Rmin(0.0), Rmax(20.0), pmin(-180), pmax(180)
@@ -349,6 +352,7 @@ struct DISKSTATS
     #define DISKID        0
     #define BULGEID       2000000000000000000
 
+    const MPI_Comm &mpiCommWorld;
     const int procId, nProcs, nParticles;
 
     const double xscale, mscale;
@@ -411,7 +415,7 @@ struct DISKSTATS
      double t0 = get_time();
      #ifdef USE_MPI
        //MPI Reduce: Sum results over all processes store in procId == 0
-       MPI_Reduce(perProcRes, comProcRes, nItems*iMax*3, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
+       MPI_Reduce(perProcRes, comProcRes, nItems*iMax*3, MPI_FLOAT, MPI_SUM, 0, mpiCommWorld);
      #else
        memcpy(comProcRes, perProcRes, nItems*iMax*3*sizeof(float));
      #endif
@@ -520,13 +524,15 @@ struct DISKSTATS
   public:
 
     //Create two density plots and write results to file
-    DISKSTATS(const int _procId, const int _nProc, const int _n,
+    DISKSTATS(const MPI_Comm &comm,
+              const int _procId, const int _nProc, const int _n,
               const float4 *positions,
               const float4 *velocities,
               const unsigned long long    *IDs,
               double _xscale, double _mscale,
               const char *baseFilename,
               const double tsim) :
+              mpiCommWorld(comm),
               procId(_procId), nProcs(_nProc), nParticles(_n),
               xscale(_xscale), mscale(_mscale)
       {

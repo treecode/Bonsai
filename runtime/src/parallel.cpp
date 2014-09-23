@@ -101,6 +101,7 @@ struct GETLETBUFFERS
 
 #include "mpi.h"
 #include <omp.h>
+
 #include "MPIComm.h"
 template <> MPI_Datatype MPIComm_datatype<float>() {return MPI_FLOAT; }
 MPIComm *myComm;
@@ -948,10 +949,10 @@ void octree::mpiInit(int argc,char *argv[], int &procId, int &nProcs)
     //      assert(provided == MPI_THREAD_FUNNELED);
   }
 
-  MPI_Comm_size(MPI_COMM_WORLD, &nProcs);
-  MPI_Comm_rank(MPI_COMM_WORLD, &procId);
+  MPI_Comm_size(mpiCommWorld, &nProcs);
+  MPI_Comm_rank(mpiCommWorld, &procId);
 
-  myComm = new MPIComm(procId, nProcs);
+  myComm = new MPIComm(procId, nProcs,mpiCommWorld);
 
   MPI_Get_processor_name(processor_name,&namelen);
 #else
@@ -977,7 +978,7 @@ void octree::mpiInit(int argc,char *argv[], int &procId, int &nProcs)
 //Utility functions
 void octree::mpiSync(){
 #ifdef USE_MPI
-  MPI_Barrier(MPI_COMM_WORLD);
+  MPI_Barrier(mpiCommWorld);
 #endif
 }
 
@@ -993,7 +994,7 @@ void octree::AllSum(double &value)
 {
 #ifdef USE_MPI
   double tmp = -1;
-  MPI_Allreduce(&value,&tmp,1, MPI_DOUBLE, MPI_SUM,MPI_COMM_WORLD);
+  MPI_Allreduce(&value,&tmp,1, MPI_DOUBLE, MPI_SUM,mpiCommWorld);
   value = tmp;
 #endif
 }
@@ -1002,7 +1003,7 @@ int octree::SumOnRootRank(int &value)
 {
 #ifdef USE_MPI
   int temp;
-  MPI_Reduce(&value,&temp,1, MPI_INT, MPI_SUM,0, MPI_COMM_WORLD);
+  MPI_Reduce(&value,&temp,1, MPI_INT, MPI_SUM,0, mpiCommWorld);
   return temp;
 #else
   return value;
@@ -1032,7 +1033,7 @@ void octree::sendCurrentRadiusAndSampleInfo(real4 &rmin, real4 &rmax, int nsampl
 #ifdef USE_MPI
   //Get the number of sample particles and the domain size information
   MPI_Allgather(&curProcState, sizeof(sampleRadInfo), MPI_BYTE,  curSysState,
-      sizeof(sampleRadInfo), MPI_BYTE, MPI_COMM_WORLD);
+      sizeof(sampleRadInfo), MPI_BYTE, mpiCommWorld);
 #else
   curSysState[0] = curProcState;
 #endif
@@ -1094,7 +1095,7 @@ void octree::computeSampleRateSFC(float lastExecTime, int &nSamples, float &samp
     double timeSum   = 0.0;
 
     //Sum the execution times over all processes
-    MPI_Allreduce( &timeLocal, &timeSum, 1,MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce( &timeLocal, &timeSum, 1,MPI_DOUBLE, MPI_SUM, mpiCommWorld);
 
     nrate = timeLocal / timeSum;
 
@@ -1112,7 +1113,7 @@ void octree::computeSampleRateSFC(float lastExecTime, int &nSamples, float &samp
 
       double nrate2_sum = 0.0;
 
-      MPI_Allreduce(&nrate, &nrate2_sum, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+      MPI_Allreduce(&nrate, &nrate2_sum, 1, MPI_DOUBLE, MPI_SUM, mpiCommWorld);
 
       nrate /= nrate2_sum;
     }
@@ -1178,7 +1179,7 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys2,    int  nSa
       //JB We should not forget to set prevDurStep
       prevDurStep = timeLocal;
 
-      MPI_Allreduce( &timeLocal, &timeSum, 1,MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+      MPI_Allreduce( &timeLocal, &timeSum, 1,MPI_DOUBLE, MPI_SUM, mpiCommWorld);
 
       double fmin = 0.0;
       double fmax = HUGE;
@@ -1263,7 +1264,7 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys2,    int  nSa
     std::sort(key_sample1d.begin(), key_sample1d.end(), DD2D::Key());
     std::sort(key_sample2d.begin(), key_sample2d.end(), DD2D::Key());
 
-    const DD2D dd(procId, npx, nProcs, key_sample1d, key_sample2d, MPI_COMM_WORLD);
+    const DD2D dd(procId, npx, nProcs, key_sample1d, key_sample2d, mpiCommWorld);
 
     /* distribute keys */
     for (int p = 0; p < nProcs; p++)
@@ -1300,7 +1301,7 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys2,    int  nSa
     //Send actual data
     MPI_Gatherv(&sampleKeys[0],    nSamples*sizeof(uint4), MPI_BYTE,
         &globalSamples[0], nReceiveCnts, nReceiveDpls, MPI_BYTE,
-        0, MPI_COMM_WORLD);
+        0, mpiCommWorld);
 
 
     if(procId == 0)
@@ -1422,7 +1423,7 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys2,    int  nSa
     }
 
     //Send the boundaries to all processes
-    MPI_Bcast(&parallelBoundaries[0], sizeof(uint4)*(nProcs+1), MPI_BYTE, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&parallelBoundaries[0], sizeof(uint4)*(nProcs+1), MPI_BYTE, 0, mpiCommWorld);
   }
 
   //End of 1D
@@ -1445,7 +1446,7 @@ void octree::sendCurrentRadiusInfo(real4 &rmin, real4 &rmax)
 #ifdef USE_MPI
   //Get the number of sample particles and the domain size information
   MPI_Allgather(&curProcState, sizeof(sampleRadInfo), MPI_BYTE,  curSysState,
-      sizeof(sampleRadInfo), MPI_BYTE, MPI_COMM_WORLD);
+      sizeof(sampleRadInfo), MPI_BYTE, mpiCommWorld);
 #else
   curSysState[0] = curProcState;
 #endif
@@ -1721,7 +1722,7 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
       }
 
       double tStarta2a = get_time();
-      MPI_Alltoall(nparticles, 1, MPI_INT, nreceive, 1, MPI_INT, MPI_COMM_WORLD);
+      MPI_Alltoall(nparticles, 1, MPI_INT, nreceive, 1, MPI_INT, mpiCommWorld);
       ta2aSize = get_time()-tStarta2a;
     }//if tid == 1
   } //omp section
@@ -1981,18 +1982,18 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree
 #if 1
     if (scount > 0)
     {
-      MPI_Isend(&particlesToSend[nsendDispls[dst]], scount, MPI_DOUBLE, dst, 1, MPI_COMM_WORLD, &req[nreq++]);
+      MPI_Isend(&particlesToSend[nsendDispls[dst]], scount, MPI_DOUBLE, dst, 1, mpiCommWorld, &req[nreq++]);
     }
     if(rcount > 0)
     {
-      MPI_Irecv(&recv_buffer3[recvOffset], rcount, MPI_DOUBLE, src, 1, MPI_COMM_WORLD, &req[nreq++]);
+      MPI_Irecv(&recv_buffer3[recvOffset], rcount, MPI_DOUBLE, src, 1, mpiCommWorld, &req[nreq++]);
       recvOffset += nreceive[src];
     }
 #else
     MPI_Status stat;
     MPI_Sendrecv(&particlesToSend[nsendDispls[dst]],
         scount, MPI_DOUBLE, dst, 1,
-        &recv_buffer3[recvOffset], rcount, MPI_DOUBLE, src, 1, MPI_COMM_WORLD, &stat);
+        &recv_buffer3[recvOffset], rcount, MPI_DOUBLE, src, 1, mpiCommWorld, &stat);
     recvOffset += nreceive[src];
 #endif
   }
@@ -2393,7 +2394,7 @@ void octree::sendCurrentInfoGrpTree()
 
   //Communicate the sizes
   MPI_Alltoall(&globalGroupSizeArray[0],     2, MPI_INT,
-               &globalGroupSizeArrayRecv[0], 2, MPI_INT, MPI_COMM_WORLD);
+               &globalGroupSizeArrayRecv[0], 2, MPI_INT, mpiCommWorld);
 
 
   std::vector<int> groupRecvSizesSmall(nProcs, 0);
@@ -2535,7 +2536,7 @@ void octree::sendCurrentInfoGrpTree()
     nGroups = SmallBoundaryTree.size();
     MPI_Allgatherv(&SmallBoundaryTree[0], sizeof(real4)*nGroups, MPI_BYTE,
                    globalGrpTreeCntSize, &groupRecvSizesSmall[0],   &displacement[0], MPI_BYTE,
-                   MPI_COMM_WORLD);
+                   mpiCommWorld);
   }
 
   double t2 = get_time();
@@ -2556,12 +2557,12 @@ void octree::sendCurrentInfoGrpTree()
 
     if (scount > 0)
     {
-      MPI_Isend(&fullBoundaryTree[0], scount, MPI_BYTE, dst, 1, MPI_COMM_WORLD, &req[nreq++]);
+      MPI_Isend(&fullBoundaryTree[0], scount, MPI_BYTE, dst, 1, mpiCommWorld, &req[nreq++]);
       LOGF(stderr,"Sending to: %d size: %d \n", dst, (int)(scount / sizeof(real4)));
     }
     if(rcount > 0)
     {
-      MPI_Irecv(&globalGrpTreeCntSize[offset], rcount, MPI_BYTE, src, 1, MPI_COMM_WORLD, &req[nreq++]);
+      MPI_Irecv(&globalGrpTreeCntSize[offset], rcount, MPI_BYTE, src, 1, mpiCommWorld, &req[nreq++]);
       LOGF(stderr,"Receiving from: %d size: %d Offset: %d \n",
                     src, globalGroupSizeArrayRecv[src].x, offset);
     }
@@ -2605,7 +2606,7 @@ void octree::sendCurrentInfoGrpTree()
                 &sendSizes[0],                &sendOffsets[0],  MPI_BYTE,
                 &globalGrpTreeCntSize[0],
                 (int*)&this->globalGrpTreeCount[0], &displacement[0], MPI_BYTE,
-                MPI_COMM_WORLD);
+                mpiCommWorld);
 
 
 #endif
@@ -4689,7 +4690,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       //Send the sizes
       LOGF(stderr, "Going to do the alltoall size communication! Iter: %d Since begin: %lg \n", iter, get_time()-tStart);
       double t100 = get_time();
-      MPI_Alltoall(quickCheckSendSizes, 4, MPI_INT, quickCheckRecvSizes, 4, MPI_INT, MPI_COMM_WORLD);
+      MPI_Alltoall(quickCheckSendSizes, 4, MPI_INT, quickCheckRecvSizes, 4, MPI_INT, mpiCommWorld);
       LOGF(stderr, "Completed_alltoall size communication! Iter: %d Took: %lg ( %lg )\n", iter, get_time()-t100, get_time()-t0);
 
       //If quickCheckRecvSizes[].y == 1 then the remote process used the boundary.
@@ -4783,7 +4784,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
           {
             MPI_Isend(&(computedLETs[i].buffer)[0],computedLETs[i].size,
                 MPI_BYTE, computedLETs[i].destination, 999,
-                MPI_COMM_WORLD, &(computedLETs[i].req));
+                mpiCommWorld, &(computedLETs[i].req));
           }
           nSendOut = tempComputed;
         }
@@ -4795,7 +4796,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
         do
         {
-          MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &probeStatus);
+          MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, mpiCommWorld, &flag, &probeStatus);
 
           if(flag)
           {
@@ -4806,7 +4807,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             double tY = get_time();
             real4 *recvDataBuffer = new real4[count / sizeof(real4)];
             double tZ = get_time();
-            MPI_Recv(&recvDataBuffer[0], count, MPI_BYTE, probeStatus.MPI_SOURCE, probeStatus.MPI_TAG, MPI_COMM_WORLD,&recvStatus);
+            MPI_Recv(&recvDataBuffer[0], count, MPI_BYTE, probeStatus.MPI_SOURCE, probeStatus.MPI_TAG, mpiCommWorld,&recvStatus);
 
             LOGF(stderr, "Receive complete from: %d  || recvTree: %d since start: %lg ( %lg ) alloc: %lg Recv: %lg Size: %d\n",
                           recvStatus.MPI_SOURCE, 0, get_time()-tStart,get_time()-t0,tZ-tY, get_time()-tZ, count);
@@ -5470,16 +5471,16 @@ void octree::ICSend(int destination, real4 *bodyPositions, real4 *bodyVelocities
 {
 #ifdef USE_MPI
   //First send the number of particles, then the actual sample data
-  MPI_Send(&toSend, 1, MPI_INT, destination, destination*2 , MPI_COMM_WORLD);
+  MPI_Send(&toSend, 1, MPI_INT, destination, destination*2 , mpiCommWorld);
 
   //Send the positions, velocities and ids
-  MPI_Send( bodyPositions,  toSend*sizeof(real)*4, MPI_BYTE, destination, destination*2+1, MPI_COMM_WORLD);
-  MPI_Send( bodyVelocities, toSend*sizeof(real)*4, MPI_BYTE, destination, destination*2+2, MPI_COMM_WORLD);
-  MPI_Send( bodiesIDs,      toSend*sizeof(ullong), MPI_BYTE, destination, destination*2+3, MPI_COMM_WORLD);
+  MPI_Send( bodyPositions,  toSend*sizeof(real)*4, MPI_BYTE, destination, destination*2+1, mpiCommWorld);
+  MPI_Send( bodyVelocities, toSend*sizeof(real)*4, MPI_BYTE, destination, destination*2+2, mpiCommWorld);
+  MPI_Send( bodiesIDs,      toSend*sizeof(ullong), MPI_BYTE, destination, destination*2+3, mpiCommWorld);
 
-  /*    MPI_Send( (real*)&bodyPositions[0],  toSend*sizeof(real)*4, MPI_BYTE, destination, destination*2+1, MPI_COMM_WORLD);
-        MPI_Send( (real*)&bodyVelocities[0], toSend*sizeof(real)*4, MPI_BYTE, destination, destination*2+2, MPI_COMM_WORLD);
-        MPI_Send( (int *)&bodiesIDs[0],      toSend*sizeof(int),    MPI_BYTE, destination, destination*2+3, MPI_COMM_WORLD);*/
+  /*    MPI_Send( (real*)&bodyPositions[0],  toSend*sizeof(real)*4, MPI_BYTE, destination, destination*2+1, mpiCommWorld);
+        MPI_Send( (real*)&bodyVelocities[0], toSend*sizeof(real)*4, MPI_BYTE, destination, destination*2+2, mpiCommWorld);
+        MPI_Send( (int *)&bodiesIDs[0],      toSend*sizeof(int),    MPI_BYTE, destination, destination*2+3, mpiCommWorld);*/
 #endif
 }
 
@@ -5491,16 +5492,16 @@ void octree::ICRecv(int recvFrom, vector<real4> &bodyPositions, vector<real4> &b
   int procId = mpiGetRank();
 
   //First send the number of particles, then the actual sample data
-  MPI_Recv(&nreceive, 1, MPI_INT, recvFrom, procId*2, MPI_COMM_WORLD,&status);
+  MPI_Recv(&nreceive, 1, MPI_INT, recvFrom, procId*2, mpiCommWorld,&status);
 
   bodyPositions.resize(nreceive);
   bodyVelocities.resize(nreceive);
   bodiesIDs.resize(nreceive);
 
   //Recv the positions, velocities and ids
-  MPI_Recv( (real*  )&bodyPositions[0],  nreceive*sizeof(real)*4, MPI_BYTE, recvFrom, procId*2+1, MPI_COMM_WORLD,&status);
-  MPI_Recv( (real*  )&bodyVelocities[0], nreceive*sizeof(real)*4, MPI_BYTE, recvFrom, procId*2+2, MPI_COMM_WORLD,&status);
-  MPI_Recv( (ullong*)&bodiesIDs[0],      nreceive*sizeof(ullong), MPI_BYTE, recvFrom, procId*2+3, MPI_COMM_WORLD,&status);
+  MPI_Recv( (real*  )&bodyPositions[0],  nreceive*sizeof(real)*4, MPI_BYTE, recvFrom, procId*2+1, mpiCommWorld,&status);
+  MPI_Recv( (real*  )&bodyVelocities[0], nreceive*sizeof(real)*4, MPI_BYTE, recvFrom, procId*2+2, mpiCommWorld,&status);
+  MPI_Recv( (ullong*)&bodiesIDs[0],      nreceive*sizeof(ullong), MPI_BYTE, recvFrom, procId*2+3, mpiCommWorld,&status);
 #endif
 }
 
@@ -5510,7 +5511,7 @@ void octree::mpiSumParticleCount(int numberOfParticles)
 #ifdef USE_MPI
   unsigned long long tmp  = 0;
   unsigned long long tmp2 = numberOfParticles;
-  MPI_Allreduce(&tmp2,&tmp,1, MPI_UNSIGNED_LONG_LONG, MPI_SUM,MPI_COMM_WORLD);
+  MPI_Allreduce(&tmp2,&tmp,1, MPI_UNSIGNED_LONG_LONG, MPI_SUM,mpiCommWorld);
   nTotalFreq_ull = tmp;
 #else
   nTotalFreq_ull = numberOfParticles;
@@ -5558,7 +5559,7 @@ unsigned int nreceive;
 
 //Send and get the number of particles that are exchanged
 MPI_Sendrecv(&nsend,1,MPI_INT,ibox,local_proc_id*10,
-    &nreceive,1,MPI_INT,isource,isource*10,MPI_COMM_WORLD,
+    &nreceive,1,MPI_INT,isource,isource*10,mpiCommWorld,
     &status);
 
 int ss         = sizeof(T);
@@ -5574,13 +5575,13 @@ if((nreceive + recvCount) > recv_buffer.size())
 //Send the actual particles
 MPI_Sendrecv(&source_buffer[firstloc+sendoffset],ss*nsend,MPI_BYTE,ibox,local_proc_id*10+1,
     &recv_buffer[recvCount],ss*nreceive,MPI_BYTE,isource,isource*10+1,
-    MPI_COMM_WORLD,&status);
+    mpiCommWorld,&status);
 
 recvCount += nreceive;
 
 //     int iret = 0;
 //     int giret;
-//     MPI_Allreduce(&iret, &giret,1, MPI_INT, MPI_MAX,MPI_COMM_WORLD);
+//     MPI_Allreduce(&iret, &giret,1, MPI_INT, MPI_MAX,mpiCommWorld);
 //     return giret;
 #endif
 return 0;
@@ -5894,7 +5895,7 @@ real4* octree::MP_exchange_bhlist(int ibox, int isource,
   double t0 = get_time();
   //first send&get the number of particles to send&get
   MPI_Sendrecv(&nlist,1,MPI_INT,ibox,procId*10, &nrecvlist,
-      1,MPI_INT,isource,isource*10,MPI_COMM_WORLD, &status);
+      1,MPI_INT,isource,isource*10,mpiCommWorld, &status);
 
   double t1= get_time();
   //Resize the buffer so it has the correct size and then exchange the tree
@@ -5904,7 +5905,7 @@ real4* octree::MP_exchange_bhlist(int ibox, int isource,
   //Particles
   MPI_Sendrecv(&letDataBuffer[0], nlist*sizeof(real4), MPI_BYTE, ibox, procId*10+1,
       &recvDataBuffer[0], nrecvlist*sizeof(real4), MPI_BYTE, isource, isource*10+1,
-      MPI_COMM_WORLD, &status);
+      mpiCommWorld, &status);
 
   LOG("LET Data Exchange: %d <-> %d  sync-size: %f  alloc: %f  data: %f Total: %lg MB : %f \n",
       ibox, isource, t1-t0, t2-t1, get_time()-t2, get_time()-t0, (nlist*sizeof(real4)/(double)(1024*1024)));
@@ -6020,7 +6021,7 @@ void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries, f
   hashInfo  *recvHashInfo  = new hashInfo[nProcs];
 
   //First receive the number of hashes
-  MPI_Gather(&hInfo, sizeof(hashInfo), MPI_BYTE, recvHashInfo, sizeof(hashInfo), MPI_BYTE, 0, MPI_COMM_WORLD);
+  MPI_Gather(&hInfo, sizeof(hashInfo), MPI_BYTE, recvHashInfo, sizeof(hashInfo), MPI_BYTE, 0, mpiCommWorld);
 
   int    totalNumberOfHashes = 0;
   float  timeSum, timeSum2   = 0;
@@ -6097,11 +6098,11 @@ void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries, f
   //Collect hashes on process 0
   MPI_Gatherv(&hashes[0],    nHashes*sizeof(uint4), MPI_BYTE,
       &allHashes[0], nReceiveCnts,          nReceiveDpls, MPI_BYTE,
-      0, MPI_COMM_WORLD);
+      0, mpiCommWorld);
 
   //  MPI_Gatherv((procId ? &sampleArray[0] : MPI_IN_PLACE), nsample*sizeof(real4), MPI_BYTE,
   //              &sampleArray[0], nReceiveCnts, nReceiveDpls, MPI_BYTE,
-  //              0, MPI_COMM_WORLD);
+  //              0, mpiCommWorld);
 
   if(procId == 0)
   {
@@ -6299,7 +6300,7 @@ void octree::gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries, f
 
 
   //Send the boundaries to all processes
-  MPI_Bcast(boundaries,  sizeof(uint4)*(nProcs+1),MPI_BYTE,0,MPI_COMM_WORLD);
+  MPI_Bcast(boundaries,  sizeof(uint4)*(nProcs+1),MPI_BYTE,0,mpiCommWorld);
 
   if(procId == 0){
     for(int i=0; i < nProcs; i++)
@@ -6680,7 +6681,7 @@ void extractGroupsPrint(
 
   std::vector<int> globalSizeArray(nProcs), displacement(nProcs,0);
   MPI_Allgather(&nGroups,  sizeof(int), MPI_BYTE,
-      &globalSizeArray[0], sizeof(int), MPI_BYTE, MPI_COMM_WORLD); /* to globalSize Array */
+      &globalSizeArray[0], sizeof(int), MPI_BYTE, mpiCommWorld); /* to globalSize Array */
 
   int runningOffset = 0;
   for (int i = 0; i < nProcs; i++)
@@ -6705,7 +6706,7 @@ void extractGroupsPrint(
   MPI_Allgatherv(
       &groupCentre[0], sizeof(real4)*nGroups, MPI_BYTE,
       globalGrpTreeCntSize, &globalSizeArray[0], &displacement[0], MPI_BYTE,
-      MPI_COMM_WORLD);
+      mpiCommWorld);
 
 
   double tEndGrp = get_time(); //TODO delete
@@ -6783,7 +6784,7 @@ void extractGroupsPrint(
 
      MPI_Allgather(&nGroupsFull,            sizeof(int), MPI_BYTE,
                    (void*)&globalSizeArrayFull[0], sizeof(int), MPI_BYTE,
-                   MPI_COMM_WORLD); /* to globalSize Array */
+                   mpiCommWorld); /* to globalSize Array */
 
      int runningOffsetFull = 0;
      for (int i = 0; i < nProcs; i++)
@@ -6812,7 +6813,7 @@ void extractGroupsPrint(
      MPI_Allgatherv(
          &fullBoundaryTree[0], sizeof(real4)*nGroupsFull, MPI_BYTE,
          &globalGrpTreeCntSizeFull[0], &globalSizeArrayFull[0], &displacementFull[0], MPI_BYTE,
-         MPI_COMM_WORLD);
+         mpiCommWorld);
 
 
      double tEndGrpFull = get_time(); //TODO delete
@@ -6912,7 +6913,7 @@ void extractGroupsPrint(
 
      MPI_Allgather(&nGroupsFull,            sizeof(int), MPI_BYTE,
                    (void*)&globalSizeArrayFull[0], sizeof(int), MPI_BYTE,
-                   MPI_COMM_WORLD); /* to globalSize Array */
+                   mpiCommWorld); /* to globalSize Array */
 
      std::vector<int> alltoallSend(nProcs);
      std::vector<int> alltoallSendOff(nProcs, 0);
@@ -6940,7 +6941,7 @@ void extractGroupsPrint(
      /* compute displacements for allgatherv */
      MPI_Alltoallv(&fullBoundaryTree[0], &alltoallSend[0], &alltoallSendOff[0], MPI_BYTE,
              &globalGrpTreeCntSizeFull[0], &globalSizeArrayFull[0], &displacementFull[0], MPI_BYTE,
-           MPI_COMM_WORLD);
+           mpiCommWorld);
 
 
      double tA2AEndGrpFull = get_time(); //TODO delete
@@ -8292,7 +8293,7 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
   t1 = get_time();
 #if 0
   //AlltoallV version
-  MPI_Alltoall(nparticles, 1, MPI_INT, nreceive, 1, MPI_INT, MPI_COMM_WORLD);
+  MPI_Alltoall(nparticles, 1, MPI_INT, nreceive, 1, MPI_INT, mpiCommWorld);
 
   //Compute how much we will receive and the offsets and displacements
   nrecvDispls[0]   = 0;
@@ -8309,13 +8310,13 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
 
   MPI_Alltoallv(&array2Send[0],   nsendbytes, nsendDispls, MPI_BYTE,
       &recv_buffer3[0], nrecvbytes, nrecvDispls, MPI_BYTE,
-      MPI_COMM_WORLD);
+      mpiCommWorld);
 
 #elif 0
 
   //Blocking Send/Recv version
 
-  MPI_Alltoall(nparticles, 1, MPI_INT, nreceive, 1, MPI_INT, MPI_COMM_WORLD);
+  MPI_Alltoall(nparticles, 1, MPI_INT, nreceive, 1, MPI_INT, mpiCommWorld);
   double t92 = get_time();
   unsigned int recvCount  = nreceive[0];
   for (int i = 1; i < nproc; i++)
@@ -8337,15 +8338,15 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
     if ((myid/dist) & 1)
     {
 
-      if (scount > 0) MPI_Send(&array2Send[nsendDispls[dst]/sizeof(bodyStruct)], scount, MPI_BYTE, dst, 1, MPI_COMM_WORLD);
-      if (rcount > 0) MPI_Recv(&recv_buffer3[recvOffset], rcount, MPI_BYTE   , src, 1, MPI_COMM_WORLD, &stat);
+      if (scount > 0) MPI_Send(&array2Send[nsendDispls[dst]/sizeof(bodyStruct)], scount, MPI_BYTE, dst, 1, mpiCommWorld);
+      if (rcount > 0) MPI_Recv(&recv_buffer3[recvOffset], rcount, MPI_BYTE   , src, 1, mpiCommWorld, &stat);
 
       recvOffset +=  nreceive[src];
     }
     else
     {
-      if (rcount > 0) MPI_Recv(&recv_buffer3[recvOffset], rcount, MPI_BYTE   , src, 1, MPI_COMM_WORLD, &stat);
-      if (scount > 0) MPI_Send(&array2Send[nsendDispls[dst]/sizeof(bodyStruct)], scount, MPI_BYTE, dst, 1, MPI_COMM_WORLD);
+      if (rcount > 0) MPI_Recv(&recv_buffer3[recvOffset], rcount, MPI_BYTE   , src, 1, mpiCommWorld, &stat);
+      if (scount > 0) MPI_Send(&array2Send[nsendDispls[dst]/sizeof(bodyStruct)], scount, MPI_BYTE, dst, 1, mpiCommWorld);
 
       recvOffset +=  nreceive[src];
     }
@@ -8357,7 +8358,7 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
   //Non-blocking send/recv version
 
   double tStarta2a = get_time();
-  MPI_Alltoall(nparticles, 1, MPI_INT, nreceive, 1, MPI_INT, MPI_COMM_WORLD);
+  MPI_Alltoall(nparticles, 1, MPI_INT, nreceive, 1, MPI_INT, mpiCommWorld);
 
   double tEnda2a = get_time();
   unsigned int recvCount  = nreceive[0];
@@ -8384,17 +8385,17 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
     const int rcount = nreceive[src]*sizeof(bodyStruct);
 
 #if 1
-    if (scount > 0) MPI_Isend(&array2Send[nsendDispls[dst]/sizeof(bodyStruct)], scount, MPI_BYTE, dst, 1, MPI_COMM_WORLD, &req[nreq++]);
+    if (scount > 0) MPI_Isend(&array2Send[nsendDispls[dst]/sizeof(bodyStruct)], scount, MPI_BYTE, dst, 1, mpiCommWorld, &req[nreq++]);
     if(rcount > 0)
     {
-      MPI_Irecv(&recv_buffer3[recvOffset], rcount, MPI_BYTE, src, 1, MPI_COMM_WORLD, &req[nreq++]);
+      MPI_Irecv(&recv_buffer3[recvOffset], rcount, MPI_BYTE, src, 1, mpiCommWorld, &req[nreq++]);
       recvOffset += nreceive[src];
     }
 #else
     MPI_Status stat;
     MPI_Sendrecv(&array2Send[nsendDispls[dst]/sizeof(bodyStruct)],
         scount, MPI_BYTE, dst, 1,
-        &recv_buffer3[recvOffset], rcount, MPI_BYTE, src, 1, MPI_COMM_WORLD, &stat);
+        &recv_buffer3[recvOffset], rcount, MPI_BYTE, src, 1, mpiCommWorld, &stat);
     recvOffset += nreceive[src];
 #endif
   }

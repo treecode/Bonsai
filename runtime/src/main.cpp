@@ -285,7 +285,8 @@ static void lReadBonsaiFile(
 }
 
 
-void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyVelocities,
+void read_tipsy_file_parallel(const MPI_Comm &mpiCommWorld,
+    vector<real4> &bodyPositions, vector<real4> &bodyVelocities,
                               vector<ullong> &bodiesIDs,  float eps2, string fileName,
                               int rank, int procs, int &NTotal2, int &NFirst, 
                               int &NSecond, int &NThird, octree *tree,
@@ -513,8 +514,7 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
    */
   if (restart)
   {
-    const MPI_Comm &comm = MPI_COMM_WORLD;
-    MPI_Reduce(&ntypeloc, &ntypeglb, 10, MPI_LONG_LONG, MPI_SUM, 0, comm);
+    MPI_Reduce(&ntypeloc, &ntypeglb, 10, MPI_LONG_LONG, MPI_SUM, 0, mpiCommWorld);
   }
   else
   {
@@ -989,8 +989,10 @@ int main(int argc, char** argv)
   }
 
 
+  const MPI_Comm &mpiCommWorld = MPI_COMM_WORLD;
   //Creat the octree class and set the properties
   octree *tree = new octree(
+      mpiCommWorld,
       argv, devID, theta, eps, 
       snapshotFile, snapshotIter,  
       quickDump, quickRatio, quickSync,
@@ -1150,7 +1152,7 @@ int main(int argc, char** argv)
 
   if (!bonsaiFileName.empty() && useMPIIO)
   {
-    const MPI_Comm &comm = MPI_COMM_WORLD;
+    const MPI_Comm &comm = mpiCommWorld;
     lReadBonsaiFile(
         bodyPositions, 
         bodyVelocities,
@@ -1165,7 +1167,7 @@ int main(int argc, char** argv)
   else if(restartSim)
   {
     //The input snapshot file are many files with each process reading its own particles
-    read_tipsy_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName,
+    read_tipsy_file_parallel(mpiCommWorld, bodyPositions, bodyVelocities, bodyIDs, eps, fileName,
                              procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
                              dustPositions, dustVelocities, dustIDs,
                              reduce_bodies_factor, reduce_dust_factor, true);
@@ -1175,7 +1177,7 @@ int main(int argc, char** argv)
     if(procId == 0)
     {
       #ifdef TIPSYOUTPUT
-            read_tipsy_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName,
+            read_tipsy_file_parallel(mpiCommWorld, bodyPositions, bodyVelocities, bodyIDs, eps, fileName,
                 procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
                 dustPositions, dustVelocities, dustIDs, reduce_bodies_factor, reduce_dust_factor, false);
       #else
@@ -1189,7 +1191,7 @@ int main(int argc, char** argv)
     }
     #if USE_MPI
         float tCurrent = tree->get_t_current();
-        MPI_Bcast(&tCurrent, 1, MPI_FLOAT, 0,MPI_COMM_WORLD);
+        MPI_Bcast(&tCurrent, 1, MPI_FLOAT, 0,mpiCommWorld);
         tree->set_t_current(tCurrent);
     #endif
   }
@@ -1365,7 +1367,7 @@ int main(int argc, char** argv)
   tree->load_kernels();
 
 #ifdef USE_MPI
-  MPI_Reduce(&mass,&totalMass,1, MPI_DOUBLE, MPI_SUM,0, MPI_COMM_WORLD);
+  MPI_Reduce(&mass,&totalMass,1, MPI_DOUBLE, MPI_SUM,0, mpiCommWorld);
 #else
   totalMass = mass;
 #endif

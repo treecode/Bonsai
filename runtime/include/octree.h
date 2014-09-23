@@ -420,6 +420,7 @@ class tree_structure
 
 class octree {
 protected:
+  const MPI_Comm &mpiCommWorld;
   int devID;
   int rebuild_tree_rate;
 
@@ -996,7 +997,8 @@ public:
 		return t_current;
 	}
 
-  octree(char **argv, const int device = 0, const float _theta = 0.75, const float eps = 0.05,
+  octree(const MPI_Comm &comm,
+         char **argv, const int device = 0, const float _theta = 0.75, const float eps = 0.05,
          string snapF = "", float snapI = -1,  
          const float _quickDump = 0.0,
          const float _quickRatio = 0.1,
@@ -1006,7 +1008,7 @@ public:
          int _iterEnd = (1<<30),
          int maxDistT = -1, const int _rebuild = 2,
          bool direct = false)
-  : rebuild_tree_rate(_rebuild), procId(0), nProcs(1), thisPartLETExTime(0), useDirectGravity(direct),
+  : mpiCommWorld(comm), rebuild_tree_rate(_rebuild), procId(0), nProcs(1), thisPartLETExTime(0), useDirectGravity(direct),
   quickDump(_quickDump), quickRatio(_quickRatio), quickSync(_quickSync), useMPIIO(_useMPIIO), nextQuickDump(0.0)
   {
 #if USE_B40C
