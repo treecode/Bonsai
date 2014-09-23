@@ -989,7 +989,31 @@ int main(int argc, char** argv)
   }
 
 
-  const MPI_Comm &mpiCommWorld = MPI_COMM_WORLD;
+  auto getCustomCommunicator = [&](){
+    MPI_Init(&argc, &argv);
+    char processor_name[MPI_MAX_PROCESSOR_NAME];
+    int rank, nrank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &nrank);
+    MPI_Comm comm;
+    int color = rank&1;
+//    color = rank&3;
+    color = 0;   /* returns MPI_COMM_WORLD */
+    MPI_Comm_split(MPI_COMM_WORLD, color, rank, &comm);
+    return std::make_tuple(color, comm);
+  };
+
+
+  const auto &comm = getCustomCommunicator();
+  const int       color        = std::get<0>(comm);
+  const MPI_Comm &mpiCommWorld = std::get<1>(comm);
+  if (color != 0)
+    while(1)
+    {
+      sleep(1);
+    };
+
+
   //Creat the octree class and set the properties
   octree *tree = new octree(
       mpiCommWorld,
