@@ -318,7 +318,7 @@ namespace BonsaiIO
       void write(FileIO &fh)
       {
         assert(fh.isWrite());
-        char versionString[16] = "V1";
+        char versionString[16] = "V2";
         fh.write(versionString, 16*sizeof(char), "Error writing versionString.");
         int nData = data.size();
         fh.write(&nData, sizeof(int), "Error writing nData.");
@@ -331,14 +331,19 @@ namespace BonsaiIO
         assert(fh.isRead());
         char versionString[16];
         fh.read(versionString, 16*sizeof(char), "Error reading versionString.");
-        assert(std::string(versionString) == "V1");
+        assert(
+            std::string(versionString) == "V1" ||
+            std::string(versionString) == "V2" );
         int nData;
         fh.read(&nData, sizeof(int), "Error reading nData.");
 
         data.resize(nData);
         fh.read(&data[0], sizeof(DataInfo)*nData, "Error reading dataInfo.");
 
-        fh.read(&time, sizeof(double), "Error reading time.");
+        if (std::string(versionString) == "V1")
+          fh.read(&time, sizeof(float), "Error reading time.");
+        else
+          fh.read(&time, sizeof(double), "Error reading time.");
       }
   };
 
