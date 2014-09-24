@@ -47,7 +47,7 @@ static std::vector<std::string> lSplitString(const std::string &s, char delim)
   return elems;
 }
 
-std::vector<std::vector<std::string>> parseInput()
+static std::vector<std::vector<std::string>> lParseInput()
 {
   std::string input;
   std::string tmp;
@@ -75,7 +75,7 @@ int main(int argc, char *argv[])
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &nrank);
 
-  const auto &programs = parseInput();
+  const auto &programs = lParseInput();
 
   if (rank == 0)
   {
