@@ -1,6 +1,7 @@
 #include <mpi.h>
 #include <dlfcn.h>
 #include <vector>
+#include <iostream>
 #include <string>
 #include <sstream>
 #include <cassert>
