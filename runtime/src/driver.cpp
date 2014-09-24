@@ -36,7 +36,7 @@ class DynamicLoader
 };
 
 
-static std::vector<std::string> lSplitString(const std::string &s, char delim)
+static std::vector<std::string> lSplitString(const std::string &s, const char delim)
 {
   std::vector<std::string> elems;
   std::stringstream ss(s);
