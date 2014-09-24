@@ -61,9 +61,9 @@ option(CUDA_KEEP_INTERMEDIATE_FILES
 FIND_PACKAGE(CUDA REQUIRED)
 
 add_definitions(-std=c++11)
-add_definitions(-fPIC)
 if (USE_MPI)
   add_definitions(-DUSE_MPI)
+  add_definitions(-fPIE -Wno-main)
 endif (USE_MPI)
 
 if (USE_THRUST)
@@ -292,27 +292,12 @@ cuda_add_executable(${BINARY_NAME}
   ${HFILES}
   ${CUFILES}
   ${PROFFILES}
-  OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING} ${KEEP}
+  OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING} ${KEEP} -Xcompiler="-fPIE"
   )
-cuda_add_library(l${BINARY_NAME} SHARED
-  ${CCFILES} 
-  ${HFILES}
-  ${CUFILES}
-  ${PROFFILES}
-  OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING} ${KEEP}
-  )
-
 add_executable(${BINARY_CLR_NAME}
   ${CLR_CCFILES}
   )
-add_library(l${BINARY_CLR_NAME} SHARED
-  ${CLR_CCFILES}
-  )
-
 add_executable(${BINARY_IO_NAME}
-  ${IO_CCFILES}
-  )
-add_library(l${BINARY_IO_NAME} SHARED
   ${IO_CCFILES}
   )
 
@@ -331,9 +316,9 @@ else(USE_GALACTICS OR USE_GALACTICS_IFORT)
   target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES})
 endif(USE_GALACTICS OR USE_GALACTICS_IFORT)
 
-target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES} -lrt)
-target_link_libraries(${BINARY_CLR_NAME}  -lrt)
-target_link_libraries(${BINARY_IO_NAME}  -lrt)
+target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES} -lrt -pie -rdynamic)
+target_link_libraries(${BINARY_CLR_NAME}  -lrt -pie -rdynamic)
+target_link_libraries(${BINARY_IO_NAME}  -lrt -pie -rdynamic)
 
 #copy test data file
 file(COPY ${CMAKE_SOURCE_DIR}/../inputExamples/model3_child_compact.tipsy DESTINATION ${CMAKE_BINARY_DIR})

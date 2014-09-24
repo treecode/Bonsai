@@ -670,7 +670,7 @@ volatile IOSharedData_t ioSharedData;
 long long my_dev::base_mem::currentMemUsage;
 long long my_dev::base_mem::maxMemUsage;
 
-int main(int argc, char** argv)
+int main(int argc, char** argv, MPI_Comm comm)
 {
   my_dev::base_mem::currentMemUsage = 0;
   my_dev::base_mem::maxMemUsage     = 0;
@@ -989,6 +989,7 @@ int main(int argc, char** argv)
   }
 
 
+#if 0
   auto getCustomCommunicator = [&](){
     MPI_Init(&argc, &argv);
     char processor_name[MPI_MAX_PROCESSOR_NAME];
@@ -1012,7 +1013,16 @@ int main(int argc, char** argv)
     {
       sleep(1);
     };
+#else
+  int mpiInitialized = 0;
+  MPI_Initialized(&mpiInitialized);
+  MPI_Comm mpiCommWorld = MPI_COMM_WORLD;
+  if (!mpiInitialized)
+    MPI_Init(&argc, &argv);
+  else
+    mpiCommWorld = comm;
 
+#endif
 
   //Creat the octree class and set the properties
   octree *tree = new octree(
