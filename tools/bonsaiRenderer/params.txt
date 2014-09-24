@@ -1,0 +1,57 @@
+render_params_points
+render_params_volumetric
+slices 64
+displayed_slices 64
+sprite_size 0.1
+scale_[log] 0
+dust_scale 0
+dust_alpha 0.196
+light_color_r 0
+light_color_g 0
+light_color_b 0
+alpha 0.1
+shadow_alpha 0
+transmission 0.001
+indirect_lighting 0.5
+fog 0.001
+over_bright_multiplier 1
+star_brightness 0.015
+image_brightness 1
+image_gamma 0.454545
+blur_radius 1
+blur_passes 2
+source_intensity 0.5
+star_blur_radius 40
+star_threshold 1
+star_power 1
+star_intensity 0.5
+glow_radius 10
+glow_intensity 0.5
+flare_intensity 0
+flare_threshold 0.5
+flare_radius 50
+skybox_brightness 0.5
+render_params_splotch
+star_scale_[log] 0
+star_alpha______ 1
+dm_scale___[log] -0.4
+dm_alpha________ 0.1
+max_size_[log]__ 0
+alpha___________ 0.02
+transmission____ 0.001
+brightness_[pre] 0.08
+gamma_[pre] 0.4
+brightness_[post] 1
+gamma_[post] 1
+render_params_splotch_sorted
+star_scale_[log] 0
+star_alpha______ 1
+dm_scale___[log] -0.4
+dm_alpha________ 0.1
+max_size_[log]__ 0
+alpha___________ 0.02
+transmission____ 0.001
+brightness_[pre] 0.08
+gamma_[pre] 0.4
+brightness_[post] 1
+gamma_[post] 1
