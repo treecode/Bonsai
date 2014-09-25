@@ -736,7 +736,7 @@ int main(int argc, char** argv, MPI_Comm comm)
   int nMilkyWay = -1;
   int nMWfork   =  4;
   std::string taskVar;
-#define TITAN_G
+//#define TITAN_G
 //#define SLURM_G
 #ifdef TITAN_G
   //Works for both Titan and Piz Daint
