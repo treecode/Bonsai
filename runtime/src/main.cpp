@@ -139,8 +139,10 @@ static double lReadBonsaiFields(
         fprintf(stderr, " %s  is not found, skipping\n", type->getName().c_str());
         fprintf(stderr, " ---- \n");
       }
+#if 0
       MPI_Finalize();
       ::exit(-1);
+#endif
     }
       
     dtRead += MPI_Wtime() - t0;
@@ -268,9 +270,14 @@ static void lReadBonsaiFile(
   MPI_Reduce(&ntypeloc, &ntypeglb, ntypecount, MPI_LONG_LONG, MPI_SUM, 0, comm);
   if (rank == 0)
   {
+    size_t nsum = 0;
     for (int type = 0; type < ntypecount; type++)
+    {
+      nsum += ntypeglb[type];
       if (ntypeglb[type] > 0)
         fprintf(stderr, "bonsai-read: ptype= %d:  np= %zu \n",type, ntypeglb[type]);
+    }
+    assert(nsum > 0);
   }
 
   
