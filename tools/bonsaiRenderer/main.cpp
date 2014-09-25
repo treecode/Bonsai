@@ -31,7 +31,7 @@ using ShmQData   = SharedMemoryClient<BonsaiSharedQuickData>;
 static ShmQHeader *shmQHeader = NULL;
 static ShmQData   *shmQData   = NULL;
 
-bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const MPI_Comm &comm,
+bool fetchSharedData(const bool quickSync, RendererData &rData, const int rank, const int nrank, const MPI_Comm &comm,
     const int reduceDM = 1, const int reduceS = 1)
 {
   if (shmQHeader == NULL)
@@ -43,11 +43,33 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
   auto &header = *shmQHeader;
   auto &data   = *shmQData;
 
+  static bool first = true;
+  if (quickSync && first) 
+  {
+    /* handshake */
+
+    header.acquireLock();
+    header[0].handshake = true;
+    header.releaseLock();
+
+    while (header[0].handshake)
+      usleep(1000);
+
+    header.acquireLock();
+    header[0].handshake = true;
+    header.releaseLock();
+
+    /* handshake complete */
+    first = false;
+  }
+
 
   static float tLast = -1.0f;
+    
 
   if (rData.isNewData())
     return false;
+
 
 #if 0
   //  if (rank == 0)
@@ -59,7 +81,7 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
   const float tCurrent = header[0].tCurrent;
 
 
-  int sumL = tCurrent != tLast;
+  int sumL = quickSync ? !header[0].done_writing : tCurrent != tLast;
   int sumG ;
   MPI_Allreduce(&sumL, &sumG, 1, MPI_INT, MPI_SUM, comm);
 
@@ -143,6 +165,7 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
     data.releaseLock();
   }
 
+  header[0].done_writing = true;
   header.releaseLock();
 
 #if 0
@@ -459,6 +482,8 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
   std::string display;
 
   bool inSitu = false;
+  bool quickSync = true;
+  int sleeptime = 1;
 
   {
 		AnyOption opt;
@@ -471,6 +496,8 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
 		ADDUSAGE(" -h  --help             Prints this help ");
 		ADDUSAGE(" -i  --infile #         Input snapshot filename ");
     ADDUSAGE(" -I  --insitu          Enable in-situ rendering ");
+    ADDUSAGE("     --sleep  #        start up sleep in sec [1]  ");
+    ADDUSAGE("     --noquicksync      disable syncing with simulation [enabled] ");
 		ADDUSAGE("     --reduceDM    #    cut down DM dataset by # factor [10]. 0-disable DM");
 		ADDUSAGE("     --reduceS     #    cut down stars dataset by # factor [1]. 0-disable S");
 #ifndef PARTICLESRENDERER
@@ -486,12 +513,14 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
 		opt.setOption( "infile",       'i');
 		opt.setFlag  ( "insitu",       'I');
 		opt.setOption( "reduceDM");
+		opt.setOption( "sleep");
 		opt.setOption( "reduceS");
     opt.setOption( "fullscreen");
     opt.setFlag("stereo");
     opt.setFlag("doDD", 'd');
     opt.setOption("nmaxsample", 's');
     opt.setOption("display", 'D');
+    opt.setFlag  ( "noquicksync");
 
     opt.processCommandArgs( argc, argv );
 
@@ -515,6 +544,8 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     if ((optarg = opt.getValue("nmaxsample"))) nmaxsample = atoi(optarg);
     if (opt.getFlag("doDD"))  doDD = true;
     if ((optarg = opt.getValue("display"))) display = std::string(optarg);
+    if ((optarg = opt.getValue("sleep"))) sleeptime = atoi(optarg);
+    if (opt.getValue("noquicksync")) quickSync = false;
 
     if ((fileName.empty() && !inSitu) ||
         reduceDM < 0 || reduceS < 0)
@@ -551,12 +582,15 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     fprintf(stderr, "root: %s  display: %s \n", hostname, display);
   }
 
-
   if (!display.empty())
   {
     std::string var="DISPLAY="+display;
     putenv((char*)var.c_str());
   }
+
+  if (rank == 0)
+    fprintf(stderr, " Sleeping for %d seconds \n", sleeptime);
+  sleep(sleeptime);
 
 
 
@@ -597,7 +631,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     }
 
     if (inSitu )
-      if (fetchSharedData(*rDataPtr, rank, nranks, comm, reduceDM, reduceS))
+      if (fetchSharedData(quickSync, *rDataPtr, rank, nranks, comm, reduceDM, reduceS))
       {
         rescaleData(*rDataPtr, rank,nranks,comm, doDD,nmaxsample);
         rDataPtr->setNewData();
