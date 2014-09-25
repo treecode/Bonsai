@@ -153,6 +153,7 @@ int main(int argc, char * argv[])
   {
     const double tOpen = MPI_Wtime();
     BonsaiIO::Core out(rank, nranks, comm, BonsaiIO::WRITE, outputName);
+    out.setTime(data.time);
     double dtOpenLoc = MPI_Wtime() - tOpen;
     double dtOpenGlb;
     MPI_Allreduce(&dtOpenLoc, &dtOpenGlb, 1, MPI_DOUBLE, MPI_MAX,comm);
