@@ -16,3 +16,5 @@ vglrun -d :0.0 ./bonsai_driver  << EOF
   ./bonsai_io -q
 EOF
 '
+sleep 1
+mpirun  ./bonsai_clrshm $np

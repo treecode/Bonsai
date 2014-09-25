@@ -13,3 +13,5 @@ vglrun -d :0.0 ./bonsai_driver  << EOF
   ./renderer -I --reduceDM 0 -d --noquicksync
 EOF
 '
+sleep 1
+mpirun -np $nhost ./bonsai_clrshm $np
