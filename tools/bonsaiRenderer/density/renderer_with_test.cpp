@@ -1328,7 +1328,7 @@ void SmokeRenderer::renderSprites(bool sort)
 
 void SmokeRenderer::render()
 {
-  MPI_Bcast(this, sizeof(SmokeRendererParams),  MPI_BYTE, 0, MPI_COMM_WORLD);
+  MPI_Bcast(this, sizeof(SmokeRendererParams),  MPI_BYTE, 0, comm);
 #if 1
   switch(mDisplayMode) {
     case POINTS:

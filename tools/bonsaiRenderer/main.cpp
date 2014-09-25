@@ -444,7 +444,7 @@ static T* readJamieSPH(
 
 
 
-int main(int argc, char * argv[])
+int main(int argc, char * argv[], MPI_Comm commWorld)
 {
 
   std::string fileName;
@@ -527,11 +527,21 @@ int main(int argc, char * argv[])
   }
   
   MPI_Comm comm = MPI_COMM_WORLD;
-  MPI_Init(&argc, &argv);
+  int mpiInitialized = 0;
+  MPI_Initialized(&mpiInitialized);
+  if (!mpiInitialized)
+    MPI_Init(&argc, &argv);
+  else
+    comm = commWorld;
 
   int nranks, rank;
   MPI_Comm_size(comm, &nranks);
   MPI_Comm_rank(comm, &rank);
+  
+  char processor_name[MPI_MAX_PROCESSOR_NAME];
+  int namelen;
+  MPI_Get_processor_name(processor_name,&namelen);
+  fprintf(stderr, "bonsai_renderer:: Proc id: %d @ %s , total processes: %d (mpiInit) \n", rank, processor_name, nranks);
 
   if (rank == 0)
   {
@@ -600,7 +610,7 @@ int main(int argc, char * argv[])
 
 #ifdef USE_ICET
   //Setup the IceT context and communicators
-  IceTCommunicator icetComm =   icetCreateMPICommunicator(MPI_COMM_WORLD);
+  IceTCommunicator icetComm =   icetCreateMPICommunicator(comm);
 /*IceTContext   icetContext =*/ icetCreateContext(icetComm);
   icetDestroyMPICommunicator(icetComm); //Save since the comm is copied to the icetContext
   icetDiagnostics(ICET_DIAG_FULL);

@@ -7,17 +7,18 @@ CFLAGS =  -Wall -Werror
 CUDA_TK  = /usr/local/cuda
 # CUDA_TK = $(HOME)/usr/local/cuda-5.5
 
-CXXFLAGS = -Wall -fopenmp -std=c++11 
+CXXFLAGS = -Wall -fopenmp -std=c++11  -fPIE 
 CXXFLAGS += -Werror
 #ignore warnings caused by openmpi
 CXXFLAGS += -Wno-literal-suffix
 #ignore warnings in a constructor when intialization is not done in the order the variables are declared
 CXXFLAGS += -Wno-reorder
+CXXFLAGS += -Wno-main  # ignore warrnings on main()
 
 
 OPT += -O3 -g
 
-CFLAGS += $(OPT)
+CFLAGS += $(OPT) -fPIE
 CXXFLAGS += $(OPT)
 
 CXXFLAGS += -mavx
@@ -36,6 +37,7 @@ ENGINE=density
 INCLUDE_FLAGS= -I./ -I./$(ENGINE)/
 INCLUDE_FLAGS += -I$(CUDA_TK)/include 
 LDFLAGS = -lGL -lGLU -lglut -lGLEW -fopenmp -lrt
+LDFLAGS += -pie -rdynamic
 #-L$(PWD)/lib/linux -lGLEW_x86_64
 
 ifeq ($(ICET),1)
