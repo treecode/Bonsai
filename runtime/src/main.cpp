@@ -139,10 +139,6 @@ static double lReadBonsaiFields(
         fprintf(stderr, " %s  is not found, skipping\n", type->getName().c_str());
         fprintf(stderr, " ---- \n");
       }
-#if 0
-      MPI_Finalize();
-      ::exit(-1);
-#endif
     }
       
     dtRead += MPI_Wtime() - t0;
@@ -183,7 +179,7 @@ static void lReadBonsaiFile(
     if (rank == 0)
       fprintf(stderr, "Something went wrong: %s \n", e.what());
     MPI_Finalize();
-    ::exit(-1);
+    ::exit(0);
   }
 
   if (rank == 0)
@@ -283,6 +279,7 @@ static void lReadBonsaiFile(
   
   tree->set_t_current(static_cast<float>(in->getTime()));
 
+  in->close();
   const double bw = in->computeBandwidth()/1e6;
   for (auto d : data)
     delete d;
@@ -995,32 +992,6 @@ int main(int argc, char** argv, MPI_Comm comm)
 #endif
   }
 
-
-#if 0
-  auto getCustomCommunicator = [&](){
-    MPI_Init(&argc, &argv);
-    char processor_name[MPI_MAX_PROCESSOR_NAME];
-    int rank, nrank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &nrank);
-    MPI_Comm comm;
-    int color = rank&1;
-//    color = rank&3;
-    color = 0;   /* returns MPI_COMM_WORLD */
-    MPI_Comm_split(MPI_COMM_WORLD, color, rank, &comm);
-    return std::make_tuple(color, comm);
-  };
-
-
-  const auto &comm = getCustomCommunicator();
-  const int       color        = std::get<0>(comm);
-  const MPI_Comm &mpiCommWorld = std::get<1>(comm);
-  if (color != 0)
-    while(1)
-    {
-      sleep(1);
-    };
-#else
   int mpiInitialized = 0;
   MPI_Initialized(&mpiInitialized);
   MPI_Comm mpiCommWorld = MPI_COMM_WORLD;
@@ -1028,8 +999,6 @@ int main(int argc, char** argv, MPI_Comm comm)
     MPI_Init(&argc, &argv);
   else
     mpiCommWorld = comm;
-
-#endif
 
   //Creat the octree class and set the properties
   octree *tree = new octree(
@@ -1517,17 +1486,6 @@ int main(int argc, char** argv, MPI_Comm comm)
       }
       simulationFinished = true;
     }
-#if 0
-    else if (useMPIIO)
-    {
-      static const std::string ioexe(std::string(getenv("PWD"))+"./bonsai-io");
-      char * const argv[2] = {(char*)ioexe.c_str(), NULL};
-      fprintf(stderr, " -- rank= %d -- launch IO \n",procId);
-      execv(ioexe.c_str(), argv);
-      fprintf(stderr, " -- rank= %d -- stop IO \n", procId);
-      while(1);
-    }
-#endif
     else
     {
       assert(!useMPIIO);
@@ -1568,6 +1526,9 @@ int main(int argc, char** argv, MPI_Comm comm)
     }
   }
 
+  if (useMPIIO)
+    tree->terminateIO();
+
   LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
 
 
@@ -1576,10 +1537,6 @@ int main(int argc, char** argv, MPI_Comm comm)
   std::string stemp = sstemp.str();
   tree->writeLogData(stemp);
   tree->writeLogToFile();//Final write incase anything is left in the buffers
-
-  #ifdef USE_MPI
-    MPI_Finalize();
-  #endif
 
   if(tree->procId == 0)
   {
@@ -1595,8 +1552,15 @@ int main(int argc, char** argv, MPI_Comm comm)
 
   delete tree;
   tree = NULL;
+  
+
 #endif
 
   displayTimers();
+
+#ifdef USE_MPI
+  if (!mpiInitialized)
+    MPI_Finalize();
+#endif
   return 0;
 }

@@ -706,6 +706,7 @@ public:
   void iterate_setup(IterationData &idata); 
   void iterate_teardown(IterationData &idata); 
   bool iterate_once(IterationData &idata); 
+  void terminateIO() const;
   template<typename THeader, typename TData>
     void dumpDataCommon(
         SharedMemoryBase<THeader> &header, SharedMemoryBase<TData> &data,

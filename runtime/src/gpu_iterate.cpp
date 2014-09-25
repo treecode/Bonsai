@@ -256,6 +256,23 @@ static void lHandShake(SharedMemoryBase<T> &header)
   header.releaseLock();
 }
 
+void octree::terminateIO() const
+{
+  {
+    auto &header = *shmQHeader;
+    header.acquireLock();
+    header[0].tCurrent = -1;
+    header[0].done_writing = false;
+    header.releaseLock();
+  }
+  {
+    auto &header = *shmSHeader;
+    header.acquireLock();
+    header[0].tCurrent = -1;
+    header[0].done_writing = false;
+    header.releaseLock();
+  }
+}
 
 template<typename THeader, typename TData>
 void octree::dumpDataCommon(

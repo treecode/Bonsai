@@ -115,6 +115,8 @@ int main(int argc, char *argv[])
   argVec.push_back(NULL);
   program(static_cast<int>(argVec.size()-1), &argVec[0], comm);
 
+  if (rank == 0)
+    fprintf(stderr, " %s finalizing .. \n", argv[0]);
   MPI_Finalize();
   exit(0);
 }

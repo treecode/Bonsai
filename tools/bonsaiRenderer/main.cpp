@@ -31,6 +31,8 @@ using ShmQData   = SharedMemoryClient<BonsaiSharedQuickData>;
 static ShmQHeader *shmQHeader = NULL;
 static ShmQData   *shmQData   = NULL;
 
+static bool terminateRenderer = false;
+
 bool fetchSharedData(const bool quickSync, RendererData &rData, const int rank, const int nrank, const MPI_Comm &comm,
     const int reduceDM = 1, const int reduceS = 1)
 {
@@ -80,6 +82,7 @@ bool fetchSharedData(const bool quickSync, RendererData &rData, const int rank, 
   header.acquireLock();
   const float tCurrent = header[0].tCurrent;
 
+  terminateRenderer = tCurrent == -1;
 
   int sumL = quickSync ? !header[0].done_writing : tCurrent != tLast;
   int sumG ;
@@ -621,7 +624,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
 
   auto dataSetFunc = [&](const int code) -> void 
   {
-    int quitL = (code == -1);  /* exit code */
+    int quitL = (code == -1) || terminateRenderer;  /* exit code */
     int quitG;
     MPI_Allreduce(&quitL, &quitG, 1, MPI_INT, MPI_SUM, comm);
     if (quitG)

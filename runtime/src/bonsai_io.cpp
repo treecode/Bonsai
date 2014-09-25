@@ -263,8 +263,9 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
   }
 
 
+  const std::string mode(snapDump  ? "SNAPSHOT" : "QUICKDUMP");
   if (rank == 0)
-    fprintf(stderr, "BonsaIO :: %s mode. Use '-h' for help. \n", (snapDump  ? "SNAPSHOT" : "QUICKDUMP"));
+    fprintf(stderr, "BonsaIO :: %s mode. Use '-h' for help. \n", mode.c_str());
 
   if (snapDump)
   {
@@ -278,6 +279,11 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     ShmQData   shmQData  (ShmQData  ::type::sharedFile(rank));
     writeLoop(shmQHeader, shmQData, rank, nrank, comm);
   }
+
+  if (rank == 0)
+    fprintf(stderr , "BonsaiIO ::  %s mode done writing .. \n", mode.c_str());
+  if (!mpiInitialized)
+    MPI_Finalize();
 
   return 0;
 }
