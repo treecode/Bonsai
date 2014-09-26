@@ -1,9 +1,34 @@
 #include "BonsaiIO.h"
 #include "IDType.h"
 #include "read_tipsy.h"
+#include <array>
 
-template<typename IO>
-static double writeDM(ReadTipsy &data, IO &out)
+static IDType lGetIDType (const long long id)
+{
+  IDType ID;
+  ID.setID(id);
+  ID.setType(3);     /* Everything is Dust until told otherwise */
+  if(id >= DISKID  && id < BULGEID)       
+  {
+    ID.setType(2);  /* Disk */
+    ID.setID(id - DISKID);
+  }
+  else if(id >= BULGEID && id < DARKMATTERID)  
+  {
+    ID.setType(1);  /* Bulge */
+    ID.setID(id - BULGEID);
+  }
+  else if (id >= DARKMATTERID)
+  {
+    ID.setType(0);  /* DM */
+    ID.setID(id - DARKMATTERID);
+  }
+  return ID;
+};
+
+template<typename IO, size_t N>
+static double writeDM(ReadTipsy &data, IO &out,
+    std::array<size_t,N> &count)
 {
   double dtWrite = 0;
   const int pCount  = data.firstID.size();
@@ -12,8 +37,10 @@ static double writeDM(ReadTipsy &data, IO &out)
     BonsaiIO::DataType<IDType> ID("DM:IDType", pCount);
     for (int i = 0; i< pCount; i++)
     {
-      ID[i].setID(data.firstID[i]);
-      ID[i].setType(0);
+      ID[i] = lGetIDType(data.firstID[i]);
+      assert(ID[i].getType() == 0);
+      if (ID[i].getType() < count.size())
+        count[ID[i].getType()]++;
     }
     double t0 = MPI_Wtime();
     out.write(ID);
@@ -48,8 +75,9 @@ static double writeDM(ReadTipsy &data, IO &out)
   return dtWrite;
 }
 
-template<typename IO>
-static double writeStars(ReadTipsy &data, IO &out)
+template<typename IO, size_t N>
+static double writeStars(ReadTipsy &data, IO &out,
+    std::array<size_t,N> &count)
 {
   double dtWrite = 0;
 
@@ -60,8 +88,10 @@ static double writeStars(ReadTipsy &data, IO &out)
     BonsaiIO::DataType<IDType> ID("Stars:IDType", pCount);
     for (int i = 0; i< pCount; i++)
     {
-      ID[i].setID(data.secondID[i]);
-      ID[i].setType(1);
+      ID[i] = lGetIDType(data.secondID[i]);
+      assert(ID[i].getType() > 0);
+      if (ID[i].getType() < count.size())
+        count[ID[i].getType()]++;
     }
     double t0 = MPI_Wtime();
     out.write(ID);
@@ -153,6 +183,8 @@ int main(int argc, char * argv[])
   {
     const double tOpen = MPI_Wtime();
     BonsaiIO::Core out(rank, nranks, comm, BonsaiIO::WRITE, outputName);
+    if (rank == 0)
+      fprintf(stderr, "Time= %g\n", data.time);
     out.setTime(data.time);
     double dtOpenLoc = MPI_Wtime() - tOpen;
     double dtOpenGlb;
@@ -161,23 +193,39 @@ int main(int argc, char * argv[])
       fprintf(stderr, "open file in %g sec \n", dtOpenGlb);
 
     double dtWrite = 0;
+  
+    std::array<size_t,10> ntypeloc, ntypeglb;
+    std::fill(ntypeloc.begin(), ntypeloc.end(), 0);
 
     
     if (rank == 0)
       fprintf(stderr, " write DM  \n");
     MPI_Barrier(comm);
-    dtWrite += writeDM(data,out);
+    dtWrite += writeDM(data,out,ntypeloc);
 
     if (rank == 0)
       fprintf(stderr, " write Stars\n");
     MPI_Barrier(comm);
-    dtWrite += writeStars(data,out);
-
+    dtWrite += writeStars(data,out,ntypeloc);
+    
+    MPI_Reduce(&ntypeloc, &ntypeglb, ntypeloc.size(), MPI_LONG_LONG, MPI_SUM, 0, comm);
+    if (rank == 0)
+    {
+      size_t nsum = 0;
+      for (int type = 0; type < (int)ntypeloc.size(); type++)
+      {
+        nsum += ntypeglb[type];
+        if (ntypeglb[type] > 0)
+          fprintf(stderr, "ptype= %d:  np= %zu \n",type, ntypeglb[type]);
+      }
+    }
+  
 
     double dtWriteGlb;
     MPI_Allreduce(&dtWrite, &dtWriteGlb, 1, MPI_DOUBLE, MPI_MAX,comm);
     if (rank == 0)
       fprintf(stderr, "write file in %g sec \n", dtWriteGlb);
+  
 
     const double tClose = MPI_Wtime();
     out.close();
