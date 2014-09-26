@@ -238,6 +238,7 @@ static void lReadBonsaiFile(
     auto &vel = bodyVelocities[i];
     auto &ID  = bodyIDs[i];
     pos = DM_Pos[i];
+    pos.w *= reduceFactor;
     vel = make_float4(DM_Vel[i][0], DM_Vel[i][1], DM_Vel[i][2],0.0f);
     ID  = DM_IDType[i].getID() + DARKMATTERID;
   }
@@ -248,6 +249,7 @@ static void lReadBonsaiFile(
     auto &vel = bodyVelocities[nDM+i];
     auto &ID  = bodyIDs[nDM+i];
     pos = S_Pos[i];
+    pos.w *= reduceFactor;
     vel = make_float4(S_Vel[i][0], S_Vel[i][1], S_Vel[i][2],0.0f);
     ID  = S_IDType[i].getID();
     switch (S_IDType[i].getType())
