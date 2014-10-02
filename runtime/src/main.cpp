@@ -139,8 +139,6 @@ static double lReadBonsaiFields(
         fprintf(stderr, " %s  is not found, skipping\n", type->getName().c_str());
         fprintf(stderr, " ---- \n");
       }
-      MPI_Finalize();
-      ::exit(-1);
     }
       
     dtRead += MPI_Wtime() - t0;
@@ -181,7 +179,7 @@ static void lReadBonsaiFile(
     if (rank == 0)
       fprintf(stderr, "Something went wrong: %s \n", e.what());
     MPI_Finalize();
-    ::exit(-1);
+    ::exit(0);
   }
 
   if (rank == 0)
@@ -240,6 +238,7 @@ static void lReadBonsaiFile(
     auto &vel = bodyVelocities[i];
     auto &ID  = bodyIDs[i];
     pos = DM_Pos[i];
+    pos.w *= reduceFactor;
     vel = make_float4(DM_Vel[i][0], DM_Vel[i][1], DM_Vel[i][2],0.0f);
     ID  = DM_IDType[i].getID() + DARKMATTERID;
   }
@@ -250,6 +249,7 @@ static void lReadBonsaiFile(
     auto &vel = bodyVelocities[nDM+i];
     auto &ID  = bodyIDs[nDM+i];
     pos = S_Pos[i];
+    pos.w *= reduceFactor;
     vel = make_float4(S_Vel[i][0], S_Vel[i][1], S_Vel[i][2],0.0f);
     ID  = S_IDType[i].getID();
     switch (S_IDType[i].getType())
@@ -268,14 +268,20 @@ static void lReadBonsaiFile(
   MPI_Reduce(&ntypeloc, &ntypeglb, ntypecount, MPI_LONG_LONG, MPI_SUM, 0, comm);
   if (rank == 0)
   {
+    size_t nsum = 0;
     for (int type = 0; type < ntypecount; type++)
+    {
+      nsum += ntypeglb[type];
       if (ntypeglb[type] > 0)
         fprintf(stderr, "bonsai-read: ptype= %d:  np= %zu \n",type, ntypeglb[type]);
+    }
+    assert(nsum > 0);
   }
 
   
   tree->set_t_current(static_cast<float>(in->getTime()));
 
+  in->close();
   const double bw = in->computeBandwidth()/1e6;
   for (auto d : data)
     delete d;
@@ -285,7 +291,8 @@ static void lReadBonsaiFile(
 }
 
 
-void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyVelocities,
+void read_tipsy_file_parallel(const MPI_Comm &mpiCommWorld,
+    vector<real4> &bodyPositions, vector<real4> &bodyVelocities,
                               vector<ullong> &bodiesIDs,  float eps2, string fileName,
                               int rank, int procs, int &NTotal2, int &NFirst, 
                               int &NSecond, int &NThird, octree *tree,
@@ -513,8 +520,7 @@ void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
    */
   if (restart)
   {
-    const MPI_Comm &comm = MPI_COMM_WORLD;
-    MPI_Reduce(&ntypeloc, &ntypeglb, 10, MPI_LONG_LONG, MPI_SUM, 0, comm);
+    MPI_Reduce(&ntypeloc, &ntypeglb, 10, MPI_LONG_LONG, MPI_SUM, 0, mpiCommWorld);
   }
   else
   {
@@ -670,7 +676,7 @@ volatile IOSharedData_t ioSharedData;
 long long my_dev::base_mem::currentMemUsage;
 long long my_dev::base_mem::maxMemUsage;
 
-int main(int argc, char** argv)
+int main(int argc, char** argv, MPI_Comm comm)
 {
   my_dev::base_mem::currentMemUsage = 0;
   my_dev::base_mem::maxMemUsage     = 0;
@@ -736,7 +742,7 @@ int main(int argc, char** argv)
   int nMilkyWay = -1;
   int nMWfork   =  4;
   std::string taskVar;
-#define TITAN_G
+//#define TITAN_G
 //#define SLURM_G
 #ifdef TITAN_G
   //Works for both Titan and Piz Daint
@@ -988,9 +994,17 @@ int main(int argc, char** argv)
 #endif
   }
 
+  int mpiInitialized = 0;
+  MPI_Initialized(&mpiInitialized);
+  MPI_Comm mpiCommWorld = MPI_COMM_WORLD;
+  if (!mpiInitialized)
+    MPI_Init(&argc, &argv);
+  else
+    mpiCommWorld = comm;
 
   //Creat the octree class and set the properties
   octree *tree = new octree(
+      mpiCommWorld,
       argv, devID, theta, eps, 
       snapshotFile, snapshotIter,  
       quickDump, quickRatio, quickSync,
@@ -1150,7 +1164,7 @@ int main(int argc, char** argv)
 
   if (!bonsaiFileName.empty() && useMPIIO)
   {
-    const MPI_Comm &comm = MPI_COMM_WORLD;
+    const MPI_Comm &comm = mpiCommWorld;
     lReadBonsaiFile(
         bodyPositions, 
         bodyVelocities,
@@ -1165,7 +1179,7 @@ int main(int argc, char** argv)
   else if(restartSim)
   {
     //The input snapshot file are many files with each process reading its own particles
-    read_tipsy_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName,
+    read_tipsy_file_parallel(mpiCommWorld, bodyPositions, bodyVelocities, bodyIDs, eps, fileName,
                              procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
                              dustPositions, dustVelocities, dustIDs,
                              reduce_bodies_factor, reduce_dust_factor, true);
@@ -1175,7 +1189,7 @@ int main(int argc, char** argv)
     if(procId == 0)
     {
       #ifdef TIPSYOUTPUT
-            read_tipsy_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName,
+            read_tipsy_file_parallel(mpiCommWorld, bodyPositions, bodyVelocities, bodyIDs, eps, fileName,
                 procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
                 dustPositions, dustVelocities, dustIDs, reduce_bodies_factor, reduce_dust_factor, false);
       #else
@@ -1189,7 +1203,7 @@ int main(int argc, char** argv)
     }
     #if USE_MPI
         float tCurrent = tree->get_t_current();
-        MPI_Bcast(&tCurrent, 1, MPI_FLOAT, 0,MPI_COMM_WORLD);
+        MPI_Bcast(&tCurrent, 1, MPI_FLOAT, 0,mpiCommWorld);
         tree->set_t_current(tCurrent);
     #endif
   }
@@ -1365,7 +1379,7 @@ int main(int argc, char** argv)
   tree->load_kernels();
 
 #ifdef USE_MPI
-  MPI_Reduce(&mass,&totalMass,1, MPI_DOUBLE, MPI_SUM,0, MPI_COMM_WORLD);
+  MPI_Reduce(&mass,&totalMass,1, MPI_DOUBLE, MPI_SUM,0, mpiCommWorld);
 #else
   totalMass = mass;
 #endif
@@ -1474,17 +1488,6 @@ int main(int argc, char** argv)
       }
       simulationFinished = true;
     }
-#if 0
-    else if (useMPIIO)
-    {
-      static const std::string ioexe(std::string(getenv("PWD"))+"./bonsai-io");
-      char * const argv[2] = {(char*)ioexe.c_str(), NULL};
-      fprintf(stderr, " -- rank= %d -- launch IO \n",procId);
-      execv(ioexe.c_str(), argv);
-      fprintf(stderr, " -- rank= %d -- stop IO \n", procId);
-      while(1);
-    }
-#endif
     else
     {
       assert(!useMPIIO);
@@ -1525,6 +1528,9 @@ int main(int argc, char** argv)
     }
   }
 
+  if (useMPIIO)
+    tree->terminateIO();
+
   LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
 
 
@@ -1533,10 +1539,6 @@ int main(int argc, char** argv)
   std::string stemp = sstemp.str();
   tree->writeLogData(stemp);
   tree->writeLogToFile();//Final write incase anything is left in the buffers
-
-  #ifdef USE_MPI
-    MPI_Finalize();
-  #endif
 
   if(tree->procId == 0)
   {
@@ -1552,8 +1554,15 @@ int main(int argc, char** argv)
 
   delete tree;
   tree = NULL;
+  
+
 #endif
 
   displayTimers();
+
+#ifdef USE_MPI
+  if (!mpiInitialized)
+    MPI_Finalize();
+#endif
   return 0;
 }

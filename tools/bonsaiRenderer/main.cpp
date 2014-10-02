@@ -31,7 +31,9 @@ using ShmQData   = SharedMemoryClient<BonsaiSharedQuickData>;
 static ShmQHeader *shmQHeader = NULL;
 static ShmQData   *shmQData   = NULL;
 
-bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const MPI_Comm &comm,
+static bool terminateRenderer = false;
+
+bool fetchSharedData(const bool quickSync, RendererData &rData, const int rank, const int nrank, const MPI_Comm &comm,
     const int reduceDM = 1, const int reduceS = 1)
 {
   if (shmQHeader == NULL)
@@ -43,11 +45,33 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
   auto &header = *shmQHeader;
   auto &data   = *shmQData;
 
+  static bool first = true;
+  if (quickSync && first) 
+  {
+    /* handshake */
+
+    header.acquireLock();
+    header[0].handshake = true;
+    header.releaseLock();
+
+    while (header[0].handshake)
+      usleep(1000);
+
+    header.acquireLock();
+    header[0].handshake = true;
+    header.releaseLock();
+
+    /* handshake complete */
+    first = false;
+  }
+
 
   static float tLast = -1.0f;
+    
 
   if (rData.isNewData())
     return false;
+
 
 #if 0
   //  if (rank == 0)
@@ -58,8 +82,9 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
   header.acquireLock();
   const float tCurrent = header[0].tCurrent;
 
+  terminateRenderer = tCurrent == -1;
 
-  int sumL = tCurrent != tLast;
+  int sumL = quickSync ? !header[0].done_writing : tCurrent != tLast;
   int sumG ;
   MPI_Allreduce(&sumL, &sumG, 1, MPI_INT, MPI_SUM, comm);
 
@@ -143,6 +168,7 @@ bool fetchSharedData(RendererData &rData, const int rank, const int nrank, const
     data.releaseLock();
   }
 
+  header[0].done_writing = true;
   header.releaseLock();
 
 #if 0
@@ -444,7 +470,7 @@ static T* readJamieSPH(
 
 
 
-int main(int argc, char * argv[])
+int main(int argc, char * argv[], MPI_Comm commWorld)
 {
 
   std::string fileName;
@@ -459,6 +485,8 @@ int main(int argc, char * argv[])
   std::string display;
 
   bool inSitu = false;
+  bool quickSync = true;
+  int sleeptime = 1;
 
   {
 		AnyOption opt;
@@ -471,6 +499,8 @@ int main(int argc, char * argv[])
 		ADDUSAGE(" -h  --help             Prints this help ");
 		ADDUSAGE(" -i  --infile #         Input snapshot filename ");
     ADDUSAGE(" -I  --insitu          Enable in-situ rendering ");
+    ADDUSAGE("     --sleep  #        start up sleep in sec [1]  ");
+    ADDUSAGE("     --noquicksync      disable syncing with simulation [enabled] ");
 		ADDUSAGE("     --reduceDM    #    cut down DM dataset by # factor [10]. 0-disable DM");
 		ADDUSAGE("     --reduceS     #    cut down stars dataset by # factor [1]. 0-disable S");
 #ifndef PARTICLESRENDERER
@@ -486,12 +516,14 @@ int main(int argc, char * argv[])
 		opt.setOption( "infile",       'i');
 		opt.setFlag  ( "insitu",       'I');
 		opt.setOption( "reduceDM");
+		opt.setOption( "sleep");
 		opt.setOption( "reduceS");
     opt.setOption( "fullscreen");
     opt.setFlag("stereo");
     opt.setFlag("doDD", 'd');
     opt.setOption("nmaxsample", 's');
     opt.setOption("display", 'D');
+    opt.setFlag  ( "noquicksync");
 
     opt.processCommandArgs( argc, argv );
 
@@ -515,6 +547,8 @@ int main(int argc, char * argv[])
     if ((optarg = opt.getValue("nmaxsample"))) nmaxsample = atoi(optarg);
     if (opt.getFlag("doDD"))  doDD = true;
     if ((optarg = opt.getValue("display"))) display = std::string(optarg);
+    if ((optarg = opt.getValue("sleep"))) sleeptime = atoi(optarg);
+    if (opt.getValue("noquicksync")) quickSync = false;
 
     if ((fileName.empty() && !inSitu) ||
         reduceDM < 0 || reduceS < 0)
@@ -527,11 +561,21 @@ int main(int argc, char * argv[])
   }
   
   MPI_Comm comm = MPI_COMM_WORLD;
-  MPI_Init(&argc, &argv);
+  int mpiInitialized = 0;
+  MPI_Initialized(&mpiInitialized);
+  if (!mpiInitialized)
+    MPI_Init(&argc, &argv);
+  else
+    comm = commWorld;
 
   int nranks, rank;
   MPI_Comm_size(comm, &nranks);
   MPI_Comm_rank(comm, &rank);
+  
+  char processor_name[MPI_MAX_PROCESSOR_NAME];
+  int namelen;
+  MPI_Get_processor_name(processor_name,&namelen);
+  fprintf(stderr, "bonsai_renderer:: Proc id: %d @ %s , total processes: %d (mpiInit) \n", rank, processor_name, nranks);
 
   if (rank == 0)
   {
@@ -541,12 +585,15 @@ int main(int argc, char * argv[])
     fprintf(stderr, "root: %s  display: %s \n", hostname, display);
   }
 
-
   if (!display.empty())
   {
     std::string var="DISPLAY="+display;
     putenv((char*)var.c_str());
   }
+
+  if (rank == 0)
+    fprintf(stderr, " Sleeping for %d seconds \n", sleeptime);
+  sleep(sleeptime);
 
 
 
@@ -577,7 +624,7 @@ int main(int argc, char * argv[])
 
   auto dataSetFunc = [&](const int code) -> void 
   {
-    int quitL = (code == -1);  /* exit code */
+    int quitL = (code == -1) || terminateRenderer;  /* exit code */
     int quitG;
     MPI_Allreduce(&quitL, &quitG, 1, MPI_INT, MPI_SUM, comm);
     if (quitG)
@@ -587,7 +634,7 @@ int main(int argc, char * argv[])
     }
 
     if (inSitu )
-      if (fetchSharedData(*rDataPtr, rank, nranks, comm, reduceDM, reduceS))
+      if (fetchSharedData(quickSync, *rDataPtr, rank, nranks, comm, reduceDM, reduceS))
       {
         rescaleData(*rDataPtr, rank,nranks,comm, doDD,nmaxsample);
         rDataPtr->setNewData();
@@ -600,7 +647,7 @@ int main(int argc, char * argv[])
 
 #ifdef USE_ICET
   //Setup the IceT context and communicators
-  IceTCommunicator icetComm =   icetCreateMPICommunicator(MPI_COMM_WORLD);
+  IceTCommunicator icetComm =   icetCreateMPICommunicator(comm);
 /*IceTContext   icetContext =*/ icetCreateContext(icetComm);
   icetDestroyMPICommunicator(icetComm); //Save since the comm is copied to the icetContext
   icetDiagnostics(ICET_DIAG_FULL);

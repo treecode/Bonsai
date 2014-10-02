@@ -213,12 +213,17 @@ bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank
 
 }
 
-int main(int argc, char * argv[])
+int main(int argc, char * argv[], MPI_Comm commWorld)
 {
   
   MPI_Comm comm = MPI_COMM_WORLD;
 
-  MPI_Init(&argc, &argv);
+  int mpiInitialized = 0;
+  MPI_Initialized(&mpiInitialized);
+  if (!mpiInitialized)
+    MPI_Init(&argc, &argv);
+  else
+    comm = commWorld;
     
   int rank, nrank;
   MPI_Comm_size(comm, &nrank);
@@ -227,7 +232,7 @@ int main(int argc, char * argv[])
   char processor_name[MPI_MAX_PROCESSOR_NAME];
   int namelen;
   MPI_Get_processor_name(processor_name,&namelen);
-  fprintf(stderr, "Rank: %d @ %s , total ranks: %d (mpiInit) \n", rank, processor_name, nrank);
+  fprintf(stderr, "bonsai_io:: Rank: %d @ %s , total ranks: %d (mpiInit) \n", rank, processor_name, nrank);
   bool snapDump = true;
   {
 		AnyOption opt;
@@ -258,8 +263,9 @@ int main(int argc, char * argv[])
   }
 
 
+  const std::string mode(snapDump  ? "SNAPSHOT" : "QUICKDUMP");
   if (rank == 0)
-    fprintf(stderr, "BonsaIO :: %s mode. Use '-h' for help. \n", (snapDump  ? "SNAPSHOT" : "QUICKDUMP"));
+    fprintf(stderr, "BonsaIO :: %s mode. Use '-h' for help. \n", mode.c_str());
 
   if (snapDump)
   {
@@ -273,6 +279,11 @@ int main(int argc, char * argv[])
     ShmQData   shmQData  (ShmQData  ::type::sharedFile(rank));
     writeLoop(shmQHeader, shmQData, rank, nrank, comm);
   }
+
+  if (rank == 0)
+    fprintf(stderr , "BonsaiIO ::  %s mode done writing .. \n", mode.c_str());
+  if (!mpiInitialized)
+    MPI_Finalize();
 
   return 0;
 }

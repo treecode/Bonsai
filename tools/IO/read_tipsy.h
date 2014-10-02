@@ -8,6 +8,10 @@
 #include <cassert>
 #include "tipsydefs.h"
 
+#define DARKMATTERID  3000000000000000000
+#define DISKID        0
+#define BULGEID       2000000000000000000
+  
 
 class ReadTipsy
 {
@@ -161,7 +165,6 @@ class ReadTipsy
           velocity.y        = d.vel[1];
           velocity.z        = d.vel[2];
           idummy            = d.getID();
-#define DARKMATTERID  3000000000000000000
           if(fileFormatVersion == 0)
             idummy = s.getID_V1() + DARKMATTERID;
           
@@ -182,7 +185,6 @@ class ReadTipsy
           idummy            = s.getID();
           if(fileFormatVersion == 0)
           {
-#define BULGEID       2000000000000000000
             if(s.getID_V1() >= 100000000)
               idummy    = s.getID_V1() + BULGEID; //Bulge particles
             else

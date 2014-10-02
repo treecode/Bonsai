@@ -63,6 +63,7 @@ FIND_PACKAGE(CUDA REQUIRED)
 add_definitions(-std=c++11)
 if (USE_MPI)
   add_definitions(-DUSE_MPI)
+  add_definitions(-fPIE -Wno-main)
 endif (USE_MPI)
 
 if (USE_THRUST)
@@ -77,8 +78,10 @@ endif (USE_B40C)
 if (USE_DUST)
   add_definitions(-DUSE_DUST)
   set(BINARY_NAME bonsai2)
+  set(LIBRARY_NAME bonsai2)
 else (USE_DUST)
   set(BINARY_NAME bonsai2_slowdust)
+  set(LIBRARY_NAME bonsai2_slowdust)
 endif (USE_DUST)
 
 set(BINARY_CLR_NAME bonsai_clrshm)
@@ -289,15 +292,17 @@ cuda_add_executable(${BINARY_NAME}
   ${HFILES}
   ${CUFILES}
   ${PROFFILES}
-  OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING} ${KEEP}
+  OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING} ${KEEP} -Xcompiler="-fPIE"
   )
-
 add_executable(${BINARY_CLR_NAME}
   ${CLR_CCFILES}
   )
-
 add_executable(${BINARY_IO_NAME}
   ${IO_CCFILES}
+  )
+
+add_executable(bonsai_driver
+  src/driver.cpp
   )
 
 if (USE_GALACTICS OR USE_GALACTICS_IFORT)
@@ -311,9 +316,9 @@ else(USE_GALACTICS OR USE_GALACTICS_IFORT)
   target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES})
 endif(USE_GALACTICS OR USE_GALACTICS_IFORT)
 
-target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES} -lrt)
-target_link_libraries(${BINARY_CLR_NAME}  -lrt)
-target_link_libraries(${BINARY_IO_NAME}  -lrt)
+target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES} -lrt -pie -rdynamic)
+target_link_libraries(${BINARY_CLR_NAME}  -lrt -pie -rdynamic)
+target_link_libraries(${BINARY_IO_NAME}  -lrt -pie -rdynamic)
 
 #copy test data file
 file(COPY ${CMAKE_SOURCE_DIR}/../inputExamples/model3_child_compact.tipsy DESTINATION ${CMAKE_BINARY_DIR})

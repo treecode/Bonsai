@@ -642,7 +642,7 @@ void octree::parallelDataSummary(tree_structure &tree,
      double timeSum   = 0.0;
 
      //Sum the execution times over all processes
-     MPI_Allreduce( &timeLocal, &timeSum, 1,MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+     MPI_Allreduce( &timeLocal, &timeSum, 1,MPI_DOUBLE, MPI_SUM, mpiCommWorld);
 
      nrate = timeLocal / timeSum;
 
@@ -660,7 +660,7 @@ void octree::parallelDataSummary(tree_structure &tree,
 
        double nrate2_sum = 0.0;
 
-       MPI_Allreduce(&nrate, &nrate2_sum, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+       MPI_Allreduce(&nrate, &nrate2_sum, 1, MPI_DOUBLE, MPI_SUM, mpiCommWorld);
 
        nrate /= nrate2_sum;
      }

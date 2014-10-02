@@ -256,6 +256,23 @@ static void lHandShake(SharedMemoryBase<T> &header)
   header.releaseLock();
 }
 
+void octree::terminateIO() const
+{
+  {
+    auto &header = *shmQHeader;
+    header.acquireLock();
+    header[0].tCurrent = -1;
+    header[0].done_writing = false;
+    header.releaseLock();
+  }
+  {
+    auto &header = *shmSHeader;
+    header.acquireLock();
+    header[0].tCurrent = -1;
+    header[0].done_writing = false;
+    header.releaseLock();
+  }
+}
 
 template<typename THeader, typename TData>
 void octree::dumpDataCommon(
@@ -680,8 +697,8 @@ bool octree::iterate_once(IterationData &idata) {
       //mpiSync();
 
       //Gather info about the load-balance, used to decide if we need to refine the domains
-      MPI_Allreduce(&lastTotal, &maxExecTimePrevStep, 1, MPI_FLOAT, MPI_MAX, MPI_COMM_WORLD);
-      MPI_Allreduce(&lastTotal, &avgExecTimePrevStep, 1, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+      MPI_Allreduce(&lastTotal, &maxExecTimePrevStep, 1, MPI_FLOAT, MPI_MAX, mpiCommWorld);
+      MPI_Allreduce(&lastTotal, &avgExecTimePrevStep, 1, MPI_FLOAT, MPI_SUM, mpiCommWorld);
       avgExecTimePrevStep /= nProcs;
 
       devContext.stopTiming("Unbalance", 12, execStream->s());
@@ -710,7 +727,7 @@ bool octree::iterate_once(IterationData &idata) {
         localTree.bodies_ids.d2h();
 
         double tDens1 = get_time();
-        const DENSITY dens(procId, nProcs, localTree.n,
+        const DENSITY dens(mpiCommWorld, procId, nProcs, localTree.n,
                            &localTree.bodies_pos[0],
                            &localTree.bodies_vel[0],
                            &localTree.bodies_ids[0],
@@ -720,7 +737,7 @@ bool octree::iterate_once(IterationData &idata) {
         if(procId == 0) LOGF(stderr,"Density took: Copy: %lg Create: %lg \n", tDens1-tDens0, tDens2-tDens1);
 
         double tDisk1 = get_time();
-        const DISKSTATS diskstats(procId, nProcs, localTree.n,
+        const DISKSTATS diskstats(mpiCommWorld, procId, nProcs, localTree.n,
                            &localTree.bodies_pos[0],
                            &localTree.bodies_vel[0],
                            &localTree.bodies_ids[0],
@@ -816,15 +833,15 @@ bool octree::iterate_once(IterationData &idata) {
     return false;
 }
 
-void debugPrintProgress(int procId, int p)
+void debugPrintProgress(int procId, int p, const MPI_Comm &mpiCommWorld)
 {
 #ifdef USE_MPI
-  MPI_Barrier(MPI_COMM_WORLD);
+  MPI_Barrier(mpiCommWorld);
   if (procId == 0)
   {
     fprintf(stderr, " === %d === \n", p);
   }
-  MPI_Barrier(MPI_COMM_WORLD);
+  MPI_Barrier(mpiCommWorld);
 #endif
 }
 
@@ -865,7 +882,7 @@ void octree::iterate_setup(IterationData &idata) {
   //Will be at time 0
   //predict the particles
   predict(this->localTree);
-  debugPrintProgress(procId,200);
+  debugPrintProgress(procId,200,mpiCommWorld);
   double notUsed = 0;
 
   //Setup of the particle distribution, initially it should be equal
@@ -879,8 +896,8 @@ void octree::iterate_setup(IterationData &idata) {
       //Check if the min/max are within certain percentage
       int maxN = 0, minN = 0;
       #ifdef USE_MPI
-        MPI_Allreduce(&localTree.n, &maxN, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
-        MPI_Allreduce(&localTree.n, &minN, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
+        MPI_Allreduce(&localTree.n, &maxN, 1, MPI_INT, MPI_MAX, mpiCommWorld);
+        MPI_Allreduce(&localTree.n, &minN, 1, MPI_INT, MPI_MIN, mpiCommWorld);
 
         //Compute difference in percent
         int perc = (int)(100*(maxN-minN)/(double)minN);
@@ -1056,7 +1073,7 @@ void octree::iterate_setup(IterationData &idata) {
       localTree.bodies_ids.d2h();
 
       double tDens1 = get_time();
-      const DENSITY dens(procId, nProcs, localTree.n,
+      const DENSITY dens(mpiCommWorld,procId, nProcs, localTree.n,
                          &localTree.bodies_pos[0],
                          &localTree.bodies_vel[0],
                          &localTree.bodies_ids[0],
@@ -1066,7 +1083,7 @@ void octree::iterate_setup(IterationData &idata) {
       if(procId == 0) LOGF(stderr,"Density took: Copy: %lg Create: %lg \n", tDens1-tDens0, tDens2-tDens1);
 
       double tDisk1 = get_time();
-      const DISKSTATS diskstats(procId, nProcs, localTree.n,
+      const DISKSTATS diskstats(mpiCommWorld,procId, nProcs, localTree.n,
                          &localTree.bodies_pos[0],
                          &localTree.bodies_vel[0],
                          &localTree.bodies_ids[0],
@@ -1934,7 +1951,7 @@ double octree::compute_energies(tree_structure &tree)
 //            i,vel.x, vel.y, vel.z,tree.bodies_pos[i].w, tree.bodies_acc0[i].w);
 
   }
-  MPI_Barrier(MPI_COMM_WORLD);
+  MPI_Barrier(mpiCommWorld);
   double hEtot = hEpot + hEkin;
   LOG("Energy (on host): Etot = %.10lg Ekin = %.10lg Epot = %.10lg \n", hEtot, hEkin, hEpot);
   #endif

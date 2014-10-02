@@ -1026,7 +1026,7 @@ class Demo
         m_cameraRoll
       };
 
-      MPI_Bcast(cameraTemp, 7, MPI_FLOAT, 0, MPI_COMM_WORLD);
+      MPI_Bcast(cameraTemp, 7, MPI_FLOAT, 0, comm);
 
       m_cameraTransLag.x = cameraTemp[0]; 
       m_cameraTransLag.y = cameraTemp[1];
