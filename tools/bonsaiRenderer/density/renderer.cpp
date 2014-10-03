@@ -2374,7 +2374,11 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
 #define __PROFILE
 #endif
 
-  bool useIceT = false;
+#ifdef USE_ICET
+	bool useIceT = true;
+#else  
+	bool useIceT = false;
+#endif 
 
 #ifdef USE_ICET
   if(useIceT)
@@ -2708,9 +2712,6 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
 #endif
   }
 
-#ifdef __COMPOSITE_PROFILE
-#undef __COMPOSITE_PROFILE
-#endif
   m_fbo->Disable();
 }
 
