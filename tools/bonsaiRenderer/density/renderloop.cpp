@@ -1670,6 +1670,24 @@ class Demo
 
 #pragma omp parallel
     {
+
+      //GTC12 colors
+      const float MoL_bulge = 4.0; /* mass-to-light ratio */
+      const float MoL_disk = 3.5;
+      const float MoL_glow = 1.0;
+      const float slope_bulge = -1.35f + MoL_bulge;
+      const float slope_disk = -1.35f + MoL_disk; /* salpeter MF slope + MoL to get light distribution function*/
+      const float slope_glow = -1.35f + MoL_glow;
+      StarSampler sBulge(slope_bulge-1, 7, 7+9); /* only include old GKM stars */
+      StarSampler sDisk (slope_disk-1, 2, 2+14); /* limit only to BAFGKM stars */
+      StarSampler sGlow (slope_glow-1, 0, 0+ 6); /* only OBA stars */
+      float4 color2 = make_float4(starColor2.x*starColor2.w, starColor2.y*starColor2.w, starColor2.z*starColor2.w, 1.0f);
+      float4 color3 = make_float4(starColor3.x*starColor3.w, starColor3.y*starColor3.w, starColor3.z*starColor3.w, 1.0f);
+      float4 color4 = make_float4(starColor4.x*starColor4.w, starColor4.y*starColor4.w, starColor4.z*starColor4.w, 1.0f);
+
+
+
+
       float slope = +1.35; // reversed MF, low mass depleted
       slope = 0.1;
       StarSampler sSampler (slope-1);
@@ -1686,6 +1704,7 @@ class Demo
 
         /* assign color */
         const int type =  ID.getType();
+	const size_t IDval = ID.getID();
         float4 color = make_float4(0.0f);
         if (hasRHO)
         {
@@ -1710,22 +1729,49 @@ class Demo
           {
             case 0:   /* DM */
               color = darkMatterColor;
-              color.w = 0;
+              color.w = 3;
               break;
             case 1:   /* Bulge */
-              /* to-do */
-              // break;
+            {
+              const float Mstar = sBulge.sampleMass(IDval);
+              const float4 Cstar = sBulge.getColour(Mstar);
+              const float fdim = 0.01f;
+              color = Cstar * make_float4(fdim, fdim, fdim, 2.0f);
+              break;
+            }            
             case 2:   /* Disk */
-              /* to-do */
-              // break;
+            {
+              //Normal disk
+              color = ((IDval % m_brightFreq) != 0) ? starColor : ((IDval / m_brightFreq) & 1) ? color2 : color3;
+              const float Mstar = sDisk.sampleMass(IDval);
+              const float4 Cstar = sDisk.getColour(Mstar);
+              color = ((IDval & 1023) == 0) ? /* one in 1000 stars glows a bit */
+              sGlow.getColour(sGlow.sampleMass(IDval)) :  (0) ? color : make_float4(Cstar.x*0.01f, Cstar.y*0.01f, Cstar.z*0.01f, Cstar.w);
+              color.w = 1.0f;
+              break;
+            }              
             case 3:   /* Dust */
-              /* to-do */
-              // break;
+              color = dustColor;
+              color.w = 0.0f;
+              break; 
+            case 4: //Glowing stars in spiral arms
+            {
+              color              = ((IDval%4) == 0) ? color4 : color3;
+              const float Mstar  = sGlow.sampleMass(IDval);
+              const float4 Cstar = sGlow.getColour(Mstar);
+              color              = Cstar;
+              color.w            = ((IDval%8) == 0) ? color.w : 3.0f; //Hide some, testing
+              break;
+            }          
+            case 5: //Glow mass less dust particles
+               color = color3; /* adds glow in purple */
+               //NOTE, this one is never triggered
+               break;
             default:
               const float  Mstar = sSampler.sampleMass();
               const float4 Cstar = sSampler.getColour(Mstar);
               color = Cstar;
-              color.w = 1.0;
+              color.w = 3.0; //Hide this unknown particle
           }
         }
         colors[i] = color;

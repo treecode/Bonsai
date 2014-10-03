@@ -42,8 +42,8 @@ const char *particleVS = STRINGIFY(
     float mass = gl_Vertex.w;
     float type = gl_Color.w;
 
-//    float pointRadius1 = pointRadius; \n
-    float pointRadius1 = pointRadiusAttr; \n
+    float pointRadius1 = pointRadius; \n
+//    float pointRadius1 = pointRadiusAttr; \n
 
     // calculate window-space point size                    \n
     vec4 eyeSpacePos = gl_ModelViewMatrix * wpos;           \n
@@ -73,8 +73,8 @@ const char *particleVS = STRINGIFY(
     }
 
     //gl_PointSize = pointRadius1*(pointScale / dist);       \n
-    //gl_PointSize = max(1.0, pointRadius1 * (pointScale / dist)); \n
-    gl_PointSize = max(1.0, pointRadius1 * (2*pointScale / dist)); \n
+    gl_PointSize = max(1.0, pointRadius1 * (pointScale / dist)); \n
+    //gl_PointSize = max(1.0, pointRadius1 * (2*pointScale / dist)); \n
       //float pointSize = pointRadius1 * (pointScale / dist);
       //if (pointSize < 1.0) col.rgb *= pointSize;
       //gl_PointSize = max(1.0, pointSize);
