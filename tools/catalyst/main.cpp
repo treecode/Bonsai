@@ -27,6 +27,7 @@ static void renderer(
   while (1)
   {
     sleep(1);
+    callback(0);  /* fetch new data */
     if (data.isNewData())
     {
       fprintf(stderr , "rank= %d: --copying new data --\n", rank);
