@@ -20,7 +20,6 @@ OPT += -O3 -g
 CFLAGS += $(OPT) -fPIE
 CXXFLAGS += $(OPT)
 
-CXXFLAGS += -mavx
 
 
 NVCC=$(CUDATK)/bin/nvcc
@@ -43,6 +42,8 @@ ifeq ($(APPLEOSX),1)
 	INCLUDE_FLAGS += -I/opt/local/include
 	CXXFLAGS +=-Wno-deprecated-declarations 
 	LDFLAGS = -framework OpenGL -L/opt/local/lib -lglut -lglew -fopenmp -pie
+else
+  CXXFLAGS += -mavx
 endif
 
 OBJ = main.o anyoption.o RendererData.o
