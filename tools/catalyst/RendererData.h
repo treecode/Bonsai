@@ -6,7 +6,11 @@
 #include <array>
 #include <algorithm>
 #include <iostream>
+#include <vector>
 #include "IDType.h"
+#ifdef BONSAI_CATALYST_CLANG
+ #include <tmmintrin.h>
+#endif
 
 #if 0
 struct float2 { float x, y; };
@@ -181,7 +185,6 @@ class RendererDataDistribute : public RendererData
     float xlow[3], xhigh[3];
     int npx, npy, npz;
     bool distributed;
-
     using vector3 = std::array<double,3>;
     struct float4
     {
@@ -190,7 +193,11 @@ class RendererDataDistribute : public RendererData
       static v4sf v4sf_abs(v4sf x){
         typedef int v4si __attribute__ ((vector_size(16)));
         v4si mask = {0x7fffffff, 0x7fffffff, 0x7fffffff, 0x7fffffff};
+#ifndef BONSAI_CATALYST_CLANG
         return __builtin_ia32_andps(x, (v4sf)mask);
+#else
+        return _mm_and_ps(x, (v4sf)mask);
+#endif
       }
       union{
         v4sf v;
@@ -205,7 +212,11 @@ class RendererDataDistribute : public RendererData
       float4 abs(){
         typedef int v4si __attribute__ ((vector_size(16)));
         v4si mask = {0x7fffffff, 0x7fffffff, 0x7fffffff, 0x7fffffff};
+#ifndef BONSAI_CATALYST_CLANG
         return float4(__builtin_ia32_andps(v, (v4sf)mask));
+#else
+        return float4(_mm_and_ps(v, (v4sf)mask));
+#endif
       }
       void dump(){
         std::cerr << x << " "
