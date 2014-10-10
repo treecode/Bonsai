@@ -41,7 +41,11 @@ endif
 ifeq ($(APPLEOSX),1)
 	INCLUDE_FLAGS += -I/opt/local/include
 	CXXFLAGS +=-Wno-deprecated-declarations 
-	LDFLAGS = -framework OpenGL -L/opt/local/lib -lglut -lglew -fopenmp -pie
+	LDFLAGS = -framework OpenGL -L/opt/local/lib -lglut -lglew -fopenmp -fpie
+	LDFLAGS+= -L/opt/local/lib/gcc48 -lgomp -stdlib=libstdc++
+	CXX=OMPI_CXX=g++-mp-4.8 mpicxx
+	CC=OMPI_CXX=g++-mp-4.8 mpicxx
+	LD=OMPI_CXX=clang++ mpicxx
 else
   CXXFLAGS += -mavx
 endif

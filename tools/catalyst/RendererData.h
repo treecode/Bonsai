@@ -4,7 +4,7 @@
 #include <cassert>
 #include <cmath>
 #include <array>
-#include <parallel/algorithm>
+#include <algorithm>
 #include <iostream>
 #include "IDType.h"
 
