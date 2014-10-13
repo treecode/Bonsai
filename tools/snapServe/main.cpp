@@ -15,7 +15,6 @@
 #include <functional>
 
 #include "anyoption.h"
-#include "RendererData.h"
 
 using ShmQHeader = SharedMemoryServer<BonsaiSharedQuickHeader>;
 using ShmQData   = SharedMemoryServer<BonsaiSharedQuickData>;

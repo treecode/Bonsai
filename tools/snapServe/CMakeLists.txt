@@ -50,7 +50,6 @@ endif()
 # source files
 #
 set(SRC_FILES 
-  RendererData.cpp
   anyoption.cpp
   main.cpp
 )
