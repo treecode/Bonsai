@@ -32,6 +32,10 @@ include_directories(${MPI_C_INCLUDE_PATH})
 message("compiler is ${CMAKE_CXX_COMPILER_ID}")
 if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
   add_definitions(-DBONSAI_CATALYST_CLANG)
+else()
+  add_definitions("-Wno-literal-suffix") # FIX for OpenMPI with gcc491
+  add_definitions("-Wno-main") # Do not generate warrning on main
+  add_definitions("-Werror")
 endif()
 
 #
