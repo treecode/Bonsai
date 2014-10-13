@@ -1,4 +1,3 @@
-#include <mpi.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cassert>
@@ -12,7 +11,14 @@
 #ifndef BONSAI_CATALYST_CLANG
  #include <omp.h>
 #endif
-#include <functional>
+#ifdef BONSAI_CATALYST_STDLIB
+ #include <boost/function.hpp>
+ #define bonsaistd boost
+#else
+ #include <functional>
+ #define bonsaistd std
+#endif
+#include <mpi.h>
 
 #include "anyoption.h"
 #include "RendererData.h"
@@ -23,7 +29,7 @@ static void renderer(
     RendererData &data,
     const char *fullScreenMode /* = "" */,
     const bool stereo /* = false */,
-    std::function<void(int)> &callback)
+    bonsaistd::function<void(int)> &callback)
 {
   /* do rendering here */
   while (1)
@@ -124,7 +130,7 @@ bool fetchSharedData(const bool quickSync, RendererData &rData, const int rank, 
 
     size_t nDM = 0, nS = 0;
     constexpr int ntypecount = 10;
-    std::array<size_t,ntypecount> ntypeloc, ntypeglb;
+    bonsaistd::array<size_t,ntypecount> ntypeloc, ntypeglb;
     std::fill(ntypeloc.begin(), ntypeloc.end(), 0);
     for (size_t i = 0; i < size; i++)
     {
@@ -515,7 +521,7 @@ int main(int argc, char * argv[])
       }
   };
 
-  std::function<void(int)> callback = callbackFunc;
+  bonsaistd::function<void(int)> callback = callbackFunc;
   callback(0);  /* init data set */
 
   renderer(

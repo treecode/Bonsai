@@ -41,6 +41,21 @@ endif()
 if ("${CMAKE_CXX_FLAGS}" STREQUAL "")
   set(CMAKE_CXX_FLAGS "-std=c++11" CACHE STRING "CXX flags" FORCE)
 endif()
+
+#--------------------------------------------------
+# On mac, if we use cuda we need stdlibc++
+# add an option to use boost where std:: isn't available
+#--------------------------------------------------
+option(BONSAI_CATALYST_USE_STDLIB OFF "Use stdlibc++ instead of libc++")
+if(BONSAI_CATALYST_USE_STDLIB)
+  add_definitions(-DBONSAI_CATALYST_STDLIB)
+  #-----------------------------------------------
+  # Boost
+  #-----------------------------------------------
+  find_package( Boost 1.54.0 )
+  include_directories(${Boost_INCLUDE_DIR})
+  LINK_DIRECTORIES(${Boost_LIBRARY_DIR})
+endif()
   
 #
 # source files
