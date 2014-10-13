@@ -244,10 +244,17 @@ static std::tuple<double,DataVec> readBonsai(
   return std::make_tuple(t,rdata);
 }
 
-std::vector<std::string> lParseList(const std::string fileNameList)
+static std::vector<std::string> lParseList(const std::string fileNameList)
 {
-  std::vector<std::string> fileList;
+  std::ifstream fin(fileNameList);
 
+  std::string item;
+  std::vector<std::string> fileList;
+  while (std::getline(fin, item))
+    if (!item.empty())
+      fileList.push_back(item);
+
+  fin.close();
   return fileList;
 }
 
@@ -286,8 +293,8 @@ int main(int argc, char * argv[])
 
     opt.setFlag  ( "help" ,        'h');
     opt.setOption( "inlist",       'i');
-    opt.setFlag  ( "loop",         'l');
-    opt.setFlag  ( "delay",        'd');
+    opt.setOption( "loop",         'l');
+    opt.setOption( "delay",        'd');
     opt.setFlag  ( "noquicksync");
     opt.setOption( "reduceDM");
     opt.setOption( "reduceS");
@@ -304,11 +311,11 @@ int main(int argc, char * argv[])
 
     char *optarg = NULL;
     if ((optarg = opt.getValue("inlist")))    fileNameList       = std::string(optarg);
-    if ((optarg = opt.getValue("loop")))      nloop             = atoi(optarg);
+    if ((optarg = opt.getValue("loop")))      nloop              = atoi(optarg);
     if ((optarg = opt.getValue("reduceDM"))) reduceDM       = atoi(optarg);
     if ((optarg = opt.getValue("reduceS"))) reduceS       = atoi(optarg);
     if ((optarg = opt.getValue("delay"))) delay       = atoi(optarg);
-    if (opt.getValue("noquicksync")) quickSync = false;
+    if (opt.getFlag("noquicksync")) quickSync = false;
 
     if (fileNameList.empty() ||
         reduceDM < 0 || reduceS < 0)
@@ -337,12 +344,19 @@ int main(int argc, char * argv[])
   MPI_Get_processor_name(processor_name,&namelen);
   fprintf(stderr, "bonsai_snapServe:: Proc id: %d @ %s , total processes: %d (mpiInit) \n", rank, processor_name, nranks);
 
+  if (rank == 0)
+  {
+    fprintf(stderr , " quickSync= %s \n", quickSync ? "true" : "false");
+    fprintf(stderr , " delay= %d msec \n", delay);
+  }
+
   const auto &fileList = lParseList(fileNameList);
 
   for (int i = 0; i < nloop; i++)
     for (const auto &file : fileList)
     {
-      fprintf(stderr, "loop= %3d: filename= %s \n", i, file.c_str());
+      if (rank == 0)
+        fprintf(stderr, "loop= %3d: filename= %s \n", i, file.c_str());
       const auto &data = readBonsai(rank, nranks, comm,
           file, reduceDM, reduceS);
       sendSharedData(quickSync, std::get<0>(data), std::get<1>(data), file.c_str(), rank, nranks, comm);
