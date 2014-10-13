@@ -17,200 +17,121 @@
 #include "anyoption.h"
 #include "RendererData.h"
 
-static void renderer(
-    int argc, char** argv, 
-    const int rank, const int nrank, const MPI_Comm &comm,
-    RendererData &data,
-    const char *fullScreenMode /* = "" */,
-    const bool stereo /* = false */,
-    std::function<void(int)> &callback)
-{
-  /* do rendering here */
-  while (1)
-  {
-    sleep(1);
-    callback(0);  /* fetch new data */
-    if (data.isNewData())
-    {
-      fprintf(stderr , "rank= %d: --copying new data --\n", rank);
-      /* copy new data into my buffer */
-      data.unsetNewData();
-    }
-    fprintf(stderr ," rank= %d: rendering ... \n", rank);
-  }
-}
-
-using ShmQHeader = SharedMemoryClient<BonsaiSharedQuickHeader>;
-using ShmQData   = SharedMemoryClient<BonsaiSharedQuickData>;
+using ShmQHeader = SharedMemoryServer<BonsaiSharedQuickHeader>;
+using ShmQData   = SharedMemoryServer<BonsaiSharedQuickData>;
 static ShmQHeader *shmQHeader = NULL;
 static ShmQData   *shmQData   = NULL;
 
-static bool terminateRenderer = false;
+struct data_t
+{
+  float posx,posy,posz, mass;
+  float velx,vely,velz;
+  float rho,h;
+  IDType ID;
+};
+using DataVec = std::vector<data_t>;
 
-bool fetchSharedData(const bool quickSync, RendererData &rData, const int rank, const int nrank, const MPI_Comm &comm,
-    const int reduceDM = 1, const int reduceS = 1)
+static void sendSharedData(
+    const bool sync, 
+    const double t_current,
+    const DataVec &rdata,
+    const char fileName[],
+    const int rank, 
+    const int nrank, 
+    const MPI_Comm &comm)
 {
   if (shmQHeader == NULL)
   {
-    shmQHeader = new ShmQHeader(ShmQHeader::type::sharedFile(rank));
-    shmQData   = new ShmQData  (ShmQData  ::type::sharedFile(rank));
+    const size_t capacity  = rdata.size()*2;
+    shmQHeader = new ShmQHeader(ShmQHeader::type::sharedFile(rank), 1);
+    shmQData   = new ShmQData  (ShmQData  ::type::sharedFile(rank), capacity);
   }
 
   auto &header = *shmQHeader;
   auto &data   = *shmQData;
 
-  static bool first = true;
-  if (quickSync && first) 
+  static bool handShake = false;
+  if (sync && handShake) 
   {
     /* handshake */
 
     header.acquireLock();
-    header[0].handshake = true;
+    header[0].handshake = false;
     header.releaseLock();
 
-    while (header[0].handshake)
-      usleep(1000);
+    while (!header[0].handshake)
+      usleep(100);
 
     header.acquireLock();
-    header[0].handshake = true;
+    header[0].handshake = false;
     header.releaseLock();
 
     /* handshake complete */
-    first = false;
+    handShake = true;
   }
 
-
-  static float tLast = -1.0f;
-
-
-  if (rData.isNewData())
-    return false;
+  if (sync)
+    while (!header[0].done_writing);
 
 
-#if 0
-  //  if (rank == 0)
-  fprintf(stderr, " rank= %d: attempting to fetch data \n",rank);
-#endif
-
-  // header
+  const size_t np = rdata.size();
+  
   header.acquireLock();
-  const float tCurrent = header[0].tCurrent;
-
-  terminateRenderer = tCurrent == -1;
-
-  int sumL = quickSync ? !header[0].done_writing : tCurrent != tLast;
-  int sumG ;
-  MPI_Allreduce(&sumL, &sumG, 1, MPI_INT, MPI_SUM, comm);
-
-
-  bool completed = false;
-  if (sumG == nrank) //tCurrent != tLast)
+  header[0].tCurrent = t_current;
+  header[0].nBodies  = np;
+  for (int i = 0; i < 1024; i++)
   {
-    tLast = tCurrent;
-    completed = true;
-
-    // data
-    const size_t nBodies = header[0].nBodies;
-    data.acquireLock();
-
-    const size_t size = data.size();
-    assert(size == nBodies);
-
-    /* skip particles that failed to get density, or with too big h */
-    auto skipPtcl = [&](const int i)
-    {
-      return (data[i].rho == 0 || data[i].h == 0.0 || data[i].h > 100);
-    };
-
-    size_t nDM = 0, nS = 0;
-    constexpr int ntypecount = 10;
-    std::array<size_t,ntypecount> ntypeloc, ntypeglb;
-    std::fill(ntypeloc.begin(), ntypeloc.end(), 0);
-    for (size_t i = 0; i < size; i++)
-    {
-      const int type = data[i].ID.getType();
-      if  (type < ntypecount)
-        ntypeloc[type]++;
-      if (skipPtcl(i))
-        continue;
-      switch (type)
-      {
-        case 0:
-          nDM++;
-          break;
-        default:
-          nS++;
-      }
-    }
-
-    MPI_Reduce(&ntypeloc, &ntypeglb, ntypecount, MPI_LONG_LONG, MPI_SUM, 0, comm);
-    if (rank == 0)
-    {
-      for (int type = 0; type < ntypecount; type++)
-        if (ntypeglb[type] > 0)
-          fprintf(stderr, " ptype= %d:  np= %zu \n",type, ntypeglb[type]);
-    }
-
-
-    rData.resize(nS);
-    size_t ip = 0;
-    for (size_t i = 0; i < size; i++)
-    {
-      if (skipPtcl(i))
-        continue;
-      if (data[i].ID.getType() == 0 )  /* pick stars only */
-        continue;
-
-      rData.posx(ip) = data[i].x;
-      rData.posy(ip) = data[i].y;
-      rData.posz(ip) = data[i].z;
-      rData.ID  (ip) = data[i].ID;
-      rData.attribute(RendererData::MASS, ip) = data[i].mass;
-      rData.attribute(RendererData::VEL,  ip) =
-        std::sqrt(
-            data[i].vx*data[i].vx+
-            data[i].vy*data[i].vy+
-            data[i].vz*data[i].vz);
-      rData.attribute(RendererData::RHO, ip) = data[i].rho;
-      rData.attribute(RendererData::H,   ip) = data[i].h;
-
-      ip++;
-      assert(ip <= nS);
-    }
-    rData.resize(ip);
-
-    data.releaseLock();
+    header[0].fileName[i] = fileName[i];
+    if (fileName[i] == 0)
+      break;
   }
 
-  header[0].done_writing = true;
+  data.acquireLock();
+  if (!data.resize(np))
+  {
+    std::cerr << "rank= " << rank << ": failed to resize. ";
+    std::cerr << "Request " << np << " but capacity is  " << data.capacity() << "." << std::endl;
+    data.releaseLock();
+    header.releaseLock();
+    MPI_Finalize();
+    ::exit(0);
+  }
+
+  for (size_t i = 0; i < np; i++)
+  {
+    auto &p       = data[i];
+    const auto &d = rdata[i];
+    p.x    = d.posx;
+    p.y    = d.posy;
+    p.z    = d.posz;
+    p.mass = d.mass;
+    p.vx   = d.velx;
+    p.vy   = d.vely;
+    p.vz   = d.velz;
+    p.vw   = 0.0;
+    p.rho  = d.rho;
+    p.h    = d.h;
+    p.ID   = d.ID;
+  }
+  data.releaseLock();
+
+  header[0].done_writing = false;
   header.releaseLock();
-
-#if 0
-  //  if (rank == 0)
-  fprintf(stderr, " rank= %d: done fetching data \n", rank);
-#endif
-
-  if (completed)
-    rData.computeMinMax();
-
-
-  return completed;
 }
 
-
-  template<typename T>
-static T* readBonsai(
+static std::tuple<double,DataVec> readBonsai(
     const int rank, const int nranks, const MPI_Comm &comm,
     const std::string &fileName,
     const int reduceDM,
     const int reduceS,
-    const bool print_header = false)
+    const bool print_header = false) 
 {
-  BonsaiIO::Core out(rank, nranks, comm, BonsaiIO::READ, fileName);
+  const double t0 = MPI_Wtime();
+  BonsaiIO::Core in(rank, nranks, comm, BonsaiIO::READ, fileName);
   if (rank == 0 && print_header)
   {
     fprintf(stderr, "---- Bonsai header info ----\n");
-    out.getHeader().printFields();
+    in.getHeader().printFields();
     fprintf(stderr, "----------------------------\n");
   }
   typedef float float4[4];
@@ -222,15 +143,16 @@ static T* readBonsai(
   BonsaiIO::DataType<float3> velS("Stars:VEL:float[3]");
   BonsaiIO::DataType<float2> rhohS("Stars:RHOH:float[2]");
 
+  DataVec rdata;
   if (reduceS > 0)
   {
-    if (!out.read(IDListS, true, reduceS)) return NULL;
+    if (!in.read(IDListS, true, reduceS)) return std::make_tuple(-1.0,rdata);
     if (rank  == 0)
       fprintf(stderr, " Reading star data \n");
-    assert(out.read(posS,    true, reduceS));
-    assert(out.read(velS,    true, reduceS));
+    assert(in.read(posS,    true, reduceS));
+    assert(in.read(velS,    true, reduceS));
     bool renderDensity = true;
-    if (!out.read(rhohS,  true, reduceS))
+    if (!in.read(rhohS,  true, reduceS))
     {
       if (rank == 0)
       {
@@ -253,11 +175,11 @@ static T* readBonsai(
   {
     if (rank  == 0)
       fprintf(stderr, " Reading DM data \n");
-    if(!out.read(IDListDM, true, reduceDM)) return NULL;
-    assert(out.read(posDM,    true, reduceDM));
-    assert(out.read(velDM,    true, reduceDM));
+    if(!in.read(IDListDM, true, reduceDM)) return std::make_tuple(-1.0,rdata);
+    assert(in.read(posDM,    true, reduceDM));
+    assert(in.read(velDM,    true, reduceDM));
     bool renderDensity = true;
-    if (!out.read(rhohDM,  true, reduceDM))
+    if (!in.read(rhohDM,  true, reduceDM))
     {
       if (rank == 0)
       {
@@ -272,6 +194,7 @@ static T* readBonsai(
       assert(IDListS.getNumElements() == posS.getNumElements());
   }
 
+  const double t1 = MPI_Wtime();
 
   const int nS  = IDListS.getNumElements();
   const int nDM = IDListDM.getNumElements();
@@ -287,61 +210,45 @@ static T* readBonsai(
   }
 
 
-  T *rDataPtr = new T(rank,nranks,comm);
-  rDataPtr->resize(nS+nDM);
-  auto &rData = *rDataPtr;
+  rdata.resize(nS+nDM);
   for (int i = 0; i < nS; i++)
   {
-    const int ip = i;
-    rData.posx(ip) = posS[i][0];
-    rData.posy(ip) = posS[i][1];
-    rData.posz(ip) = posS[i][2];
-    rData.ID  (ip) = IDListS[i];
-    assert(rData.ID(ip).getType() > 0); /* sanity check */
-    rData.attribute(RendererData::MASS, ip) = posS[i][3];
-    rData.attribute(RendererData::VEL,  ip) =
-      std::sqrt(
-          velS[i][0]*velS[i][0] +
-          velS[i][1]*velS[i][1] +
-          velS[i][2]*velS[i][2]);
+    auto &d = rdata[i];
+    d.posx = posS[i][0];
+    d.posy = posS[i][1];
+    d.posz = posS[i][2];
+    d.mass = posS[i][3];
+    d.ID   = IDListS[i];
+    assert(d.ID.getType() > 0); /* sanity check */
+    d.velx = velS[i][0];
+    d.vely = velS[i][1];
+    d.velz = velS[i][2];
     if (rhohS.size() > 0)
     {
-      rData.attribute(RendererData::RHO, ip) = rhohS[i][0];
-      rData.attribute(RendererData::H,  ip)  = rhohS[i][1];
+      d.rho = rhohS[i][0];
+      d.h   = rhohS[i][1];
     }
     else
     {
-      rData.attribute(RendererData::RHO, ip) = 0.0;
-      rData.attribute(RendererData::H,   ip) = 0.0;
-    }
-  }
-  for (int i = 0; i < nDM; i++)
-  {
-    const int ip = i + nS;
-    rData.posx(ip) = posDM[i][0];
-    rData.posy(ip) = posDM[i][1];
-    rData.posz(ip) = posDM[i][2];
-    rData.ID  (ip) = IDListDM[i];
-    assert(rData.ID(ip).getType() == 0); /* sanity check */
-    rData.attribute(RendererData::MASS, ip) = posDM[i][3];
-    rData.attribute(RendererData::VEL,  ip) =
-      std::sqrt(
-          velDM[i][0]*velDM[i][0] +
-          velDM[i][1]*velDM[i][1] +
-          velDM[i][2]*velDM[i][2]);
-    if (rhohDM.size() > 0)
-    {
-      rData.attribute(RendererData::RHO, ip) = rhohDM[i][0];
-      rData.attribute(RendererData::H,   ip) = rhohDM[i][1];
-    }
-    else
-    {
-      rData.attribute(RendererData::RHO, ip) = 0.0;
-      rData.attribute(RendererData::H,   ip) = 0.0;
+      d.rho = 0.0;
+      d.h   = 0.0;
     }
   }
 
-  return rDataPtr;
+  const double bw = in.computeBandwidth()/1e6;
+  const double dtRead = t1-t0;
+  if (rank == 0)
+    fprintf(stderr, " :: dtRead= %g  sec readBW= %g MB/s \n", dtRead, bw);
+  const double t = in.getTime();
+  in.close();
+  return std::make_tuple(t,rdata);
+}
+
+std::vector<std::string> lParseList(const std::string fileNameList)
+{
+  std::vector<std::string> fileList;
+
+  return fileList;
 }
 
 #ifndef BONSAI_CATALYST_CLANG
@@ -353,19 +260,11 @@ int main(int argc, char * argv[])
  MPI_Comm commWorld;
 #endif
 
-  std::string fileName;
-  int reduceDM    =  10;
-  int reduceS=  1;
-#ifndef PARTICLESRENDERER
-  std::string fullScreenMode    = "";
-  bool stereo     = false;
-#endif
-  int nmaxsample = 200000;
-  std::string display;
-
-  bool inSitu = false;
+  std::string fileNameList;
+  int nloop    = 1;
   bool quickSync = true;
-  int sleeptime = 1;
+  int reduceDM = 10;
+  int reduceS  = 1;
 
   {
     AnyOption opt;
@@ -376,31 +275,19 @@ int main(int argc, char * argv[])
     ADDUSAGE("Usage:");
     ADDUSAGE(" ");
     ADDUSAGE(" -h  --help             Prints this help ");
-    ADDUSAGE(" -i  --infile #         Input snapshot filename ");
-    ADDUSAGE(" -I  --insitu          Enable in-situ rendering ");
-    ADDUSAGE("     --sleep  #        start up sleep in sec [1]  ");
-    ADDUSAGE("     --noquicksync      disable syncing with simulation [enabled] ");
+    ADDUSAGE(" -i  --inlist #         Input list with snapshot filenames");
+    ADDUSAGE(" -l  --loop   #         Loop count through file list [1]");
+    ADDUSAGE("     --noquicksync      disable syncing with the client ");
     ADDUSAGE("     --reduceDM    #    cut down DM dataset by # factor [10]. 0-disable DM");
     ADDUSAGE("     --reduceS     #    cut down stars dataset by # factor [1]. 0-disable S");
-#ifndef PARTICLESRENDERER
-    ADDUSAGE("     --fullscreen  #    set fullscreen mode string");
-    ADDUSAGE("     --stereo           enable stereo rendering");
-#endif
-    ADDUSAGE(" -s  --nmaxsample   #   set max number of samples for DD [" << nmaxsample << "]");
-    ADDUSAGE(" -D  --display      #   set DISPLAY=display, otherwise inherited from environment");
 
 
     opt.setFlag  ( "help" ,        'h');
-    opt.setOption( "infile",       'i');
-    opt.setFlag  ( "insitu",       'I');
-    opt.setOption( "reduceDM");
-    opt.setOption( "sleep");
-    opt.setOption( "reduceS");
-    opt.setOption( "fullscreen");
-    opt.setFlag("stereo");
-    opt.setOption("nmaxsample", 's');
-    opt.setOption("display", 'D');
+    opt.setOption( "inlist",       'i');
+    opt.setFlag  ( "loop",         'l');
     opt.setFlag  ( "noquicksync");
+    opt.setOption( "reduceDM");
+    opt.setOption( "reduceS");
 
     opt.processCommandArgs( argc, argv );
 
@@ -413,20 +300,13 @@ int main(int argc, char * argv[])
     }
 
     char *optarg = NULL;
-    if (opt.getFlag("insitu"))  inSitu = true;
-    if ((optarg = opt.getValue("infile")))       fileName           = std::string(optarg);
+    if ((optarg = opt.getValue("inlist")))    fileNameList       = std::string(optarg);
+    if ((optarg = opt.getValue("loop")))      nloop             = atoi(optarg);
     if ((optarg = opt.getValue("reduceDM"))) reduceDM       = atoi(optarg);
     if ((optarg = opt.getValue("reduceS"))) reduceS       = atoi(optarg);
-#ifndef PARTICLESRENDERER
-    if ((optarg = opt.getValue("fullscreen")))	 fullScreenMode     = std::string(optarg);
-    if (opt.getFlag("stereo"))  stereo = true;
-#endif
-    if ((optarg = opt.getValue("nmaxsample"))) nmaxsample = atoi(optarg);
-    if ((optarg = opt.getValue("display"))) display = std::string(optarg);
-    if ((optarg = opt.getValue("sleep"))) sleeptime = atoi(optarg);
     if (opt.getValue("noquicksync")) quickSync = false;
 
-    if ((fileName.empty() && !inSitu) ||
+    if (fileNameList.empty() ||
         reduceDM < 0 || reduceS < 0)
     {
       opt.printUsage();
@@ -451,82 +331,21 @@ int main(int argc, char * argv[])
   char processor_name[MPI_MAX_PROCESSOR_NAME];
   int namelen;
   MPI_Get_processor_name(processor_name,&namelen);
-  fprintf(stderr, "bonsai_renderer:: Proc id: %d @ %s , total processes: %d (mpiInit) \n", rank, processor_name, nranks);
+  fprintf(stderr, "bonsai_snapServe:: Proc id: %d @ %s , total processes: %d (mpiInit) \n", rank, processor_name, nranks);
 
-  if (rank == 0)
-  {
-    char hostname[256];
-    gethostname(hostname,256);
-    char * display = getenv("DISPLAY");
-    fprintf(stderr, "root: %s  display: %s \n", hostname, display);
-  }
+  const auto &fileList = lParseList(fileNameList);
 
-  if (!display.empty())
-  {
-    std::string var="DISPLAY="+display;
-    putenv((char*)var.c_str());
-  }
-
-  if (rank == 0)
-    fprintf(stderr, " Sleeping for %d seconds \n", sleeptime);
-  sleep(sleeptime);
-
-
-
-  using RendererDataT = RendererData;
-  RendererDataT *rDataPtr;
-  if (inSitu)
-  {
-    rDataPtr = new RendererDataT(rank,nranks,comm);
-  }
-  else
-  {
-    if ((rDataPtr = readBonsai<RendererDataT>(rank, nranks, comm, fileName, reduceDM, reduceS))) 
-    {}
-    else
+  for (int i = 0; i < nloop; i++)
+    for (const auto &file : fileList)
     {
-      if (rank == 0)
-        fprintf(stderr, " I don't recognize the format ... please try again , or recompile to use with old tipsy if that is what you use ..\n");
-      MPI_Finalize();
-      ::exit(-1);
-    }
-    rDataPtr->computeMinMax();
-    rDataPtr->setNewData();
-  }
-
-  assert(rDataPtr != 0);
-
-
-  auto callbackFunc = [&](const int code) 
-  {
-    int quitL = (code == -1) || terminateRenderer;  /* exit code */
-    int quitG;
-    MPI_Allreduce(&quitL, &quitG, 1, MPI_INT, MPI_SUM, comm);
-    if (quitG)
-    {
-      MPI_Finalize();
-      ::exit(0);
+      fprintf(stderr, "loop= %3d: filename= %s \n", i, file.c_str());
+      const auto &data = readBonsai(rank, nranks, comm,
+          file, reduceDM, reduceS);
+      sendSharedData(quickSync, std::get<0>(data), std::get<1>(data), file.c_str(), rank, nranks, comm);
     }
 
-    if (inSitu )
-      if (fetchSharedData(quickSync, *rDataPtr, rank, nranks, comm, reduceDM, reduceS))
-      {
-        rDataPtr->setNewData();
-      }
-  };
+  MPI_Finalize();
 
-  std::function<void(int)> callback = callbackFunc;
-  callback(0);  /* init data set */
-
-  renderer(
-      argc, argv, 
-      rank, nranks, comm,
-      *rDataPtr,
-      fullScreenMode.c_str(), 
-      stereo,
-      callback);
-
-  while(1) {}
   return 0;
 }
 
