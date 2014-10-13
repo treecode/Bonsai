@@ -37,9 +37,12 @@ class CameraPath
         fin >> cam.tranx >> cam.trany >> cam.tranz;
         fin >> cam.rotx >> cam.roty >> cam.rotz;
 
-        cam.rotx *= 180.0/M_PI;
-        cam.roty *= 180.0/M_PI;
-        cam.rotz *= 180.0/M_PI;
+        cam.rotx *= -180.0/M_PI;
+        cam.roty *= -180.0/M_PI;
+        cam.rotz *= -180.0/M_PI;
+        cam.tranx *= -1.0;
+        cam.trany *= -1.0;
+        cam.tranz *= -1.0;
 
         std::string order;
         fin >> order;
