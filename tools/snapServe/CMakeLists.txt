@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8)
-project(bonsai_catalyst)
+project(bonsai_snapserve)
 
 
 if (BONSAI_CATALYST_OSX_GCC)
