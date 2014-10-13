@@ -43,18 +43,18 @@ class CameraPath
       }
     }
 
-    int nsteps() const { return cameraVec.size(); }
-    const camera_t& getStep(const int step) const { return cameraVec[step%nsteps()]; }
-    camera_t getRange(const real r) const
+    int nFrames() const { return cameraVec.size(); }
+    const camera_t& getFrame(const int step) const { return cameraVec[step%nFrames()]; }
+    camera_t interpolate(const real r) const
     {
       assert(r >= 0.0);
       assert(r <= 1.0);
-      const real t  = r * (nsteps()-1);
+      const real t  = r * (nFrames()-1);
       const real t0 = floor(t);
       const real t1 = t0 + 1.0;
       
       const auto& c0 = cameraVec[static_cast<int>(t0)];
-      const auto& c1 = cameraVec[std::min(static_cast<int>(t1),nsteps()-1)];
+      const auto& c1 = cameraVec[std::min(static_cast<int>(t1),nFrames()-1)];
 
       const float f = (t-t0)/(t1-t0);
       auto cvt = [&](const real f0, const real f1)
