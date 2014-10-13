@@ -22,6 +22,15 @@ using ShmQData   = SharedMemoryServer<BonsaiSharedQuickData>;
 static ShmQHeader *shmQHeader = NULL;
 static ShmQData   *shmQData   = NULL;
 
+static void lTerminateIO() 
+{
+  auto &header = *shmQHeader;
+  header.acquireLock();
+  header[0].tCurrent = -1;
+  header[0].done_writing = false;
+  header.releaseLock();
+}
+
 struct data_t
 {
   float posx,posy,posz, mass;
@@ -51,9 +60,12 @@ static void sendSharedData(
   auto &data   = *shmQData;
 
   static bool handShake = false;
-  if (sync && handShake) 
+  if (sync && !handShake) 
   {
     /* handshake */
+
+    header[0].tCurrent = t_current;
+    header[0].done_writing = true;
 
     header.acquireLock();
     header[0].handshake = false;
@@ -99,7 +111,7 @@ static void sendSharedData(
 
   for (size_t i = 0; i < np; i++)
   {
-    auto &p       = data[i];
+    auto &p       =  data[i];
     const auto &d = rdata[i];
     p.x    = d.posx;
     p.y    = d.posy;
@@ -359,10 +371,14 @@ int main(int argc, char * argv[])
         fprintf(stderr, "loop= %3d: filename= %s \n", i, file.c_str());
       const auto &data = readBonsai(rank, nranks, comm,
           file, reduceDM, reduceS);
+      fprintf(stderr, "rank= %d : time= %g np= %d \n",
+          rank, std::get<0>(data), std::get<1>(data).size());
       sendSharedData(quickSync, std::get<0>(data), std::get<1>(data), file.c_str(), rank, nranks, comm);
       if (delay > 0)
         usleep(1000*delay);
     }
+
+  lTerminateIO();
 
   MPI_Finalize();
 
