@@ -15,7 +15,6 @@
 #include "renderloop.h"
 #include "anyoption.h"
 #include "RendererData.h"
-#include "cameraPath.h"
 
 #if 0
 #define USE_ICET
@@ -635,7 +634,11 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
 
   CameraPath *camera = nullptr;
   if (!cameraFileName.empty())
+  {
     camera = new CameraPath(cameraFileName);
+    rDataPtr->setCameraPath(camera);
+  }
+
 
   auto dataSetFunc = [&](const int code) -> void 
   {
