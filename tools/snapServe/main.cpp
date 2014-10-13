@@ -371,7 +371,7 @@ int main(int argc, char * argv[])
         fprintf(stderr, "loop= %3d: filename= %s \n", i, file.c_str());
       const auto &data = readBonsai(rank, nranks, comm,
           file, reduceDM, reduceS);
-      fprintf(stderr, "rank= %d : time= %g np= %d \n",
+      fprintf(stderr, "rank= %d : time= %g np= %zu \n",
           rank, std::get<0>(data), std::get<1>(data).size());
       sendSharedData(quickSync, std::get<0>(data), std::get<1>(data), file.c_str(), rank, nranks, comm);
       if (delay > 0)
