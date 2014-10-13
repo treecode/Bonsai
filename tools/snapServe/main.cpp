@@ -265,6 +265,7 @@ int main(int argc, char * argv[])
   bool quickSync = true;
   int reduceDM = 10;
   int reduceS  = 1;
+  int delay = 0;
 
   {
     AnyOption opt;
@@ -277,6 +278,7 @@ int main(int argc, char * argv[])
     ADDUSAGE(" -h  --help             Prints this help ");
     ADDUSAGE(" -i  --inlist #         Input list with snapshot filenames");
     ADDUSAGE(" -l  --loop   #         Loop count through file list [1]");
+    ADDUSAGE(" -d  --delay  #         Delay between new shapshots in ms [0/none]");
     ADDUSAGE("     --noquicksync      disable syncing with the client ");
     ADDUSAGE("     --reduceDM    #    cut down DM dataset by # factor [10]. 0-disable DM");
     ADDUSAGE("     --reduceS     #    cut down stars dataset by # factor [1]. 0-disable S");
@@ -285,6 +287,7 @@ int main(int argc, char * argv[])
     opt.setFlag  ( "help" ,        'h');
     opt.setOption( "inlist",       'i');
     opt.setFlag  ( "loop",         'l');
+    opt.setFlag  ( "delay",        'd');
     opt.setFlag  ( "noquicksync");
     opt.setOption( "reduceDM");
     opt.setOption( "reduceS");
@@ -304,6 +307,7 @@ int main(int argc, char * argv[])
     if ((optarg = opt.getValue("loop")))      nloop             = atoi(optarg);
     if ((optarg = opt.getValue("reduceDM"))) reduceDM       = atoi(optarg);
     if ((optarg = opt.getValue("reduceS"))) reduceS       = atoi(optarg);
+    if ((optarg = opt.getValue("delay"))) delay       = atoi(optarg);
     if (opt.getValue("noquicksync")) quickSync = false;
 
     if (fileNameList.empty() ||
@@ -342,6 +346,8 @@ int main(int argc, char * argv[])
       const auto &data = readBonsai(rank, nranks, comm,
           file, reduceDM, reduceS);
       sendSharedData(quickSync, std::get<0>(data), std::get<1>(data), file.c_str(), rank, nranks, comm);
+      if (delay > 0)
+        usleep(1000*delay);
     }
 
   MPI_Finalize();

@@ -56,5 +56,5 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 #
 # exe
 #
-add_executable(catalyst ${SRC_FILES})
-target_link_libraries(catalyst ${MPI_C_LIBRARIES})
+add_executable(snapServe ${SRC_FILES})
+target_link_libraries(snapServe ${MPI_C_LIBRARIES})
