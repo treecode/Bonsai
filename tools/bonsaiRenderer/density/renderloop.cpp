@@ -442,6 +442,7 @@ class Demo
       m_enableStats(true)
   {
     assert(rank < nrank);
+    m_frameCount = 0;
     m_windowDims = make_int2(WINX, WINY);
     m_cameraTrans = make_float3(0, 0, -100);
     m_cameraTransLag = m_cameraTrans;
@@ -999,6 +1000,8 @@ class Demo
     //double startTime = GetTimer();
     //double getBodyDataTime = startTime;
 
+    m_frameCount++;
+
     if (m_renderingEnabled)
     {
       //Check if we need to update the number of particles
@@ -1021,7 +1024,19 @@ class Demo
       m_cameraTransLag = m_cameraTrans;
       m_cameraRotLag = m_cameraRot;
 #endif
-      float cameraTemp[7] = {m_cameraTransLag.x, m_cameraTransLag.y, m_cameraTransLag.z, 
+      if (m_idata.isCameraPath())
+      {
+        const auto &cam = m_idata.getCamera().getFrame(m_frameCount);
+        m_cameraRotLag  .x = cam. rotx;
+        m_cameraRotLag  .y = cam. roty;
+        m_cameraRotLag  .z = cam. rotz;
+        m_cameraTransLag.x = cam.tranx;
+        m_cameraTransLag.y = cam.trany;
+        m_cameraTransLag.z = cam.tranz;
+      }
+      float cameraTemp[7] = 
+      {
+        m_cameraTransLag.x, m_cameraTransLag.y, m_cameraTransLag.z, 
         m_cameraRotLag.x,   m_cameraRotLag.y,   m_cameraRotLag.z,
         m_cameraRoll
       };
@@ -1098,7 +1113,7 @@ class Demo
         calculateCursorPos();
       }
 
-      if (m_flyMode) {
+      if (m_flyMode && !m_idata.isCameraPath()) {
         glRotatef(m_cameraRotLag.z, 0.0, 0.0, 1.0);
         glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
         glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
@@ -1111,11 +1126,22 @@ class Demo
 
       } else {
         // orbit viwer - rotate around centre, then translate
-        glTranslatef(m_cameraTransLag.x, m_cameraTransLag.y, m_cameraTransLag.z);
-        glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
-        glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
-        glRotatef(m_cameraRoll, 0.0, 0.0, 1.0);
-        glRotatef(90.0f, 1.0f, 0.0f, 0.0f); // rotate galaxies into XZ plane
+        if (m_idata.isCameraPath())
+        {
+          glLoadIdentity();
+          glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
+          glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
+          glRotatef(m_cameraRotLag.z, 0.0, 0.0, 1.0);
+          glTranslatef(m_cameraTransLag.x, m_cameraTransLag.y, m_cameraTransLag.z);
+        }
+        else
+        {
+          glTranslatef(m_cameraTransLag.x, m_cameraTransLag.y, m_cameraTransLag.z);
+          glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
+          glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
+          glRotatef(m_cameraRoll, 0.0, 0.0, 1.0);
+          glRotatef(90.0f, 1.0f, 0.0f, 0.0f); // rotate galaxies into XZ plane
+        }
       }
 
       glGetDoublev(GL_MODELVIEW_MATRIX, m_modelView);
@@ -1960,6 +1986,7 @@ class Demo
   double m_simTime, m_renderTime;
   double m_fps;
   int m_fpsCount, m_fpsLimit;
+  int m_frameCount;
 
   bool m_supernova;
   float m_overBright;

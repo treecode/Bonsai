@@ -645,9 +645,9 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     int quitL = (code == -1) || terminateRenderer;  /* exit code */
     int quitG;
     MPI_Allreduce(&quitL, &quitG, 1, MPI_INT, MPI_SUM, comm);
-    delete camera;
     if (quitG)
     {
+      delete camera;
       MPI_Finalize();
       ::exit(0);
     }
