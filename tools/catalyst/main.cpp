@@ -9,7 +9,9 @@
 #include "BonsaiSharedData.h"
 #include "BonsaiIO.h"
 #include "SharedMemory.h"
-#include <omp.h>
+#ifndef BONSAI_CATALYST_CLANG
+ #include <omp.h>
+#endif
 #include <functional>
 
 #include "anyoption.h"
@@ -342,9 +344,14 @@ static T* readBonsai(
   return rDataPtr;
 }
 
-
+#ifndef BONSAI_CATALYST_CLANG
 int main(int argc, char * argv[], MPI_Comm commWorld)
 {
+#else
+int main(int argc, char * argv[])
+{
+ MPI_Comm commWorld;
+#endif
 
   std::string fileName;
   int reduceDM    =  10;
