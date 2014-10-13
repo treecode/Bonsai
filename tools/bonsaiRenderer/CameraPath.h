@@ -34,8 +34,8 @@ class CameraPath
         assert(idum == i+1);
 
         auto &cam = cameraVec[i];
-        fin >> cam.rotx >> cam.roty >> cam.rotz;
         fin >> cam.tranx >> cam.trany >> cam.tranz;
+        fin >> cam.rotx >> cam.roty >> cam.rotz;
 
         std::string order;
         fin >> order;
