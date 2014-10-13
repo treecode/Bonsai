@@ -53,8 +53,6 @@ class CameraPath
       const real t0 = floor(t);
       const real t1 = t0 + 1.0;
       
-      fprintf(stderr, "t0= %g  t= %g  t1= %g \n", t0,t,t1);
-
       const auto& c0 = cameraVec[static_cast<int>(t0)];
       const auto& c1 = cameraVec[std::min(static_cast<int>(t1),nsteps()-1)];
 
