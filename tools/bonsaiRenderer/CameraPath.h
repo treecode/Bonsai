@@ -37,6 +37,10 @@ class CameraPath
         fin >> cam.tranx >> cam.trany >> cam.tranz;
         fin >> cam.rotx >> cam.roty >> cam.rotz;
 
+        cam.rotx *= 180.0/M_PI;
+        cam.roty *= 180.0/M_PI;
+        cam.rotz *= 180.0/M_PI;
+
         std::string order;
         fin >> order;
         assert(order == "XYZ");
