@@ -6,6 +6,7 @@
 #include "vtkCPProcessor.h"
 #include "vtkCPPythonScriptPipeline.h"
 #include "vtkPolyData.h"
+#include "vtkPointData.h"
 #include "vtkFloatArray.h"
 #include "vtkCellArray.h"
 #include <vtkNew.h>
@@ -72,6 +73,15 @@ void BonsaiCatalystData::coProcess(double time, unsigned int timeStep)
     };
 */
 
+   // for each field array generate a vtk equivalent array
+   const char *names[] = {"MASS", "VEL", "RHO", "H"};
+   std::vector<vtkSmartPointer<vtkFloatArray> > fieldArrays;
+   for (int p = 0; p < NPROP; p++) {
+     fieldArrays.push_back(vtkSmartPointer<vtkFloatArray>::New());
+     fieldArrays[p]->SetNumberOfTuples(data.size());
+     fieldArrays[p]->SetName(names[p]);
+   }
+
    // create the points information,
    // copy from particle_t struct into vtk array
    // in next version, use vtk array adaptor for zero copy
@@ -81,10 +91,15 @@ void BonsaiCatalystData::coProcess(double time, unsigned int timeStep)
    pointArray->SetNumberOfTuples(data.size());
    float *pointarray = pointArray->GetPointer(0);
    for (int i=0; i<data.size(); i++) {
-//   for (auto &i : data) {
      pointarray[i*3+0] = data[i].posx;
      pointarray[i*3+1] = data[i].posy;
      pointarray[i*3+2] = data[i].posz;
+     for (int p = 0; p < NPROP; p++) {
+       fieldArrays[p]->SetValue(i,data[i].attribute[p]);
+     }
+   }
+   for (int p = 0; p < NPROP; p++) {
+     particles->GetPointData()->AddArray(fieldArrays[p]);
    }
 
    //
@@ -108,7 +123,10 @@ void BonsaiCatalystData::coProcess(double time, unsigned int timeStep)
    points->SetData(pointArray.GetPointer());
    particles->SetPoints(points.GetPointer());
 //   VTKGrid->SetPoints(points.GetPointer());
-coProcessorData->GetInputDescriptionByName("input")->SetGrid(particles);
+
+
+
+   coProcessorData->GetInputDescriptionByName("input")->SetGrid(particles);
 
     coProcessor->CoProcess(coProcessorData.GetPointer());
     }
