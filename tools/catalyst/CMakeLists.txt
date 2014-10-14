@@ -82,7 +82,6 @@ endif()
 #--------------------------------------------------
 set(SRC_FILES 
   RendererData.cpp
-  anyoption.cpp
   main.cpp
   ${CATALYST_ADAPTOR_SRCS}
 )
@@ -97,4 +96,4 @@ if(BONSAI_CATALYST_PARAVIEW)
   message("Adding catalyst links")
   target_link_libraries(catalyst vtkPVCatalyst vtkPVVTKExtensionsDefault)
 endif()
-target_link_libraries(catalyst ${MPI_C_LIBRARIES})
+target_link_libraries(catalyst bonsai_tools_common ${MPI_C_LIBRARIES})

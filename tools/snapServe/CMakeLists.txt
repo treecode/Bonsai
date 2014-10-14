@@ -50,7 +50,6 @@ endif()
 # source files
 #
 set(SRC_FILES 
-  anyoption.cpp
   main.cpp
 )
 
@@ -60,4 +59,4 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 # exe
 #
 add_executable(snapServe ${SRC_FILES})
-target_link_libraries(snapServe ${MPI_C_LIBRARIES})
+target_link_libraries(snapServe bonsai_tools_common ${MPI_C_LIBRARIES})

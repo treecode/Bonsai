@@ -5,7 +5,7 @@
 #ifdef BONSAI_CATALYST_STDLIB
  #include <boost/lexical_cast.hpp>
  #define bonsaistd boost
- #define to_string boost::lexical_cast<int>
+ #define to_string boost::lexical_cast<std::string>
 #else
  #define to_string std::to_string
 #endif

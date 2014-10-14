@@ -1,4 +1,3 @@
-#include <mpi.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cassert>
@@ -12,9 +11,17 @@
 #ifndef BONSAI_CATALYST_CLANG
  #include <omp.h>
 #endif
-#include <functional>
+#ifdef BONSAI_CATALYST_STDLIB
+ #include <boost/function.hpp>
+ #include <boost/tuple/tuple.hpp>
+ #define bonsaistd boost
+#else
+ #include <functional>
+ #define bonsaistd std
+#endif
 
 #include "anyoption.h"
+#include <mpi.h>
 
 using ShmQHeader = SharedMemoryServer<BonsaiSharedQuickHeader>;
 using ShmQData   = SharedMemoryServer<BonsaiSharedQuickData>;
@@ -130,7 +137,7 @@ static void sendSharedData(
   header.releaseLock();
 }
 
-static std::tuple<double,DataVec> readBonsai(
+static bonsaistd::tuple<double,DataVec> readBonsai(
     const int rank, const int nranks, const MPI_Comm &comm,
     const std::string &fileName,
     const int reduceDM,
@@ -157,7 +164,7 @@ static std::tuple<double,DataVec> readBonsai(
   DataVec rdata;
   if (reduceS > 0)
   {
-    if (!in.read(IDListS, true, reduceS)) return std::make_tuple(-1.0,rdata);
+    if (!in.read(IDListS, true, reduceS)) return bonsaistd::make_tuple(-1.0,rdata);
     if (rank  == 0)
       fprintf(stderr, " Reading star data \n");
     assert(in.read(posS,    true, reduceS));
@@ -186,7 +193,7 @@ static std::tuple<double,DataVec> readBonsai(
   {
     if (rank  == 0)
       fprintf(stderr, " Reading DM data \n");
-    if(!in.read(IDListDM, true, reduceDM)) return std::make_tuple(-1.0,rdata);
+    if(!in.read(IDListDM, true, reduceDM)) return bonsaistd::make_tuple(-1.0,rdata);
     assert(in.read(posDM,    true, reduceDM));
     assert(in.read(velDM,    true, reduceDM));
     bool renderDensity = true;
@@ -252,12 +259,12 @@ static std::tuple<double,DataVec> readBonsai(
     fprintf(stderr, " :: dtRead= %g  sec readBW= %g MB/s \n", dtRead, bw);
   const double t = in.getTime();
   in.close();
-  return std::make_tuple(t,rdata);
+  return bonsaistd::make_tuple(t,rdata);
 }
 
 static std::vector<std::string> lParseList(const std::string fileNameList)
 {
-  std::ifstream fin(fileNameList);
+  std::ifstream fin(fileNameList.c_str());
 
   std::string item;
   std::vector<std::string> fileList;
@@ -371,8 +378,8 @@ int main(int argc, char * argv[])
       const auto &data = readBonsai(rank, nranks, comm,
           file, reduceDM, reduceS);
       fprintf(stderr, "rank= %d : time= %g np= %zu \n",
-          rank, std::get<0>(data), std::get<1>(data).size());
-      sendSharedData(quickSync, std::get<0>(data), std::get<1>(data), file.c_str(), rank, nranks, comm);
+          rank, bonsaistd::get<0>(data), bonsaistd::get<1>(data).size());
+      sendSharedData(quickSync, bonsaistd::get<0>(data), bonsaistd::get<1>(data), file.c_str(), rank, nranks, comm);
       if (delay > 0)
         usleep(1000*delay);
     }
