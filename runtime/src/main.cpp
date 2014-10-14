@@ -704,7 +704,7 @@ int main(int argc, char** argv, MPI_Comm comm)
   std::string bonsaiFileName;
   float snapshotIter       = -1;
   float  remoDistance      = -1.0;
-  int rebuild_tree_rate    = 2;
+  int rebuild_tree_rate    = 1;
   int reduce_bodies_factor = 1;
   int reduce_dust_factor   = 1;
   string fullScreenMode    = "";
