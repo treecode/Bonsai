@@ -12,12 +12,18 @@ class CameraPath
     using real = double;
     struct camera_t
     {
-      real rotx,roty,rotz;
-      real tranx,trany,tranz;
+      union
+      {
+        struct{
+          real rotx,roty,rotz;
+          real tranx,trany,tranz;
+        };
+        real data[6];
+      };
     };
 
   private:
-    std::vector<camera_t> cameraVec;
+    std::vector<camera_t> cameraVec_base, cameraVec;
 
   public:
     CameraPath(const std::string &fileName)
@@ -26,14 +32,14 @@ class CameraPath
       int nval;
       real time;
       fin >> nval >> time;
-      cameraVec.resize(nval);
+      cameraVec_base.resize(nval);
       for (int i = 0; i < nval; i++)
       {
         int idum;
         fin >> idum;
         assert(idum == i+1);
 
-        auto &cam = cameraVec[i];
+        auto &cam = cameraVec_base[i];
         fin >> cam.tranx >> cam.trany >> cam.tranz;
         fin >> cam.rotx >> cam.roty >> cam.rotz;
 
@@ -48,36 +54,45 @@ class CameraPath
         fin >> order;
         assert(order == "XYZ");
       }
+      cameraVec = cameraVec_base;
     }
-
-    int nFrames() const { return cameraVec.size(); }
-    const camera_t& getFrame(const int step) const { return cameraVec[step%nFrames()]; }
+    
     camera_t interpolate(const real r) const
     {
       assert(r >= 0.0);
       assert(r <= 1.0);
-      const real t  = r * (nFrames()-1);
+      const int nframes = cameraVec_base.size();
+      const real t  = r * (nframes-1);
       const real t0 = floor(t);
       const real t1 = t0 + 1.0;
       
-      const auto& c0 = cameraVec[static_cast<int>(t0)];
-      const auto& c1 = cameraVec[std::min(static_cast<int>(t1),nFrames()-1)];
+      const auto& c0 = cameraVec_base[static_cast<int>(t0)];
+      const auto& c1 = cameraVec_base[std::min(static_cast<int>(t1),nframes-1)];
 
-      const float f = (t-t0)/(t1-t0);
+      const real f = (t-t0)/(t1-t0);
       auto cvt = [&](const real f0, const real f1)
       {
         return f0 + (f1-f0)*f;
       };
 
-
       camera_t cam;
-      cam. rotx = cvt(c0. rotx, c1. rotx);
-      cam. roty = cvt(c0. roty, c1. roty);
-      cam. rotz = cvt(c0. rotz, c1. rotz);
-      cam.tranx = cvt(c0.tranx, c1.tranx);
-      cam.trany = cvt(c0.trany, c1.trany);
-      cam.tranz = cvt(c0.tranz, c1.tranz);
-     
+      for (int k = 0; k < 6; k++)
+        cam.data[k] = cvt(c0.data[k], c1.data[k]);
+
       return cam; 
     }
+
+    void reframe(const int nframe)
+    {
+      assert(nframe > 0);
+      cameraVec.resize(nframe);
+      for (int i = 0; i < nframe; i++)
+      {
+        const real f = static_cast<real>(i)/(nframe-1);
+        cameraVec[i] = interpolate(f);
+      }
+    }
+
+    int nFrames() const { return cameraVec.size(); }
+    const camera_t& getFrame(const int step) const { return cameraVec[step%nFrames()]; }
 };
