@@ -490,6 +490,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
 
   std::string imageFileName;
   std::string cameraFileName;
+  int nCameraFrame = 0;
 
 
   {
@@ -515,6 +516,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     ADDUSAGE(" -s  --nmaxsample   #   set max number of samples for DD [" << nmaxsample << "]");
     ADDUSAGE(" -D  --display      #   set DISPLAY=display, otherwise inherited from environment");
     ADDUSAGE("     --camera       #   camera path file");
+    ADDUSAGE("     --camereframe  #   Reframe original camera path to # frames. [ignore]");
     ADDUSAGE("     --image        #   image base filename");
 
 
@@ -526,6 +528,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
 		opt.setOption( "reduceS");
     opt.setOption( "fullscreen");
     opt.setOption( "camera");
+    opt.setOption( "cameraframe");
     opt.setOption( "image");
     opt.setFlag("stereo");
     opt.setFlag("doDD", 'd');
@@ -559,6 +562,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     if (opt.getFlag("noquicksync")) quickSync = false;
     if ((optarg = opt.getValue("image"))) imageFileName = std::string(optarg);
     if ((optarg = opt.getValue("camera"))) cameraFileName = std::string(optarg);
+    if ((optarg = opt.getValue("cameraframe"))) nCameraFrame = std::atoi(optarg);
 
     if ((fileName.empty() && !inSitu) ||
         reduceDM < 0 || reduceS < 0)
@@ -636,7 +640,15 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
   if (!cameraFileName.empty())
   {
     camera = new CameraPath(cameraFileName);
-    rDataPtr->setCameraPath(camera);
+    rDataPtr->setCameraPath(camera); 
+    if (nCameraFrame > 0)
+    {
+       if (rank == 0)
+         fprintf(stderr, " Reframe camera from %d -> %d \n",
+             camera->nFrames(), nCameraFrame);
+       camera->reframe(nCameraFrame);
+
+    }
   }
 
 
