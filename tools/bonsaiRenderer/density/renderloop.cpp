@@ -1030,6 +1030,9 @@ class Demo
         assert(fwrite(&img[3*i], sizeof(char), 3, fout) == 3);
       }
     fclose(fout);
+
+    if (m_frameCount >= m_idata.getCamera().nFrames())
+      dataSetFunc(-1);
   }
 
 
@@ -1064,7 +1067,7 @@ class Demo
 #endif
       if (m_idata.isCameraPath())
       {
-        const auto &cam = m_idata.getCamera().getFrame(m_frameCount);
+        const auto &cam = m_idata.getCamera().getFrame(m_frameCount-1);
         m_cameraRotLag  .x = cam. rotx;
         m_cameraRotLag  .y = cam. roty;
         m_cameraRotLag  .z = cam. rotz;

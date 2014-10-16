@@ -516,7 +516,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     ADDUSAGE(" -s  --nmaxsample   #   set max number of samples for DD [" << nmaxsample << "]");
     ADDUSAGE(" -D  --display      #   set DISPLAY=display, otherwise inherited from environment");
     ADDUSAGE("     --camera       #   camera path file");
-    ADDUSAGE("     --camereframe  #   Reframe original camera path to # frames. [ignore]");
+    ADDUSAGE("     --cameraframe  #   Reframe original camera path to # frames. [ignore]");
     ADDUSAGE("     --image        #   image base filename");
 
 
