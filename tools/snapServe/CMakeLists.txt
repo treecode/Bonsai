@@ -49,9 +49,13 @@ endif()
 #
 # source files
 #
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../common)
 set(SRC_FILES 
-  anyoption.cpp
   main.cpp
+  )
+
+add_library(bonsai_tools_common
+  ${CMAKE_CURRENT_SOURCE_DIR}/../common/anyoption.cpp
 )
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
@@ -60,4 +64,4 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 # exe
 #
 add_executable(snapServe ${SRC_FILES})
-target_link_libraries(snapServe ${MPI_C_LIBRARIES})
+target_link_libraries(snapServe bonsai_tools_common ${MPI_C_LIBRARIES})

@@ -1,9 +1,14 @@
 #pragma once
 
-#include <mpi.h>
 #include <cassert>
 #include <cmath>
-#include <array>
+#ifdef BONSAI_CATALYST_STDLIB
+ #include <boost/array.hpp>
+ #define bonsaistd boost
+#else
+ #include <array>
+ #define bonsaistd std
+#endif
 #include <algorithm>
 #include <iostream>
 #include <vector>
@@ -11,6 +16,7 @@
 #ifdef BONSAI_CATALYST_CLANG
  #include <tmmintrin.h>
 #endif
+#include <mpi.h>
 
 #if 0
 struct float2 { float x, y; };
@@ -168,7 +174,7 @@ class RendererData
         default: return rmax();
       }
     }
-    virtual std::vector<int> getVisibilityOrder(const std::array<float,3> camPos) const
+    virtual std::vector<int> getVisibilityOrder(const bonsaistd::array<float,3> camPos) const
     {
       return std::vector<int>();
     }
@@ -185,7 +191,7 @@ class RendererDataDistribute : public RendererData
     float xlow[3], xhigh[3];
     int npx, npy, npz;
     bool distributed;
-    using vector3 = std::array<double,3>;
+    using vector3 = bonsaistd::array<double,3>;
     struct float4
     {
       typedef float  v4sf __attribute__ ((vector_size(16)));
@@ -317,5 +323,5 @@ class RendererDataDistribute : public RendererData
     virtual void distribute();
     virtual float getBoundBoxLow (const int i) const {return  xlow[i];}
     virtual float getBoundBoxHigh(const int i) const {return xhigh[i];}
-    virtual std::vector<int> getVisibilityOrder(const std::array<float,3> camPos) const;
+    virtual std::vector<int> getVisibilityOrder(const bonsaistd::array<float,3> camPos) const;
 };
