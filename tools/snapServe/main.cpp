@@ -46,7 +46,7 @@ struct data_t
 };
 using DataVec = std::vector<data_t>;
 
-static void sendSharedData(
+static void lSendSharedData(
     const bool sync, 
     const double t_current,
     const DataVec &rdata,
@@ -137,7 +137,7 @@ static void sendSharedData(
   header.releaseLock();
 }
 
-static bonsaistd::tuple<double,DataVec> readBonsai(
+static bonsaistd::tuple<double,DataVec> lReadBonsai(
     const int rank, const int nranks, const MPI_Comm &comm,
     const std::string &fileName,
     const int reduceDM,
@@ -375,11 +375,12 @@ int main(int argc, char * argv[])
     {
       if (rank == 0)
         fprintf(stderr, "loop= %3d: filename= %s \n", i, file.c_str());
-      const auto &data = readBonsai(rank, nranks, comm,
+      const auto &data = lReadBonsai(rank, nranks, comm,
           file, reduceDM, reduceS);
-      fprintf(stderr, "rank= %d : time= %g np= %zu \n",
-          rank, bonsaistd::get<0>(data), bonsaistd::get<1>(data).size());
-      sendSharedData(quickSync, bonsaistd::get<0>(data), bonsaistd::get<1>(data), file.c_str(), rank, nranks, comm);
+      if (rank == 0)
+        fprintf(stderr, "rank= %d : time= %g np= %zu \n",
+            rank, bonsaistd::get<0>(data), bonsaistd::get<1>(data).size());
+      lSendSharedData(quickSync, bonsaistd::get<0>(data), bonsaistd::get<1>(data), file.c_str(), rank, nranks, comm);
       if (delay > 0)
         usleep(1000*delay);
     }
