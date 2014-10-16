@@ -994,6 +994,44 @@ class Demo
 
   } //end of mainRender
 
+  void dumpImage(const std::string &fileNameBase)
+  {
+    if (!isMaster()) return;
+    if (fileNameBase.empty()) return;
+
+    char fileName[1024];
+    sprintf(fileName, "%s_%05d.ppm", fileNameBase.c_str(), m_frameCount);
+
+    const int winW = m_windowDims.x;
+    const int winH = m_windowDims.y;
+
+    FILE *fout = fopen(fileName, "wb");
+    if (!fout) 
+    {
+      fprintf(stderr, "Couldn't open image file: %s\n", fileName);
+      return;
+    }
+    else
+    {
+      fprintf(stderr , " Writing snapshot into file: %s\n", fileName);
+    }
+
+    fprintf(fout,"P6\n");
+    fprintf(fout,"# ppm-file created by %s\n", "BonsaiRenderer");
+    fprintf(fout,"%i %i\n", winW, winH);
+    fprintf(fout,"255\n");
+    static std::vector<char> img;
+    img.resize(3*winW*winH);
+    glReadPixels(0,0,winW,winH,GL_RGB,GL_UNSIGNED_BYTE,&img[0]);
+    for (int h = 0; h < winH; h++)
+      for (int w = 0; w < winW; w++)
+      {
+        const int i = (winH-1-h)*winW + w;
+        assert(fwrite(&img[3*i], sizeof(char), 3, fout) == 3);
+      }
+    fclose(fout);
+  }
+
 
   void display() 
   {
@@ -2077,6 +2115,7 @@ unsigned long long fpsCount;
 double timeBegin;
 static int thisRank;
 static MPI_Comm thisComm;
+static std::string imageFileName;
 void display()
 {
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -2085,6 +2124,8 @@ void display()
   MPI_Barrier(thisComm);
   const double t0 = MPI_Wtime();
   theDemo->display();
+
+  theDemo->dumpImage(imageFileName);
 
   //glutReportErrors();
   glutSwapBuffers();
@@ -2450,7 +2491,8 @@ void initAppRenderer(int argc, char** argv,
     RendererData &idata,
     const char *fullScreenMode,
     const bool stereo,
-    std::function<void(int)> &func)
+    std::function<void(int)> &func,
+    const std::string imagefn)
 {
   dataSetFunc = func;
   thisRank = rank;
@@ -2458,6 +2500,7 @@ void initAppRenderer(int argc, char** argv,
   assert(rank < nrank);
   assert(idata.n() <= MAX_PARTICLES);
   initGL(argc, argv, rank, nrank, comm, fullScreenMode, stereo);
+  imageFileName = imagefn;
   theDemo = new Demo(idata, rank, nrank, comm);
   if (stereo)
     theDemo->toggleStereo(); //SV assuming stereo is set to disable by default.

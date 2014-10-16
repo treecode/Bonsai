@@ -690,7 +690,8 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
       *rDataPtr,
       fullScreenMode.c_str(), 
       stereo,
-      updateFunc);
+      updateFunc,
+      imageFileName);
 
   while(1) 
   return 0;
