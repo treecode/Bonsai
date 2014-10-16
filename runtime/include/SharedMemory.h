@@ -120,7 +120,7 @@ class SharedMemoryServer : public SharedMemoryBase<T>
     {
       p::shmfd = shm_open(p::descriptor.c_str(), O_CREAT|O_RDWR, S_IRUSR|S_IWUSR);
       if (p::shmfd < 0)
-        throw Exception("SharedMemoryServer::Ctor - shm_open failed with error " + to_string(p::shmfd) + "\n");
+        throw Exception("SharedMemoryServer::Ctor - shm_open failed with error " + std::to_string(p::shmfd) + "\n");
     
       if (ftruncate(p::shmfd,sizeof(Header)+capacity*sizeof(T)))
         throw Exception("SharedMemoryServer::Ctor = ftruncate failed.");
