@@ -55,8 +55,8 @@ namespace BonsaiIO
       virtual void open(const std::string&, IOTYPE) = 0;
       virtual void close() = 0;
       virtual void seek (const size_t offset) = 0;
-      virtual void read (      void *data, const size_t count, const std::string &errString, const size_t batchMax = (1U << 31) - 1) = 0;
-      virtual void write(const void *data, const size_t count, const std::string &errString, const size_t batchMax = (1U << 31) - 1) = 0;
+      virtual void read (      void *data, const size_t count, const std::string &errString, const size_t batchMax = (1U << 30) - 1) = 0;
+      virtual void write(const void *data, const size_t count, const std::string &errString, const size_t batchMax = (1U << 30) - 1) = 0;
   };
 
   /* MPI-IO implementation */

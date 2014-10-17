@@ -103,7 +103,7 @@ clean_bak:
 
 
 
-$(OBJ): anyoption.h  paramgl.h  param.h   RendererData.h  $(ENGINE)/renderloop.h  $(ENGINE)/renderer.h  vector_math.h \
+$(OBJ): CameraPath.h anyoption.h  paramgl.h  param.h   RendererData.h  $(ENGINE)/renderloop.h  $(ENGINE)/renderer.h  vector_math.h \
 	splotch/Blending.h  splotch/GLSLProgram.h  splotch/MathArray.h  splotch/renderer.h  splotch/renderloop.h  splotch/Splotch.h  splotch/Texture.h  splotch/Vertex.h 
 
 

@@ -488,6 +488,11 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
   bool quickSync = true;
   int sleeptime = 1;
 
+  std::string imageFileName;
+  std::string cameraFileName;
+  int nCameraFrame = 0;
+
+
   {
 		AnyOption opt;
 
@@ -510,6 +515,9 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
 		ADDUSAGE(" -d  --doDD             enable domain decomposition  [disabled]");
     ADDUSAGE(" -s  --nmaxsample   #   set max number of samples for DD [" << nmaxsample << "]");
     ADDUSAGE(" -D  --display      #   set DISPLAY=display, otherwise inherited from environment");
+    ADDUSAGE("     --camera       #   camera path file");
+    ADDUSAGE("     --cameraframe  #   Reframe original camera path to # frames. [ignore]");
+    ADDUSAGE("     --image        #   image base filename");
 
 
 		opt.setFlag  ( "help" ,        'h');
@@ -519,6 +527,9 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
 		opt.setOption( "sleep");
 		opt.setOption( "reduceS");
     opt.setOption( "fullscreen");
+    opt.setOption( "camera");
+    opt.setOption( "cameraframe");
+    opt.setOption( "image");
     opt.setFlag("stereo");
     opt.setFlag("doDD", 'd');
     opt.setOption("nmaxsample", 's');
@@ -548,7 +559,10 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     if (opt.getFlag("doDD"))  doDD = true;
     if ((optarg = opt.getValue("display"))) display = std::string(optarg);
     if ((optarg = opt.getValue("sleep"))) sleeptime = atoi(optarg);
-    if (opt.getValue("noquicksync")) quickSync = false;
+    if (opt.getFlag("noquicksync")) quickSync = false;
+    if ((optarg = opt.getValue("image"))) imageFileName = std::string(optarg);
+    if ((optarg = opt.getValue("camera"))) cameraFileName = std::string(optarg);
+    if ((optarg = opt.getValue("cameraframe"))) nCameraFrame = std::atoi(optarg);
 
     if ((fileName.empty() && !inSitu) ||
         reduceDM < 0 || reduceS < 0)
@@ -622,6 +636,22 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
   assert(rDataPtr != 0);
  
 
+  CameraPath *camera = nullptr;
+  if (!cameraFileName.empty())
+  {
+    camera = new CameraPath(cameraFileName);
+    rDataPtr->setCameraPath(camera); 
+    if (nCameraFrame > 0)
+    {
+       if (rank == 0)
+         fprintf(stderr, " Reframe camera from %d -> %d \n",
+             camera->nFrames(), nCameraFrame);
+       camera->reframe(nCameraFrame);
+
+    }
+  }
+
+
   auto dataSetFunc = [&](const int code) -> void 
   {
     int quitL = (code == -1) || terminateRenderer;  /* exit code */
@@ -629,6 +659,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     MPI_Allreduce(&quitL, &quitG, 1, MPI_INT, MPI_SUM, comm);
     if (quitG)
     {
+      delete camera;
       MPI_Finalize();
       ::exit(0);
     }
@@ -641,6 +672,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
       }
   };
   std::function<void(int)> updateFunc = dataSetFunc;
+
 
 
   dataSetFunc(0);
@@ -658,7 +690,8 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
       *rDataPtr,
       fullScreenMode.c_str(), 
       stereo,
-      updateFunc);
+      updateFunc,
+      imageFileName);
 
   while(1) 
   return 0;

@@ -7,6 +7,7 @@
 #include <parallel/algorithm>
 #include <iostream>
 #include "IDType.h"
+#include "CameraPath.h"
 
 #if 0
 struct float2 { float x, y; };
@@ -69,15 +70,21 @@ class RendererData
     void minmaxAttributeGlb(const Attribute_t p);
     int  getMaster() const { return 0; }
     bool isMaster() const { return getMaster() == rank; }
+    
+    const CameraPath *cameraPtr;
 
 
   public:
     RendererData(const int rank, const int nrank, const MPI_Comm &comm) : 
-      rank(rank), nrank(nrank), comm(comm)
+      rank(rank), nrank(nrank), comm(comm), cameraPtr(nullptr)
   {
     assert(rank < nrank);
     new_data = false;
   }
+
+    void setCameraPath(const CameraPath *ptr) { cameraPtr = ptr; }
+    bool isCameraPath() const { return cameraPtr != nullptr; }
+    const CameraPath& getCamera() const {return *cameraPtr;}
 
     void setNewData() {new_data = true;}
     void unsetNewData() { new_data = false; }

@@ -1,4 +1,3 @@
-#include <mpi.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cassert>
@@ -12,18 +11,25 @@
 #ifndef BONSAI_CATALYST_CLANG
  #include <omp.h>
 #endif
-#include <functional>
+#ifdef BONSAI_CATALYST_STDLIB
+ #include <boost/function.hpp>
+ #define bonsaistd boost
+#else
+ #include <functional>
+ #define bonsaistd std
+#endif
+#include <mpi.h>
 
 #include "anyoption.h"
-#include "RendererData.h"
+#include "BonsaiCatalystData.h"
 
 static void renderer(
     int argc, char** argv, 
     const int rank, const int nrank, const MPI_Comm &comm,
-    RendererData &data,
+    BonsaiCatalystData &data,
     const char *fullScreenMode /* = "" */,
     const bool stereo /* = false */,
-    std::function<void(int)> &callback)
+    bonsaistd::function<void(int)> &callback)
 {
   /* do rendering here */
   while (1)
@@ -37,6 +43,7 @@ static void renderer(
       data.unsetNewData();
     }
     fprintf(stderr ," rank= %d: rendering ... \n", rank);
+    data.coProcess(0.0, 0);
   }
 }
 
@@ -47,7 +54,7 @@ static ShmQData   *shmQData   = NULL;
 
 static bool terminateRenderer = false;
 
-bool fetchSharedData(const bool quickSync, RendererData &rData, const int rank, const int nrank, const MPI_Comm &comm,
+bool fetchSharedData(const bool quickSync, BonsaiCatalystData &rData, const int rank, const int nrank, const MPI_Comm &comm,
     const int reduceDM = 1, const int reduceS = 1)
 {
   if (shmQHeader == NULL)
@@ -124,7 +131,7 @@ bool fetchSharedData(const bool quickSync, RendererData &rData, const int rank, 
 
     size_t nDM = 0, nS = 0;
     constexpr int ntypecount = 10;
-    std::array<size_t,ntypecount> ntypeloc, ntypeglb;
+    bonsaistd::array<size_t,ntypecount> ntypeloc, ntypeglb;
     std::fill(ntypeloc.begin(), ntypeloc.end(), 0);
     for (size_t i = 0; i < size; i++)
     {
@@ -165,14 +172,14 @@ bool fetchSharedData(const bool quickSync, RendererData &rData, const int rank, 
       rData.posy(ip) = data[i].y;
       rData.posz(ip) = data[i].z;
       rData.ID  (ip) = data[i].ID;
-      rData.attribute(RendererData::MASS, ip) = data[i].mass;
-      rData.attribute(RendererData::VEL,  ip) =
+      rData.attribute(BonsaiCatalystData::MASS, ip) = data[i].mass;
+      rData.attribute(BonsaiCatalystData::VEL,  ip) =
         std::sqrt(
             data[i].vx*data[i].vx+
             data[i].vy*data[i].vy+
             data[i].vz*data[i].vz);
-      rData.attribute(RendererData::RHO, ip) = data[i].rho;
-      rData.attribute(RendererData::H,   ip) = data[i].h;
+      rData.attribute(BonsaiCatalystData::RHO, ip) = data[i].rho;
+      rData.attribute(BonsaiCatalystData::H,   ip) = data[i].h;
 
       ip++;
       assert(ip <= nS);
@@ -298,21 +305,21 @@ static T* readBonsai(
     rData.posz(ip) = posS[i][2];
     rData.ID  (ip) = IDListS[i];
     assert(rData.ID(ip).getType() > 0); /* sanity check */
-    rData.attribute(RendererData::MASS, ip) = posS[i][3];
-    rData.attribute(RendererData::VEL,  ip) =
+    rData.attribute(BonsaiCatalystData::MASS, ip) = posS[i][3];
+    rData.attribute(BonsaiCatalystData::VEL,  ip) =
       std::sqrt(
           velS[i][0]*velS[i][0] +
           velS[i][1]*velS[i][1] +
           velS[i][2]*velS[i][2]);
     if (rhohS.size() > 0)
     {
-      rData.attribute(RendererData::RHO, ip) = rhohS[i][0];
-      rData.attribute(RendererData::H,  ip)  = rhohS[i][1];
+      rData.attribute(BonsaiCatalystData::RHO, ip) = rhohS[i][0];
+      rData.attribute(BonsaiCatalystData::H,  ip)  = rhohS[i][1];
     }
     else
     {
-      rData.attribute(RendererData::RHO, ip) = 0.0;
-      rData.attribute(RendererData::H,   ip) = 0.0;
+      rData.attribute(BonsaiCatalystData::RHO, ip) = 0.0;
+      rData.attribute(BonsaiCatalystData::H,   ip) = 0.0;
     }
   }
   for (int i = 0; i < nDM; i++)
@@ -323,21 +330,21 @@ static T* readBonsai(
     rData.posz(ip) = posDM[i][2];
     rData.ID  (ip) = IDListDM[i];
     assert(rData.ID(ip).getType() == 0); /* sanity check */
-    rData.attribute(RendererData::MASS, ip) = posDM[i][3];
-    rData.attribute(RendererData::VEL,  ip) =
+    rData.attribute(BonsaiCatalystData::MASS, ip) = posDM[i][3];
+    rData.attribute(BonsaiCatalystData::VEL,  ip) =
       std::sqrt(
           velDM[i][0]*velDM[i][0] +
           velDM[i][1]*velDM[i][1] +
           velDM[i][2]*velDM[i][2]);
     if (rhohDM.size() > 0)
     {
-      rData.attribute(RendererData::RHO, ip) = rhohDM[i][0];
-      rData.attribute(RendererData::H,   ip) = rhohDM[i][1];
+      rData.attribute(BonsaiCatalystData::RHO, ip) = rhohDM[i][0];
+      rData.attribute(BonsaiCatalystData::H,   ip) = rhohDM[i][1];
     }
     else
     {
-      rData.attribute(RendererData::RHO, ip) = 0.0;
-      rData.attribute(RendererData::H,   ip) = 0.0;
+      rData.attribute(BonsaiCatalystData::RHO, ip) = 0.0;
+      rData.attribute(BonsaiCatalystData::H,   ip) = 0.0;
     }
   }
 
@@ -473,15 +480,15 @@ int main(int argc, char * argv[])
 
 
 
-  using RendererDataT = RendererData;
-  RendererDataT *rDataPtr;
+  using BonsaiCatalystDataT = BonsaiCatalystData;
+  BonsaiCatalystDataT *rDataPtr;
   if (inSitu)
   {
-    rDataPtr = new RendererDataT(rank,nranks,comm);
+    rDataPtr = new BonsaiCatalystDataT(rank,nranks,comm);
   }
   else
   {
-    if ((rDataPtr = readBonsai<RendererDataT>(rank, nranks, comm, fileName, reduceDM, reduceS))) 
+    if ((rDataPtr = readBonsai<BonsaiCatalystDataT>(rank, nranks, comm, fileName, reduceDM, reduceS)))
     {}
     else
     {
@@ -515,7 +522,7 @@ int main(int argc, char * argv[])
       }
   };
 
-  std::function<void(int)> callback = callbackFunc;
+  bonsaistd::function<void(int)> callback = callbackFunc;
   callback(0);  /* init data set */
 
   renderer(
@@ -526,7 +533,7 @@ int main(int argc, char * argv[])
       stereo,
       callback);
 
-  while(1) {}
+//  while(1) {}
   return 0;
 }
 
