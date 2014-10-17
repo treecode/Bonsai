@@ -268,7 +268,7 @@ extern void displayTimers();    // For profiling counter display
 /* thread safe drand48(), man drand48 */
 
 // fps
-bool displayFps = false;
+bool displayFps = true;
 double fps = 0.0;
 int fpsLimit = 5;
 //cudaEvent_t startEvent, stopEvent;
