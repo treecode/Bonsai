@@ -7,7 +7,7 @@ CFLAGS =  -Wall -Werror
 CUDA_TK  = /usr/local/cuda
 # CUDA_TK = $(HOME)/usr/local/cuda-5.5
 
-CXXFLAGS = -Wall -fopenmp -std=c++11  -fPIE 
+CXXFLAGS += -Wall -fopenmp -std=c++11  -fPIE 
 CXXFLAGS += -Werror
 #ignore warnings caused by openmpi
 CXXFLAGS += -Wno-literal-suffix
@@ -39,6 +39,10 @@ INCLUDE_FLAGS += -I$(CUDA_TK)/include
 LDFLAGS = -lGL -lGLU -lglut -lGLEW -fopenmp -lrt
 LDFLAGS += -pie -rdynamic
 #-L$(PWD)/lib/linux -lGLEW_x86_64
+
+ifeq ($(PROFILE),1)
+	CXXFLAGS += -D__COMPOSITE_PROFILE
+endif
 
 ifeq ($(ICET),1)
 	ICETPATH=../../IceT
