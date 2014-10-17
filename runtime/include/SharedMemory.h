@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cassert>
+#include <cstdlib>
 #include <vector>
 #include <string>
 #include <exception>
