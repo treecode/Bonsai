@@ -666,10 +666,11 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
 
     if (inSitu )
       if (fetchSharedData(quickSync, *rDataPtr, rank, nranks, comm, reduceDM, reduceS))
-      {
-        rescaleData(*rDataPtr, rank,nranks,comm, doDD,nmaxsample);
-        rDataPtr->setNewData();
-      }
+        if (rDataPtr->size() > 0)
+        {
+          rescaleData(*rDataPtr, rank,nranks,comm, doDD,nmaxsample);
+          rDataPtr->setNewData();
+        }
   };
   std::function<void(int)> updateFunc = dataSetFunc;
 
