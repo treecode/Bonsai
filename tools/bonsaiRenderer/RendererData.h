@@ -73,10 +73,12 @@ class RendererData
     
     const CameraPath *cameraPtr;
 
+    bool firstData;
+
 
   public:
     RendererData(const int rank, const int nrank, const MPI_Comm &comm) : 
-      rank(rank), nrank(nrank), comm(comm), cameraPtr(nullptr)
+      rank(rank), nrank(nrank), comm(comm), cameraPtr(nullptr), firstData(true)
   {
     assert(rank < nrank);
     new_data = false;
@@ -87,10 +89,16 @@ class RendererData
     const CameraPath& getCamera() const {return *cameraPtr;}
 
     void setNewData() {new_data = true;}
-    void unsetNewData() { new_data = false; }
+    bool unsetNewData() { 
+      new_data = false; 
+      const bool ret = firstData;
+      firstData = false;
+      return ret;
+    }
     bool isNewData() const {return new_data;}
 
     int n() const { return data.size(); }
+    int size() const { return data.size(); }
     void resize(const int n) { data.resize(n); }
     ~RendererData() {}
 
