@@ -278,8 +278,18 @@ static void lReadBonsaiFile(
     assert(nsum > 0);
   }
 
-  
-  tree->set_t_current(static_cast<float>(in->getTime()));
+
+  LOGF(stderr,"Read time from snapshot: %f \n", in->getTime());
+
+  if(static_cast<float>(in->getTime()) > 10e10 ||
+     static_cast<float>(in->getTime()) < -10e10)
+  {
+	tree->set_t_current(0);	  
+  }
+  else
+  {
+  	tree->set_t_current(static_cast<float>(in->getTime()));
+  }
 
   in->close();
   const double bw = in->computeBandwidth()/1e6;
@@ -688,8 +698,7 @@ int main(int argc, char** argv, MPI_Comm comm)
   vector<real4>   dustPositions;
   vector<real4>   dustVelocities;
   vector<ullong>  dustIDs;
-  
-
+ 
   float eps      = 0.05f;
   float theta    = 0.75f;
   float timeStep = 1.0f / 16.0f;
@@ -704,7 +713,7 @@ int main(int argc, char** argv, MPI_Comm comm)
   std::string bonsaiFileName;
   float snapshotIter       = -1;
   float  remoDistance      = -1.0;
-  int rebuild_tree_rate    = 2;
+  int rebuild_tree_rate    = 1;
   int reduce_bodies_factor = 1;
   int reduce_dust_factor   = 1;
   string fullScreenMode    = "";
