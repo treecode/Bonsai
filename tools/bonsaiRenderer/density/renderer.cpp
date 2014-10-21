@@ -2432,6 +2432,10 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
     icetSetDepthFormat(ICET_IMAGE_DEPTH_NONE);
 
     icetEnable(ICET_ORDERED_COMPOSITE);
+    assert(!compositingOrder.empty());
+    assert(static_cast<int>(compositingOrder.size()) == nrank);
+    for (int i = 0; i < nrank; i++)
+      assert(compositingOrder[i] >= 0 && compositingOrder[i] < nrank);
     icetCompositeOrder(&compositingOrder[0]);
 #endif
 
