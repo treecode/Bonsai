@@ -648,5 +648,10 @@ std::vector<int> RendererDataDistribute::getVisibilityOrder(const std::array<flo
   const double t2 = MPI_Wtime();
   if (isMaster())
     fprintf(stderr, " globalOrder: tot= %g  algorithm %g sec \n", t2-t0, t2-t1);
+
+  assert(!compositingOrder.empty());
+  assert(static_cast<int>(compositingOrder.size()) == nrank);
+  for (int i = 0; i < nrank; i++)
+    assert(compositingOrder[i] >= 0 && compositingOrder[i] < nrank);
   return compositingOrder;
 }

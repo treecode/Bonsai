@@ -3,13 +3,13 @@
 #include "renderloop.h"
 #include <array>
 
-#if 1
+#if 0
 #define WINX 1024
 #define WINY 768
 #elif 0
 #define  WINX 2048
 #define  WINY 1536
-#elif 0
+#elif 1
 #define WINX 1920
 #define WINY 1080
 #elif 1
@@ -392,7 +392,7 @@ float4 lPlaneEquation(float3 v0, float3 v1, float3 v2)
 }
 
 // reducing to improve perf
-#define MAX_PARTICLES 10000000
+#define MAX_PARTICLES 20000000
 
 class Demo
 {
