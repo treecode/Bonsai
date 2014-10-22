@@ -1732,12 +1732,17 @@ class Demo
 
   void getBodyData()
   {
+    static auto curMode = m_renderer.getDisplayMode();
+    const bool reload = m_renderer.getDisplayMode() != curMode;
+    curMode = m_renderer.getDisplayMode();
 
-    if (!m_idata.isNewData())
+
+    if (!m_idata.isNewData() && !reload)
     {
       m_renderer.depthSort(m_particlePos);
       return;
     }
+
 
     int n = m_idata.n();
 
@@ -1749,7 +1754,7 @@ class Demo
     float velMin = m_idata.attributeMin(RendererData::VEL);
     float rhoMax = m_idata.attributeMax(RendererData::RHO);
     float rhoMin = m_idata.attributeMin(RendererData::RHO);
-    const bool hasRHO = rhoMax > 0.0;
+    const bool hasRHO = rhoMax > 0.0 && (m_renderer.getDisplayMode() != SmokeRenderer::VOLUMETRIC);
     const float scaleVEL =          1.0/(velMax - velMin);
     const float scaleRHO = hasRHO ? 1.0/(rhoMax - rhoMin) : 0.0;
 
