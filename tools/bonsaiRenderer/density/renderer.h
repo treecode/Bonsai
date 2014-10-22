@@ -192,6 +192,7 @@ class SmokeRenderer : public SmokeRendererParams
     };
 
     void setDisplayMode(DisplayMode mode) { mDisplayMode = mode; }
+    DisplayMode getDisplayMode() const { return mDisplayMode; }
 
     void setNumParticles(unsigned int x) { mNumParticles = x; }
 
