@@ -1005,6 +1005,7 @@ class Demo
 
   void dumpImage(const std::string &fileNameBase)
   {
+    if (!m_autopilot) return;
     if (!isMaster()) return;
     if (fileNameBase.empty()) return;
 
@@ -1040,17 +1041,19 @@ class Demo
       }
     fclose(fout);
 
-    if (m_frameCount >= m_idata.getCamera().nFrames())
+    if (m_frameCount >= m_idata.getCamera().nFrames() && m_autopilot && !fileNameBase.empty())
       dataSetFunc(-1);
   }
 
 
   void display() 
   {
+    MPI_Bcast(&m_autopilot, 1, MPI_INT, 0, comm);
     //double startTime = GetTimer();
     //double getBodyDataTime = startTime;
 
-    m_frameCount++;
+    if (m_autopilot)
+      m_frameCount++;
 
     if (m_renderingEnabled)
     {
@@ -1074,7 +1077,7 @@ class Demo
       m_cameraTransLag = m_cameraTrans;
       m_cameraRotLag = m_cameraRot;
 #endif
-      if (m_idata.isCameraPath())
+      if (m_idata.isCameraPath() && m_autopilot)
       {
         const auto &cam = m_idata.getCamera().getFrame(m_frameCount-1);
         m_cameraRotLag  .x = cam. rotx;
@@ -1083,6 +1086,11 @@ class Demo
         m_cameraTransLag.x = cam.tranx;
         m_cameraTransLag.y = cam.trany;
         m_cameraTransLag.z = cam.tranz;
+
+#if 0
+        m_cameraTrans = m_cameraTransLag;
+        m_cameraRot   = m_cameraRotLag;
+#endif
       }
       float cameraTemp[7] = 
       {
@@ -1163,7 +1171,7 @@ class Demo
         calculateCursorPos();
       }
 
-      if (m_flyMode && !m_idata.isCameraPath()) {
+      if (m_flyMode && !m_idata.isCameraPath() && m_autopilot) {
         glRotatef(m_cameraRotLag.z, 0.0, 0.0, 1.0);
         glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
         glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
@@ -1176,7 +1184,7 @@ class Demo
 
       } else {
         // orbit viwer - rotate around centre, then translate
-        if (m_idata.isCameraPath())
+        if (m_idata.isCameraPath() && m_autopilot)
         {
           glLoadIdentity();
           glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
@@ -1397,6 +1405,7 @@ class Demo
         toggleDomainView();
         break;
       case ' ':
+        fprintf(stderr, " Toggle autopilot @ frame= %d\n", m_frameCount);
         togglePause();
         break;
       case 27: // escape
