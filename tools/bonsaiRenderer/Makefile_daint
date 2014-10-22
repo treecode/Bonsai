@@ -46,6 +46,9 @@ INCLUDE_FLAGS += -I/apps/daint/Viz/freeglut-2.8.1/include/
 LDFLAGS += -L/apps/daint/Viz/freeglut-2.8.1/2.8.1/lib/ -L/apps/daint/Viz/glew-1.10.0/lib/
 LDFLAGS += -lglut /apps/daint/Viz/glew-1.10.0/lib/libGLEW.a
 
+ifeq ($(PROFILE),1)
+	CXXFLAGS += -D__COMPOSITE_PROFILE
+endif
 
 ifeq ($(ICET),1)
 	ICETPATH=../IceT-2-1-1/
