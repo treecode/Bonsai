@@ -2332,6 +2332,7 @@ static void lCompose(
 
 //This function is called by icet to draw stuff
 #ifdef USE_ICET
+static double dtIcetCallback = 0;
 static void drawCallback(
     const IceTDouble *projection_matrix, 
     const IceTDouble *modelview_matrix,
@@ -2377,6 +2378,9 @@ static void drawCallback(
     }
   }
 #else
+#ifdef __COMPOSITE_PROFILE
+  const double t0 = MPI_Wtime();
+#endif
   glPixelStorei(GL_PACK_ROW_LENGTH, (GLint)icetImageGetWidth(result));
   glReadPixels((GLint)x_offset,
       (GLint)y_offset,
@@ -2386,6 +2390,10 @@ static void drawCallback(
       GL_FLOAT,
       colors_float + 4*( readback_viewport[0] + width*readback_viewport[1]));	
   glPixelStorei(GL_PACK_ROW_LENGTH, 0);
+#ifdef __COMPOSITE_PROFILE
+  const double t1 = MPI_Wtime();
+  dtIcetCallback = t1-t0;
+#endif
 #endif
 }
 #endif
@@ -2504,12 +2512,14 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
 
 
   GLvoid *rptr;
-#ifdef __COMPOSITE_PROFILE
+#ifdef __COMPOSITE_PROFILE 
   glFinish();
   MPI_Barrier(comm);
   double t00 = MPI_Wtime();
+#ifndef USE_ICET
   double t10 = MPI_Wtime();
   double t20 = MPI_Wtime();
+#endif
 #endif
   if (depthTex)
   {
@@ -2529,7 +2539,9 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
 #ifdef __COMPOSITE_PROFILE
     glFinish();
     MPI_Barrier(comm);
+#ifndef USE_ICET
     t10 = MPI_Wtime();
+#endif
 #endif
 
     float dmin = +HUGE, dmax = -HUGE;
@@ -2549,7 +2561,9 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
 #ifdef __COMPOSITE_PROFILE
     glFinish();
     MPI_Barrier(comm);
+#ifndef USE_ICET
     t20 = MPI_Wtime();
+#endif
 #endif
 
     /* determine real bounds to which pixels are written */ 
@@ -2581,7 +2595,9 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
 #ifdef __COMPOSITE_PROFILE
   glFinish();
   MPI_Barrier(comm);
+#ifndef USE_ICET
   const double t30 = MPI_Wtime();
+#endif
 #endif
 
   /***** fetch image *****/
@@ -2595,7 +2611,9 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
 #ifdef __COMPOSITE_PROFILE
   glFinish();
   MPI_Barrier(comm);
+#ifndef USE_ICET
   const double t40 = MPI_Wtime();
+#endif
 #endif
 
   if(!useIceT)
@@ -2616,7 +2634,9 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
 #ifdef __COMPOSITE_PROFILE
   glFinish();
   MPI_Barrier(comm);
+#ifndef USE_ICET
   const double t50 = MPI_Wtime();
+#endif
 #endif
 
 #pragma omp parallel for schedule(static)
@@ -2730,12 +2750,21 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
     glFinish();
     const double t90 = MPI_Wtime();
 
+#ifdef USE_ICET
+    if (1)
+      fprintf(stderr, " total= %g: icet= [mpi=%g rb=%g]  wb= [%g %g]\n",
+          t90-t00,
+          t70-t60-dtIcetCallback,
+          dtIcetCallback,
+          t80-t70, t90-t80);
+#else
     if (1)
       fprintf(stderr, "total= %g: depth= [%g %g %g] img= [%g %g %g] mpi= %g  wb= [ %g %g ]\n", t90 - t00,
           t10-t00, t20-t10, t30-t20,
           t40-t30, t50-t40, t60-t50,
           t70-t60,
           t80-t70, t90-t80);
+#endif
 #endif
   }
 
