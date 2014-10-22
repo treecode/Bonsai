@@ -398,7 +398,8 @@ class Demo
 {
   const int rank, nrank;
   const MPI_Comm &comm;
-  bool isMaster() const { return rank == 0; };
+  int masterRank() const { return 0;}
+  bool isMaster() const { return rank == masterRank(); }
 
 
   public:
@@ -412,7 +413,7 @@ class Demo
       m_displayMode(SmokeRenderer::SPLOTCH_SORTED),
       //	    m_displayMode(SmokeRenderer::POINTS),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.2f),
-      m_paused(false),
+      m_autopilot(false),
       m_renderingEnabled(true),
       m_displayBoxes(false), 
       m_domainView(false),
@@ -540,7 +541,7 @@ class Demo
   void toggleStereo() {
     m_stereoEnabled = !m_stereoEnabled;
   }
-  void togglePause() { m_paused = !m_paused; }
+  void togglePause() { m_autopilot = !m_autopilot; }
   void toggleBoxes() { m_displayBoxes = !m_displayBoxes; }
   void toggleDomainView() { m_domainView = !m_domainView; m_renderer.setDomainView(m_domainView); }
   void toggleSliders() { m_displaySliders = !m_displaySliders; }
@@ -653,10 +654,12 @@ class Demo
       m_renderer.setXhighlow(r0, r1);
     }
 
-    if (!m_paused && iterationsRemaining)
+#if 0
+    if (!m_autopilot && iterationsRemaining)
     {
       //iterationsRemaining = !m_tree->iterate_once(m_idata); 
     }
+#endif
     m_simTime = GetTimer() - startTime;
 
     if (!iterationsRemaining)
@@ -688,14 +691,20 @@ class Demo
     float y = glutGet(GLUT_WINDOW_HEIGHT)*4.0f - 200.0f;
     const float lineSpacing = 140.0f;
 
-    float Myr = 0.123; //m_tree->get_t_current() * 9.78f;
-    glPrintf(x, y, "MYears:    %.2f", Myr);
+    float Myr = m_idata.getTime() * 10.0;
+    glPrintf(x, y, "MYears:    %.2f Myr", Myr);
     y -= lineSpacing;
 
-    glPrintf(x, y, "BODIES:    %d", bodies);
+
+    long long nbodies_loc = m_idata.getNbodySim();
+    long long nbodies_glb;
+    MPI_Reduce(&nbodies_loc, &nbodies_glb, 1, MPI_LONG_LONG, MPI_SUM, masterRank(), comm);
+    const float gbodies = nbodies_glb * 1.0e-6;
+    glPrintf(x, y, "BODIES:    %.2f Million", gbodies);
     y -= lineSpacing;
 
-    if (m_displayBodiesSec) {
+    if (m_displayBodiesSec) 
+    {
       double frameTime = 1.0 / fps;
       glPrintf(x, y, "BODIES/SEC:%.0f", bodies / frameTime);
       y -= lineSpacing;
@@ -2010,7 +2019,7 @@ class Demo
   float m_screenZ;
   bool m_stereoEnabled;
 
-  bool m_paused;
+  bool m_autopilot;
   bool m_displayBoxes;
   bool m_domainView;
   bool m_displaySliders;
@@ -2167,10 +2176,13 @@ void display()
     //  fpsCount = 0;
     // fpsLimit = (fps > 1.f) ? (int)fps : 1;
 
-    if (theDemo->m_paused)
+
+#if 0
+    if (theDemo->m_autopilot)
     {
       fpsLimit = 0;
     }
+#endif
 
     //    cudaEventRecord(startEvent, 0);
   }

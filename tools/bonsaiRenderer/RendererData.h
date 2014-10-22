@@ -74,7 +74,8 @@ class RendererData
     const CameraPath *cameraPtr;
 
     bool firstData;
-
+    double time;
+    size_t nBodySim;
 
   public:
     RendererData(const int rank, const int nrank, const MPI_Comm &comm) : 
@@ -83,6 +84,11 @@ class RendererData
     assert(rank < nrank);
     new_data = false;
   }
+
+    double getTime() const { return time; }
+    void setTime(const double time) { this->time = time; }
+    void setNbodySim(const size_t n) { nBodySim = n; }
+    size_t getNbodySim() const { return nBodySim; }
 
     void setCameraPath(const CameraPath *ptr) { cameraPtr = ptr; }
     bool isCameraPath() const { return cameraPtr != nullptr; }
