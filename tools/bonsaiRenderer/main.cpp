@@ -139,6 +139,7 @@ bool fetchSharedData(const bool quickSync, RendererData &rData, const int rank, 
 
 
     rData.resize(nS);
+    rData.setTime(tCurrent);
     size_t ip = 0;
     for (size_t i = 0; i < size; i++)
     {
@@ -164,6 +165,7 @@ bool fetchSharedData(const bool quickSync, RendererData &rData, const int rank, 
       assert(ip <= nS);
     }
     rData.resize(ip);
+    rData.setNbodySim(ip);
 
     data.releaseLock();
   }
@@ -239,11 +241,11 @@ static T* readBonsai(
     const int reduceS,
     const bool print_header = false)
 {
-  BonsaiIO::Core out(rank, nranks, comm, BonsaiIO::READ, fileName);
+  BonsaiIO::Core in(rank, nranks, comm, BonsaiIO::READ, fileName);
   if (rank == 0 && print_header)
   {
     fprintf(stderr, "---- Bonsai header info ----\n");
-    out.getHeader().printFields();
+    in.getHeader().printFields();
     fprintf(stderr, "----------------------------\n");
   }
   typedef float float4[4];
@@ -257,13 +259,13 @@ static T* readBonsai(
 
   if (reduceS > 0)
   {
-    if (!out.read(IDListS, true, reduceS)) return NULL;
+    if (!in.read(IDListS, true, reduceS)) return NULL;
     if (rank  == 0)
       fprintf(stderr, " Reading star data \n");
-    assert(out.read(posS,    true, reduceS));
-    assert(out.read(velS,    true, reduceS));
+    assert(in.read(posS,    true, reduceS));
+    assert(in.read(velS,    true, reduceS));
     bool renderDensity = true;
-    if (!out.read(rhohS,  true, reduceS))
+    if (!in.read(rhohS,  true, reduceS))
     {
       if (rank == 0)
       {
@@ -286,11 +288,11 @@ static T* readBonsai(
   {
     if (rank  == 0)
       fprintf(stderr, " Reading DM data \n");
-    if(!out.read(IDListDM, true, reduceDM)) return NULL;
-    assert(out.read(posDM,    true, reduceDM));
-    assert(out.read(velDM,    true, reduceDM));
+    if(!in.read(IDListDM, true, reduceDM)) return NULL;
+    assert(in.read(posDM,    true, reduceDM));
+    assert(in.read(velDM,    true, reduceDM));
     bool renderDensity = true;
-    if (!out.read(rhohDM,  true, reduceDM))
+    if (!in.read(rhohDM,  true, reduceDM))
     {
       if (rank == 0)
       {
@@ -322,6 +324,9 @@ static T* readBonsai(
 
   T *rDataPtr = new T(rank,nranks,comm);
   rDataPtr->resize(nS+nDM);
+  rDataPtr->setTime(in.getTime());
+  rDataPtr->setNbodySim(nS+nDM);
+  in.close();
   auto &rData = *rDataPtr;
   for (int i = 0; i < nS; i++)
   {
