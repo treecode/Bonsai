@@ -2,6 +2,9 @@
 #include <stdio.h>
 #include "renderloop.h"
 #include <array>
+#ifdef _PNG
+#include <png.h>
+#endif
 
 #if 0
 #define WINX 1024
@@ -1010,8 +1013,16 @@ class Demo
     if (!isMaster()) return;
     if (fileNameBase.empty()) return;
 
+    const double t0 = MPI_Wtime();
+
     char fileName[1024];
-    sprintf(fileName, "%s_%05d.ppm", fileNameBase.c_str(), m_frameCount);
+    sprintf(fileName, "%s_%05d.%s", fileNameBase.c_str(), m_frameCount,
+#ifdef _PNG
+        "png"
+#else
+        "ppm"
+#endif
+        );
 
     const int winW = m_windowDims.x;
     const int winH = m_windowDims.y;
@@ -1027,21 +1038,52 @@ class Demo
       fprintf(stderr , " Writing snapshot into file: %s\n", fileName);
     }
 
+    static std::vector<char> img;
+    img.resize(3*winW*winH);
+    glReadPixels(0,0,winW,winH,GL_RGB,GL_UNSIGNED_BYTE,&img[0]);
+
+#ifdef _PNG
+    png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, (png_voidp)NULL, NULL, NULL);
+    assert(png_ptr);
+    png_infop info_ptr = png_create_info_struct(png_ptr);
+    if (!info_ptr)
+    {
+       png_destroy_write_struct(&png_ptr, (png_infopp)NULL);
+       assert(false);
+    }
+    if (setjmp(png_jmpbuf(png_ptr)))
+    {
+       png_destroy_write_struct(&png_ptr, &info_ptr);
+       fclose(fout);
+       assert(false);
+    }
+    png_init_io(png_ptr, fout);
+    png_set_IHDR(png_ptr, info_ptr, winW, winH,
+        8, PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE,
+        PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
+    png_bytep *row_pointers = (png_bytep*) png_malloc(png_ptr, winH*sizeof(png_bytep));
+    for (int i = 0; i < winH; i++)
+      row_pointers[i] = (png_bytep)&img[0]+ (winH-1-i)*3*winW;
+
+    png_set_rows(png_ptr, info_ptr, row_pointers);
+    png_write_png(png_ptr, info_ptr, PNG_TRANSFORM_IDENTITY, NULL);
+    png_free(png_ptr, row_pointers);
+    png_destroy_write_struct(&png_ptr, &info_ptr);
+#else
     fprintf(fout,"P6\n");
     fprintf(fout,"# ppm-file created by %s\n", "BonsaiRenderer");
     fprintf(fout,"%i %i\n", winW, winH);
     fprintf(fout,"255\n");
-    static std::vector<char> img;
-    img.resize(3*winW*winH);
-    glReadPixels(0,0,winW,winH,GL_RGB,GL_UNSIGNED_BYTE,&img[0]);
     for (int h = 0; h < winH; h++)
       for (int w = 0; w < winW; w++)
       {
         const int i = (winH-1-h)*winW + w;
         assert(fwrite(&img[3*i], sizeof(char), 3, fout) == 3);
       }
+#endif
     fclose(fout);
-
+    const double t1 = MPI_Wtime();
+    fprintf(stderr, " ... snap writing done in %g sec \n", t1-t0);
     if (m_frameCount >= m_idata.getCamera().nFrames() && m_autopilot && !fileNameBase.empty())
       dataSetFunc(-1);
   }
