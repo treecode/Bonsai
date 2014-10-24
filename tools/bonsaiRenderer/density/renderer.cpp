@@ -3199,7 +3199,7 @@ void SmokeRenderer::splotchDrawSort()
 
 void SmokeRenderer::volumetricNew()
 {
-#if 0
+#if 1
   calcVectors();
   depthSortCopy();
   m_batchSize = mNumParticles / m_numSlices;
@@ -3223,36 +3223,12 @@ void SmokeRenderer::volumetricNew()
   glClearColor(0.0, 0.0, 0.0, 0.0); 
   glClear(GL_COLOR_BUFFER_BIT);
 
-#if 0
-  glMatrixMode(GL_MODELVIEW);
-  glPushMatrix();
-  glLoadIdentity();
-  static float rotate = 0;
-  glRotatef(rotate, 1,0,0);
-  rotate += 0.1f;
-  drawSkybox(m_cubemapTex);
-  glPopMatrix();
-#else
-  //        drawSkybox(m_cubemapTex);
-#endif
-
   /*
   // bind vbo as buffer texture
   glBindTexture(GL_TEXTURE_BUFFER_EXT, mPosBufferTexture);
   glTexBufferEXT(GL_TEXTURE_BUFFER_EXT, GL_RGBA32F_ARB, mPosVbo);
   */
 
-#if USE_MRT
-  // write to both color attachments
-  m_fbo->AttachTexture(GL_TEXTURE_2D, m_imageTex[0], GL_COLOR_ATTACHMENT0_EXT);
-  m_fbo->AttachTexture(GL_TEXTURE_2D, m_lightTexture[m_srcLightTexture], GL_COLOR_ATTACHMENT1_EXT);
-  m_fbo->AttachTexture(GL_TEXTURE_2D, m_depthTex, GL_DEPTH_ATTACHMENT_EXT);
-
-  GLenum buffers[] = { GL_COLOR_ATTACHMENT0_EXT, GL_COLOR_ATTACHMENT1_EXT };
-  glDrawBuffers(2, buffers);
-#endif
-
-  glActiveTexture(GL_TEXTURE0);
   glMatrixMode(GL_TEXTURE);
   glLoadMatrixf((GLfloat *) m_shadowMatrix.get_value());
 
@@ -3260,34 +3236,20 @@ void SmokeRenderer::volumetricNew()
   if (m_numDisplayedSlices > m_numSlices) m_numDisplayedSlices = m_numSlices;
 
 
-  for(int i=0; i<m_numDisplayedSlices; i++) {
-#if 0
-    // draw slice from camera view, sampling light buffer
-    drawSlice(i);
-    // draw slice from light view to light buffer, accumulating shadows
-    drawSliceLightView(i);
-    if (m_doBlur) {
-      blurLightBuffer();
-    }
-#else
-    // opposite order
-    if (m_enableAA) {
-      drawSliceLightViewAA(i);
-    } else {
-      drawSliceLightView(i);
-    }
-    if (m_doBlur) {
-      blurLightBuffer();
-    }
+  for(int i=0; i<m_numDisplayedSlices; i++) 
+  {
+    m_fbo->AttachTexture(GL_TEXTURE_2D, m_imageTex[0], GL_COLOR_ATTACHMENT0_EXT);
+    //m_fbo->AttachTexture(GL_TEXTURE_2D, m_depthTex, GL_DEPTH_ATTACHMENT_EXT);
+    m_fbo->AttachTexture(GL_TEXTURE_2D, 0, GL_DEPTH_ATTACHMENT_EXT);
+    glViewport(0, 0, m_imageW, m_imageH);
 
-    drawSlice(i);
-#endif
+
+
+    glColor4f(1.0, 1.0, 1.0, m_spriteAlpha_volume);
+     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    drawPointSprites(m_particleProg, i*m_batchSize, m_batchSize, true, true);
   }
 
-#if USE_MRT
-  glColorMaskIndexedEXT(0, true, true, true, true);
-  glColorMaskIndexedEXT(1, false, false, false, false);
-#endif
   m_fbo->Disable();
 
   glActiveTexture(GL_TEXTURE0);

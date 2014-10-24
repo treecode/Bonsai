@@ -1798,8 +1798,8 @@ class Demo
     float velMin = m_idata.attributeMin(RendererData::VEL);
     float rhoMax = m_idata.attributeMax(RendererData::RHO);
     float rhoMin = m_idata.attributeMin(RendererData::RHO);
-    const bool hasRHO = rhoMax > 0.0 && 
-      (m_renderer.getDisplayMode() != SmokeRenderer::VOLUMETRIC);
+    bool hasRHO = rhoMax > 0.0;
+
     const float scaleVEL =          1.0/(velMax - velMin);
     const float scaleRHO = hasRHO ? 1.0/(rhoMax - rhoMin) : 0.0;
 
@@ -1839,7 +1839,20 @@ class Demo
 
         /* assign color */
         const int type =  ID.getType();
-	const size_t IDval = ID.getID();
+        const size_t IDval = ID.getID();
+
+        bool hasRHO = rhoMax > 0.0;
+        if (m_renderer.getDisplayMode() == SmokeRenderer::VOLUMETRIC)
+        {
+          hasRHO = false;
+        }
+        int typeBase = 0;
+        if (m_renderer.getDisplayMode() == SmokeRenderer::VOLUMETRIC_NEW)
+        {
+          hasRHO = false; //(IDval%5) == 0;
+         // typeBase = 128;
+        }
+
         float4 color = make_float4(0.0f);
         if (hasRHO)
         {
@@ -1855,7 +1868,7 @@ class Demo
           Cstar.x = colorMap[iy][ix][0];
           Cstar.y = colorMap[iy][ix][1];
           Cstar.z = colorMap[iy][ix][2];
-          Cstar.w = type;
+          Cstar.w = type + typeBase;
           color   = Cstar;
         }
         else

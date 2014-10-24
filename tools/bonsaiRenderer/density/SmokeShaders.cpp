@@ -1034,7 +1034,6 @@ STRINGIFY(
     {
       gl_FrontColor = vcol[0];
       float s = vsize[0];
-//      s = min(s, 1024.0f);
       float sx = s / resx;
       float sy = s / resy;
 
@@ -1049,62 +1048,45 @@ STRINGIFY(
 
       vec4 pos = gl_ModelViewProjectionMatrix * vpos[0];
 
-      bool reject = false;
-      if (sorted == 0.0)
-      {
-        gl_ClipDistance[0] = -dot(pos,p0);
-        gl_ClipDistance[1] = -dot(pos,p1);
-        gl_ClipDistance[2] = -dot(pos,p2);
-        gl_ClipDistance[3] = -dot(pos,p3);
-        gl_ClipDistance[4] = -dot(pos,p4);
-        gl_ClipDistance[5] = -dot(pos,p5);
-        for (int k = 0; k < 6; k++)
-          if (gl_ClipDistance[k] < 0.0f)
-            reject = true;
-      }
+      gl_Position        = pos + vec4(-sx,-sy,0,0);
+      gl_TexCoord[0].xy  = vec2(0,0);
+      gl_ClipDistance[0] = -dot(gl_Position,p0);
+      gl_ClipDistance[1] = -dot(gl_Position,p1);
+      gl_ClipDistance[2] = -dot(gl_Position,p2);
+      gl_ClipDistance[3] = -dot(gl_Position,p3);
+      gl_ClipDistance[4] = -dot(gl_Position,p4);
+      gl_ClipDistance[5] = -dot(gl_Position,p5);
+      EmitVertex();
 
-      if (!reject)
-      {
-        gl_Position        = pos + vec4(-sx,-sy,0,0);
-        gl_TexCoord[0].xy  = vec2(0,0);
-        gl_ClipDistance[0] = -dot(gl_Position,p0);
-        gl_ClipDistance[1] = -dot(gl_Position,p1);
-        gl_ClipDistance[2] = -dot(gl_Position,p2);
-        gl_ClipDistance[3] = -dot(gl_Position,p3);
-        gl_ClipDistance[4] = -dot(gl_Position,p4);
-        gl_ClipDistance[5] = -dot(gl_Position,p5);
-        EmitVertex();
+      gl_Position        = pos + vec4(-sx,+sy,0,0);
+      gl_TexCoord[0].xy  = vec2(0,1);
+      gl_ClipDistance[0] = -dot(gl_Position,p0);
+      gl_ClipDistance[1] = -dot(gl_Position,p1);
+      gl_ClipDistance[2] = -dot(gl_Position,p2);
+      gl_ClipDistance[3] = -dot(gl_Position,p3);
+      gl_ClipDistance[4] = -dot(gl_Position,p4);
+      gl_ClipDistance[5] = -dot(gl_Position,p5);
+      EmitVertex();
 
-        gl_Position        = pos + vec4(-sx,+sy,0,0);
-        gl_TexCoord[0].xy  = vec2(0,1);
-        gl_ClipDistance[0] = -dot(gl_Position,p0);
-        gl_ClipDistance[1] = -dot(gl_Position,p1);
-        gl_ClipDistance[2] = -dot(gl_Position,p2);
-        gl_ClipDistance[3] = -dot(gl_Position,p3);
-        gl_ClipDistance[4] = -dot(gl_Position,p4);
-        gl_ClipDistance[5] = -dot(gl_Position,p5);
-        EmitVertex();
+      gl_Position        = pos + vec4(+sx,-sy,0,0);
+      gl_TexCoord[0].xy  = vec2(1,0);
+      gl_ClipDistance[0] = -dot(gl_Position,p0);
+      gl_ClipDistance[1] = -dot(gl_Position,p1);
+      gl_ClipDistance[2] = -dot(gl_Position,p2);
+      gl_ClipDistance[3] = -dot(gl_Position,p3);
+      gl_ClipDistance[4] = -dot(gl_Position,p4);
+      gl_ClipDistance[5] = -dot(gl_Position,p5);
+      EmitVertex();
 
-        gl_Position        = pos + vec4(+sx,-sy,0,0);
-        gl_TexCoord[0].xy  = vec2(1,0);
-        gl_ClipDistance[0] = -dot(gl_Position,p0);
-        gl_ClipDistance[1] = -dot(gl_Position,p1);
-        gl_ClipDistance[2] = -dot(gl_Position,p2);
-        gl_ClipDistance[3] = -dot(gl_Position,p3);
-        gl_ClipDistance[4] = -dot(gl_Position,p4);
-        gl_ClipDistance[5] = -dot(gl_Position,p5);
-        EmitVertex();
-
-        gl_Position        = pos + vec4(+sx,+sy,0,0);
-        gl_TexCoord[0].xy  = vec2(1,1);
-        gl_ClipDistance[0] = -dot(gl_Position,p0);
-        gl_ClipDistance[1] = -dot(gl_Position,p1);
-        gl_ClipDistance[2] = -dot(gl_Position,p2);
-        gl_ClipDistance[3] = -dot(gl_Position,p3);
-        gl_ClipDistance[4] = -dot(gl_Position,p4);
-        gl_ClipDistance[5] = -dot(gl_Position,p5);
-        EmitVertex();
-      }
+      gl_Position        = pos + vec4(+sx,+sy,0,0);
+      gl_TexCoord[0].xy  = vec2(1,1);
+      gl_ClipDistance[0] = -dot(gl_Position,p0);
+      gl_ClipDistance[1] = -dot(gl_Position,p1);
+      gl_ClipDistance[2] = -dot(gl_Position,p2);
+      gl_ClipDistance[3] = -dot(gl_Position,p3);
+      gl_ClipDistance[4] = -dot(gl_Position,p4);
+      gl_ClipDistance[5] = -dot(gl_Position,p5);
+      EmitVertex();
       
       EndPrimitive();
     }
