@@ -12,7 +12,7 @@
 #elif 0
 #define  WINX 2048
 #define  WINY 1536
-#elif 0
+#elif 1
 #define WINX 1920
 #define WINY 1080
 #elif 1
@@ -415,6 +415,7 @@ class Demo
       //m_displayMode(ParticleRenderer::PARTICLE_SPRITES_COLOR),
 //      m_displayMode(SmokeRenderer::SPLOTCH_SORTED),
       m_displayMode(SmokeRenderer::VOLUMETRIC_NEW),
+//      m_displayMode(SmokeRenderer::VOLUMETRIC),
       //	    m_displayMode(SmokeRenderer::POINTS),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.2f),
       m_autopilot(false),
@@ -1797,7 +1798,8 @@ class Demo
     float velMin = m_idata.attributeMin(RendererData::VEL);
     float rhoMax = m_idata.attributeMax(RendererData::RHO);
     float rhoMin = m_idata.attributeMin(RendererData::RHO);
-    const bool hasRHO = rhoMax > 0.0 && (m_renderer.getDisplayMode() != SmokeRenderer::VOLUMETRIC);
+    const bool hasRHO = rhoMax > 0.0 && 
+      (m_renderer.getDisplayMode() != SmokeRenderer::VOLUMETRIC);
     const float scaleVEL =          1.0/(velMax - velMin);
     const float scaleRHO = hasRHO ? 1.0/(rhoMax - rhoMin) : 0.0;
 

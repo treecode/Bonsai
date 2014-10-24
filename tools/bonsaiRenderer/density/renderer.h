@@ -453,6 +453,8 @@ class SmokeRenderer : public SmokeRendererParams
     GLSLProgram         *m_thresholdProg;
     GLSLProgram         *m_splotchProg;
     GLSLProgram         *m_splotch2texProg;
+    GLSLProgram         *m_volnewProg;
+    GLSLProgram         *m_volnew2texProg;
 
     // image buffers
     FramebufferObject   *m_fbo;

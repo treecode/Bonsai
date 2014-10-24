@@ -123,7 +123,7 @@ SmokeRendererParams::SmokeRendererParams() :
   m_ageScale(10.0f),
   m_enableVolume(false),
   //  m_enableFilters(true),
-  m_enableFilters(true),
+  m_enableFilters(false),
   m_noiseFreq(0.05f),
   m_noiseAmp(1.0f),
   m_indirectAmount(0.5f),
@@ -253,6 +253,11 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles, const int _rank
       GL_POINTS, GL_TRIANGLE_STRIP
       );
   m_splotch2texProg = new GLSLProgram(passThruVS, splotch2texPS);
+
+  m_volnewProg = new GLSLProgram(volnewVS, volnewGS, volnewPS,
+      GL_POINTS, GL_TRIANGLE_STRIP
+      );
+  m_volnew2texProg = new GLSLProgram(passThruVS, volnew2texPS);
 
   glClampColorARB(GL_CLAMP_VERTEX_COLOR_ARB, GL_FALSE);
   glClampColorARB(GL_CLAMP_FRAGMENT_COLOR_ARB, GL_FALSE);
@@ -3194,6 +3199,108 @@ void SmokeRenderer::splotchDrawSort()
 
 void SmokeRenderer::volumetricNew()
 {
+#if 0
+  calcVectors();
+  depthSortCopy();
+  m_batchSize = mNumParticles / m_numSlices;
+  m_srcLightTexture = 0;
+
+  setLightColor(m_lightColor);
+
+  // clear light buffer
+  m_fbo->Bind();
+  glDrawBuffer(GL_COLOR_ATTACHMENT0_EXT);
+  m_fbo->AttachTexture(GL_TEXTURE_2D, m_lightTexture[m_srcLightTexture], GL_COLOR_ATTACHMENT0_EXT);
+  m_fbo->AttachTexture(GL_TEXTURE_2D, 0, GL_COLOR_ATTACHMENT1_EXT);
+  m_fbo->AttachTexture(GL_TEXTURE_2D, 0, GL_DEPTH_ATTACHMENT_EXT);
+  //glClearColor(1.0 - m_lightColor[0], 1.0 - m_lightColor[1], 1.0 - m_lightColor[2], 0.0);
+  glClearColor(m_lightColor[0], m_lightColor[1], m_lightColor[2], 0.0);
+  //glClearColor(0.0f, 0.0f, 0.0f, 0.0f);	// clear to transparent
+  glClear(GL_COLOR_BUFFER_BIT);
+
+  // clear volume image
+  m_fbo->AttachTexture(GL_TEXTURE_2D, m_imageTex[0], GL_COLOR_ATTACHMENT0_EXT);
+  glClearColor(0.0, 0.0, 0.0, 0.0); 
+  glClear(GL_COLOR_BUFFER_BIT);
+
+#if 0
+  glMatrixMode(GL_MODELVIEW);
+  glPushMatrix();
+  glLoadIdentity();
+  static float rotate = 0;
+  glRotatef(rotate, 1,0,0);
+  rotate += 0.1f;
+  drawSkybox(m_cubemapTex);
+  glPopMatrix();
+#else
+  //        drawSkybox(m_cubemapTex);
+#endif
+
+  /*
+  // bind vbo as buffer texture
+  glBindTexture(GL_TEXTURE_BUFFER_EXT, mPosBufferTexture);
+  glTexBufferEXT(GL_TEXTURE_BUFFER_EXT, GL_RGBA32F_ARB, mPosVbo);
+  */
+
+#if USE_MRT
+  // write to both color attachments
+  m_fbo->AttachTexture(GL_TEXTURE_2D, m_imageTex[0], GL_COLOR_ATTACHMENT0_EXT);
+  m_fbo->AttachTexture(GL_TEXTURE_2D, m_lightTexture[m_srcLightTexture], GL_COLOR_ATTACHMENT1_EXT);
+  m_fbo->AttachTexture(GL_TEXTURE_2D, m_depthTex, GL_DEPTH_ATTACHMENT_EXT);
+
+  GLenum buffers[] = { GL_COLOR_ATTACHMENT0_EXT, GL_COLOR_ATTACHMENT1_EXT };
+  glDrawBuffers(2, buffers);
+#endif
+
+  glActiveTexture(GL_TEXTURE0);
+  glMatrixMode(GL_TEXTURE);
+  glLoadMatrixf((GLfloat *) m_shadowMatrix.get_value());
+
+  // render slices
+  if (m_numDisplayedSlices > m_numSlices) m_numDisplayedSlices = m_numSlices;
+
+
+  for(int i=0; i<m_numDisplayedSlices; i++) {
+#if 0
+    // draw slice from camera view, sampling light buffer
+    drawSlice(i);
+    // draw slice from light view to light buffer, accumulating shadows
+    drawSliceLightView(i);
+    if (m_doBlur) {
+      blurLightBuffer();
+    }
+#else
+    // opposite order
+    if (m_enableAA) {
+      drawSliceLightViewAA(i);
+    } else {
+      drawSliceLightView(i);
+    }
+    if (m_doBlur) {
+      blurLightBuffer();
+    }
+
+    drawSlice(i);
+#endif
+  }
+
+#if USE_MRT
+  glColorMaskIndexedEXT(0, true, true, true, true);
+  glColorMaskIndexedEXT(1, false, false, false, false);
+#endif
+  m_fbo->Disable();
+
+  glActiveTexture(GL_TEXTURE0);
+  glMatrixMode(GL_TEXTURE);
+  glLoadIdentity();
+
+
+  composeImages(m_imageTex[0]);
+      
+  compositeResult();
+
+#else  /*************/
+
   GLuint depthTex = 0;
 
   m_fbo->Bind();
@@ -3211,7 +3318,7 @@ void SmokeRenderer::volumetricNew()
   calcVectors();
   depthSortCopy();
 
-  auto &prog = m_splotchProg;
+  auto &prog = m_volnewProg;
 
   GLuint vertexLoc = -1;
   if (!mSizeVao && mSizeVbo)
@@ -3300,15 +3407,17 @@ void SmokeRenderer::volumetricNew()
 
 
   glDisable(GL_BLEND);
-  m_splotch2texProg->enable();
-  m_splotch2texProg->bindTexture("tex", m_imageTex[0], GL_TEXTURE_2D, 0);
-  m_splotch2texProg->setUniform1f("scale_pre", 0.1*m_imageBrightnessPre);
-  m_splotch2texProg->setUniform1f("gamma_pre", m_gammaPre);
-  m_splotch2texProg->setUniform1f("scale_post", m_imageBrightnessPost);
-  m_splotch2texProg->setUniform1f("gamma_post", m_gammaPost);
-  m_splotch2texProg->setUniform1f("sorted", 1.0f);
+  m_volnew2texProg->enable();
+  m_volnew2texProg->bindTexture("tex", m_imageTex[0], GL_TEXTURE_2D, 0);
+  m_volnew2texProg->setUniform1f("scale_pre", 0.1*m_imageBrightnessPre);
+  m_volnew2texProg->setUniform1f("gamma_pre", m_gammaPre);
+  m_volnew2texProg->setUniform1f("scale_post", m_imageBrightnessPost);
+  m_volnew2texProg->setUniform1f("gamma_post", m_gammaPost);
+  m_volnew2texProg->setUniform1f("sorted", 1.0f);
   drawQuad();
-  m_splotch2texProg->disable();
+  m_volnew2texProg->disable();
+
+#endif
 }
 
 // render scene depth to texture
