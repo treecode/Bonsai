@@ -284,7 +284,11 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles, const int _rank
 #endif
 
   m_spriteTex = createSpriteTexture(256);
-  m_sphTex    = createSpriteTexture(256); //createSphTexture(256);
+#if 1
+  m_sphTex    = createSphTexture(256);
+#else
+  m_sphTex = createSpriteTexture(256);
+#endif
 
   initParams();
 
