@@ -284,7 +284,7 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles, const int _rank
 #endif
 
   m_spriteTex = createSpriteTexture(256);
-  m_sphTex    = createSphTexture(256);
+  m_sphTex    = createSpriteTexture(256); //createSphTexture(256);
 
   initParams();
 
@@ -3199,7 +3199,7 @@ void SmokeRenderer::splotchDrawSort()
 
 void SmokeRenderer::volumetricNew()
 {
-#if 1
+#if 0
   calcVectors();
   depthSortCopy();
   m_batchSize = mNumParticles / m_numSlices;
@@ -3325,9 +3325,18 @@ void SmokeRenderer::volumetricNew()
   prog->setUniform1f("dmAlpha",  m_dmAlpha);
   prog->setUniform1f("spriteSizeMax", powf(10.0f, m_spriteSizeMaxLog));
 
+  prog->setUniform1f("pointRadius", mParticleRadius);
+  prog->setUniform1f("ageScale", m_ageScale);
+  prog->setUniform1f("overBright", m_overBright);
+  prog->setUniform1f("overBrightThreshold", m_overBrightThreshold);
+  prog->setUniform1f("dustAlpha", m_dustAlpha);
+  prog->setUniform1f("fogDist", m_fog);
+  prog->setUniform1f("cullDarkMatter", (float) m_cullDarkMatter);
+
   // PS
   prog->bindTexture("spriteTex",  m_sphTex, GL_TEXTURE_2D, 1);
   prog->setUniform1f("alphaScale", m_spriteAlpha);
+//  prog->setUniform1f("alphaScale", m_spriteAlpha_volume);
   prog->setUniform1f("transmission", m_transmission);
   prog->setUniform1f("resx", m_imageW);
   prog->setUniform1f("resy", m_imageH);
@@ -3338,7 +3347,6 @@ void SmokeRenderer::volumetricNew()
   prog->setUniformfv("p4o", (GLfloat*)&m_clippingPlane[4], 4, 1);
   prog->setUniformfv("p5o", (GLfloat*)&m_clippingPlane[5], 4, 1);
 
-  prog->setUniform1f("sorted", 2.0);
 
   //glClientActiveTexture(GL_TEXTURE0);
   glActiveTexture(GL_TEXTURE0);
@@ -3369,15 +3377,16 @@ void SmokeRenderer::volumetricNew()
 
 
   glDisable(GL_BLEND);
+#if 1
+  displayTexture(m_imageTex[0], m_imageBrightness);
+#else
   m_volnew2texProg->enable();
   m_volnew2texProg->bindTexture("tex", m_imageTex[0], GL_TEXTURE_2D, 0);
-  m_volnew2texProg->setUniform1f("scale_pre", 0.1*m_imageBrightnessPre);
-  m_volnew2texProg->setUniform1f("gamma_pre", m_gammaPre);
-  m_volnew2texProg->setUniform1f("scale_post", m_imageBrightnessPost);
-  m_volnew2texProg->setUniform1f("gamma_post", m_gammaPost);
-  m_volnew2texProg->setUniform1f("sorted", 1.0f);
+  m_volnew2texProg->setUniform1f("scale", 0.1*m_imageBrightnessPre);
+  m_volnew2texProg->setUniform1f("gamma", m_gammaPre);
   drawQuad();
   m_volnew2texProg->disable();
+#endif
 
 #endif
 }
@@ -3862,7 +3871,7 @@ void SmokeRenderer::initParams()
  
   /***********/ 
 
-  m_params[VOLUMETRIC_NEW] = new ParamListGL("render_params_splotch_sorted");
+  m_params[VOLUMETRIC_NEW] = new ParamListGL("render_params_volumetric_new");
   m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("star scale [log]", m_starScaleLog,     -1.0f, 1.0f, 0.001f, &m_starScaleLog));
   m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("star alpha      ", m_starAlpha,         0.0f, 1.0f, 0.001f, &m_starAlpha));
   m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("dm scale   [log]", m_dmScaleLog,       -1.0f, 1.0f, 0.001f, &m_dmScaleLog));
@@ -3874,7 +3883,6 @@ void SmokeRenderer::initParams()
   m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("gamma [pre]",       m_gammaPre,           0.0f, 2.0f, 0.001f, &m_gammaPre));
   m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("brightness [post]", m_imageBrightnessPost, 0.0f, 1.0f, 0.001f, &m_imageBrightnessPost));
   m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("gamma [post]",      m_gammaPost,           0.0f, 2.0f, 0.001f, &m_gammaPost));
-  m_params[VOLUMETRIC_NEW] = new ParamListGL("render_params_volumetric");
   m_params[VOLUMETRIC_NEW]->AddParam(new Param<int>("slices", m_numSlices, 1, 256, 1, &m_numSlices));
   m_params[VOLUMETRIC_NEW]->AddParam(new Param<int>("displayed slices", m_numDisplayedSlices, 1, 256, 1, &m_numDisplayedSlices));
   m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("sprite size", mParticleRadius, 0.0f, 0.2f, 0.001f, &mParticleRadius));

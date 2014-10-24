@@ -413,8 +413,8 @@ class Demo
       //       m_renderer(tree->localTree.n + tree->localTree.n_dust),
       m_renderer(idata.n(), MAX_PARTICLES, rank, nrank, comm),
       //m_displayMode(ParticleRenderer::PARTICLE_SPRITES_COLOR),
-//      m_displayMode(SmokeRenderer::SPLOTCH_SORTED),
-      m_displayMode(SmokeRenderer::VOLUMETRIC_NEW),
+      m_displayMode(SmokeRenderer::SPLOTCH_SORTED),
+//      m_displayMode(SmokeRenderer::VOLUMETRIC_NEW),
 //      m_displayMode(SmokeRenderer::VOLUMETRIC),
       //	    m_displayMode(SmokeRenderer::POINTS),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.2f),
@@ -1839,7 +1839,7 @@ class Demo
 
         /* assign color */
         const int type =  ID.getType();
-        const size_t IDval = ID.getID();
+        size_t IDval = ID.getID();
 
         bool hasRHO = rhoMax > 0.0;
         if (m_renderer.getDisplayMode() == SmokeRenderer::VOLUMETRIC)
@@ -1849,8 +1849,10 @@ class Demo
         int typeBase = 0;
         if (m_renderer.getDisplayMode() == SmokeRenderer::VOLUMETRIC_NEW)
         {
-          hasRHO = false; //(IDval%5) == 0;
-         // typeBase = 128;
+          const int ns = 16;
+          hasRHO = (IDval%ns) != 0;
+          IDval /= ns;
+          typeBase = 128;
         }
 
         float4 color = make_float4(0.0f);
@@ -1870,6 +1872,14 @@ class Demo
           Cstar.z = colorMap[iy][ix][2];
           Cstar.w = type + typeBase;
           color   = Cstar;
+#if 1
+          if (typeBase == 128)
+          {
+            color.x *= 1.0/256;
+            color.y *= 1.0/256;
+            color.z *= 1.0/256;
+          }
+#endif
         }
         else
         {

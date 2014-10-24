@@ -974,7 +974,13 @@ STRINGIFY(
     uniform float dmScale;                                    \n
     uniform float dmAlpha;                                    \n
     uniform float spriteSizeMax;                              \n
-    uniform float sorted;                                     \n
+    uniform float pointRadius;  // point size in world space    \n
+    uniform float overBright;
+    uniform float overBrightThreshold;
+    uniform float ageScale;                                   \n
+    uniform float dustAlpha;
+    uniform float fogDist;
+    uniform float cullDarkMatter;
     out varying vec4 vpos;                                    \n
     out varying vec4 vcol;                                    \n
     out varying float vsize;                                  \n
@@ -991,23 +997,46 @@ STRINGIFY(
       // store particle type for PS                           \n
       gl_TexCoord[1] = vec4(0,0,1, type);                     \n
                                                               \n
-      float pointSize = particleSize*spriteScale;             \n
-      float alpha = 1.0;                                      \n
-      vec3 col = gl_Color.rgb;                                \n
+      float pointSize = particleSize;                         \n
+      vec4 col = gl_Color;                                    \n
+      col.a = 1.0;
       if (type == 0.0)                                        \n
+      {
+        col.a = dustAlpha;
+        pointSize = pointRadius * ageScale;
+      } 
+      else if (type == 1.0) 
+      {
+        col.rgb *= overBrightThreshold; 
+        pointSize = pointRadius;
+      }
+      else if (type == 2.0) 
+      {
+        // star
+        col.rgb *= overBright;
+        pointSize = pointRadius;
+      } 
+      else if (type == 3.0) 
+      {
+        if (cullDarkMatter != 0) {
+          gl_Position.w = -1.0;
+          wpos.w = -1.0;
+        }
+        pointSize = pointRadius;
+      }
+      else if (type == 128.0)                                 \n
       {                                                       \n
-         alpha     *= dmAlpha;                                \n
+         col.a     *= dmAlpha;                                \n
          pointSize *= dmScale;                                \n
       }                                                       \n
       else                                                    \n
       {                                                       \n
-         alpha     *= starAlpha;                              \n
+         col.a     *= starAlpha;                              \n
          pointSize *= starScale;                              \n
       }                                                       \n
-                                                              \n
-      if (sorted == 0.0) col *= 1.0/255;                      \n
-      gl_PointSize  = max(spriteSizeMax, pointSize / dist);   \n
-      gl_FrontColor = vec4(col, alpha);                       \n
+      gl_PointSize  = max(spriteSizeMax, pointSize*spriteScale / dist);   \n
+      float fog = exp(-dist*fogDist);
+      gl_FrontColor = vec4(col.rgb*fog, col.a);                       \n
                                                               \n
       vpos   = wpos;                                          \n
       vcol   = gl_FrontColor;                                 \n
@@ -1048,45 +1077,48 @@ STRINGIFY(
 
       vec4 pos = gl_ModelViewProjectionMatrix * vpos[0];
 
-      gl_Position        = pos + vec4(-sx,-sy,0,0);
-      gl_TexCoord[0].xy  = vec2(0,0);
-      gl_ClipDistance[0] = -dot(gl_Position,p0);
-      gl_ClipDistance[1] = -dot(gl_Position,p1);
-      gl_ClipDistance[2] = -dot(gl_Position,p2);
-      gl_ClipDistance[3] = -dot(gl_Position,p3);
-      gl_ClipDistance[4] = -dot(gl_Position,p4);
-      gl_ClipDistance[5] = -dot(gl_Position,p5);
-      EmitVertex();
+      if (vpos[0] != -1.0)
+      {
+        gl_Position        = pos + vec4(-sx,-sy,0,0);
+        gl_TexCoord[0].xy  = vec2(0,0);
+        gl_ClipDistance[0] = -dot(gl_Position,p0);
+        gl_ClipDistance[1] = -dot(gl_Position,p1);
+        gl_ClipDistance[2] = -dot(gl_Position,p2);
+        gl_ClipDistance[3] = -dot(gl_Position,p3);
+        gl_ClipDistance[4] = -dot(gl_Position,p4);
+        gl_ClipDistance[5] = -dot(gl_Position,p5);
+        EmitVertex();
 
-      gl_Position        = pos + vec4(-sx,+sy,0,0);
-      gl_TexCoord[0].xy  = vec2(0,1);
-      gl_ClipDistance[0] = -dot(gl_Position,p0);
-      gl_ClipDistance[1] = -dot(gl_Position,p1);
-      gl_ClipDistance[2] = -dot(gl_Position,p2);
-      gl_ClipDistance[3] = -dot(gl_Position,p3);
-      gl_ClipDistance[4] = -dot(gl_Position,p4);
-      gl_ClipDistance[5] = -dot(gl_Position,p5);
-      EmitVertex();
+        gl_Position        = pos + vec4(-sx,+sy,0,0);
+        gl_TexCoord[0].xy  = vec2(0,1);
+        gl_ClipDistance[0] = -dot(gl_Position,p0);
+        gl_ClipDistance[1] = -dot(gl_Position,p1);
+        gl_ClipDistance[2] = -dot(gl_Position,p2);
+        gl_ClipDistance[3] = -dot(gl_Position,p3);
+        gl_ClipDistance[4] = -dot(gl_Position,p4);
+        gl_ClipDistance[5] = -dot(gl_Position,p5);
+        EmitVertex();
 
-      gl_Position        = pos + vec4(+sx,-sy,0,0);
-      gl_TexCoord[0].xy  = vec2(1,0);
-      gl_ClipDistance[0] = -dot(gl_Position,p0);
-      gl_ClipDistance[1] = -dot(gl_Position,p1);
-      gl_ClipDistance[2] = -dot(gl_Position,p2);
-      gl_ClipDistance[3] = -dot(gl_Position,p3);
-      gl_ClipDistance[4] = -dot(gl_Position,p4);
-      gl_ClipDistance[5] = -dot(gl_Position,p5);
-      EmitVertex();
+        gl_Position        = pos + vec4(+sx,-sy,0,0);
+        gl_TexCoord[0].xy  = vec2(1,0);
+        gl_ClipDistance[0] = -dot(gl_Position,p0);
+        gl_ClipDistance[1] = -dot(gl_Position,p1);
+        gl_ClipDistance[2] = -dot(gl_Position,p2);
+        gl_ClipDistance[3] = -dot(gl_Position,p3);
+        gl_ClipDistance[4] = -dot(gl_Position,p4);
+        gl_ClipDistance[5] = -dot(gl_Position,p5);
+        EmitVertex();
 
-      gl_Position        = pos + vec4(+sx,+sy,0,0);
-      gl_TexCoord[0].xy  = vec2(1,1);
-      gl_ClipDistance[0] = -dot(gl_Position,p0);
-      gl_ClipDistance[1] = -dot(gl_Position,p1);
-      gl_ClipDistance[2] = -dot(gl_Position,p2);
-      gl_ClipDistance[3] = -dot(gl_Position,p3);
-      gl_ClipDistance[4] = -dot(gl_Position,p4);
-      gl_ClipDistance[5] = -dot(gl_Position,p5);
-      EmitVertex();
+        gl_Position        = pos + vec4(+sx,+sy,0,0);
+        gl_TexCoord[0].xy  = vec2(1,1);
+        gl_ClipDistance[0] = -dot(gl_Position,p0);
+        gl_ClipDistance[1] = -dot(gl_Position,p1);
+        gl_ClipDistance[2] = -dot(gl_Position,p2);
+        gl_ClipDistance[3] = -dot(gl_Position,p3);
+        gl_ClipDistance[4] = -dot(gl_Position,p4);
+        gl_ClipDistance[5] = -dot(gl_Position,p5);
+        EmitVertex();
+      }
       
       EndPrimitive();
     }
@@ -1099,42 +1131,26 @@ STRINGIFY(
     uniform sampler2D spriteTex;                                       \n
     uniform float alphaScale;                                          \n
     uniform float transmission;                                        \n
-    uniform float sorted;                                              \n
     void main()                                                        \n
     {                                                                  \n
       float type = gl_TexCoord[1].w;                                   \n
       float alpha = texture2D(spriteTex, gl_TexCoord[0].xy).x;         \n
-      vec4 c = vec4(gl_Color.xyz*alpha, 0);
-      if (sorted != 0.0)                                               \n
-      {                                                                \n
-        alpha *= gl_Color.w*alphaScale;                                \n
-        alpha = clamp(alpha, 0.0, 1.0);                                \n
-        c = vec4(gl_Color.xyz * alpha, max(0, alpha-transmission));    \n
-      }                                                                \n
-      gl_FragColor = c;                                                \n
+      alpha *= gl_Color.w*alphaScale;                                \n
+      alpha  = clamp(alpha, 0.0, 1.0);                                \n
+      gl_FragColor = vec4(gl_Color.xyz * alpha, max(0, alpha-transmission)); \n
     }                                                                  \n
   );
 
 const char *volnew2texPS = 
 STRINGIFY(
     uniform sampler2D tex;                                             \n
-    uniform float scale_pre;                         \n
-    uniform float gamma_pre;                         \n
-    uniform float scale_post;                         \n
-    uniform float gamma_post;
-    uniform float sorted; \n
+    uniform float scale;                         \n
+    uniform float gamma;
     void main()                                                        \n
     {                                                                  \n
       vec4 c = texture2D(tex, gl_TexCoord[0].xy);                    \n
-      c.rgb *= scale_pre;
-      c.rgb = pow(c.rgb, gamma_pre);          \n
-      if (sorted == 0.0)  \n
-      {
-        c.rgb = 1.0 - exp(-c.rgb);          \n
-        c.rgb *= scale_post;
-        c.rgb = pow(c.rgb, gamma_post);          \n
-      }  \n
-      c.a = 1.0;          \n
+      c.rgb *= scale;
+      c.rgb = pow(c.rgb, gamma);          \n
       gl_FragColor = c;                                              \n
     }                                                                  \n
   );
