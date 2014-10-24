@@ -12,7 +12,7 @@
 #elif 0
 #define  WINX 2048
 #define  WINY 1536
-#elif 0
+#elif 1
 #define WINX 1920
 #define WINY 1080
 #elif 1
