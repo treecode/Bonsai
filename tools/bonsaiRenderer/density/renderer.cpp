@@ -3381,16 +3381,17 @@ void SmokeRenderer::volumetricNew()
 
 
   glDisable(GL_BLEND);
-#if 1
-  displayTexture(m_imageTex[0], m_imageBrightness);
-#else
   m_volnew2texProg->enable();
   m_volnew2texProg->bindTexture("tex", m_imageTex[0], GL_TEXTURE_2D, 0);
+#if 0
   m_volnew2texProg->setUniform1f("scale", 0.1*m_imageBrightnessPre);
   m_volnew2texProg->setUniform1f("gamma", m_gammaPre);
+#else
+  m_volnew2texProg->setUniform1f("scale", m_imageBrightness);
+  m_volnew2texProg->setUniform1f("gamma", m_gamma);
+#endif
   drawQuad();
   m_volnew2texProg->disable();
-#endif
 
 #endif
 }
