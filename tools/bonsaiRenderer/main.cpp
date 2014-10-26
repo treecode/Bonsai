@@ -79,16 +79,32 @@ bool fetchSharedData(const bool quickSync, RendererData &rData, const int rank, 
 #endif
 
   // header
-  header.acquireLock();
+
+
+  int sumL, sumG ;
+  if (quickSync)
+  {
+    while(1)
+    {
+      header.acquireLock();
+      sumL = !header[0].done_writing;
+      MPI_Allreduce(&sumL, &sumG, 1, MPI_INT, MPI_SUM, comm);
+      if (sumG == nrank)
+        break;
+      header.releaseLock();
+      usleep(1000);
+    }
+  }
+  else
+  {
+    header.acquireLock();
+    const float tCurrent = header[0].tCurrent;
+    sumL = tCurrent != tLast;
+    MPI_Allreduce(&sumL, &sumG, 1, MPI_INT, MPI_SUM, comm);
+  }
+
   const float tCurrent = header[0].tCurrent;
-
   terminateRenderer = tCurrent == -1;
-
-  int sumL = quickSync ? !header[0].done_writing : tCurrent != tLast;
-  int sumG ;
-  MPI_Allreduce(&sumL, &sumG, 1, MPI_INT, MPI_SUM, comm);
-
-
   bool completed = false;
   if (sumG == nrank) //tCurrent != tLast)
   {
@@ -168,9 +184,9 @@ bool fetchSharedData(const bool quickSync, RendererData &rData, const int rank, 
     rData.setNbodySim(ip);
 
     data.releaseLock();
+    header[0].done_writing = true;
   }
 
-  header[0].done_writing = true;
   header.releaseLock();
 
 #if 0

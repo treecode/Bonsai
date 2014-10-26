@@ -12,7 +12,7 @@
 #elif 0
 #define  WINX 2048
 #define  WINY 1536
-#elif 1
+#elif 0
 #define WINX 1920
 #define WINY 1080
 #elif 1
@@ -271,7 +271,7 @@ extern void displayTimers();    // For profiling counter display
 /* thread safe drand48(), man drand48 */
 
 // fps
-bool displayFps = true;
+bool displayFps = false;
 double fps = 0.0;
 int fpsLimit = 5;
 //cudaEvent_t startEvent, stopEvent;
@@ -413,12 +413,12 @@ class Demo
       //       m_renderer(tree->localTree.n + tree->localTree.n_dust),
       m_renderer(idata.n(), MAX_PARTICLES, rank, nrank, comm),
       //m_displayMode(ParticleRenderer::PARTICLE_SPRITES_COLOR),
-      m_displayMode(SmokeRenderer::SPLOTCH_SORTED),
-//      m_displayMode(SmokeRenderer::VOLUMETRIC_NEW),
+//      m_displayMode(SmokeRenderer::SPLOTCH_SORTED),
+      m_displayMode(SmokeRenderer::VOLUMETRIC_NEW),
 //      m_displayMode(SmokeRenderer::VOLUMETRIC),
       //	    m_displayMode(SmokeRenderer::POINTS),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.2f),
-      m_autopilot(false),
+      m_autopilot(true),
       m_renderingEnabled(true),
       m_displayBoxes(false), 
       m_domainView(false),
@@ -442,7 +442,7 @@ class Demo
       m_overBright(1.0f),
       m_params(m_renderer.getParams()),
       m_brightFreq(100),
-      m_displayBodiesSec(true),
+      m_displayBodiesSec(false),
       m_cameraRollHome(0.0f),
       m_cameraRoll(0.0f),
       m_enableStats(true)
