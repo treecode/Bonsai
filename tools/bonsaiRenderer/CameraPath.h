@@ -76,7 +76,7 @@ class CameraPath
       };
 
       /* correct angles, to ensure continuited across [-PI;+PI] boudary */
-#if 1
+#if 0
       for (int k = 0; k < 3; k++)
          if (std::abs(c0.data[k] - c1.data[k]) > M_PI)
          {
