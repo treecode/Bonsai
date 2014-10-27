@@ -696,7 +696,7 @@ class Demo
     float y = glutGet(GLUT_WINDOW_HEIGHT)*4.0f - 200.0f;
     const float lineSpacing = 140.0f;
 
-    float Myr = m_idata.getTime() * 10.0;
+    float Myr = m_idata.getTime() * 9.767;
     glPrintf(x, y, "MYears:    %.2f Myr", Myr);
     y -= lineSpacing;
 
