@@ -260,7 +260,7 @@ static __device__ __forceinline__ float4 add_acc(
 	density.y += 1; //Increase nnb count
   }
 #else
-  computeDensityAndNgb(r2,pos.w,massj,density.x,density.y);
+  computeDensityAndNgb(r2-eps2,pos.w,massj,density.x,density.y);
 #endif
 
 

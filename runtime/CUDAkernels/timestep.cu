@@ -193,9 +193,9 @@ KERNEL_DECLARE(setActiveGroups)(const int n_bodies,
 
 static __device__ __forceinline__ float adjustH(const float h_old, const float nnb)
 {
-	const float nbDesired 	= 42;
+	const float nbDesired 	= 32;
 	const float f      	= 0.5f * (1.0f + cbrtf(nbDesired / nnb));
-	const float fScale 	= max(min(f, 1.2), 0.8);
+	const float fScale 	= max(min(f, 2.0), 0.5);
 	return (h_old*fScale);
 }
 KERNEL_DECLARE(correct_particles)(const int n_bodies,
@@ -280,7 +280,10 @@ KERNEL_DECLARE(correct_particles)(const int n_bodies,
   unsorted[idx] = idx;  //Have to reset it in case we do not resort the particles
  
 
+//  body_h[idx] = adjustH(body_h[idx], body_dens[idx].y);
+
   body_h[idx] = adjustH(body_h[idx], body_dens[idx].y);
+  //body_h[idx] = 1.0f/idx; //adjustH(body_h[idx], body_dens[idx].y);
 
   //   time[idx] = (float2){tc, tc + dt};
 }
