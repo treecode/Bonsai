@@ -671,11 +671,16 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
 
     if (inSitu )
       if (fetchSharedData(quickSync, *rDataPtr, rank, nranks, comm, reduceDM, reduceS))
-        if (rDataPtr->size() > 0)
+      {
+        int nTotal, nLocal = rDataPtr->size();
+	MPI_Allreduce(&nLocal, &nTotal, 1, MPI_INT, MPI_SUM, comm);
+
+        if (nTotal > 0)
         {
           rescaleData(*rDataPtr, rank,nranks,comm, doDD,nmaxsample);
           rDataPtr->setNewData();
         }
+      }
   };
   std::function<void(int)> updateFunc = dataSetFunc;
 
