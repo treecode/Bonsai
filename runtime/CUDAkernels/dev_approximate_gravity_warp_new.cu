@@ -31,44 +31,29 @@ PROF_MODULE(dev_approximate_gravity);
 /***********************************/
 /***** DENSITY   ******************/
 
-static __device__ __forceinline__ float Wkernel(const float q)
-{
-  const float sigma = 8.0f/M_PI;
-
-  const float qm = 1.0f - q;
-  if (q < 0.5f) return sigma * (1.0f + (-6.0f)*q*q*qm);
-  else if (q < 1.0f) return sigma * 2.0f*qm*qm*qm;
-
-  return 0.0f;
-}
-
-static __device__ __forceinline__  float computePartialDensity(
-    const float h, 
-    const float r2, 
-    const float mass)
-{
-  const float r     =  sqrtf(r2); //Can we combine this with the force sqrt?
-  const float hinv  =  1.0f/h; //Can we precompute this and keep in register?
-  const float q     =  r * hinv;
-  const float hinv3 =  hinv*hinv*hinv;
-
-//  printf("ON DEV: Kernel: %f\tq: %f\tr: %f\thinv: %f\n",  Wkernel(q), q, r, hinv);
-
-
-  const float m = 0 ? mass : 1.0f;
-  return m * Wkernel(q) * hinv3;
-  
-}
-
 static __device__ __forceinline__ void computeDensityAndNgb(
-    const float r2, const float h, const float mass, 
+    const float r2, const float hinv2, const float mass, 
     float &density, float &nb)
 {
-  if (h*h > r2)
-  {
-    nb++;
-    density += computePartialDensity(h,r2,mass);
-  }
+#if 0  /* full kernel for reference */
+  const float hinv = 1.0f/h;
+  const float hinv2 = hinv*hinv;
+  const float hinv3 = hinv*hinv2;
+  const float C     = 3465.0f/(512.0f*M_PI)*hinv3;
+  const float q2    = r2*hinv2;
+  const float rho   = fmaxf(0.0f, 1.0f - q2);
+  nb      += ceilf(rho);
+  const float rho2 = rho*rho;
+  density += C * rho2*rho2;
+#else
+  const float rho   = fmaxf(0.0f, 1.0f - r2*hinv2);   /* fma, fmax */
+  const float rho2  = rho*rho;                        /* fmul */
+  density += rho2*rho2;                               /* fma */
+  nb      += ceilf(rho2);                             /* fadd, ceil */
+
+  /*2x fma, 1x fmul, 1x fadd, 1x ceil, 1x fmax */
+  /* total: 6 flops or 8 flops with ceil&fmax */
+#endif
 }
 
 #if 0
@@ -184,18 +169,19 @@ static __device__ __forceinline__ int2 inclusive_segscan_warp(
 /**** binary scans ****/
 
 
+#if 0
 static __device__ int warp_exclusive_scan(const bool p, int &psum)
 {
   const unsigned int b = __ballot(p);
   psum = __popc(b & lanemask_lt());
   return __popc(b);
 }
-
 static __device__ int warp_exclusive_scan(const bool p)
 {
   const int b = __ballot(p);
   return __popc(b & lanemask_lt());
 }
+#endif
 
 
 /**************************************/
@@ -240,8 +226,9 @@ static __device__ __forceinline__ float4 add_acc(
 #if 1  // to test performance of a tree-walk 
   const float3 dr = make_float3(posj.x - pos.x, posj.y - pos.y, posj.z - pos.z);
 
-  const float r2     = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z + eps2;
-  const float rinv   = rsqrtf(r2);
+  const float r2     = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
+  const float r2eps  = r2 + eps2;
+  const float rinv   = rsqrtf(r2eps);
   const float rinv2  = rinv*rinv;
   const float mrinv  = massj * rinv;
   const float mrinv3 = mrinv * rinv2;
@@ -251,19 +238,7 @@ static __device__ __forceinline__ float4 add_acc(
   acc.y += mrinv3 * dr.y;
   acc.z += mrinv3 * dr.z;
 
-
-  //Density
-#if 0
-  if(r2 < pos.w*pos.w)
-  {
-        density.x  = addDensity(pos.w, r2, density.x, massj);
-	density.y += 1; //Increase nnb count
-  }
-#else
-  computeDensityAndNgb(r2-eps2,pos.w,massj,density.x,density.y);
-#endif
-
-
+  computeDensityAndNgb(r2,pos.w,massj,density.x,density.y);
 #endif
 
   return acc;
@@ -310,20 +285,6 @@ static __device__ __forceinline__ float4 add_acc(
   const float mrinv3 = rinv2*mrinv;
   const float mrinv5 = rinv2*mrinv3; 
   const float mrinv7 = rinv2*mrinv5;   // 16
-
-
-  //Density
-#if 0
-  if(pos.w*pos.w  < r2)
-  {
-        density.x  = addDensity(pos.w, r2, density.x, mass);
-	density.y += 1; //Increase nnb count, this should be nParticles in leaf or node instead of 1
-  }
-#else
-//  computeDensityAndNgb(r2,pos.w,mass,density.x,density.y);
-#endif
-
-
 
   float  D0  =  mrinv;
   float  D1  = -mrinv3;
@@ -748,10 +709,12 @@ bool treewalk(
   float2 dens_i[2];  
 
   pos_i[0]   = group_body_pos[body_i[0]];
-  pos_i[0].w = body_h[body_i[0]];
-  if(ni > 1){ //Only read if we actually have ni == 2
+  pos_i[0].w = 1.0f/body_h[body_i[0]];
+  pos_i[0].w *= pos_i[0].w;  /* .w stores 1/h^2 to speed up computations */
+  if(ni > 1){       //Only read if we actually have ni == 2
     pos_i[1]   = group_body_pos[body_i[1]];
-    pos_i[1].w = body_h[body_i[1]];
+    pos_i[1].w = 1.0f/body_h[body_i[1]];  
+    pos_i[1].w *= pos_i[1].w;  /* .w stores 1/h^2 to speed up computations */
   }
 
   acc_i[0] = acc_i[1] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
@@ -794,6 +757,11 @@ bool treewalk(
   if (laneId < nb_i) 
   {
     const int addr = body_i[0];
+    {
+      const float hinv = 1.0f/body_h[addr];
+      const float C   = 3465.0f/(512.0f*M_PI)*hinv*hinv*hinv;
+      dens_i[0].x *= C;  /* scale rho */
+    }
     if (ACCUMULATE)
     {
       acc_out     [addr].x += acc_i[0].x;
@@ -830,6 +798,11 @@ bool treewalk(
     if (ni == 2)
     {
       const int addr = body_i[1];
+      {
+        const float hinv = 1.0f/body_h[addr];
+        const float C   = 3465.0f/(512.0f*M_PI)*hinv*hinv*hinv;
+        dens_i[1].x *= C;  /* scale rho */
+      }
       if (ACCUMULATE)
       {
         acc_out     [addr].x += acc_i[1].x;
