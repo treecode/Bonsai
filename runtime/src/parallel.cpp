@@ -1951,7 +1951,7 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree
     recvCount     += nreceive[i];
   }
 
-  #if 1
+  #if 0
     { /* jb2404 */
       fprintf(stderr, "Proc: %d Exchange, received %d \tSend: %d newN: %d\n",
           procId, recvCount, nToSend,  tree.n + recvCount - nToSend);
