@@ -22,6 +22,7 @@ SRC1 = cvt_tipsy2bonsai.cpp
 SRC2 = readBonsai.cpp
 SRC3 = benchmark.cpp
 SRC4 = cvt_tipsy_gtc12_2bonsai.cpp
+SRC5 = cvt_bonsai2dumbp.cpp
 OBJ1 = $(SRC1:%.cpp=%.o)
 OBJ2 = $(SRC2:%.cpp=%.o)
 OBJ3 = $(SRC3:%.cpp=%.o)
@@ -32,10 +33,11 @@ PROG1 = cvt_tipsy2bonsai
 PROG2 = readBonsai
 PROG3 = benchmark
 PROG4 = cvt_tipsy_gtc12_2bonsai
+PROG5 = cvt_bonsai2dumbp
 
 RM = /bin/rm
 
-all:	  $(PROG1) $(PROG2) $(PROG3) $(PROG4)
+all:	  $(PROG1) $(PROG2) $(PROG3) $(PROG4) $(PROG5)
 
 
 $(PROG1): $(OBJ1) 
