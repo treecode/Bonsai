@@ -603,7 +603,8 @@ KERNEL_DECLARE(gpu_internalMoveSFC2) (int       n_extract,
                                   real4     *acc1,
                                   float2    *time,
                                   unsigned long long       *body_id,
-                                  uint4     *body_key)
+                                  uint4     *body_key,
+				  float *h)
 {
   CUXTIMER("internalMoveSFC2");
   uint bid = blockIdx.y * gridDim.x + blockIdx.x;
@@ -635,6 +636,7 @@ KERNEL_DECLARE(gpu_internalMoveSFC2) (int       n_extract,
     time[dstIdx] = time[srcIdx];
     body_key[dstIdx] = body_key[srcIdx];
     body_id[dstIdx]  = body_id[srcIdx];
+    h[dstIdx]     = h[srcIdx];
   }//if inside
 
 }
@@ -653,7 +655,8 @@ KERNEL_DECLARE(gpu_internalMoveSFC) (int       n_extract,
                                   real4     *acc1,
                                   float2    *time,
                                   unsigned long long        *body_id,
-                                  uint4     *body_key)
+                                  uint4     *body_key
+				  )
 {
   CUXTIMER("internalMoveSFC");
   uint bid = blockIdx.y * gridDim.x + blockIdx.x;
@@ -702,6 +705,7 @@ KERNEL_DECLARE(gpu_extractOutOfDomainParticlesAdvancedSFC2)(
                                                        float2 *time,
                                                        unsigned long long    *body_id,
                                                        uint4 *body_key,
+						       float *h,
                                                        bodyStruct *destination)
 {
   CUXTIMER("extractOutOfDomainParticlesAdvancedSFC2");
@@ -737,6 +741,7 @@ KERNEL_DECLARE(gpu_extractOutOfDomainParticlesAdvancedSFC2)(
     shmem[threadIdx.x].time  = time[extractList[offset+id].y];
 
     shmem[threadIdx.x].id    = body_id[extractList[offset+id].y];
+    shmem[threadIdx.x].Pvel.w = h[extractList[offset+id].y];
 
 
 #ifdef DO_BLOCK_TIMESTEP_EXCHANGE_MPI
@@ -1010,6 +1015,7 @@ KERNEL_DECLARE(gpu_insertNewParticlesSFC)(int       n_extract,
                                               float2    *time,
                                               unsigned long long        *body_id,
                                               uint4     *body_key,
+					      float     *h,
                                               bodyStruct *source)
 {
   CUXTIMER("insertNewParticlesSFC");
@@ -1028,6 +1034,9 @@ KERNEL_DECLARE(gpu_insertNewParticlesSFC)(int       n_extract,
   acc0[idx]     = source[id].acc0;
   time[idx]     = source[id].time;
   body_id[idx]  = source[id].id;
+	  
+  h[idx]        = source[id].Pvel.w; 
+ 
 
 #ifdef DO_BLOCK_TIMESTEP_EXCHANGE_MPI
   body_key[idx] = source[id].key;
