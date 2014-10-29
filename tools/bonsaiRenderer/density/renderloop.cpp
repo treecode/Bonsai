@@ -670,6 +670,11 @@ class Demo
 
   void drawStats(double fps)
   {
+    //JB, moved the reduce to before the if to prevent MPI divergence
+    long long nbodies_loc = m_idata.getNbodySim();
+    long long nbodies_glb;
+    MPI_Reduce(&nbodies_loc, &nbodies_glb, 1, MPI_LONG_LONG, MPI_SUM, masterRank(), comm);
+  	
     if (!m_enableStats)
       return;
 
@@ -696,9 +701,7 @@ class Demo
     y -= lineSpacing;
 
 
-    long long nbodies_loc = m_idata.getNbodySim();
-    long long nbodies_glb;
-    MPI_Reduce(&nbodies_loc, &nbodies_glb, 1, MPI_LONG_LONG, MPI_SUM, masterRank(), comm);
+
     const float gbodies = nbodies_glb * 1.0e-6;
     glPrintf(x, y, "BODIES:    %.2f Million", gbodies);
     y -= lineSpacing;
