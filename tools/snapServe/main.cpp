@@ -1,3 +1,4 @@
+#include <mpi.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cassert>
@@ -21,7 +22,6 @@
 #endif
 
 #include "anyoption.h"
-#include <mpi.h>
 
 using ShmQHeader = SharedMemoryServer<BonsaiSharedQuickHeader>;
 using ShmQData   = SharedMemoryServer<BonsaiSharedQuickData>;
