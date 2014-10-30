@@ -123,7 +123,7 @@ SmokeRendererParams::SmokeRendererParams() :
   m_ageScale(10.0f),
   m_enableVolume(false),
   //  m_enableFilters(true),
-  m_enableFilters(false),
+  m_enableFilters(true),
   m_noiseFreq(0.05f),
   m_noiseAmp(1.0f),
   m_indirectAmount(0.5f),
