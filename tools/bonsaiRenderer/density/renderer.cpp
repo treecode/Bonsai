@@ -1597,7 +1597,7 @@ static void lCompose(
   const int pixelBeg =              rank * nPixelsPerRank;
   const int pixelEnd = std::min(pixelBeg + nPixelsPerRank, nPixels);
 
-  constexpr int NBLOCK = 16;
+  constexpr int NBLOCK = 32;
 #pragma omp parallel for schedule(static)
   for (int idxb = pixelBeg; idxb < pixelEnd; idxb += NBLOCK)
   {
@@ -1617,29 +1617,24 @@ static void lCompose(
         const int offs = rcvMetaData[p][4];
         const int cnt  = rcvMetaData[p][5];
 
+        const int base = recvdispl[p];
         for (int idx = idx0; idx < idx1; idx++)
         {
           const int i = idx % viewportSize.x;
           const int j = idx / viewportSize.x;
           const int k = (j-y0)*(x1-x0) + (i-x0) - offs;
+          float4 &dst = imgLoc[idx - pixelBeg];
           if (x0 <= i && i < x1 &&
               y0 <= j && j < y1 && 
-              k  >= 0 && k < cnt)
+              k  >= 0 && k < cnt &&
+              dst.w < 1.0f)
           {
-            float4 dst = imgLoc[idx - pixelBeg];
-            auto src = recvbuf[recvdispl[p] + k];
-            src[0] *= 1.0f - dst.w;
-            src[1] *= 1.0f - dst.w;
-            src[2] *= 1.0f - dst.w;
-            src[3] *= 1.0f - dst.w;
-
-            dst.x += src[0];
-            dst.y += src[1];
-            dst.z += src[2];
-            dst.w += src[3];
-
-            dst.w = std::min(dst.w, 1.0f);
-            imgLoc[idx - pixelBeg] = dst;
+            const auto &src = recvbuf[base + k];
+            const float f = 1.0f - dst.w;
+            dst.x += src[0] * f;
+            dst.y += src[1] * f;
+            dst.z += src[2] * f;
+            dst.w = std::min(dst.w + src[3] * f, 1.0f);
           }
         }
       }
