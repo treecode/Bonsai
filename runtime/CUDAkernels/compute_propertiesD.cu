@@ -276,7 +276,8 @@ KERNEL_DECLARE(compute_leaf)( const int n_leafs,
     }
     hp = max(hp, h_min);
     for(int i=firstChild; i < lastChild; i++)
-      body_h[i] = hp;
+      if(body_h[i] < 0)
+        body_h[i] = hp;
   }
 #endif
 

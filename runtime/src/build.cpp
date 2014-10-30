@@ -169,9 +169,9 @@ void octree::reallocateParticleMemory(tree_structure &tree)
   tree.bodies_h.cresize(n_bodies, reduce);
   tree.bodies_dens.cresize(n_bodies, reduce);
   
-  tree.bodies_h.d2h();
-  for(int i=oldHsize; i < n_bodies; i++) tree.bodies_h[i] = -1;
-  tree.bodies_h.h2d();
+  //tree.bodies_h.d2h();
+  //for(int i=oldHsize; i < n_bodies; i++) tree.bodies_h[i] = -1;
+  //tree.bodies_h.h2d();
 
   tree.oriParticleOrder.cresize(n_bodies,   reduce);     //To desort the bodies tree later on
   //iteration properties / information

@@ -1629,7 +1629,8 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
             extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(9, localTree.bodies_time.p());
             extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(10, localTree.bodies_ids.p());
             extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(11, localTree.bodies_key.p());
-            extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(12, bodyBuffer.p());
+            extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(12, localTree.bodies_h.p());
+            extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(13, bodyBuffer.p());
             extractOutOfDomainParticlesAdvancedSFC2.setWork(items, 128);
             extractOutOfDomainParticlesAdvancedSFC2.execute(execStream->s());
 
@@ -1693,6 +1694,7 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
         internalMoveSFC2.set_arg<cl_mem>(12, localTree.bodies_time.p());
         internalMoveSFC2.set_arg<cl_mem>(13, localTree.bodies_ids.p());
         internalMoveSFC2.set_arg<cl_mem>(14, localTree.bodies_key.p());
+        internalMoveSFC2.set_arg<cl_mem>(15, localTree.bodies_h.p());
         internalMoveSFC2.setWork(validCount, 128);
         internalMoveSFC2.execute(execStream->s());
         //  execStream->sync();
@@ -2040,6 +2042,7 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree
   tree.bodies_Ppos.cresize(memSize + 1, false);
   tree.bodies_Pvel.cresize(memSize + 1, false);
   tree.bodies_key. cresize(memSize + 1, false);
+  tree.bodies_h.   cresize(memSize + 1, false);
 
   memSize = tree.bodies_acc0.get_size();
   //This one has to be at least the same size as the number of particles in order to
@@ -2089,7 +2092,8 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree
       insertNewParticlesSFC.set_arg<cl_mem>(10, localTree.bodies_time.p());
       insertNewParticlesSFC.set_arg<cl_mem>(11, localTree.bodies_ids.p());
       insertNewParticlesSFC.set_arg<cl_mem>(12, localTree.bodies_key.p());
-      insertNewParticlesSFC.set_arg<cl_mem>(13, bodyBuffer.p());
+      insertNewParticlesSFC.set_arg<cl_mem>(13, localTree.bodies_h.p());
+      insertNewParticlesSFC.set_arg<cl_mem>(14, bodyBuffer.p());
       insertNewParticlesSFC.setWork(items, 128);
       insertNewParticlesSFC.execute(execStream->s());
     }// if items > 0
