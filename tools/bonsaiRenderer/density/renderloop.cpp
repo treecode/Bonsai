@@ -12,7 +12,7 @@
 #elif 0
 #define  WINX 2048
 #define  WINY 1536
-#elif 0
+#elif 1
 #define WINX 1920
 #define WINY 1080
 #elif 1
@@ -675,6 +675,10 @@ class Demo
 
   void drawStats(double fps)
   {
+    long long nbodies_loc = m_idata.getNbodySim();
+    long long nbodies_glb;
+    MPI_Allreduce(&nbodies_loc, &nbodies_glb, 1, MPI_LONG_LONG, MPI_SUM, comm);
+
     if (!m_enableStats)
       return;
 
@@ -701,9 +705,6 @@ class Demo
     y -= lineSpacing;
 
 
-    long long nbodies_loc = m_idata.getNbodySim();
-    long long nbodies_glb;
-    MPI_Reduce(&nbodies_loc, &nbodies_glb, 1, MPI_LONG_LONG, MPI_SUM, masterRank(), comm);
     const float gbodies = nbodies_glb * 1.0e-6;
     glPrintf(x, y, "BODIES:    %.2f Million", gbodies);
     y -= lineSpacing;
