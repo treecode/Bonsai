@@ -79,16 +79,32 @@ bool fetchSharedData(const bool quickSync, RendererData &rData, const int rank, 
 #endif
 
   // header
-  header.acquireLock();
+
+
+  int sumL, sumG ;
+  if (quickSync)
+  {
+    while(1)
+    {
+      header.acquireLock();
+      sumL = !header[0].done_writing;
+      MPI_Allreduce(&sumL, &sumG, 1, MPI_INT, MPI_SUM, comm);
+      if (sumG == nrank)
+        break;
+      header.releaseLock();
+      usleep(1000);
+    }
+  }
+  else
+  {
+    header.acquireLock();
+    const float tCurrent = header[0].tCurrent;
+    sumL = tCurrent != tLast;
+    MPI_Allreduce(&sumL, &sumG, 1, MPI_INT, MPI_SUM, comm);
+  }
+
   const float tCurrent = header[0].tCurrent;
-
   terminateRenderer = tCurrent == -1;
-
-  int sumL = quickSync ? !header[0].done_writing : tCurrent != tLast;
-  int sumG ;
-  MPI_Allreduce(&sumL, &sumG, 1, MPI_INT, MPI_SUM, comm);
-
-
   bool completed = false;
   if (sumG == nrank) //tCurrent != tLast)
   {
@@ -168,9 +184,9 @@ bool fetchSharedData(const bool quickSync, RendererData &rData, const int rank, 
     rData.setNbodySim(ip);
 
     data.releaseLock();
+    header[0].done_writing = true;
   }
 
-  header[0].done_writing = true;
   header.releaseLock();
 
 #if 0
@@ -328,6 +344,11 @@ static T* readBonsai(
   rDataPtr->setNbodySim(nS+nDM);
   in.close();
   auto &rData = *rDataPtr;
+
+  constexpr int ntypecount = 10;
+  std::array<size_t,ntypecount> ntypeloc, ntypeglb;
+  std::fill(ntypeloc.begin(), ntypeloc.end(), 0);
+
   for (int i = 0; i < nS; i++)
   {
     const int ip = i;
@@ -352,9 +373,12 @@ static T* readBonsai(
       rData.attribute(RendererData::RHO, ip) = 0.0;
       rData.attribute(RendererData::H,   ip) = 0.0;
     }
+    if (rData.ID(ip).getType() < ntypecount)
+      ntypeloc[rData.ID(ip).getType()]++;
   }
   for (int i = 0; i < nDM; i++)
   {
+    ntypeloc[0]++;
     const int ip = i + nS;
     rData.posx(ip) = posDM[i][0];
     rData.posy(ip) = posDM[i][1];
@@ -377,6 +401,19 @@ static T* readBonsai(
       rData.attribute(RendererData::RHO, ip) = 0.0;
       rData.attribute(RendererData::H,   ip) = 0.0;
     }
+  }
+  
+  MPI_Reduce(&ntypeloc, &ntypeglb, ntypecount, MPI_LONG_LONG, MPI_SUM, 0, comm);
+  if (rank == 0)
+  {
+    size_t nsum = 0;
+    for (int type = 0; type < ntypecount; type++)
+    {
+      nsum += ntypeglb[type];
+      if (ntypeglb[type] > 0)
+        fprintf(stderr, "bonsai-read: ptype= %d:  np= %zu \n",type, ntypeglb[type]);
+    }
+    assert(nsum > 0);
   }
 
   return rDataPtr;

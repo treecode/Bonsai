@@ -123,7 +123,7 @@ SmokeRendererParams::SmokeRendererParams() :
   m_ageScale(10.0f),
   m_enableVolume(false),
   //  m_enableFilters(true),
-  m_enableFilters(true),
+  m_enableFilters(false),
   m_noiseFreq(0.05f),
   m_noiseAmp(1.0f),
   m_indirectAmount(0.5f),
@@ -254,6 +254,11 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles, const int _rank
       );
   m_splotch2texProg = new GLSLProgram(passThruVS, splotch2texPS);
 
+  m_volnewProg = new GLSLProgram(volnewVS, volnewGS, volnewPS,
+      GL_POINTS, GL_TRIANGLE_STRIP
+      );
+  m_volnew2texProg = new GLSLProgram(passThruVS, volnew2texPS);
+
   glClampColorARB(GL_CLAMP_VERTEX_COLOR_ARB, GL_FALSE);
   glClampColorARB(GL_CLAMP_FRAGMENT_COLOR_ARB, GL_FALSE);
 
@@ -279,7 +284,11 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles, const int _rank
 #endif
 
   m_spriteTex = createSpriteTexture(256);
+#if 1
   m_sphTex    = createSphTexture(256);
+#else
+  m_sphTex = createSpriteTexture(256);
+#endif
 
   initParams();
 
@@ -1425,6 +1434,10 @@ void SmokeRenderer::render()
       break;
     case SPLOTCH_SORTED:
       splotchDrawSort();
+      break;
+
+    case VOLUMETRIC_NEW:
+      volumetricNew();
       break;
 
     case NUM_MODES:
@@ -3188,6 +3201,201 @@ void SmokeRenderer::splotchDrawSort()
   m_splotch2texProg->disable();
 }
 
+void SmokeRenderer::volumetricNew()
+{
+#if 0
+  calcVectors();
+  depthSortCopy();
+  m_batchSize = mNumParticles / m_numSlices;
+  m_srcLightTexture = 0;
+
+  setLightColor(m_lightColor);
+
+  // clear light buffer
+  m_fbo->Bind();
+  glDrawBuffer(GL_COLOR_ATTACHMENT0_EXT);
+  m_fbo->AttachTexture(GL_TEXTURE_2D, m_lightTexture[m_srcLightTexture], GL_COLOR_ATTACHMENT0_EXT);
+  m_fbo->AttachTexture(GL_TEXTURE_2D, 0, GL_COLOR_ATTACHMENT1_EXT);
+  m_fbo->AttachTexture(GL_TEXTURE_2D, 0, GL_DEPTH_ATTACHMENT_EXT);
+  //glClearColor(1.0 - m_lightColor[0], 1.0 - m_lightColor[1], 1.0 - m_lightColor[2], 0.0);
+  glClearColor(m_lightColor[0], m_lightColor[1], m_lightColor[2], 0.0);
+  //glClearColor(0.0f, 0.0f, 0.0f, 0.0f);	// clear to transparent
+  glClear(GL_COLOR_BUFFER_BIT);
+
+  // clear volume image
+  m_fbo->AttachTexture(GL_TEXTURE_2D, m_imageTex[0], GL_COLOR_ATTACHMENT0_EXT);
+  glClearColor(0.0, 0.0, 0.0, 0.0); 
+  glClear(GL_COLOR_BUFFER_BIT);
+
+  /*
+  // bind vbo as buffer texture
+  glBindTexture(GL_TEXTURE_BUFFER_EXT, mPosBufferTexture);
+  glTexBufferEXT(GL_TEXTURE_BUFFER_EXT, GL_RGBA32F_ARB, mPosVbo);
+  */
+
+  glMatrixMode(GL_TEXTURE);
+  glLoadMatrixf((GLfloat *) m_shadowMatrix.get_value());
+
+  // render slices
+  if (m_numDisplayedSlices > m_numSlices) m_numDisplayedSlices = m_numSlices;
+
+
+  for(int i=0; i<m_numDisplayedSlices; i++) 
+  {
+    m_fbo->AttachTexture(GL_TEXTURE_2D, m_imageTex[0], GL_COLOR_ATTACHMENT0_EXT);
+    //m_fbo->AttachTexture(GL_TEXTURE_2D, m_depthTex, GL_DEPTH_ATTACHMENT_EXT);
+    m_fbo->AttachTexture(GL_TEXTURE_2D, 0, GL_DEPTH_ATTACHMENT_EXT);
+    glViewport(0, 0, m_imageW, m_imageH);
+
+
+
+    glColor4f(1.0, 1.0, 1.0, m_spriteAlpha_volume);
+     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    drawPointSprites(m_particleProg, i*m_batchSize, m_batchSize, true, true);
+  }
+
+  m_fbo->Disable();
+
+  glActiveTexture(GL_TEXTURE0);
+  glMatrixMode(GL_TEXTURE);
+  glLoadIdentity();
+
+
+  composeImages(m_imageTex[0]);
+      
+  compositeResult();
+
+#else  /*************/
+
+  GLuint depthTex = 0;
+
+  m_fbo->Bind();
+  m_fbo->AttachTexture(GL_TEXTURE_2D, m_imageTex[0], GL_COLOR_ATTACHMENT0_EXT);
+  m_fbo->AttachTexture(GL_TEXTURE_2D, 0, GL_DEPTH_ATTACHMENT_EXT);
+
+  glViewport(0, 0, m_imageW, m_imageH);
+  glClearColor(0.0, 0.0, 0.0, 0.0); 
+  glClear(GL_COLOR_BUFFER_BIT);
+
+
+  const int start = 0;
+  const int count = mNumParticles;
+
+  calcVectors();
+  depthSortCopy();
+
+  auto &prog = m_volnewProg;
+
+  GLuint vertexLoc = -1;
+  if (!mSizeVao && mSizeVbo)
+  {
+    glGenVertexArrays(1, &mSizeVao);
+    glBindVertexArray(mSizeVao);
+    glBindBufferARB(GL_ARRAY_BUFFER_ARB, mSizeVbo);
+    vertexLoc = prog->getAttribLoc("particleSize");
+    glEnableVertexAttribArray(vertexLoc);
+    glVertexAttribPointer(vertexLoc , 1, GL_FLOAT, 0, 0, 0);
+  }
+
+  if (m_doClipping)
+  {
+    glEnable(GL_CLIP_DISTANCE0);
+    glEnable(GL_CLIP_DISTANCE1);
+    glEnable(GL_CLIP_DISTANCE2);
+    glEnable(GL_CLIP_DISTANCE3);
+    glEnable(GL_CLIP_DISTANCE4);
+    glEnable(GL_CLIP_DISTANCE5);
+  }
+
+  prog->enable();
+  glBindVertexArray(mSizeVao);
+
+  GLint viewport[4];
+  glGetIntegerv(GL_VIEWPORT, viewport);
+
+  glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+  glDisable(GL_DEPTH_TEST);
+  glDepthMask(GL_FALSE);  // don't write depth
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);   
+
+  prog->enable();
+
+  // VS
+  prog->setUniform1f("spriteScale", viewport[3] / mInvFocalLen);
+  prog->setUniform1f("starScale", powf(10.0f, m_starScaleLog));
+  prog->setUniform1f("starAlpha", m_starAlpha);
+  prog->setUniform1f("dmScale",  powf(10.0f, m_dmScaleLog));
+  prog->setUniform1f("dmAlpha",  m_dmAlpha);
+  prog->setUniform1f("spriteSizeMax", powf(10.0f, m_spriteSizeMaxLog));
+
+  prog->setUniform1f("pointRadius", mParticleRadius);
+  prog->setUniform1f("ageScale", m_ageScale);
+  prog->setUniform1f("overBright", m_overBright);
+  prog->setUniform1f("overBrightThreshold", m_overBrightThreshold);
+  prog->setUniform1f("dustAlpha", m_dustAlpha);
+  prog->setUniform1f("fogDist", m_fog);
+  prog->setUniform1f("cullDarkMatter", (float) m_cullDarkMatter);
+
+  // PS
+  prog->bindTexture("spriteTex",  m_sphTex, GL_TEXTURE_2D, 1);
+  prog->setUniform1f("alphaScale", m_spriteAlpha);
+//  prog->setUniform1f("alphaScale", m_spriteAlpha_volume);
+  prog->setUniform1f("transmission", m_transmission);
+  prog->setUniform1f("resx", m_imageW);
+  prog->setUniform1f("resy", m_imageH);
+  prog->setUniformfv("p0o", (GLfloat*)&m_clippingPlane[0], 4, 1);
+  prog->setUniformfv("p1o", (GLfloat*)&m_clippingPlane[1], 4, 1);
+  prog->setUniformfv("p2o", (GLfloat*)&m_clippingPlane[2], 4, 1);
+  prog->setUniformfv("p3o", (GLfloat*)&m_clippingPlane[3], 4, 1);
+  prog->setUniformfv("p4o", (GLfloat*)&m_clippingPlane[4], 4, 1);
+  prog->setUniformfv("p5o", (GLfloat*)&m_clippingPlane[5], 4, 1);
+
+
+  //glClientActiveTexture(GL_TEXTURE0);
+  glActiveTexture(GL_TEXTURE0);
+  glTexEnvi(GL_POINT_SPRITE_ARB, GL_COORD_REPLACE_ARB, GL_TRUE);
+  glEnable(GL_VERTEX_PROGRAM_POINT_SIZE_ARB);
+  glEnable(GL_POINT_SPRITE_ARB);
+
+  drawPoints(start,count,true);
+
+  prog->disable();
+
+  glDisable(GL_CLIP_DISTANCE0);
+  glDisable(GL_CLIP_DISTANCE1);
+  glDisable(GL_CLIP_DISTANCE2);
+  glDisable(GL_CLIP_DISTANCE3);
+  glDisable(GL_CLIP_DISTANCE4);
+  glDisable(GL_CLIP_DISTANCE5);
+
+  /********* compose ********/
+
+#if 1
+  glFlush();
+  glFinish();
+#endif
+  m_fbo->Disable();
+
+  composeImages(m_imageTex[0], depthTex);
+
+
+  glDisable(GL_BLEND);
+  m_volnew2texProg->enable();
+  m_volnew2texProg->bindTexture("tex", m_imageTex[0], GL_TEXTURE_2D, 0);
+#if 0
+  m_volnew2texProg->setUniform1f("scale", 0.1*m_imageBrightnessPre);
+  m_volnew2texProg->setUniform1f("gamma", m_gammaPre);
+#else
+  m_volnew2texProg->setUniform1f("scale", m_imageBrightness);
+  m_volnew2texProg->setUniform1f("gamma", m_gamma);
+#endif
+  drawQuad();
+  m_volnew2texProg->disable();
+
+#endif
+}
+
 // render scene depth to texture
 // (this is to ensure that particles are correctly occluded in the low-resolution render buffer)
 void SmokeRenderer::beginSceneRender(Target target)
@@ -3665,4 +3873,52 @@ void SmokeRenderer::initParams()
 
   m_params[VOLUMETRIC]->AddParam(new Param<float>("skybox brightness", m_skyboxBrightness, 0.0f, 1.0f, 0.01f, &m_skyboxBrightness));
 #endif
+ 
+  /***********/ 
+
+  m_params[VOLUMETRIC_NEW] = new ParamListGL("render_params_volumetric_new");
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("star scale [log]", m_starScaleLog,     -1.0f, 1.0f, 0.001f, &m_starScaleLog));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("star alpha      ", m_starAlpha,         0.0f, 1.0f, 0.001f, &m_starAlpha));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("dm scale   [log]", m_dmScaleLog,       -1.0f, 1.0f, 0.001f, &m_dmScaleLog));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("dm alpha        ", m_dmAlpha,           0.0f, 1.0f, 0.001f, &m_dmAlpha));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("max size [log]  ", m_spriteSizeMaxLog, -1.0f, 1.0f, 0.001f, &m_spriteSizeMaxLog));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("alpha           ", m_spriteAlpha,       0.0f, 1.0f, 0.001f, &m_spriteAlpha));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("transmission    ", m_transmission,      0.0f, 0.1f, 0.001f, &m_transmission));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("brightness [pre]",  m_imageBrightnessPre, 0.0f, 1.0f, 0.001f, &m_imageBrightnessPre));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("gamma [pre]",       m_gammaPre,           0.0f, 2.0f, 0.001f, &m_gammaPre));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("brightness [post]", m_imageBrightnessPost, 0.0f, 1.0f, 0.001f, &m_imageBrightnessPost));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("gamma [post]",      m_gammaPost,           0.0f, 2.0f, 0.001f, &m_gammaPost));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<int>("slices", m_numSlices, 1, 256, 1, &m_numSlices));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<int>("displayed slices", m_numDisplayedSlices, 1, 256, 1, &m_numDisplayedSlices));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("sprite size", mParticleRadius, 0.0f, 0.2f, 0.001f, &mParticleRadius));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("scale [log]", mParticleScaleLog, -1.0f, 1.0f, 0.01f, &mParticleScaleLog));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("dust scale", m_ageScale, 0.0f, 50.0f, 0.1f, &m_ageScale));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("dust alpha", m_dustAlpha, 0.0f, 1.0f, 0.01f, &m_dustAlpha));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("light color r", m_lightColor[0], 0.0f, 1.0f, 0.01f, &m_lightColor[0]));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("light color g", m_lightColor[1], 0.0f, 1.0f, 0.01f, &m_lightColor[1]));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("light color b", m_lightColor[2], 0.0f, 1.0f, 0.01f, &m_lightColor[2]));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("alpha", m_spriteAlpha_volume, 0.0f, 1.0f, 0.001f, &m_spriteAlpha_volume));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("shadow alpha", m_shadowAlpha, 0.0f, 1.0f, 0.001f, &m_shadowAlpha));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("transmission", m_transmission, 0.0f, 0.1f, 0.001f, &m_transmission));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("indirect lighting", m_indirectAmount, 0.0f, 1.0f, 0.001f, &m_indirectAmount));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("fog", m_fog, 0.0f, 0.1f, 0.001f, &m_fog));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("over bright multiplier", m_overBright, 0.0f, 100.0f, 1.0f, &m_overBright));
+  //m_params->AddParam(new Param<float>("over bright threshold", m_overBrightThreshold, 0.0f, 1.0f, 0.001f, &m_overBrightThreshold));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("star brightness", m_overBrightThreshold, 0.0f, 10.0f, 0.001f, &m_overBrightThreshold));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("image brightness", m_imageBrightness, 0.0f, 2.0f, 0.1f, &m_imageBrightness));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("image gamma", m_gamma, 0.0f, 2.0f, 0.0f, &m_gamma));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("blur radius", m_blurRadius, 0.0f, 10.0f, 0.1f, &m_blurRadius));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<int>("blur passes", m_blurPasses, 0, 10, 1, &m_blurPasses));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("source intensity", m_sourceIntensity, 0.0f, 1.0f, 0.01f, &m_sourceIntensity));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("star blur radius", m_starBlurRadius, 0.0f, 100.0f, 1.0f, &m_starBlurRadius));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("star threshold", m_starThreshold, 0.0f, 100.0f, 0.1f, &m_starThreshold));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("star power", m_starPower, 0.0f, 100.0f, 0.1f, &m_starPower));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("star intensity", m_starIntensity, 0.0f, 1.0f, 0.1f, &m_starIntensity));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("glow radius", m_glowRadius, 0.0f, 100.0f, 1.0f, &m_glowRadius));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("glow intensity", m_glowIntensity, 0.0f, 1.0f, 0.01f, &m_glowIntensity));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("flare intensity", m_flareIntensity, 0.0f, 1.0f, 0.01f, &m_flareIntensity));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("flare threshold", m_flareThreshold, 0.0f, 10.0f, 0.01f, &m_flareThreshold));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("flare radius", m_flareRadius, 0.0f, 100.0f, 0.01f, &m_flareRadius));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("skybox brightness", m_skyboxBrightness, 0.0f, 1.0f, 0.01f, &m_skyboxBrightness));
+
 }

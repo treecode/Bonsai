@@ -40,6 +40,7 @@ LDFLAGS = -lGL -lGLU -lglut -lGLEW -fopenmp -lrt
 LDFLAGS += -pie -rdynamic
 #-L$(PWD)/lib/linux -lGLEW_x86_64
 
+
 ifeq ($(PROFILE),1)
 	CXXFLAGS += -D__COMPOSITE_PROFILE
 endif
@@ -55,6 +56,11 @@ ifeq ($(APPLEOSX),1)
 	INCLUDE_FLAGS += -I/opt/local/include
 	CXXFLAGS +=-Wno-deprecated-declarations 
 	LDFLAGS = -framework OpenGL -L/opt/local/lib -lglut -lglew -fopenmp
+endif
+
+ifeq ($(PNG),1)
+	CXXFLAGS += -D_PNG
+	LDFLAGS += -lpng
 endif
 
 OBJ = main.o $(ENGINE)/renderloop.o anyoption.o $(ENGINE)/renderer.o paramgl.o RendererData.o RendererDataDistribute.o

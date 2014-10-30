@@ -22,3 +22,4 @@ extern const char *floorVS, *floorPS;
 extern const char *volumeVS, *volumePS;
 extern const char *skyboxVS, *skyboxPS;
 extern const char *splotchPS, *splotchGS, *splotchVS, *splotch2texPS;
+extern const char *volnewPS, *volnewGS, *volnewVS, *volnew2texPS;

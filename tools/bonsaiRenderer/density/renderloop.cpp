@@ -2,6 +2,9 @@
 #include <stdio.h>
 #include "renderloop.h"
 #include <array>
+#ifdef _PNG
+#include <png.h>
+#endif
 
 #if 0
 #define WINX 1024
@@ -268,7 +271,7 @@ extern void displayTimers();    // For profiling counter display
 /* thread safe drand48(), man drand48 */
 
 // fps
-bool displayFps = true;
+bool displayFps = false;
 double fps = 0.0;
 int fpsLimit = 5;
 //cudaEvent_t startEvent, stopEvent;
@@ -411,9 +414,11 @@ class Demo
       m_renderer(idata.n(), MAX_PARTICLES, rank, nrank, comm),
       //m_displayMode(ParticleRenderer::PARTICLE_SPRITES_COLOR),
       m_displayMode(SmokeRenderer::SPLOTCH_SORTED),
+//      m_displayMode(SmokeRenderer::VOLUMETRIC_NEW),
+//      m_displayMode(SmokeRenderer::VOLUMETRIC),
       //	    m_displayMode(SmokeRenderer::POINTS),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.2f),
-      m_autopilot(false),
+      m_autopilot(true),
       m_renderingEnabled(true),
       m_displayBoxes(false), 
       m_domainView(false),
@@ -437,7 +442,7 @@ class Demo
       m_overBright(1.0f),
       m_params(m_renderer.getParams()),
       m_brightFreq(100),
-      m_displayBodiesSec(true),
+      m_displayBodiesSec(false),
       m_cameraRollHome(0.0f),
       m_cameraRoll(0.0f),
       m_enableStats(true)
@@ -670,6 +675,10 @@ class Demo
 
   void drawStats(double fps)
   {
+    long long nbodies_loc = m_idata.getNbodySim();
+    long long nbodies_glb;
+    MPI_Allreduce(&nbodies_loc, &nbodies_glb, 1, MPI_LONG_LONG, MPI_SUM, comm);
+
     if (!m_enableStats)
       return;
 
@@ -691,14 +700,11 @@ class Demo
     float y = glutGet(GLUT_WINDOW_HEIGHT)*4.0f - 200.0f;
     const float lineSpacing = 140.0f;
 
-    float Myr = m_idata.getTime() * 10.0;
+    float Myr = m_idata.getTime() * 9.767;
     glPrintf(x, y, "MYears:    %.2f Myr", Myr);
     y -= lineSpacing;
 
 
-    long long nbodies_loc = m_idata.getNbodySim();
-    long long nbodies_glb;
-    MPI_Reduce(&nbodies_loc, &nbodies_glb, 1, MPI_LONG_LONG, MPI_SUM, masterRank(), comm);
     const float gbodies = nbodies_glb * 1.0e-6;
     glPrintf(x, y, "BODIES:    %.2f Million", gbodies);
     y -= lineSpacing;
@@ -1009,8 +1015,16 @@ class Demo
     if (!isMaster()) return;
     if (fileNameBase.empty()) return;
 
+    const double t0 = MPI_Wtime();
+
     char fileName[1024];
-    sprintf(fileName, "%s_%05d.ppm", fileNameBase.c_str(), m_frameCount);
+    sprintf(fileName, "%s_%05d.%s", fileNameBase.c_str(), m_frameCount,
+#ifdef _PNG
+        "png"
+#else
+        "ppm"
+#endif
+        );
 
     const int winW = m_windowDims.x;
     const int winH = m_windowDims.y;
@@ -1026,21 +1040,52 @@ class Demo
       fprintf(stderr , " Writing snapshot into file: %s\n", fileName);
     }
 
+    static std::vector<char> img;
+    img.resize(3*winW*winH);
+    glReadPixels(0,0,winW,winH,GL_RGB,GL_UNSIGNED_BYTE,&img[0]);
+
+#ifdef _PNG
+    png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, (png_voidp)NULL, NULL, NULL);
+    assert(png_ptr);
+    png_infop info_ptr = png_create_info_struct(png_ptr);
+    if (!info_ptr)
+    {
+       png_destroy_write_struct(&png_ptr, (png_infopp)NULL);
+       assert(false);
+    }
+    if (setjmp(png_jmpbuf(png_ptr)))
+    {
+       png_destroy_write_struct(&png_ptr, &info_ptr);
+       fclose(fout);
+       assert(false);
+    }
+    png_init_io(png_ptr, fout);
+    png_set_IHDR(png_ptr, info_ptr, winW, winH,
+        8, PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE,
+        PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
+    png_bytep *row_pointers = (png_bytep*) png_malloc(png_ptr, winH*sizeof(png_bytep));
+    for (int i = 0; i < winH; i++)
+      row_pointers[i] = (png_bytep)&img[0]+ (winH-1-i)*3*winW;
+
+    png_set_rows(png_ptr, info_ptr, row_pointers);
+    png_write_png(png_ptr, info_ptr, PNG_TRANSFORM_IDENTITY, NULL);
+    png_free(png_ptr, row_pointers);
+    png_destroy_write_struct(&png_ptr, &info_ptr);
+#else
     fprintf(fout,"P6\n");
     fprintf(fout,"# ppm-file created by %s\n", "BonsaiRenderer");
     fprintf(fout,"%i %i\n", winW, winH);
     fprintf(fout,"255\n");
-    static std::vector<char> img;
-    img.resize(3*winW*winH);
-    glReadPixels(0,0,winW,winH,GL_RGB,GL_UNSIGNED_BYTE,&img[0]);
     for (int h = 0; h < winH; h++)
       for (int w = 0; w < winW; w++)
       {
         const int i = (winH-1-h)*winW + w;
         assert(fwrite(&img[3*i], sizeof(char), 3, fout) == 3);
       }
+#endif
     fclose(fout);
-
+    const double t1 = MPI_Wtime();
+    fprintf(stderr, " ... snap writing done in %g sec \n", t1-t0);
     if (m_frameCount >= m_idata.getCamera().nFrames() && m_autopilot && !fileNameBase.empty())
       dataSetFunc(-1);
   }
@@ -1428,7 +1473,7 @@ class Demo
         break;
       case 'r':
       case 'R':
-        toggleRendering();
+        /* toggleRendering(); */
         break;
       case 'l':
       case 'L':
@@ -1754,7 +1799,8 @@ class Demo
     float velMin = m_idata.attributeMin(RendererData::VEL);
     float rhoMax = m_idata.attributeMax(RendererData::RHO);
     float rhoMin = m_idata.attributeMin(RendererData::RHO);
-    const bool hasRHO = rhoMax > 0.0 && (m_renderer.getDisplayMode() != SmokeRenderer::VOLUMETRIC);
+    bool hasRHO = rhoMax > 0.0;
+
     const float scaleVEL =          1.0/(velMax - velMin);
     const float scaleRHO = hasRHO ? 1.0/(rhoMax - rhoMin) : 0.0;
 
@@ -1794,7 +1840,22 @@ class Demo
 
         /* assign color */
         const int type =  ID.getType();
-	const size_t IDval = ID.getID();
+        size_t IDval = ID.getID();
+
+        bool hasRHO = rhoMax > 0.0;
+        if (m_renderer.getDisplayMode() == SmokeRenderer::VOLUMETRIC)
+        {
+          hasRHO = false;
+        }
+        int typeBase = 0;
+        if (m_renderer.getDisplayMode() == SmokeRenderer::VOLUMETRIC_NEW)
+        {
+          const int ns = 16;
+          hasRHO = (IDval%ns) != 0;
+          IDval /= ns;
+          typeBase = 128;
+        }
+
         float4 color = make_float4(0.0f);
         if (hasRHO)
         {
@@ -1810,8 +1871,16 @@ class Demo
           Cstar.x = colorMap[iy][ix][0];
           Cstar.y = colorMap[iy][ix][1];
           Cstar.z = colorMap[iy][ix][2];
-          Cstar.w = type;
+          Cstar.w = type + typeBase;
           color   = Cstar;
+#if 1
+          if (typeBase == 128)
+          {
+            color.x *= 1.0/256;
+            color.y *= 1.0/256;
+            color.z *= 1.0/256;
+          }
+#endif
         }
         else
         {
@@ -1836,7 +1905,7 @@ class Demo
               const float Mstar = sDisk.sampleMass(IDval);
               const float4 Cstar = sDisk.getColour(Mstar);
               color = ((IDval & 1023) == 0) ? /* one in 1000 stars glows a bit */
-              sGlow.getColour(sGlow.sampleMass(IDval)) :  (0) ? color : make_float4(Cstar.x*0.01f, Cstar.y*0.01f, Cstar.z*0.01f, Cstar.w);
+                sGlow.getColour(sGlow.sampleMass(IDval)) :  (0) ? color : make_float4(Cstar.x*0.01f, Cstar.y*0.01f, Cstar.z*0.01f, Cstar.w);
               color.w = 1.0f;
               break;
             }              

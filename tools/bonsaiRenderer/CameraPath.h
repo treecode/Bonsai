@@ -66,14 +66,28 @@ class CameraPath
       const real t0 = floor(t);
       const real t1 = t0 + 1.0;
       
-      const auto& c0 = cameraVec_base[static_cast<int>(t0)];
-      const auto& c1 = cameraVec_base[std::min(static_cast<int>(t1),nframes-1)];
+      auto c0 = cameraVec_base[static_cast<int>(t0)];
+      auto c1 = cameraVec_base[std::min(static_cast<int>(t1),nframes-1)];
 
       const real f = (t-t0)/(t1-t0);
       auto cvt = [&](const real f0, const real f1)
       {
         return f0 + (f1-f0)*f;
       };
+
+      /* correct angles, to ensure continuited across [-PI;+PI] boudary */
+#if 0
+      for (int k = 0; k < 3; k++)
+         if (std::abs(c0.data[k] - c1.data[k]) > M_PI)
+         {
+    //       fprintf(stdout, " k0: %d  %5.2f  %5.2f \n", k, c0.data[k]*M_PI/180.0, c1.data[k]*M_PI/180.0);
+           if (c0.data[k] > 0.0)
+             c1.data[k] += 360.0;
+           else if (c0.data[k] < 0.0)
+             c1.data[k] -= 360.0;
+     //      fprintf(stdout, " k1: %d  %5.2f  %5.2f \n", k, c0.data[k]*M_PI/180.0, c1.data[k]*M_PI/180.0);
+         }
+#endif
 
       camera_t cam;
       for (int k = 0; k < 6; k++)

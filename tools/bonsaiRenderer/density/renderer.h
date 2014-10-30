@@ -37,6 +37,7 @@ class SmokeRendererParams
       VOLUMETRIC,
       SPLOTCH,
       SPLOTCH_SORTED,
+      VOLUMETRIC_NEW,
       NUM_MODES
     };
   protected:
@@ -301,6 +302,7 @@ class SmokeRenderer : public SmokeRendererParams
 
     void splotchDraw    ();
     void splotchDrawSort();
+    void volumetricNew  ();
 
     GLuint createTexture(GLenum target, int w, int h, GLint internalformat, GLenum format, void *data = 0);
     GLuint createNoiseTexture(int w, int h, int d);
@@ -451,6 +453,8 @@ class SmokeRenderer : public SmokeRendererParams
     GLSLProgram         *m_thresholdProg;
     GLSLProgram         *m_splotchProg;
     GLSLProgram         *m_splotch2texProg;
+    GLSLProgram         *m_volnewProg;
+    GLSLProgram         *m_volnew2texProg;
 
     // image buffers
     FramebufferObject   *m_fbo;
