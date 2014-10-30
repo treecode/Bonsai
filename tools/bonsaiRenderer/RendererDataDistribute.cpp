@@ -574,7 +574,11 @@ std::vector<int> RendererDataDistribute::getVisibilityOrder(const std::array<flo
 {
   using float3 = std::array<float,3>;
   if (!isDistributed())
-    return std::vector<int>();
+  {
+    std::vector<int> order(nrank);
+    std::iota(order.begin(), order.end(), 0);
+    return order;
+  }
   const double t0 = MPI_Wtime();
   static std::vector<float3> bounds(nrank);
   float3 xlow = {{

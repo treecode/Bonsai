@@ -187,7 +187,9 @@ class RendererData
     }
     virtual std::vector<int> getVisibilityOrder(const std::array<float,3> camPos) const
     {
-      return std::vector<int>();
+      std::vector<int> order(nrank);
+      std::iota(order.begin(), order.end(), 0);
+      return order;
     }
 
 };

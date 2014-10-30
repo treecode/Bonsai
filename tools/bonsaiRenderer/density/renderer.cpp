@@ -1472,29 +1472,12 @@ static void lCompose(
   assert(imgCrd.y >= 0);
   assert(imgCrd.x + imgSize.x <= viewportSize.x);
   assert(imgCrd.y + imgSize.y <= viewportSize.y);
-
-  if (compositeOrder.empty())
-  {
-    compositeOrder.resize(nrank);
-    std::iota(compositeOrder.begin(),compositeOrder.end(), 0);
-  }
+  assert(!compositeOrder.empty());
 
   constexpr int master = 0;
 
   using imgData_t = std::array<float,4>;
   constexpr int mpiImgDataSize = sizeof(imgData_t)/sizeof(float);
-  static std::vector<imgData_t> sendbuf;
-
-  /* copy img pixels ot send buffer */
-
-  const int imgNPix = imgSize.x*imgSize.y;
-  if (imgNPix > 0)
-  {
-    sendbuf.resize(imgNPix);
-#pragma omp parallel for schedule(static)
-    for (int i = 0; i < imgNPix; i++)
-      sendbuf[i] = imgData_t{{imgSrc[i].x, imgSrc[i].y, imgSrc[i].z, imgSrc[i].w}};
-  }
 
   /* compute which parts of img are sent to which rank */
 
@@ -1583,7 +1566,7 @@ static void lCompose(
     const double t0 = MPI_Wtime();
 #endif
     MPI_Alltoallv(
-        &sendbuf[0], &sendcount[0], &senddispl[0], MPI_FLOAT,
+        imgSrc, &sendcount[0], &senddispl[0], MPI_FLOAT,
         &recvbuf[0], &recvcount[0], &recvdispl[0], MPI_FLOAT,
         comm);
 #ifdef __COMPOSITE_PROFILE
@@ -3721,7 +3704,7 @@ void SmokeRenderer::createBuffers(int w, int h)
 
   // create texture for image buffer
   GLint format = GL_RGBA32F;
-//  format = GL_RGBA16F_ARB;
+  // format = GL_RGBA16F_ARB;
   //GLint format = GL_LUMINANCE16F_ARB;
   //GLint format = GL_RGBA8;
   m_imageTex[0] = createTexture(GL_TEXTURE_2D, m_imageW, m_imageH, format, GL_RGBA);
