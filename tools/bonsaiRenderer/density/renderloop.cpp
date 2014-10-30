@@ -413,8 +413,8 @@ class Demo
       //       m_renderer(tree->localTree.n + tree->localTree.n_dust),
       m_renderer(idata.n(), MAX_PARTICLES, rank, nrank, comm),
       //m_displayMode(ParticleRenderer::PARTICLE_SPRITES_COLOR),
-//      m_displayMode(SmokeRenderer::SPLOTCH_SORTED),
-      m_displayMode(SmokeRenderer::VOLUMETRIC_NEW),
+      m_displayMode(SmokeRenderer::SPLOTCH_SORTED),
+//      m_displayMode(SmokeRenderer::VOLUMETRIC_NEW),
 //      m_displayMode(SmokeRenderer::VOLUMETRIC),
       //	    m_displayMode(SmokeRenderer::POINTS),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.2f),
@@ -1473,7 +1473,7 @@ class Demo
         break;
       case 'r':
       case 'R':
-        toggleRendering();
+        /* toggleRendering(); */
         break;
       case 'l':
       case 'L':
