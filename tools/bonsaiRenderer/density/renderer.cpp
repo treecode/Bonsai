@@ -3141,7 +3141,7 @@ void SmokeRenderer::splotchDraw()
   glDisable(GL_CLIP_DISTANCE4);
   glDisable(GL_CLIP_DISTANCE5);
 
-#if 1
+#ifdef __COMPOSITE_PROFILE
   glFlush();
   glFinish();
 #endif
@@ -3316,7 +3316,7 @@ void SmokeRenderer::splotchDrawSort()
 
   /********* compose ********/
 
-#if 1
+#ifdef __COMPOSITE_PROFILE
   glFlush();
   glFinish();
 #endif
@@ -3447,7 +3447,7 @@ void SmokeRenderer::volumetricNew()
 
   /********* compose ********/
 
-#if 1
+#ifdef __COMPOSITE_PROFILE
   glFlush();
   glFinish();
 #endif
