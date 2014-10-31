@@ -2831,18 +2831,6 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   int2 wSize = make_int2(visibleViewport[2], visibleViewport[3]);
   const int2 viewPort = make_int2(mWindowW,mWindowH);
 
-
-#if 0
-#ifdef __COMPOSITE_PROFILE 
-  glFinish();
-  MPI_Barrier(comm);
-  double t10 = MPI_Wtime();
-#endif
-  m_fbo->Bind();
-  m_fbo->AttachTexture(GL_TEXTURE_2D, imgTex, GL_COLOR_ATTACHMENT0_EXT);
-  glReadPixels(wCrd.x, wCrd.y, wSize.x, wSize.y, GL_RGBA, GL_FLOAT, &imgLoc[0]);
-  m_fbo->Disable();
-#else
   m_fbo->Bind();
   m_fbo->AttachTexture(GL_TEXTURE_2D, imgTex, GL_COLOR_ATTACHMENT0_EXT);
   glBindTexture(GL_TEXTURE_2D, m_imageTex[4]);  
@@ -2856,12 +2844,6 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   double t10 = MPI_Wtime();
 #endif
 
-
-#if 0
-  glBindTexture(GL_TEXTURE_2D, m_imageTex[4]); 
-  glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, &imgLoc[0]);
-  glBindTexture(GL_TEXTURE_2D, 0);
-#else
   static GLuint pbo_id = 0;
   if (!pbo_id)
   {
@@ -2882,9 +2864,6 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
   glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
   glBindTexture(GL_TEXTURE_2D,0);
-#endif
-
-#endif
 
 #ifdef __COMPOSITE_PROFILE
   glFinish();
