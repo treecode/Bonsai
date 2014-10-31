@@ -205,8 +205,9 @@ void rescaleData(RendererData &rData,
     const int rank,
     const int nrank,
     const MPI_Comm &comm,
-    const bool doDD = false,
-    const int  nmaxsample = 200000)
+    const bool doDD,
+    const int  nmaxsample,
+    const float hfac)
 {
   if (doDD)
   {
@@ -214,6 +215,7 @@ void rescaleData(RendererData &rData,
     const double t0 = MPI_Wtime();
     rData.randomShuffle();
     rData.setNMAXSAMPLE(nmaxsample);
+    rData.set_hfac(hfac);
     fprintf(stderr, " rank= %d: pre n= %d\n", rank, rData.n());
     rData.distribute();
     //    rData.distribute();
@@ -533,6 +535,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
   std::string imageFileName;
   std::string cameraFileName;
   int nCameraFrame = 0;
+  float hfac = 1.1f;
 
 
   {
@@ -556,6 +559,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
 #endif
 		ADDUSAGE(" -d  --doDD             enable domain decomposition  [disabled]");
     ADDUSAGE(" -s  --nmaxsample   #   set max number of samples for DD [" << nmaxsample << "]");
+    ADDUSAGE("     --hfac         #   set scaling factor for 'h' in DD [" << hfac << "]");
     ADDUSAGE(" -D  --display      #   set DISPLAY=display, otherwise inherited from environment");
     ADDUSAGE("     --camera       #   camera path file");
     ADDUSAGE("     --cameraframe  #   Reframe original camera path to # frames. [ignore]");
@@ -572,6 +576,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     opt.setOption( "camera");
     opt.setOption( "cameraframe");
     opt.setOption( "image");
+    opt.setOption( "hfac");
     opt.setFlag("stereo");
     opt.setFlag("doDD", 'd');
     opt.setOption("nmaxsample", 's');
@@ -605,6 +610,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     if ((optarg = opt.getValue("image"))) imageFileName = std::string(optarg);
     if ((optarg = opt.getValue("camera"))) cameraFileName = std::string(optarg);
     if ((optarg = opt.getValue("cameraframe"))) nCameraFrame = std::atoi(optarg);
+    if ((optarg = opt.getValue("hfac"))) hfac = std::atof(optarg);
 
     if ((fileName.empty() && !inSitu) ||
         reduceDM < 0 || reduceS < 0)
@@ -639,6 +645,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     gethostname(hostname,256);
     char * display = getenv("DISPLAY");
     fprintf(stderr, "root: %s  display: %s \n", hostname, display);
+    fprintf(stderr, " hfac = %g\n", hfac);
   }
 
   if (!display.empty())
@@ -671,7 +678,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
       ::exit(-1);
     }
     rDataPtr->computeMinMax();
-    rescaleData(*rDataPtr, rank,nranks,comm, doDD,nmaxsample);
+    rescaleData(*rDataPtr, rank,nranks,comm, doDD,nmaxsample,hfac);
     rDataPtr->setNewData();
   }
 
@@ -714,7 +721,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
 
         if (nTotal > 0)
         {
-          rescaleData(*rDataPtr, rank,nranks,comm, doDD,nmaxsample);
+          rescaleData(*rDataPtr, rank,nranks,comm, doDD,nmaxsample,hfac);
           rDataPtr->setNewData();
         }
       }
