@@ -164,6 +164,7 @@ class RendererData
 
     virtual bool  isDistributed() const { return false; }
     virtual void  setNMAXSAMPLE(const int n) {};
+    virtual void set_hfac(const int h) {};
     virtual void  distribute() {}
     virtual float getBoundBoxLow (const int i) const 
     {
@@ -204,6 +205,7 @@ class RendererDataDistribute : public RendererData
     float xlow[3], xhigh[3];
     int npx, npy, npz;
     bool distributed;
+    float hfac;
 
     using vector3 = std::array<double,3>;
     struct float4
@@ -281,13 +283,14 @@ class RendererDataDistribute : public RendererData
   public:
 
     RendererDataDistribute(const int rank, const int nrank, const MPI_Comm &comm) : 
-      RendererData(rank,nrank,comm), NMAXSAMPLE(200000), distributed(false)
+      RendererData(rank,nrank,comm), NMAXSAMPLE(200000), distributed(false), hfac(1.1f)
   {
     assert(nrank <= NMAXPROC);
   }
 
     virtual void setNMAXSAMPLE(const int n) {NMAXSAMPLE = n;}
     virtual bool isDistributed() const { return distributed; }
+    virtual void set_hfac(const int h) { hfac = h; }
 
   private:
 
