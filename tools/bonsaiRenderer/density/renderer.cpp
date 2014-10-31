@@ -1458,7 +1458,7 @@ void SmokeRenderer::render()
   glutReportErrors();
 }
 
-static void lCompose(
+static void lComposeFloat(
     float4* imgSrc,
     float4* imgDst,
     const int rank, const int nrank, const MPI_Comm &comm,
@@ -1657,6 +1657,339 @@ static void lCompose(
     }
 #endif
   }
+}
+
+
+class Float16Compressor
+{
+  union Bits
+  {
+    float f;
+    int32_t si;
+    uint32_t ui;
+  };
+
+  static int const shift = 13;
+  static int const shiftSign = 16;
+
+  static int32_t const infN = 0x7F800000; // flt32 infinity
+  static int32_t const maxN = 0x477FE000; // max flt16 normal as a flt32
+  static int32_t const minN = 0x38800000; // min flt16 normal as a flt32
+  static int32_t const signN = 0x80000000; // flt32 sign bit
+
+  static int32_t const infC = infN >> shift;
+  static int32_t const nanN = (infC + 1) << shift; // minimum flt16 nan as a flt32
+  static int32_t const maxC = maxN >> shift;
+  static int32_t const minC = minN >> shift;
+  static int32_t const signC = signN >> shiftSign; // flt16 sign bit
+
+  static int32_t const mulN = 0x52000000; // (1 << 23) / minN
+  static int32_t const mulC = 0x33800000; // minN / (1 << (23 - shift))
+
+  static int32_t const subC = 0x003FF; // max flt32 subnormal down shifted
+  static int32_t const norC = 0x00400; // min flt32 normal down shifted
+
+  static int32_t const maxD = infC - maxC - 1;
+  static int32_t const minD = minC - subC - 1;
+
+  public:
+
+  static uint16_t compress(float value)
+  {
+    Bits v, s;
+    v.f = value;
+    uint32_t sign = v.si & signN;
+    v.si ^= sign;
+    sign >>= shiftSign; // logical shift
+    s.si = mulN;
+    s.si = s.f * v.f; // correct subnormals
+    v.si ^= (s.si ^ v.si) & -(minN > v.si);
+    v.si ^= (infN ^ v.si) & -((infN > v.si) & (v.si > maxN));
+    v.si ^= (nanN ^ v.si) & -((nanN > v.si) & (v.si > infN));
+    v.ui >>= shift; // logical shift
+    v.si ^= ((v.si - maxD) ^ v.si) & -(v.si > maxC);
+    v.si ^= ((v.si - minD) ^ v.si) & -(v.si > subC);
+    return v.ui | sign;
+  }
+
+  static float decompress(uint16_t value)
+  {
+    Bits v;
+    v.ui = value;
+    int32_t sign = v.si & signC;
+    v.si ^= sign;
+    sign <<= shiftSign;
+    v.si ^= ((v.si + minD) ^ v.si) & -(v.si > subC);
+    v.si ^= ((v.si + maxD) ^ v.si) & -(v.si > maxC);
+    Bits s;
+    s.si = mulC;
+    s.f *= v.si;
+    int32_t mask = -(norC > v.si);
+    v.si <<= shift;
+    v.si ^= (s.si ^ v.si) & mask;
+    v.si |= sign;
+    return v.f;
+  }
+};
+
+static inline float l_half2float(const int16_t h)
+{
+  return Float16Compressor::decompress(h);
+}
+static inline int16_t l_float2half(float f) 
+{
+  return Float16Compressor::compress(f);
+}
+
+static void l_cvt_float2half(const int n, uint16_t *fp16, const float *fp32)
+{
+#pragma omp parallel for schedule(static)
+  for (int i = 0; i < n; i++)
+    fp16[i] = l_float2half(fp32[i]);
+}
+static void l_cvt_half2float(const int n, float *fp32, const uint16_t *fp16)
+{
+#pragma omp parallel for schedule(static)
+  for (int i = 0; i < n; i++)
+    fp32[i] = l_half2float(fp16[i]);
+}
+
+static void lComposeHalf(
+    float4* imgSrc,
+    float4* imgDst,
+    const int rank, const int nrank, const MPI_Comm &comm,
+    const int2 imgCrd,
+    const int2 imgSize,
+    const int2 viewportSize,
+    const int showDomain,
+    std::vector<int> compositeOrder)
+{
+  assert(imgCrd.x >= 0);
+  assert(imgCrd.y >= 0);
+  assert(imgCrd.x + imgSize.x <= viewportSize.x);
+  assert(imgCrd.y + imgSize.y <= viewportSize.y);
+  assert(!compositeOrder.empty());
+
+  constexpr int master = 0;
+
+
+  /* compute which parts of img are sent to which rank */
+
+  const int nPixels = viewportSize.x*viewportSize.y;
+  const int nPixelsPerRank = (nPixels+nrank-1)/nrank; 
+
+  const int x0 = imgCrd.x;
+  const int y0 = imgCrd.y;
+  const int x1 = imgCrd.x + imgSize.x;
+  const int y1 = imgCrd.y + imgSize.y;
+
+  const int w = viewportSize.x;
+
+  const int imgBeg   =  y0   *w + x0;
+  const int imgEnd   = (y1-1)*w + x1-1;
+  const int imgWidth = imgSize.x;
+
+  using imgMetaData_t = std::array<int,6>;
+  constexpr  int mpiImgMetaDataSize = sizeof(imgMetaData_t)/sizeof(int);
+
+  static std::vector<imgMetaData_t> srcMetaData(nrank);
+  int totalSendCount = 0;
+  for (int p = 0; p < nrank; p++)
+  {
+    /* domain scanline beginning & end */
+    const int pbeg =    p * nPixelsPerRank;
+    const int pend = pbeg + nPixelsPerRank-1;
+
+    /* clip image with the domain scanline */
+    const int clipBeg = std::min(pend+1, std::max(pbeg,  imgBeg  ));
+    const int clipEnd = std::max(pbeg,   std::min(pend+1,imgEnd+1));
+
+    int sendcount = 0;
+    if (clipBeg < clipEnd)
+    {
+      const int i0 = clipBeg % w;
+      const int j0 = clipBeg / w;
+      const int i1 = (clipEnd-1) % w;
+      const int j1 = (clipEnd-1) / w;
+      assert(j0 >= y0);
+      assert(j1 <  y1);
+
+      /* compute number of pixels to send: 
+       * multiply hight (j1-j0+1) by image width */
+      /* but subtract top and bottom corners */
+
+      const int dxtop = std::max(0,std::min(i0-x0,   imgWidth));
+      const int dxbtm = std::max(0,std::min(x1-i1-1, imgWidth));
+      sendcount = (j1-j0+1)*imgWidth - dxtop - dxbtm;
+    }
+
+    srcMetaData[p] = imgMetaData_t{{x0,y0,x1,y1,totalSendCount,sendcount}};
+    totalSendCount += sendcount;
+  }
+  if (!(totalSendCount == (x1-x0)*(y1-y0)))
+    fprintf(stderr, "rank= %d: totalSendCount= %d  wSize= %d (%d,%d)-(%d,%d) --- (%d,%d)\n",
+        rank, totalSendCount, (x1-x0)*(y1-y0),
+        x0,x1, y0,y1,
+        viewportSize.x,
+        viewportSize.y);
+  assert(totalSendCount == (x1-x0)*(y1-y0));
+
+  /* exchange metadata info */
+
+  static std::vector<imgMetaData_t> rcvMetaData(nrank);
+  MPI_Alltoall(&srcMetaData[0], mpiImgMetaDataSize, MPI_INT, &rcvMetaData[0], mpiImgMetaDataSize, MPI_INT, comm);
+
+  /* prepare counts & displacements for alltoallv */
+  
+  using imgData_t = std::array<float,4>;
+  constexpr int mpiImgDataSz = sizeof(imgData_t)/sizeof(float);
+
+  static std::vector<int> sendcount(nrank), senddispl(nrank+1);
+  static std::vector<int> recvcount(nrank), recvdispl(nrank+1);
+  senddispl[0] = recvdispl[0] = 0;
+  for (int p = 0; p < nrank; p++)
+  {
+    sendcount[p  ] = srcMetaData[p][5] * (mpiImgDataSz/2);
+    recvcount[p  ] = rcvMetaData[p][5] * (mpiImgDataSz/2);
+    senddispl[p+1] = senddispl[p] + sendcount[p];
+    recvdispl[p+1] = recvdispl[p] + recvcount[p];
+  }
+
+  static std::vector<imgData_t> recvbuf;
+  static std::vector<std::array<float,2>> sendbuf_half, recvbuf_half;
+  {
+    const int nsend = senddispl[nrank] * 2/mpiImgDataSz;
+    const int nrecv = recvdispl[nrank] * 2/mpiImgDataSz;
+
+    sendbuf_half.resize(nsend);
+    recvbuf_half.resize(nrecv);
+    recvbuf.resize(nrecv);
+
+    l_cvt_float2half(4*nsend, (uint16_t*)&sendbuf_half[0], (float*)imgSrc);
+
+#ifdef __COMPOSITE_PROFILE
+    const double t0 = MPI_Wtime();
+#endif
+    MPI_Alltoallv(
+        &sendbuf_half[0], &sendcount[0], &senddispl[0], MPI_FLOAT,
+        &recvbuf_half[0], &recvcount[0], &recvdispl[0], MPI_FLOAT,
+        comm);
+#ifdef __COMPOSITE_PROFILE
+    double nsendrecvloc = (senddispl[nrank] + recvdispl[nrank])*sizeof(float);
+    double nsendrecv;
+    MPI_Allreduce(&nsendrecvloc, &nsendrecv, 1, MPI_DOUBLE, MPI_SUM, comm);
+    const double t1 = MPI_Wtime();
+    if (rank == master)
+    {
+      const double dt = t1-t0;
+      const double bw = nsendrecv / dt;
+      fprintf(stderr, " MPI_Alltoallv: dt= %g  BW= %g MB/s  mem= %g MB\n", dt, bw/1e6, nsendrecv/1e6);
+    }
+#endif
+    
+    l_cvt_half2float(4*nrecv, (float*)&recvbuf[0], (uint16_t*)&recvbuf_half[0]);
+  }
+
+  /* pixel composition */
+
+
+  constexpr int NRANKMAX = 1024;
+  assert(nrank <= NRANKMAX);
+
+  for (int p = 0; p < nrank+1; p++)
+    recvdispl[p] /= mpiImgDataSz/2;
+
+  static std::vector<float4> imgLoc;
+  imgLoc.resize(nPixelsPerRank);
+  const int pixelBeg =              rank * nPixelsPerRank;
+  const int pixelEnd = std::min(pixelBeg + nPixelsPerRank, nPixels);
+
+  constexpr int NBLOCK = 32;
+#pragma omp parallel for schedule(static)
+  for (int idxb = pixelBeg; idxb < pixelEnd; idxb += NBLOCK)
+  {
+    const int idx0 = idxb;
+    const int idx1 = std::min(idxb+NBLOCK,pixelEnd);
+
+    for (int idx = idx0; idx < idx1; idx++)
+      imgLoc[idx - pixelBeg] = make_float4(0.0f);
+
+    for (auto p : compositeOrder)
+      if (showDomain == -1 || showDomain == p)
+      {
+        const int x0   = rcvMetaData[p][0];
+        const int y0   = rcvMetaData[p][1];
+        const int x1   = rcvMetaData[p][2];
+        const int y1   = rcvMetaData[p][3];
+        const int offs = rcvMetaData[p][4];
+        const int cnt  = rcvMetaData[p][5];
+
+        const int base = recvdispl[p];
+        for (int idx = idx0; idx < idx1; idx++)
+        {
+          const int i = idx % viewportSize.x;
+          const int j = idx / viewportSize.x;
+          const int k = (j-y0)*(x1-x0) + (i-x0) - offs;
+          float4 &dst = imgLoc[idx - pixelBeg];
+          if (x0 <= i && i < x1 &&
+              y0 <= j && j < y1 && 
+              k  >= 0 && k < cnt &&
+              dst.w < 1.0f)
+          {
+            const auto &src = recvbuf[base + k];
+            const float f = 1.0f - dst.w;
+            dst.x += src[0] * f;
+            dst.y += src[1] * f;
+            dst.z += src[2] * f;
+            dst.w = std::min(dst.w + src[3] * f, 1.0f);
+          }
+        }
+      }
+  }
+
+  /* gather composited part of images into a single image on the master rank */
+  {
+    static std::vector<uint16_t> imgLocHalf, imgDstHalf;
+    imgLocHalf.resize(3*nPixelsPerRank);
+    imgDstHalf.resize(3*nPixelsPerRank*nrank);
+#pragma omp parallel for schedule(static)
+    for (int i = 0; i < 3*nPixelsPerRank; i++)
+      imgLocHalf[i] = l_float2half(*(reinterpret_cast<float*>(&imgLoc[0]) + (i/3)*4+i%3));
+
+#ifdef __COMPOSITE_PROFILE
+    const double t0 = MPI_Wtime();
+#endif
+    MPI_Gather(&imgLocHalf[0], nPixelsPerRank*3, MPI_SHORT, &imgDstHalf[0], 3*nPixelsPerRank, MPI_SHORT, master, comm);
+#ifdef __COMPOSITE_PROFILE
+    const double t1 = MPI_Wtime();
+    if (master == rank)
+    {
+      const double dt    = t1 - t0;
+      const double nrecv = nPixelsPerRank*3*nrank*sizeof(short);
+      const double bw    = nrecv / dt;
+      fprintf(stderr, " MPI_Gather: dt= %g  BW= %g MB/s  mem= %g MB\n", dt, bw/1e6, nrecv/1e6);
+    }
+#endif
+
+#pragma omp parallel for schedule(static)
+    for (int i = 0; i < 3*nPixels; i++)
+      *(reinterpret_cast<float*>(imgDst) + (i/3)*4+i%3) = l_half2float(imgDstHalf[i]);
+  }
+}
+
+static void lCompose(
+    float4* imgSrc,
+    float4* imgDst,
+    const int rank, const int nrank, const MPI_Comm &comm,
+    const int2 imgCrd,
+    const int2 imgSize,
+    const int2 viewportSize,
+    const int showDomain,
+    std::vector<int> compositeOrder)
+{
+  lComposeHalf(imgSrc, imgDst, rank, nrank, comm, imgCrd, imgSize, viewportSize, showDomain, compositeOrder);
+  return;
+  lComposeFloat(imgSrc, imgDst, rank, nrank, comm, imgCrd, imgSize, viewportSize, showDomain, compositeOrder);
 }
 
 static void lCompose(
