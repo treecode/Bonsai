@@ -267,22 +267,78 @@ inline int RendererDataDistribute::which_box(
       return p;
     }
 
-inline void RendererDataDistribute::which_boxes(
-    const vector3 &pos,
-    const float h,
-    const vector3 xlow[],
-    const vector3 xhigh[],
-    std::vector<int> &boxes)
-{
-  for (int p = 0; p < nrank; p++)
-  {
-    if (
-        pos[0]+h >= xlow[p][0]  && pos[0]-h <= xhigh[p][0] &&
-        pos[1]+h >= xlow[p][1]  && pos[1]-h <= xhigh[p][1] &&
-        pos[2]+h >= xlow[p][2]  && pos[2]-h <= xhigh[p][2])
-      boxes.push_back(p);
-  }
-}
+
+	void RendererDataDistribute::which_boxes_z(
+			int p,
+			const vector3 &pos,
+			const float h,
+			const vector3 xlow[],
+			const vector3 xhigh[],
+			std::vector<int> &boxes)
+	{
+
+		int npz = this->npz;
+		for(int iz=0; iz<npz; iz++, p++){
+			if(pos[2]+h >= xlow[p][2]  && pos[2]-h <= xhigh[p][2]){
+				boxes.push_back(p);
+			}
+		}
+
+	}
+
+	void RendererDataDistribute::which_boxes_y(
+			int p,
+			const vector3 &pos,
+			const float h,
+			const vector3 xlow[],
+			const vector3 xhigh[],
+			std::vector<int> &boxes)
+	{
+		int npy = this->npy;
+		for(int iy=0; iy<npy; iy++, p+=npz){
+			if(pos[1]+h >= xlow[p][1]  && pos[1]-h <= xhigh[p][1]){
+				which_boxes_z(p, pos, h, xlow, xhigh, boxes);
+			}
+		}
+			
+	}
+
+	void RendererDataDistribute::which_boxes_x(
+			const vector3 &pos,
+			const float h,
+			const vector3 xlow[],
+			const vector3 xhigh[],
+			std::vector<int> &boxes)
+	{
+		int p=0;
+		int npx = this->npx;
+		for(int ix=0; ix<npx; ix++, p+=npy*npz){
+			if(pos[0]+h >= xlow[p][0]  && pos[0]-h <= xhigh[p][0]){
+				which_boxes_y(p, pos, h, xlow, xhigh, boxes);
+			}
+		}
+	}
+
+	void RendererDataDistribute::which_boxes(
+			const vector3 &pos,
+			const float h,
+			const vector3 xlow[],
+			const vector3 xhigh[],
+			std::vector<int> &boxes)
+	{
+#if 0  /* naive: O(nrank) */
+		for (int p = 0; p < nrank; p++)
+		{
+			if (
+					pos[0]+h >= xlow[p][0]  && pos[0]-h <= xhigh[p][0] &&
+					pos[1]+h >= xlow[p][1]  && pos[1]-h <= xhigh[p][1] &&
+					pos[2]+h >= xlow[p][2]  && pos[2]-h <= xhigh[p][2])
+				boxes.push_back(p);
+		}
+#else  /* optimized: O(nrank^{1/3})
+		which_boxes_x(pos, h, xlow, xhigh, boxes);
+	}
+#endif
 
 void RendererDataDistribute::exchange_particles_alltoall_vector(
     const vector3  xlow[],

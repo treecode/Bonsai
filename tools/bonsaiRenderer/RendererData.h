@@ -307,6 +307,26 @@ class RendererDataDistribute : public RendererData
         const vector3 xlow[],
         const vector3 xhigh[]);
 
+    inline void which_boxes_z(
+			int p,
+			const vector3 &pos,
+			const float h,
+			const vector3 xlow[],
+			const vector3 xhigh[],
+			std::vector<int> &boxes);
+    inline void which_boxes_y(
+			int p,
+			const vector3 &pos,
+			const float h,
+			const vector3 xlow[],
+			const vector3 xhigh[],
+			std::vector<int> &boxes);
+    inline void which_boxes_x(
+			const vector3 &pos,
+			const float h,
+			const vector3 xlow[],
+			const vector3 xhigh[],
+			std::vector<int> &boxes);
     inline void which_boxes(
         const vector3 &pos,
         const float h,
