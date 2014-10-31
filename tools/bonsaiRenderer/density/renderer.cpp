@@ -2814,108 +2814,6 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &internalformat);
   glBindTexture(GL_TEXTURE_2D,0);
 
-#ifdef USE_ICET
-
-#ifdef __COMPOSITE_PROFILE 
-  glFinish();
-  MPI_Barrier(comm);
-  const double t00 = MPI_Wtime();
-#endif
-
-  glbComm = comm;
-  //Setup the rendering configuration
-  //TODO we only have to do this if things have changed
-  //But Always set bunding boxes and composite order
-  GLint physical_viewport[4];
-  glGetIntegerv(GL_VIEWPORT, physical_viewport);
-  icetPhysicalRenderSize(physical_viewport[2], physical_viewport[3]);
-
-  icetDrawCallback(drawCallback); //Calls our display func
-
-  IceTInt winX, winY;	
-  icetGetIntegerv(ICET_PHYSICAL_RENDER_WIDTH,  &winX);
-  icetGetIntegerv(ICET_PHYSICAL_RENDER_HEIGHT, &winY);
-
-  //Setup a single tile
-  icetResetTiles();
-  icetAddTile(0, 0, winX, winY, 0);
-
-  icetStrategy(ICET_STRATEGY_SEQUENTIAL);
-
-#if 1
-  //Use the below if we use Volume rendering
-  icetCompositeMode(ICET_COMPOSITE_MODE_BLEND);
-  icetSetColorFormat(ICET_IMAGE_COLOR_RGBA_FLOAT);
-  icetSetDepthFormat(ICET_IMAGE_DEPTH_NONE);
-
-  icetEnable(ICET_ORDERED_COMPOSITE);
-  assert(!compositingOrder.empty());
-  assert(static_cast<int>(compositingOrder.size()) == nrank);
-  for (int i = 0; i < nrank; i++)
-    assert(compositingOrder[i] >= 0 && compositingOrder[i] < nrank);
-  icetCompositeOrder(&compositingOrder[0]);
-#endif
-
-  //set the bounding boxes, should already converted with projection matrix
-#if 1	
-  const float3 r0 = m_xlow;
-  const float3 r1 = m_xhigh;
-  icetBoundingBoxf(r0.x,
-      r1.x,
-      r0.y,
-      r1.y,
-      r0.z,
-      r1.z);
-#endif
-
-#ifdef __COMPOSITE_PROFILE 
-  glFinish();
-  MPI_Barrier(comm);
-  const double t60 = MPI_Wtime();
-#endif
-  m_fbo->Bind();
-  m_fbo->AttachTexture(GL_TEXTURE_2D, imgTex, GL_COLOR_ATTACHMENT0_EXT);
-
-  IceTDouble projection_matrix[16];
-  IceTDouble modelview_matrix[16];
-  IceTFloat background_color[4];
-
-  glGetDoublev(GL_PROJECTION_MATRIX, projection_matrix);
-  glGetDoublev(GL_MODELVIEW_MATRIX, modelview_matrix);
-  glGetFloatv(GL_COLOR_CLEAR_VALUE, background_color);
-
-  //Launch the composing
-  IceTImage image =  icetDrawFrame(projection_matrix, modelview_matrix, background_color);
-
-  m_fbo->Disable();
-
-#ifdef __COMPOSITE_PROFILE 
-  glFinish();
-  MPI_Barrier(comm);
-  const double t70 = MPI_Wtime();
-#endif
-
-
-  if(rank == 0)
-  {
-    IceTFloat *colors_float = NULL;
-    colors_float = icetImageGetColorf(image);
-    float4 *colorBuff = (float4*)colors_float;
-
-    lUpdateTexture(w,h,internalformat, imgTex, colorBuff);
-
-#ifdef __COMPOSITE_PROFILE
-    glFinish();
-    const double t80 = MPI_Wtime();
-    fprintf(stderr, "total= %g: rb= %g  compose= %g  wb= %g\n", t80 - t00,
-        dtIcetCallback,
-        t70 - t60 - dtIcetCallback,
-        t80-t70);
-#endif
-  }
-
-#else /* USE_ICET */
-
 #ifdef __COMPOSITE_PROFILE 
   glFinish();
   MPI_Barrier(comm);
@@ -2934,10 +2832,59 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   const int2 viewPort = make_int2(mWindowW,mWindowH);
 
 
+#if 0
+#ifdef __COMPOSITE_PROFILE 
+  glFinish();
+  MPI_Barrier(comm);
+  double t10 = MPI_Wtime();
+#endif
   m_fbo->Bind();
   m_fbo->AttachTexture(GL_TEXTURE_2D, imgTex, GL_COLOR_ATTACHMENT0_EXT);
   glReadPixels(wCrd.x, wCrd.y, wSize.x, wSize.y, GL_RGBA, GL_FLOAT, &imgLoc[0]);
   m_fbo->Disable();
+#else
+  m_fbo->Bind();
+  m_fbo->AttachTexture(GL_TEXTURE_2D, imgTex, GL_COLOR_ATTACHMENT0_EXT);
+  glBindTexture(GL_TEXTURE_2D, m_imageTex[4]);  
+  glCopyTexImage2D(GL_TEXTURE_2D,0,internalformat, wCrd.x,wCrd.y,wSize.x,wSize.y,0);
+  glBindTexture(GL_TEXTURE_2D, 0);
+  m_fbo->Disable();
+
+#ifdef __COMPOSITE_PROFILE 
+  glFinish();
+  MPI_Barrier(comm);
+  double t10 = MPI_Wtime();
+#endif
+
+
+#if 0
+  glBindTexture(GL_TEXTURE_2D, m_imageTex[4]); 
+  glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, &imgLoc[0]);
+  glBindTexture(GL_TEXTURE_2D, 0);
+#else
+  static GLuint pbo_id = 0;
+  if (!pbo_id)
+  {
+    const int pbo_size = 8*4096*3072*sizeof(float4);
+    glGenBuffers(1, &pbo_id);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_id);
+    glBufferData(GL_PIXEL_PACK_BUFFER, pbo_size, 0, GL_STATIC_READ);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+  }
+
+  glBindTexture(GL_TEXTURE_2D, m_imageTex[4]);
+  glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_id);
+  glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, 0);
+  GLvoid *rptr = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, wSize.x*wSize.y*sizeof(float), GL_MAP_READ_BIT);
+#pragma omp parallel for schedule(static)
+  for (int i = 0; i < wSize.x*wSize.y; i++)
+    imgLoc[i] = reinterpret_cast<float4*>(rptr)[i];
+  glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+  glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+  glBindTexture(GL_TEXTURE_2D,0);
+#endif
+
+#endif
 
 #ifdef __COMPOSITE_PROFILE
   glFinish();
@@ -2965,14 +2912,13 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
 #ifdef __COMPOSITE_PROFILE
     glFinish();
     const double t80 = MPI_Wtime();
-    fprintf(stderr, "total= %g: rb= %g  compose= %g  wb= %g\n", t80 - t00,
+    fprintf(stderr, "total= %g: rb= %g [%g %g]  compose= %g  wb= %g\n", t80 - t00,
         t60-t00,
+        t10-t00, t60-t10,
         t70-t60,
         t80-t70);
 #endif
   }
-
-#endif /* USE_ICET */
 
 }
 
