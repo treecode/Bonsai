@@ -3146,7 +3146,7 @@ static double lUpdateTextureHALF3(
   }
 
   glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo_id);
-  GLvoid *wptr = glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, w*h*sizeof(float4), GL_MAP_WRITE_BIT);
+  GLvoid *wptr = glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, w*h*3*sizeof(uint16_t), GL_MAP_WRITE_BIT);
 
 #pragma omp parallel for schedule(static)
   for (int i = 0; i < w*h*3; i++)
