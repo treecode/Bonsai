@@ -38,11 +38,11 @@
 
 #if 1
 #define TEX_FLOAT16
-//#define AVX11  /* comment out if AVX11 is not supported */
+//#define F16C  /* comment out if F16C is not supported */
 #endif
 
 
-#ifdef AVX11
+#ifdef F16C
 typedef uint16_t _v4si  __attribute__((vector_size(16)));
 typedef float    _v4sf  __attribute__((vector_size(16)));
 #endif
@@ -1774,7 +1774,7 @@ static void lComposeHalf(
               dst.w < 1.0f)
           {
             const auto &src = recvbuf[base + k];
-#ifdef AVX11
+#ifdef F16C
             const _v4si icol = (_v4si){src[0],src[1],src[2],src[3]};
             _v4sf fcol;
             __asm__("vcvtph2ps %1,%0" : "=x"(fcol) :"x"(icol));
@@ -1802,7 +1802,7 @@ static void lComposeHalf(
     for (int idx = idx0; idx < idx1; idx++)
     {
       const auto &col = imgLoc[idx - idx0];
-#ifdef AVX11
+#ifdef F16C
       const _v4sf fcol = (_v4sf){col.x,col.y,col.z,1.0f};
       _v4si icol;
       __asm__("vcvtps2ph $0,%1,%0" : "=x"(icol) :"x"(fcol));

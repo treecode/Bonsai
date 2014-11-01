@@ -40,8 +40,8 @@ LDFLAGS = -lGL -lGLU -lglut -lGLEW -fopenmp -lrt
 LDFLAGS += -pie -rdynamic
 #-L$(PWD)/lib/linux -lGLEW_x86_64
 
-ifeq ($(AVX11),1)
-	CXXFLAGS += -DAVX11
+ifeq ($(F16C),1)
+	CXXFLAGS += -DF16C
 endif
 ifeq ($(PROFILE),1)
 	CXXFLAGS += -D__COMPOSITE_PROFILE
