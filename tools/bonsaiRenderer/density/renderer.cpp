@@ -38,6 +38,13 @@
 
 #if 1
 #define TEX_FLOAT16
+//#define AVX11  /* comment out if AVX11 is not supported */
+#endif
+
+
+#ifdef AVX11
+typedef uint16_t _v4si  __attribute__((vector_size(16)));
+typedef float    _v4sf  __attribute__((vector_size(16)));
 #endif
 
 
@@ -1767,12 +1774,19 @@ static void lComposeHalf(
               dst.w < 1.0f)
           {
             const auto &src = recvbuf[base + k];
-#if 1
+#ifdef AVX11
+            const _v4si icol = (_v4si){src[0],src[1],src[2],src[3]};
+            _v4sf fcol;
+            __asm__("vcvtph2ps %1,%0" : "=x"(fcol) :"x"(icol));
+            const float r =  __builtin_ia32_vec_ext_v4sf(fcol, 0);
+            const float g =  __builtin_ia32_vec_ext_v4sf(fcol, 1);
+            const float b =  __builtin_ia32_vec_ext_v4sf(fcol, 2);
+            const float w =  __builtin_ia32_vec_ext_v4sf(fcol, 3);
+#else
             const float r = l_half2float(src[0]);
             const float g = l_half2float(src[1]);
             const float b = l_half2float(src[2]);
             const float w = l_half2float(src[3]);
-#else
 #endif
 
             const float f = 1.0f - dst.w;
@@ -1788,9 +1802,18 @@ static void lComposeHalf(
     for (int idx = idx0; idx < idx1; idx++)
     {
       const auto &col = imgLoc[idx - idx0];
+#ifdef AVX11
+      const _v4sf fcol = (_v4sf){col.x,col.y,col.z,1.0f};
+      _v4si icol;
+      __asm__("vcvtps2ph $0,%1,%0" : "=x"(icol) :"x"(fcol));
+      const uint16_t r = *(reinterpret_cast<uint16_t*>(&icol) + 0);
+      const uint16_t g = *(reinterpret_cast<uint16_t*>(&icol) + 1);
+      const uint16_t b = *(reinterpret_cast<uint16_t*>(&icol) + 2);
+#else
       const uint16_t r = col.x > 0.0f ? l_float2half(col.x) : 0;
       const uint16_t g = col.y > 0.0f ? l_float2half(col.y) : 0;
       const uint16_t b = col.z > 0.0f ? l_float2half(col.z) : 0;
+#endif
       const int addr = idx - pixelBeg;
       img2send[3*addr + 0] = r;
       img2send[3*addr + 1] = g;
