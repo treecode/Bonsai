@@ -1767,10 +1767,13 @@ static void lComposeHalf(
               dst.w < 1.0f)
           {
             const auto &src = recvbuf[base + k];
+#if 1
             const float r = l_half2float(src[0]);
             const float g = l_half2float(src[1]);
             const float b = l_half2float(src[2]);
             const float w = l_half2float(src[3]);
+#else
+#endif
 
             const float f = 1.0f - dst.w;
             dst.x += r * f;
@@ -1785,9 +1788,9 @@ static void lComposeHalf(
     for (int idx = idx0; idx < idx1; idx++)
     {
       const auto &col = imgLoc[idx - idx0];
-      const uint16_t r = l_float2half(col.x);
-      const uint16_t g = l_float2half(col.y);
-      const uint16_t b = l_float2half(col.z);
+      const uint16_t r = col.x > 0.0f ? l_float2half(col.x) : 0;
+      const uint16_t g = col.y > 0.0f ? l_float2half(col.y) : 0;
+      const uint16_t b = col.z > 0.0f ? l_float2half(col.z) : 0;
       const int addr = idx - pixelBeg;
       img2send[3*addr + 0] = r;
       img2send[3*addr + 1] = g;
