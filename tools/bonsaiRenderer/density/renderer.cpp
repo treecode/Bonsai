@@ -3258,7 +3258,7 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   imgLoc.resize(2*w*h*4);
   imgGlb.resize(2*w*h*4);
   glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_HALF_FLOAT, 0);
-  GLvoid *rptr = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, wSize.x*wSize.y*sizeof(float), GL_MAP_READ_BIT);
+  GLvoid *rptr = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, wSize.x*wSize.y*4*sizeof(uint16_t), GL_MAP_READ_BIT);
 #pragma omp parallel for schedule(static)
   for (int i = 0; i < wSize.x*wSize.y*4; i++)
     imgLoc[i] = reinterpret_cast<uint16_t*>(rptr)[i];
@@ -3270,7 +3270,7 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   imgGlb.resize(2*w*h);
 
   glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, 0);
-  GLvoid *rptr = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, wSize.x*wSize.y*sizeof(uint16_t), GL_MAP_READ_BIT);
+  GLvoid *rptr = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, wSize.x*wSize.y*sizeof(float4), GL_MAP_READ_BIT);
 #pragma omp parallel for schedule(static)
   for (int i = 0; i < wSize.x*wSize.y; i++)
     imgLoc[i] = reinterpret_cast<float4*>(rptr)[i];
