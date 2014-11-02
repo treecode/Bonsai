@@ -7,7 +7,7 @@ CFLAGS =  -Wall -Werror
 CUDA_TK  = /usr/local/cuda
 # CUDA_TK = $(HOME)/usr/local/cuda-5.5
 
-CXXFLAGS += -Wall -fopenmp -std=c++11  -fPIE 
+CXXFLAGS += -Wall -fopenmp -std=c++11  -fPIE  -ffast-math
 CXXFLAGS += -Werror
 #ignore warnings caused by openmpi
 CXXFLAGS += -Wno-literal-suffix
@@ -40,6 +40,14 @@ LDFLAGS = -lGL -lGLU -lglut -lGLEW -fopenmp -lrt
 LDFLAGS += -pie -rdynamic
 #-L$(PWD)/lib/linux -lGLEW_x86_64
 
+ifeq ($(FP32),1)
+	CXXFLAGS += -DTEX_FLOAT32
+else
+	CXXFLAGS += -DTEX_FLOAT16
+	ifeq ($(F16C),1)
+		CXXFLAGS += -DF16C
+	endif
+endif
 
 ifeq ($(PROFILE),1)
 	CXXFLAGS += -D__COMPOSITE_PROFILE

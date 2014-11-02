@@ -431,6 +431,7 @@ const char *texture2DPS = STRINGIFY(
     vec4 c = texture2D(tex, gl_TexCoord[0].xy);                    \n
     c.rgb *= scale;
     c.rgb = pow(c.rgb, gamma);                                     \n
+    c.a = 1.0;
     gl_FragColor = c;                                              \n
     }                                                                  \n
     );
@@ -1153,6 +1154,7 @@ STRINGIFY(
       c.rgb = 1.0 - exp(-c.rgb);          \n
       c.rgb *= scale;
       c.rgb = pow(c.rgb, gamma);          \n
+      c.a   = 1.0;
       gl_FragColor = c;                                              \n
     }                                                                  \n
   );

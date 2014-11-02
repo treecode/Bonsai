@@ -164,6 +164,7 @@ class RendererData
 
     virtual bool  isDistributed() const { return false; }
     virtual void  setNMAXSAMPLE(const int n) {};
+    virtual void set_hfac(const int h) {};
     virtual void  distribute() {}
     virtual float getBoundBoxLow (const int i) const 
     {
@@ -187,7 +188,9 @@ class RendererData
     }
     virtual std::vector<int> getVisibilityOrder(const std::array<float,3> camPos) const
     {
-      return std::vector<int>();
+      std::vector<int> order(nrank);
+      std::iota(order.begin(), order.end(), 0);
+      return order;
     }
 
 };
@@ -202,6 +205,7 @@ class RendererDataDistribute : public RendererData
     float xlow[3], xhigh[3];
     int npx, npy, npz;
     bool distributed;
+    float hfac;
 
     using vector3 = std::array<double,3>;
     struct float4
@@ -279,13 +283,14 @@ class RendererDataDistribute : public RendererData
   public:
 
     RendererDataDistribute(const int rank, const int nrank, const MPI_Comm &comm) : 
-      RendererData(rank,nrank,comm), NMAXSAMPLE(200000), distributed(false)
+      RendererData(rank,nrank,comm), NMAXSAMPLE(200000), distributed(false), hfac(1.1f)
   {
     assert(nrank <= NMAXPROC);
   }
 
     virtual void setNMAXSAMPLE(const int n) {NMAXSAMPLE = n;}
     virtual bool isDistributed() const { return distributed; }
+    virtual void set_hfac(const int h) { hfac = h; }
 
   private:
 
@@ -305,6 +310,26 @@ class RendererDataDistribute : public RendererData
         const vector3 xlow[],
         const vector3 xhigh[]);
 
+    inline void which_boxes_z(
+			int p,
+			const vector3 &pos,
+			const float h,
+			const vector3 xlow[],
+			const vector3 xhigh[],
+			std::vector<int> &boxes);
+    inline void which_boxes_y(
+			int p,
+			const vector3 &pos,
+			const float h,
+			const vector3 xlow[],
+			const vector3 xhigh[],
+			std::vector<int> &boxes);
+    inline void which_boxes_x(
+			const vector3 &pos,
+			const float h,
+			const vector3 xlow[],
+			const vector3 xhigh[],
+			std::vector<int> &boxes);
     inline void which_boxes(
         const vector3 &pos,
         const float h,

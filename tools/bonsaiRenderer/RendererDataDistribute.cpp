@@ -1,7 +1,7 @@
 #include "RendererData.h"
 #include <omp.h>
-    
-    
+
+
 void RendererDataDistribute::create_division()
 { 
   int &nx = npx;
@@ -64,7 +64,7 @@ int RendererDataDistribute::determine_sample_freq()
   MPI_Bcast(&sample_freq,1,MPI_INT,getMaster(),comm);
   return sample_freq;
 }
-    
+
 void RendererDataDistribute::initialize_division()
 {
   static bool initcall = true;
@@ -153,9 +153,9 @@ void RendererDataDistribute::determine_division( // nitadori's version
     double *xoff = buf; // xoff[nx+1]
     __gnu_parallel::sort(&pos[addr.off(0, 0, 0)], &pos[addr.off(nx, 0, 0)], 
         [](const float4 &lhs, const float4 &rhs)  {
-          constexpr int mask = 1;
-          return mask & __builtin_ia32_movmskps(
-            (float4::v4sf)__builtin_ia32_cmpltps(lhs.v, rhs.v));
+        constexpr int mask = 1;
+        return mask & __builtin_ia32_movmskps(
+          (float4::v4sf)__builtin_ia32_cmpltps(lhs.v, rhs.v));
         });
     for(int ix=0; ix<nx; ix++)
     {
@@ -185,11 +185,11 @@ void RendererDataDistribute::determine_division( // nitadori's version
       double buf[NMAXPROC+1];
       double *yoff = buf; // yoff[ny+1];
       std::sort(&pos[addr.off(ix, 0, 0)], &pos[addr.off(ix, ny, 0)], 
-        [](const float4 &lhs, const float4 &rhs)  {
+          [](const float4 &lhs, const float4 &rhs)  {
           constexpr int mask = 2;
           return mask & __builtin_ia32_movmskps(
             (float4::v4sf)__builtin_ia32_cmpltps(lhs.v, rhs.v));
-        });
+          });
       for(int iy=0; iy<ny; iy++)
       {
         const int ioff = addr.off(ix, iy, 0);
@@ -218,11 +218,11 @@ void RendererDataDistribute::determine_division( // nitadori's version
         double *zoff = buf; // zoff[nz+1];
 
         std::sort(&pos[addr.off(ix, iy, 0)], &pos[addr.off(ix, iy, nz)], 
-        [](const float4 &lhs, const float4 &rhs)  {
-          constexpr int mask = 4;
-          return mask & __builtin_ia32_movmskps(
-            (float4::v4sf)__builtin_ia32_cmpltps(lhs.v, rhs.v));
-        });
+            [](const float4 &lhs, const float4 &rhs)  {
+            constexpr int mask = 4;
+            return mask & __builtin_ia32_movmskps(
+              (float4::v4sf)__builtin_ia32_cmpltps(lhs.v, rhs.v));
+            });
         for(int iz=0; iz<nz; iz++)
         {
           const int ioff = addr.off(ix, iy, iz);
@@ -239,41 +239,94 @@ void RendererDataDistribute::determine_division( // nitadori's version
       }
   }
 }
-    
+
 inline int RendererDataDistribute::which_box(
-        const vector3 &pos,
-        const vector3 xlow[],
-        const vector3 xhigh[])
-    {
-      int p = 0;
-      if(pos[0] < xlow[p][0]) return -1;
-      for(int ix=0; ix<npx; ix++, p+=npy*npz){
-        if(pos[0] < xhigh[p][0]) break;
-      }
-      if(pos[0] > xhigh[p][0]) return -1;
+    const vector3 &pos,
+    const vector3 xlow[],
+    const vector3 xhigh[])
+{
+  int p = 0;
+  if(pos[0] < xlow[p][0]) return -1;
+  for(int ix=0; ix<npx; ix++, p+=npy*npz){
+    if(pos[0] < xhigh[p][0]) break;
+  }
+  if(pos[0] > xhigh[p][0]) return -1;
 
-      if(pos[1] < xlow[p][1]) return -1;
-      for(int iy=0; iy<npy; iy++, p+=npz){
-        if(pos[1] < xhigh[p][1]) break;
-      }
-      if(pos[1] > xhigh[p][1]) return -1;
+  if(pos[1] < xlow[p][1]) return -1;
+  for(int iy=0; iy<npy; iy++, p+=npz){
+    if(pos[1] < xhigh[p][1]) break;
+  }
+  if(pos[1] > xhigh[p][1]) return -1;
 
-      if(pos[2] < xlow[p][2]) return -1;
-      for(int iy=0; iy<npy; iy++, p++){
-        if(pos[2] < xhigh[p][2]) break;
-      }
-      if(pos[2] > xhigh[p][2]) return -1;
+  if(pos[2] < xlow[p][2]) return -1;
+  for(int iy=0; iy<npy; iy++, p++){
+    if(pos[2] < xhigh[p][2]) break;
+  }
+  if(pos[2] > xhigh[p][2]) return -1;
 
-      return p;
-    }
+  return p;
+}
 
-inline void RendererDataDistribute::which_boxes(
+
+void RendererDataDistribute::which_boxes_z(
+    int p,
     const vector3 &pos,
     const float h,
     const vector3 xlow[],
     const vector3 xhigh[],
     std::vector<int> &boxes)
 {
+
+  int npz = this->npz;
+  for(int iz=0; iz<npz; iz++, p++){
+    if(pos[2]+h >= xlow[p][2]  && pos[2]-h <= xhigh[p][2]){
+      boxes.push_back(p);
+    }
+  }
+
+}
+
+void RendererDataDistribute::which_boxes_y(
+    int p,
+    const vector3 &pos,
+    const float h,
+    const vector3 xlow[],
+    const vector3 xhigh[],
+    std::vector<int> &boxes)
+{
+  int npy = this->npy;
+  for(int iy=0; iy<npy; iy++, p+=npz){
+    if(pos[1]+h >= xlow[p][1]  && pos[1]-h <= xhigh[p][1]){
+      which_boxes_z(p, pos, h, xlow, xhigh, boxes);
+    }
+  }
+
+}
+
+void RendererDataDistribute::which_boxes_x(
+    const vector3 &pos,
+    const float h,
+    const vector3 xlow[],
+    const vector3 xhigh[],
+    std::vector<int> &boxes)
+{
+  int p=0;
+  int npx = this->npx;
+  for(int ix=0; ix<npx; ix++, p+=npy*npz){
+    if(pos[0]+h >= xlow[p][0]  && pos[0]-h <= xhigh[p][0]){
+      which_boxes_y(p, pos, h, xlow, xhigh, boxes);
+    }
+  }
+}
+
+void RendererDataDistribute::which_boxes(
+    const vector3 &pos,
+    const float h,
+    const vector3 xlow[],
+    const vector3 xhigh[],
+    std::vector<int> &boxes)
+{
+#if 0  /* naive: O(nrank) */
   for (int p = 0; p < nrank; p++)
   {
     if (
@@ -282,11 +335,15 @@ inline void RendererDataDistribute::which_boxes(
         pos[2]+h >= xlow[p][2]  && pos[2]-h <= xhigh[p][2])
       boxes.push_back(p);
   }
+#else  /* optimized: O(nrank^{1/3}) */
+  which_boxes_x(pos, h, xlow, xhigh, boxes);
+#endif
 }
 
 void RendererDataDistribute::exchange_particles_alltoall_vector(
     const vector3  xlow[],
     const vector3 xhigh[])
+
 {
   const double t00 = MPI_Wtime();
 
@@ -294,7 +351,7 @@ void RendererDataDistribute::exchange_particles_alltoall_vector(
   static std::vector<int> sendcount(nrank  ), recvcount(nrank  );
   static std::vector<int> senddispl(nrank+1), recvdispl(nrank+1);
   static std::vector<int> sendidx[NMAXPROC];
- 
+
   const int np = data.size();
   for (int p = 0; p < nrank; p++)
   {
@@ -302,10 +359,10 @@ void RendererDataDistribute::exchange_particles_alltoall_vector(
     sendidx[p].reserve(128);
   }
 
-  
+
   const double t10 = MPI_Wtime();
 
-  const float hfac = 1.1f;
+  const float hfac = this->hfac; //1.1f;
 
 #if 0
 #define _ORIGDD
@@ -322,7 +379,7 @@ void RendererDataDistribute::exchange_particles_alltoall_vector(
     for (auto ibox : boxes)
       sendidx[ibox].push_back(i);
   }
-  
+
   senddispl[0] = 0;
   int sendcountmax = 0;
   for (int p = 0; p < nrank; p++)
@@ -412,17 +469,17 @@ void RendererDataDistribute::exchange_particles_alltoall_vector(
     }
 
 #pragma omp critical
-   for (int p = 0; p < nrank; p++)
-     sendcount[p] += sendcount_thread[p];
+    for (int p = 0; p < nrank; p++)
+      sendcount[p] += sendcount_thread[p];
   }
   __gnu_parallel::sort(ptcl2send.begin(), ptcl2send.end(),
-        [](const pair_t  &lhs, const pair_t &rhs) { return lhs.first < rhs.first; });
+      [](const pair_t  &lhs, const pair_t &rhs) { return lhs.first < rhs.first; });
 
   senddispl[0] = 0;
   for (int p = 0; p < nrank; p++)
     senddispl[p+1] = senddispl[p] + sendcount[p];
 #endif
-  
+
   const double t20 = MPI_Wtime();
 
 
@@ -483,7 +540,7 @@ void RendererDataDistribute::exchange_particles_alltoall_vector(
         << "Global Bandwidth " << bw << " GB/s" << std::endl;
     }
   }
-  
+
   const double t50 = MPI_Wtime();
 
   computeMinMax();
@@ -574,18 +631,22 @@ std::vector<int> RendererDataDistribute::getVisibilityOrder(const std::array<flo
 {
   using float3 = std::array<float,3>;
   if (!isDistributed())
-    return std::vector<int>();
+  {
+    std::vector<int> order(nrank);
+    std::iota(order.begin(), order.end(), 0);
+    return order;
+  }
   const double t0 = MPI_Wtime();
   static std::vector<float3> bounds(nrank);
   float3 xlow = {{
-      getBoundBoxLow(0),
+    getBoundBoxLow(0),
       getBoundBoxLow(1),
       getBoundBoxLow(2)
   }};
   MPI_Allgather(&xlow, 3, MPI_FLOAT, &bounds[0], 3, MPI_FLOAT, comm);
 
   const double t1 = MPI_Wtime();
-  
+
   auto xdi = [=](int ix, int iy, int iz)
   {
     return iz + npz*(iy + npy*(ix));
