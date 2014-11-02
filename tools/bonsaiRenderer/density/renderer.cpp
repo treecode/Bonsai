@@ -36,9 +36,8 @@
 #define USE_HALF_ANGLE 0
 #define MOTION_BLUR 0
 
-#if 1
-#define TEX_FLOAT16
-//#define F16C  /* comment out if F16C is not supported */
+#ifndef TEX_FLOAT16
+#undef F16C
 #endif
 
 
