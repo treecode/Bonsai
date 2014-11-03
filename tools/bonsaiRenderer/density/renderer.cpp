@@ -3149,86 +3149,6 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
 
   m_fbo->Disable();
 }
-
-#ifdef TEX_FLOAT16 
-static double lUpdateTextureHALF3(
-    const GLint w,
-    const GLint h,
-    const GLint internalformat,
-    const GLint imgTex,
-    const uint16_t *data)
-{
-  const double t00 = MPI_Wtime();
-
-  static GLuint pbo_id = 0;
-  if (!pbo_id)
-  {
-    const int pbo_size = 8*4096*3072*sizeof(float4);
-    glGenBuffers(1, &pbo_id);
-    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo_id);
-    glBufferData(GL_PIXEL_UNPACK_BUFFER, pbo_size, 0, GL_STATIC_DRAW);
-    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-  }
-
-  glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo_id);
-  GLvoid *wptr = glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, w*h*3*sizeof(uint16_t), GL_MAP_WRITE_BIT);
-
-#pragma omp parallel for schedule(static)
-  for (int i = 0; i < w*h*3; i++)
-    reinterpret_cast<uint16_t*>(wptr)[i] = data[i];
-
-  glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
-
-  glBindTexture(GL_TEXTURE_2D, imgTex);
-  glTexSubImage2D(GL_TEXTURE_2D,0, 0,0,w,h, GL_RGB, GL_HALF_FLOAT, 0);
-  glBindTexture(GL_TEXTURE_2D,0);
-  glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-
-  const double t11 = MPI_Wtime();
-
-  return t11 - t00;
-}
-#else /* TEX_FLOAT16  */
-static double lUpdateTextureFLOAT4(
-    const GLint w,
-    const GLint h,
-    const GLint internalformat,
-    const GLint imgTex,
-    const float4 *data)
-{
-  const double t00 = MPI_Wtime();
-
-  static GLuint pbo_id = 0;
-  if (!pbo_id)
-  {
-    const int pbo_size = 8*4096*3072*sizeof(float4);
-    glGenBuffers(1, &pbo_id);
-    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo_id);
-    glBufferData(GL_PIXEL_UNPACK_BUFFER, pbo_size, 0, GL_STATIC_DRAW);
-    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-  }
-
-  glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo_id);
-  GLvoid *wptr = glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, w*h*sizeof(float4), GL_MAP_WRITE_BIT);
-
-#pragma omp parallel for schedule(static)
-  for (int i = 0; i < w*h; i++)
-    reinterpret_cast<float4*>(wptr)[i] = data[i];
-
-  glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
-
-  glBindTexture(GL_TEXTURE_2D, imgTex);
-  glTexSubImage2D(GL_TEXTURE_2D,0, 0,0,w,h, GL_RGBA, GL_FLOAT, 0);
-  glBindTexture(GL_TEXTURE_2D,0);
-  glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-
-  const double t11 = MPI_Wtime();
-
-  return t11 - t00;
-}
-#endif /* TEX_FLOAT16  */
-
-
 void SmokeRenderer::composeImages(const GLuint imgTex)
 {
   GLint w, h, internalformat;
@@ -3244,15 +3164,6 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   double t00 = MPI_Wtime();
 #endif
 
-  static unsigned long long frameCount = 0;
-#ifdef __COMPOSITE_NONBLOCK
-  const int even = frameCount&1;
-  const int odd  = !even;
-  frameCount++;
-#else
-  const int even = 0;
-  const int odd  = 0;
-#endif
 
 
   /* determine visible viewport bounds */ 
@@ -3265,6 +3176,19 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   static int2 wCrdPrev  = wCrd;
   static int2 wSizePrev = wSize;
   static auto compositingOrderPrev = compositingOrder;
+  
+  static unsigned long long frameCount = 0;
+#ifdef __COMPOSITE_NONBLOCK
+  const int even = frameCount&1;
+  const int odd  = !even;
+  frameCount++;
+#else
+  const int even = 0;
+  const int odd  = 0;
+  wCrdPrev = wCrd;
+  wSizePrev = wSize;
+  compositingOrderPrev = compositingOrder;
+#endif
 
   m_fbo->Bind();
   m_fbo->AttachTexture(GL_TEXTURE_2D, imgTex, GL_COLOR_ATTACHMENT0_EXT);
@@ -3311,6 +3235,7 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_rb[even]);
   
 
+  /* copy texture to read-back pbo  & map it */
 #ifdef TEX_FLOAT16
   glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_HALF_FLOAT, 0);
   glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_rb[odd]);
@@ -3331,30 +3256,50 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   MPI_Barrier(comm);
   const double t60 = MPI_Wtime();
 #endif
+  
+  static GLuint pbo_wb = 0;
+  if (!pbo_wb)
+  {
+    const int pbo_size = 8*4096*3072*sizeof(float4);
+    glGenBuffers(1, &pbo_wb);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo_wb);
+    glBufferData(GL_PIXEL_UNPACK_BUFFER, pbo_size, 0, GL_STATIC_DRAW);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+  }
+  assert(pbo_wb);
 
-  static std::vector<float> buf;
-  buf.resize(2*w*h*4);
+  /* map write-back buffer */
+  glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo_wb);
 #ifdef TEX_FLOAT16
-  uint16_t *wptr = (uint16_t*)&buf[0];
+  uint16_t* wptr = (uint16_t*)glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, w*h*3*sizeof(uint16_t), GL_MAP_WRITE_BIT);
 #else
-  float4 *wptr = (float4*)&buf[0];
+  float4* wptr = (float4*)glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, w*h*sizeof(float4), GL_MAP_WRITE_BIT);
 #endif
+  assert(wptr != nullptr);
+  glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
 
   lCompose(rptr, wptr,
       rank, nrank, comm,
       wCrdPrev, wSizePrev, viewPort,
       m_domainView ? m_domainViewIdx : -1,
       compositingOrderPrev);
-
   wCrdPrev = wCrd;
   wSizePrev = wSize;
   compositingOrderPrev = compositingOrder;
- 
+
+  
+  /* unmap write-back buffer */ 
+  glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo_wb);
+  glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
+  glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
   /* unmap read-back buffer */ 
   glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_rb[odd]);
   glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
   glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
 
+ 
 #ifdef __COMPOSITE_PROFILE
   glFinish();
   MPI_Barrier(comm);
@@ -3363,11 +3308,15 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
 
   if (isMaster())
   {
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo_wb);
+    glBindTexture(GL_TEXTURE_2D, imgTex);
 #ifdef TEX_FLOAT16
-    lUpdateTextureHALF3(w,h,internalformat, imgTex, wptr);
+    glTexSubImage2D(GL_TEXTURE_2D,0, 0,0,w,h, GL_RGB, GL_HALF_FLOAT, 0);
 #else
-    lUpdateTextureFLOAT4(w,h,internalformat, imgTex, wptr);
+    glTexSubImage2D(GL_TEXTURE_2D,0, 0,0,w,h, GL_RGBA, GL_FLOAT, 0);
 #endif
+    glBindTexture(GL_TEXTURE_2D,0);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
 #ifdef __COMPOSITE_PROFILE
     glFinish();
@@ -3379,6 +3328,7 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
         t80-t70);
 #endif
   }
+ 
 
 }
 
