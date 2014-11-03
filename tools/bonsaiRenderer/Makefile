@@ -40,6 +40,7 @@ LDFLAGS = -lGL -lGLU -lglut -lGLEW -fopenmp -lrt
 LDFLAGS += -pie -rdynamic
 #-L$(PWD)/lib/linux -lGLEW_x86_64
 
+
 ifeq ($(FP32),1)
 	CXXFLAGS += -DTEX_FLOAT32
 else
@@ -49,8 +50,12 @@ else
 	endif
 endif
 
+ifeq ($(NONBLOCK),1)
+	CXXFLAGS += -D__COMPOSITE_NONBLOCK
+else
 ifeq ($(PROFILE),1)
 	CXXFLAGS += -D__COMPOSITE_PROFILE
+endif
 endif
 
 ifeq ($(ICET),1)

@@ -364,7 +364,7 @@ SmokeRenderer::~SmokeRenderer()
   glDeleteTextures(1, &m_lightDepthTexture);
   glDeleteTextures(1, &mPosBufferTexture);
 
-  glDeleteTextures(4, m_imageTex);
+  glDeleteTextures(5, m_imageTex);
   glDeleteTextures(1, &m_depthTex);
   glDeleteTextures(3, m_downSampledTex);
 
@@ -3244,6 +3244,16 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   double t00 = MPI_Wtime();
 #endif
 
+  static unsigned long long frameCount = 0;
+#ifdef __COMPOSITE_NONBLOCK
+  const int even = frameCount&1;
+  const int odd  = !even;
+  frameCount++;
+#else
+  const int even = 0;
+  const int odd  = 0;
+#endif
+
 
   /* determine visible viewport bounds */ 
 
@@ -3254,7 +3264,14 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
 
   m_fbo->Bind();
   m_fbo->AttachTexture(GL_TEXTURE_2D, imgTex, GL_COLOR_ATTACHMENT0_EXT);
-  glBindTexture(GL_TEXTURE_2D, m_imageTex[4]);  
+  if (frameCount == 0)
+  {
+    glBindTexture(GL_TEXTURE_2D, m_imageTex[4]);  
+    glCopyTexImage2D(GL_TEXTURE_2D,0,internalformat, wCrd.x,wCrd.y,wSize.x,wSize.y,0);
+    glBindTexture(GL_TEXTURE_2D, m_imageTex[5]);  
+    glCopyTexImage2D(GL_TEXTURE_2D,0,internalformat, wCrd.x,wCrd.y,wSize.x,wSize.y,0);
+  }
+  glBindTexture(GL_TEXTURE_2D, m_imageTex[4+even]);  
   glCopyTexImage2D(GL_TEXTURE_2D,0,internalformat, wCrd.x,wCrd.y,wSize.x,wSize.y,0);
   glBindTexture(GL_TEXTURE_2D, 0);
   m_fbo->Disable();
@@ -3265,24 +3282,36 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   double t10 = MPI_Wtime();
 #endif
 
-  static GLuint pbo_id = 0;
-  if (!pbo_id)
+  static GLuint pbo_id[2] = {0};
+  if (!pbo_id[0])
   {
     const int pbo_size = 8*4096*3072*sizeof(float4);
-    glGenBuffers(1, &pbo_id);
-    glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_id);
+    glGenBuffers(2, pbo_id);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_id[0]);
+    glBufferData(GL_PIXEL_PACK_BUFFER, pbo_size, 0, GL_STATIC_READ);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_id[1]);
     glBufferData(GL_PIXEL_PACK_BUFFER, pbo_size, 0, GL_STATIC_READ);
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
   }
 
-  glBindTexture(GL_TEXTURE_2D, m_imageTex[4]);
-  glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_id);
+  if (frameCount == 0)
+  {
+    glBindTexture(GL_TEXTURE_2D, m_imageTex[4]);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_id[0]);
+    glBindTexture(GL_TEXTURE_2D, m_imageTex[5]);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_id[1]);
+  }
+  glBindTexture(GL_TEXTURE_2D, m_imageTex[4+even]);
+  glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_id[even]);
+  
 
 #ifdef TEX_FLOAT16
   static std::vector<uint16_t> imgLoc, imgGlb;
   imgLoc.resize(2*w*h*4);
   imgGlb.resize(2*w*h*4);
   glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_HALF_FLOAT, 0);
+  
+  glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_id[odd]);
   GLvoid *rptr = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, wSize.x*wSize.y*4*sizeof(uint16_t), GL_MAP_READ_BIT);
 #pragma omp parallel for schedule(static)
   for (int i = 0; i < wSize.x*wSize.y*4; i++)
@@ -3295,6 +3324,7 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   imgGlb.resize(2*w*h);
 
   glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, 0);
+  glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_id[odd]);
   GLvoid *rptr = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, wSize.x*wSize.y*sizeof(float4), GL_MAP_READ_BIT);
 #pragma omp parallel for schedule(static)
   for (int i = 0; i < wSize.x*wSize.y; i++)
@@ -3354,6 +3384,7 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   }
 
 }
+
 
 /* some code samples and ideas are taken from IceT */
 std::array<int,4> SmokeRenderer::getVisibleViewport() const
@@ -4088,6 +4119,7 @@ void SmokeRenderer::createBuffers(int w, int h)
   m_imageTex[2] = createTexture(GL_TEXTURE_2D, m_imageW, m_imageH, format, GL_RGBA);
   m_imageTex[3] = createTexture(GL_TEXTURE_2D, m_imageW, m_imageH, format, GL_RGBA);
   m_imageTex[4] = createTexture(GL_TEXTURE_2D, m_imageW, m_imageH, format, GL_RGBA);
+  m_imageTex[5] = createTexture(GL_TEXTURE_2D, m_imageW, m_imageH, format, GL_RGBA);
 
   //  m_depthTex = createTexture(GL_TEXTURE_2D, m_imageW, m_imageH, GL_DEPTH_COMPONENT24_ARB, GL_DEPTH_COMPONENT);
   m_depthTex = createTexture(GL_TEXTURE_2D, m_imageW, m_imageH, GL_DEPTH_COMPONENT32_ARB, GL_DEPTH_COMPONENT);
