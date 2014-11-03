@@ -290,7 +290,7 @@ class RendererDataDistribute : public RendererData
 
     virtual void setNMAXSAMPLE(const int n) {NMAXSAMPLE = n;}
     virtual bool isDistributed() const { return distributed; }
-    virtual void set_hfac(const int h) { hfac = h; }
+    virtual void set_hfac(const float h) { hfac = h; }
 
   private:
 
