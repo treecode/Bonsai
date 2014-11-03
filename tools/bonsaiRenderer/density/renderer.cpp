@@ -3314,13 +3314,14 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
 #ifdef TEX_FLOAT16
   glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_HALF_FLOAT, 0);
   glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_rb[odd]);
-  uint16_t *rptr = (uint16_t*)glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, wSize.x*wSize.y*4*sizeof(uint16_t), GL_MAP_READ_BIT);
+  uint16_t *rptr = (uint16_t*)glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, wSizePrev.x*wSizePrev.y*4*sizeof(uint16_t), GL_MAP_READ_BIT);
 #else /* TEX_FLOAT16 */
   glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, 0);
   glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_rb[odd]);
-  float4 *rptr = (float4*)glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, wSize.x*wSize.y*sizeof(float4), GL_MAP_READ_BIT);
+  float4 *rptr = (float4*)glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, wSizePrev.x*wSizePrev.y*sizeof(float4), GL_MAP_READ_BIT);
 #endif /* TEX_FLOAT16 */
-  assert(rptr != nullptr || wSize.x*wSize.y == 0);
+  assert(wSizePrev.x*wSizePrev.y >= 0);
+  assert(rptr != nullptr || wSizePrev.x*wSizePrev.y == 0);
 
   glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
   glBindTexture(GL_TEXTURE_2D,0);
