@@ -1600,7 +1600,7 @@ static inline uint16_t l_float2half(float f)
   return Float16Compressor::compress(f);
 }
 
-static void lComposeHalf(
+static void lCompose(
     uint16_t* imgSrc,
     uint16_t* imgDst,
     const int rank, const int nrank, const MPI_Comm &comm,
@@ -1840,7 +1840,7 @@ static void lComposeHalf(
 }
 #endif
 //#else /* TEX_FLOAT16 */
-static void lComposeFloat(
+static void lCompose(
     float4* imgSrc,
     float4* imgDst,
     const int rank, const int nrank, const MPI_Comm &comm,
@@ -3085,7 +3085,7 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
 #endif
   else
   {
-    lComposeFloat(
+    lCompose(
         &imgLoc[0], &imgGlb[0], 
         rank, nrank, comm,
         wCrd, wSize, viewPort,
@@ -3262,6 +3262,10 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   int2 wSize = make_int2(visibleViewport[2], visibleViewport[3]);
   const int2 viewPort = make_int2(mWindowW,mWindowH);
 
+  static int2 wCrdPrev  = wCrd;
+  static int2 wSizePrev = wSize;
+  static auto compositingOrderPrev = compositingOrder;
+
   m_fbo->Bind();
   m_fbo->AttachTexture(GL_TEXTURE_2D, imgTex, GL_COLOR_ATTACHMENT0_EXT);
   if (frameCount == 0)
@@ -3306,30 +3310,13 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   
 
 #ifdef TEX_FLOAT16
-  static std::vector<uint16_t> imgLoc, imgGlb;
-  imgLoc.resize(2*w*h*4);
-  imgGlb.resize(2*w*h*4);
   glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_HALF_FLOAT, 0);
-  
   glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_id[odd]);
   GLvoid *rptr = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, wSize.x*wSize.y*4*sizeof(uint16_t), GL_MAP_READ_BIT);
-#pragma omp parallel for schedule(static)
-  for (int i = 0; i < wSize.x*wSize.y*4; i++)
-    imgLoc[i] = reinterpret_cast<uint16_t*>(rptr)[i];
-
 #else /* TEX_FLOAT16 */
-  
-  static std::vector<float4> imgLoc, imgGlb;
-  imgLoc.resize(2*w*h);
-  imgGlb.resize(2*w*h);
-
   glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, 0);
   glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_id[odd]);
   GLvoid *rptr = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, wSize.x*wSize.y*sizeof(float4), GL_MAP_READ_BIT);
-#pragma omp parallel for schedule(static)
-  for (int i = 0; i < wSize.x*wSize.y; i++)
-    imgLoc[i] = reinterpret_cast<float4*>(rptr)[i];
-
 #endif /* TEX_FLOAT16 */
 
   glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
@@ -3342,21 +3329,22 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   const double t60 = MPI_Wtime();
 #endif
 
+  static std::vector<float> imgGlb;
+  imgGlb.resize(2*w*h*4);
+  lCompose(
 #ifdef TEX_FLOAT16
-  lComposeHalf(
-      &imgLoc[0], &imgGlb[0], 
-      rank, nrank, comm,
-      wCrd, wSize, viewPort,
-      m_domainView ? m_domainViewIdx : -1,
-      compositingOrder);
+      (uint16_t*)rptr, (uint16_t*)&imgGlb[0], 
 #else
-  lComposeFloat(
-      &imgLoc[0], &imgGlb[0], 
-      rank, nrank, comm,
-      wCrd, wSize, viewPort,
-      m_domainView ? m_domainViewIdx : -1,
-      compositingOrder);
+      (float4*)rptr, (float4*)&imgGlb[0], 
 #endif
+      rank, nrank, comm,
+      wCrdPrev, wSizePrev, viewPort,
+      m_domainView ? m_domainViewIdx : -1,
+      compositingOrderPrev);
+
+  wCrdPrev = wCrd;
+  wSizePrev = wSize;
+  compositingOrderPrev = compositingOrder;
 
 #ifdef __COMPOSITE_PROFILE
   glFinish();
@@ -3367,9 +3355,9 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   if (isMaster())
   {
 #ifdef TEX_FLOAT16
-    lUpdateTextureHALF3(w,h,internalformat, imgTex, &imgGlb[0]);
+    lUpdateTextureHALF3(w,h,internalformat, imgTex, (uint16_t*)&imgGlb[0]);
 #else
-    lUpdateTextureFLOAT4(w,h,internalformat, imgTex, &imgGlb[0]);
+    lUpdateTextureFLOAT4(w,h,internalformat, imgTex, (float4*)&imgGlb[0]);
 #endif
 
 #ifdef __COMPOSITE_PROFILE
