@@ -1766,6 +1766,24 @@ static void lCompose(
           const int i = idx % viewportSize.x;
           const int j = idx / viewportSize.x;
           const int k = (j-y0)*(x1-x0) + (i-x0) - offs;
+#ifdef F16C
+          _v4sf &dst = *(_v4sf*)&imgLoc[idx - idx0];
+          const float w =  __builtin_ia32_vec_ext_v4sf(dst, 3);
+          if (x0 <= i && i < x1 &&
+              y0 <= j && j < y1 && 
+              k  >= 0 && k < cnt &&
+              w < 1.0f)
+          {
+            const auto &src = recvbuf[base + k];
+            const _v4si icol = (_v4si){src[0],src[1],src[2],src[3]};
+            _v4sf fcol;
+            __asm__("vcvtph2ps %1,%0" : "=x"(fcol) :"x"(icol));
+            const _v4sf alpha = __builtin_ia32_shufps(dst,dst, 0xFF);
+            const _v4sf one   = (_v4sf){1.0f,1.0f,1.0f,1.0f};
+            const _v4sf f = one - alpha;
+            dst += fcol * f;
+          }
+#else /* F16C */
           float4 &dst = imgLoc[idx - idx0];
           if (x0 <= i && i < x1 &&
               y0 <= j && j < y1 && 
@@ -1773,28 +1791,17 @@ static void lCompose(
               dst.w < 1.0f)
           {
             const auto &src = recvbuf[base + k];
-#ifdef F16C
-            const _v4si icol = (_v4si){src[0],src[1],src[2],src[3]};
-            _v4sf fcol;
-            __asm__("vcvtph2ps %1,%0" : "=x"(fcol) :"x"(icol));
-            const float r =  __builtin_ia32_vec_ext_v4sf(fcol, 0);
-            const float g =  __builtin_ia32_vec_ext_v4sf(fcol, 1);
-            const float b =  __builtin_ia32_vec_ext_v4sf(fcol, 2);
-            const float w =  __builtin_ia32_vec_ext_v4sf(fcol, 3);
-#else
             const float r = l_half2float(src[0]);
             const float g = l_half2float(src[1]);
             const float b = l_half2float(src[2]);
             const float w = l_half2float(src[3]);
-#endif
-
             const float f = 1.0f - dst.w;
             dst.x += r * f;
             dst.y += g * f;
             dst.z += b * f;
             dst.w += w * f;
-            dst.w = std::min(dst.w, 1.0f);
           }
+#endif  /* F16C */
         }
       }
 
