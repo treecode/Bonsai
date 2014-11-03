@@ -524,7 +524,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
   std::string fullScreenMode    = "";
   bool stereo     = false;
 #endif
-  int nmaxsample = 200000;
+  int nmaxsample = 10000;
   bool doDD = false;
   std::string display;
 
@@ -535,7 +535,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
   std::string imageFileName;
   std::string cameraFileName;
   int nCameraFrame = 0;
-  float hfac = 1.1f;
+  float hfac = 1.0f;
 
 
   {

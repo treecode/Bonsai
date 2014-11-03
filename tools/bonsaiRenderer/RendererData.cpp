@@ -21,18 +21,44 @@ void RendererData::computeMinMax()
   }
 
   const int _n = data.size();
-  for (int i = 0; i < _n; i++)
+#pragma omp parallel
   {
-    _xminl = std::min(_xminl, posx(i));
-    _yminl = std::min(_yminl, posy(i));
-    _zminl = std::min(_zminl, posz(i));
-    _xmaxl = std::max(_xmaxl, posx(i));
-    _ymaxl = std::max(_ymaxl, posy(i));
-    _zmaxl = std::max(_zmaxl, posz(i));
-    for (int p = 0; p < NPROP; p++)
+    float xminl,yminl,zminl;
+    float xmaxl,ymaxl,zmaxl;
+    xminl=yminl=zminl=+HUGE;
+    xmaxl=ymaxl=zmaxl=-HUGE;
+    float attributeMinL[NPROP] = {+HUGE};
+    float attributeMaxL[NPROP] = {-HUGE};
+
+#pragma omp for schedule(static)
+    for (int i = 0; i < _n; i++)
     {
-      _attributeMinL[p] = std::min(_attributeMinL[p], attribute(static_cast<Attribute_t>(p),i));
-      _attributeMaxL[p] = std::max(_attributeMaxL[p], attribute(static_cast<Attribute_t>(p),i));
+      xminl = std::min(xminl, posx(i));
+      yminl = std::min(yminl, posy(i));
+      zminl = std::min(zminl, posz(i));
+      xmaxl = std::max(xmaxl, posx(i));
+      ymaxl = std::max(ymaxl, posy(i));
+      zmaxl = std::max(zmaxl, posz(i));
+      for (int p = 0; p < NPROP; p++)
+      {
+        attributeMinL[p] = std::min(attributeMinL[p], attribute(static_cast<Attribute_t>(p),i));
+        attributeMaxL[p] = std::max(attributeMaxL[p], attribute(static_cast<Attribute_t>(p),i));
+      }
+    }
+
+#pragma omp critical
+    {
+      _xminl = std::min(_xminl, xminl);
+      _yminl = std::min(_yminl, yminl);
+      _zminl = std::min(_zminl, zminl);
+      _xmaxl = std::max(_xmaxl, xmaxl);
+      _ymaxl = std::max(_ymaxl, ymaxl);
+      _zmaxl = std::max(_zmaxl, zmaxl);
+      for (int p = 0; p < NPROP; p++)
+      {
+        _attributeMinL[p] = std::min(_attributeMinL[p], attributeMinL[p]);
+        _attributeMaxL[p] = std::max(_attributeMaxL[p], attributeMaxL[p]);
+      }
     }
   }
   _rminl = std::min(_rminl, _xminl);
@@ -42,6 +68,8 @@ void RendererData::computeMinMax()
   _rmaxl = std::max(_rmaxl, _ymaxl);
   _rmaxl = std::max(_rmaxl, _zmaxl);
 
+#if 0
+#pragma omp parallel for schedule(static)
   for (int i = 0; i < _n; i++)
   {
     assert(posx(i) >= _xminl && posx(i) <= _xmaxl);
@@ -50,7 +78,12 @@ void RendererData::computeMinMax()
     assert(posx(i) >= _rminl && posx(i) <= _rmaxl);
     assert(posy(i) >= _rminl && posy(i) <= _rmaxl);
     assert(posz(i) >= _rminl && posz(i) <= _rmaxl);
+    for (int p = 0; p < NPROP; p++)
+      assert(
+          attribute(static_cast<Attribute_t>(p),i) >= _attributeMinL[p] &&
+          attribute(static_cast<Attribute_t>(p),i) <= _attributeMaxL[p]);
   }
+#endif
 
 
   float minloc[] = {_xminl, _yminl, _zminl, _rminl};
@@ -80,6 +113,7 @@ void RendererData::rescale(const Attribute_t p, const Func &scale)
 {
   float min = +HUGE, max = -HUGE;
   const int _n = data.size();
+#pragma omp parallel for schedule(static) reduction(min:min) reduction(max:max)
   for (int i = 0; i < _n; i++)
   {
     attribute(p,i) = scale(attribute(p,i));

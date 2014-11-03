@@ -51,7 +51,7 @@ class RendererData
     {
       float posx, posy, posz;
       IDType ID;
-      float attribute[NPROP];
+      std::array<float,NPROP> attribute;
     };
     std::vector<particle_t> data;
     bool new_data;
@@ -283,7 +283,7 @@ class RendererDataDistribute : public RendererData
   public:
 
     RendererDataDistribute(const int rank, const int nrank, const MPI_Comm &comm) : 
-      RendererData(rank,nrank,comm), NMAXSAMPLE(200000), distributed(false), hfac(1.1f)
+      RendererData(rank,nrank,comm), NMAXSAMPLE(100000), distributed(false), hfac(1.0f)
   {
     assert(nrank <= NMAXPROC);
   }
@@ -336,6 +336,35 @@ class RendererDataDistribute : public RendererData
         const vector3 xlow[],
         const vector3 xhigh[],
         std::vector<int> &boxes);
+    
+    inline void which_boxes_z(
+			int p, const int i,
+			const vector3 &pos,
+			const float h,
+			const vector3 xlow[],
+			const vector3 xhigh[],
+			std::vector<int> boxes[NMAXPROC]);
+    inline void which_boxes_y(
+			int p, const int i,
+			const vector3 &pos,
+			const float h,
+			const vector3 xlow[],
+			const vector3 xhigh[],
+			std::vector<int> boxes[NMAXPROC]);
+    inline void which_boxes_x(
+			const vector3 &pos,
+      const int i,
+			const float h,
+			const vector3 xlow[],
+			const vector3 xhigh[],
+			std::vector<int> boxes[NMAXPROC]);
+    inline void which_boxes(
+        const vector3 &pos,
+        const int i, 
+        const float h,
+        const vector3 xlow[],
+        const vector3 xhigh[],
+        std::vector<int> boxes[NMAXPROC]);
 
     void alltoallv(std::vector<particle_t> psend[], std::vector<particle_t> precv[]);
 
