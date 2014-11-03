@@ -3219,7 +3219,7 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   static GLuint pbo_rb[2] = {0};
   if (!pbo_rb[0])
   {
-    const int pbo_size = 8*4096*3072*sizeof(float4);
+    const int pbo_size = 2*2000*2000*sizeof(float4);
     glGenBuffers(2, pbo_rb);
     glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_rb[0]);
     glBufferData(GL_PIXEL_PACK_BUFFER, pbo_size, 0, GL_STATIC_READ);
@@ -3254,6 +3254,19 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   assert(wSizePrev.x*wSizePrev.y >= 0);
   assert(rptr != nullptr || wSizePrev.x*wSizePrev.y == 0);
 
+#ifdef __COMPOSITE_COPY
+  {
+    static std::vector<float> rb_buf;
+    rb_buf.resize(2*w*h*4);
+  
+    auto src = rptr;
+    rptr = (decltype(src))&rb_buf[0];
+#pragma omp parallel for schedule(static)
+    for (int i = 0; i  < wSizePrev.x*wSizePrev.y*4; i++)
+      rptr[i] = src[i];
+  }
+#endif
+
   glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
   glBindTexture(GL_TEXTURE_2D,0);
 
@@ -3266,7 +3279,7 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   static GLuint pbo_wb = 0;
   if (!pbo_wb)
   {
-    const int pbo_size = 8*4096*3072*sizeof(float4);
+    const int pbo_size = 2*2000*2000*sizeof(float4);
     glGenBuffers(1, &pbo_wb);
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo_wb);
     glBufferData(GL_PIXEL_UNPACK_BUFFER, pbo_size, 0, GL_STATIC_DRAW);
@@ -3277,22 +3290,39 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   /* map write-back buffer */
   glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo_wb);
 #ifdef TEX_FLOAT16
-  uint16_t* wptr = (uint16_t*)glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, w*h*3*sizeof(uint16_t), GL_MAP_WRITE_BIT);
+  const int wb_size = w*h*3;
+  uint16_t* wptr = (uint16_t*)glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, wb_size*sizeof(uint16_t), GL_MAP_WRITE_BIT);
 #else
-  float4* wptr = (float4*)glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, w*h*sizeof(float4), GL_MAP_WRITE_BIT);
+  const int wb_size = w*h*4;
+  float4* wptr = (float4*)glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, wb_size*sizeof(float), GL_MAP_WRITE_BIT);
 #endif
   assert(wptr != nullptr);
   glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
+  {
+#ifdef __COMPOSITE_COPY
+    static std::vector<float> wb_buf;
+    wb_buf.resize(2*w*h*4);
+    auto wb_pbo_buf = wptr;
+    wptr = reinterpret_cast<decltype(wb_pbo_buf)>(&wb_buf[0]);
+#endif
 
-  lCompose(rptr, wptr,
-      rank, nrank, comm,
-      wCrdPrev, wSizePrev, viewPort,
-      m_domainView ? m_domainViewIdx : -1,
-      compositingOrderPrev);
-  wCrdPrev = wCrd;
-  wSizePrev = wSize;
-  compositingOrderPrev = compositingOrder;
+    lCompose(rptr, wptr,
+        rank, nrank, comm,
+        wCrdPrev, wSizePrev, viewPort,
+        m_domainView ? m_domainViewIdx : -1,
+        compositingOrderPrev);
+    wCrdPrev = wCrd;
+    wSizePrev = wSize;
+    compositingOrderPrev = compositingOrder;
+
+#ifdef __COMPOSITE_COPY
+#pragma omp parallel for schedule(static)
+    for (int i = 0; i < wb_size; i++)
+      wb_pbo_buf[i] = wptr[i];
+    wptr = wb_pbo_buf;
+#endif
+  }
 
   
   /* unmap write-back buffer */ 

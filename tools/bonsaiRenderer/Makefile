@@ -50,6 +50,10 @@ else
 	endif
 endif
 
+ifeq ($(COPY),1)
+	CXXFLAGS += -D__COMPOSITE_COPY
+endif
+
 ifeq ($(NONBLOCK),1)
 	CXXFLAGS += -D__COMPOSITE_NONBLOCK
 else
