@@ -464,7 +464,7 @@ class SmokeRenderer : public SmokeRendererParams
     int                 m_srcLightTexture;
     GLuint              m_lightDepthTexture;
 
-    GLuint              m_imageTex[5], m_depthTex;
+    GLuint              m_imageTex[6], m_depthTex;
     GLuint              m_downSampledTex[3];
 
     GLuint              m_rampTex;
@@ -493,8 +493,8 @@ class SmokeRenderer : public SmokeRendererParams
 
     std::vector<int> compositingOrder;
     std::array<int,4> getVisibleViewport() const;
-    void composeImages(const GLuint imgTex, const GLuint depthTex = 0);
-
+    void composeImages(const GLuint imgTex, const GLuint depthTex);
+    void composeImages(const GLuint imgTex);
 
   public:
 
