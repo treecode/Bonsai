@@ -37,7 +37,7 @@ ENGINE=density
 INCLUDE_FLAGS= -I./ -I./$(ENGINE)/
 INCLUDE_FLAGS += -I$(CUDA_TK)/include 
 LDFLAGS = -lGL -lGLU -lglut -lGLEW -fopenmp -lrt
-LDFLAGS += -pie -rdynamic
+LDFLAGS += -pie -rdynamic -lpthread
 #-L$(PWD)/lib/linux -lGLEW_x86_64
 
 

@@ -12,6 +12,8 @@
 #include <omp.h>
 #include <functional>
 #include <memory>
+#include <future> 
+#include <chrono> 
 
 #include "renderloop.h"
 #include "anyoption.h"
@@ -733,7 +735,15 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
       ::exit(0);
     }
 
-    auto dataPtr = fetchNewDataAsync();
+
+    std::future<std::shared_ptr<RendererDataT>> fut = std::async(std::launch::async,fetchNewDataAsync);
+    std::chrono::milliseconds span (100);
+    while (fut.wait_for(span)==std::future_status::timeout)
+    {
+      std::cerr << "crap.";
+    }
+
+    auto dataPtr = fut.get();
     if (dataPtr)
       *rDataPtr = std::move(*dataPtr);
   };
