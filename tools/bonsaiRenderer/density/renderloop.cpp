@@ -1870,9 +1870,9 @@ class Demo
           assert(ix >= 0 && ix < 256);
           assert(iy >= 0 && iy < 256);
           float4 Cstar ;
-          Cstar.x = colorMap[iy][ix][0];
-          Cstar.y = colorMap[iy][ix][1];
-          Cstar.z = colorMap[iy][ix][2];
+          Cstar.x = colorMap[iy][ix][0]*1.2+10;
+          Cstar.y = colorMap[iy][ix][1]*1.2+10;
+          Cstar.z = colorMap[iy][ix][2]*0.4+10;
           Cstar.w = type + typeBase;
           color   = Cstar;
 #if 1
@@ -1922,9 +1922,12 @@ class Demo
               const float Mstar = sDisk.sampleMass(IDval);
               const float4 Cstar = sDisk.getColour(Mstar);
 #endif
-              color = ((IDval & (1024/nps - 1)) == 0) ? /* one in 1000 stars glows a bit */
+              const bool glow = (IDval & (1024/nps-1)) == 0;
+              color = glow ? /* one in 1000 stars glows a bit */
                 sGlow.getColour(sGlow.sampleMass(IDval)) :  (0) ? color : make_float4(Cstar.x*0.01f, Cstar.y*0.01f, Cstar.z*0.01f, Cstar.w);
               color.w = 1.0f;
+              if (glow)
+                color.w = 5.0f;
               break;
             }              
             case 3:   /* Dust */

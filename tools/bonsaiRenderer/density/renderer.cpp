@@ -3861,6 +3861,7 @@ void SmokeRenderer::volumetricNew()
   prog->setUniform1f("dustAlpha", m_dustAlpha);
   prog->setUniform1f("fogDist", m_fog);
   prog->setUniform1f("cullDarkMatter", (float) m_cullDarkMatter);
+ 
 
   // PS
   prog->bindTexture("spriteTex",  m_sphTex, GL_TEXTURE_2D, 1);
@@ -3875,6 +3876,7 @@ void SmokeRenderer::volumetricNew()
   prog->setUniformfv("p3o", (GLfloat*)&m_clippingPlane[3], 4, 1);
   prog->setUniformfv("p4o", (GLfloat*)&m_clippingPlane[4], 4, 1);
   prog->setUniformfv("p5o", (GLfloat*)&m_clippingPlane[5], 4, 1);
+  
 
 
   //glClientActiveTexture(GL_TEXTURE0);
