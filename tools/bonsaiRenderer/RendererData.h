@@ -200,7 +200,7 @@ class RendererData
 
     virtual bool  isDistributed() const { return false; }
     virtual void  setNMAXSAMPLE(const int n) {};
-    virtual void set_hfac(const int h) {};
+    virtual void set_hfac(const float h) {};
     virtual void  distribute() {}
     virtual float getBoundBoxLow (const int i) const 
     {
