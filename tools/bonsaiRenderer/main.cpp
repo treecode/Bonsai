@@ -11,6 +11,7 @@
 #include "SharedMemory.h"
 #include <omp.h>
 #include <functional>
+#include <memory>
 
 #include "renderloop.h"
 #include "anyoption.h"
@@ -21,9 +22,9 @@
 #endif
 
 #ifdef USE_ICET
-  #include <IceT.h>
-  #include <IceTGL.h>
-  #include <IceTMPI.h>
+#include <IceT.h>
+#include <IceTGL.h>
+#include <IceTMPI.h>
 #endif
 
 using ShmQHeader = SharedMemoryClient<BonsaiSharedQuickHeader>;
@@ -67,7 +68,7 @@ bool fetchSharedData(const bool quickSync, RendererData &rData, const int rank, 
 
 
   static float tLast = -1.0f;
-    
+
 
   if (rData.isNewData())
     return false;
@@ -144,7 +145,7 @@ bool fetchSharedData(const bool quickSync, RendererData &rData, const int rank, 
           nS++;
       }
     }
-  
+
     MPI_Reduce(&ntypeloc, &ntypeglb, ntypecount, MPI_LONG_LONG, MPI_SUM, 0, comm);
     if (rank == 0)
     {
@@ -225,7 +226,7 @@ void rescaleData(RendererData &rData,
     if (rank == 0)
       fprintf(stderr, " DD= %g sec \n", t1-t0);
   }
- 
+
   if (rank == 0) 
     fprintf(stderr, "vel: %g %g  rho= %g %g \n ",
         rData.attributeMin(RendererData::VEL),
@@ -404,7 +405,7 @@ static T* readBonsai(
       rData.attribute(RendererData::H,   ip) = 0.0;
     }
   }
-  
+
   MPI_Reduce(&ntypeloc, &ntypeglb, ntypecount, MPI_LONG_LONG, MPI_SUM, 0, comm);
   if (rank == 0)
   {
@@ -433,7 +434,7 @@ static T* readJamieSPH(
   {
     out.getHeader().printFields();
   }
-  
+
   struct __attribute__((__packed__)) header_t
   {
     int ntot;
@@ -456,7 +457,7 @@ static T* readJamieSPH(
     double dt;
     double omega2;
   };
-  
+
   struct __attribute__((__packed__)) sph_t
   {
     double x,y,z;
@@ -539,25 +540,25 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
 
 
   {
-		AnyOption opt;
+    AnyOption opt;
 
 #define ADDUSAGE(line) {{std::stringstream oss; oss << line; opt.addUsage(oss.str());}}
 
-		ADDUSAGE(" ");
-		ADDUSAGE("Usage:");
-		ADDUSAGE(" ");
-		ADDUSAGE(" -h  --help             Prints this help ");
-		ADDUSAGE(" -i  --infile #         Input snapshot filename ");
+    ADDUSAGE(" ");
+    ADDUSAGE("Usage:");
+    ADDUSAGE(" ");
+    ADDUSAGE(" -h  --help             Prints this help ");
+    ADDUSAGE(" -i  --infile #         Input snapshot filename ");
     ADDUSAGE(" -I  --insitu          Enable in-situ rendering ");
     ADDUSAGE("     --sleep  #        start up sleep in sec [1]  ");
     ADDUSAGE("     --noquicksync      disable syncing with simulation [enabled] ");
-		ADDUSAGE("     --reduceDM    #    cut down DM dataset by # factor [10]. 0-disable DM");
-		ADDUSAGE("     --reduceS     #    cut down stars dataset by # factor [1]. 0-disable S");
+    ADDUSAGE("     --reduceDM    #    cut down DM dataset by # factor [10]. 0-disable DM");
+    ADDUSAGE("     --reduceS     #    cut down stars dataset by # factor [1]. 0-disable S");
 #ifndef PARTICLESRENDERER
-		ADDUSAGE("     --fullscreen  #    set fullscreen mode string");
-		ADDUSAGE("     --stereo           enable stereo rendering");
+    ADDUSAGE("     --fullscreen  #    set fullscreen mode string");
+    ADDUSAGE("     --stereo           enable stereo rendering");
 #endif
-		ADDUSAGE(" -d  --doDD             enable domain decomposition  [disabled]");
+    ADDUSAGE(" -d  --doDD             enable domain decomposition  [disabled]");
     ADDUSAGE(" -s  --nmaxsample   #   set max number of samples for DD [" << nmaxsample << "]");
     ADDUSAGE("     --hfac         #   set scaling factor for 'h' in DD [" << hfac << "]");
     ADDUSAGE(" -D  --display      #   set DISPLAY=display, otherwise inherited from environment");
@@ -566,12 +567,12 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     ADDUSAGE("     --image        #   image base filename");
 
 
-		opt.setFlag  ( "help" ,        'h');
-		opt.setOption( "infile",       'i');
-		opt.setFlag  ( "insitu",       'I');
-		opt.setOption( "reduceDM");
-		opt.setOption( "sleep");
-		opt.setOption( "reduceS");
+    opt.setFlag  ( "help" ,        'h');
+    opt.setOption( "infile",       'i');
+    opt.setFlag  ( "insitu",       'I');
+    opt.setOption( "reduceDM");
+    opt.setOption( "sleep");
+    opt.setOption( "reduceS");
     opt.setOption( "fullscreen");
     opt.setOption( "camera");
     opt.setOption( "cameraframe");
@@ -621,7 +622,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
 
 #undef ADDUSAGE
   }
-  
+
   MPI_Comm comm = MPI_COMM_WORLD;
   int mpiInitialized = 0;
   MPI_Initialized(&mpiInitialized);
@@ -633,7 +634,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
   int nranks, rank;
   MPI_Comm_size(comm, &nranks);
   MPI_Comm_rank(comm, &rank);
-  
+
   char processor_name[MPI_MAX_PROCESSOR_NAME];
   int namelen;
   MPI_Get_processor_name(processor_name,&namelen);
@@ -683,7 +684,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
   }
 
   assert(rDataPtr != 0);
- 
+
 
   CameraPath *camera = nullptr;
   if (!cameraFileName.empty())
@@ -692,10 +693,10 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     rDataPtr->setCameraPath(camera); 
     if (nCameraFrame > 0)
     {
-       if (rank == 0)
-         fprintf(stderr, " Reframe camera from %d -> %d \n",
-             camera->nFrames(), nCameraFrame);
-       camera->reframe(nCameraFrame);
+      if (rank == 0)
+        fprintf(stderr, " Reframe camera from %d -> %d \n",
+            camera->nFrames(), nCameraFrame);
+      camera->reframe(nCameraFrame);
 
     }
   }
@@ -714,17 +715,22 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     }
 
     if (inSitu )
-      if (fetchSharedData(quickSync, *rDataPtr, rank, nranks, comm, reduceDM, reduceS))
+    {
+      static auto newDataPtr = std::make_shared<RendererDataT>(rank,nranks,comm);
+      if (fetchSharedData(quickSync, *newDataPtr, rank, nranks, comm, reduceDM, reduceS))
       {
-        int nTotal, nLocal = rDataPtr->size();
-	MPI_Allreduce(&nLocal, &nTotal, 1, MPI_INT, MPI_SUM, comm);
+        int nTotal, nLocal = newDataPtr->size();
+        MPI_Allreduce(&nLocal, &nTotal, 1, MPI_INT, MPI_SUM, comm);
 
         if (nTotal > 0)
         {
-          rescaleData(*rDataPtr, rank,nranks,comm, doDD,nmaxsample,hfac);
-          rDataPtr->setNewData();
+          rescaleData(*newDataPtr, rank,nranks,comm, doDD,nmaxsample,hfac);
+          newDataPtr->setNewData();
+          *rDataPtr = *newDataPtr;
+          newDataPtr->unsetNewData();
         }
       }
+    }
   };
   std::function<void(int)> updateFunc = dataSetFunc;
 
@@ -733,9 +739,10 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
   dataSetFunc(0);
 
 #ifdef USE_ICET
+#error "IceT is not supported. Disable this error if you want IceT and proceed at your own risk.."
   //Setup the IceT context and communicators
   IceTCommunicator icetComm =   icetCreateMPICommunicator(comm);
-/*IceTContext   icetContext =*/ icetCreateContext(icetComm);
+  /*IceTContext   icetContext =*/ icetCreateContext(icetComm);
   icetDestroyMPICommunicator(icetComm); //Save since the comm is copied to the icetContext
   icetDiagnostics(ICET_DIAG_FULL);
 #endif
@@ -749,7 +756,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
       imageFileName);
 
   while(1) 
-  return 0;
+    return 0;
 }
 
 

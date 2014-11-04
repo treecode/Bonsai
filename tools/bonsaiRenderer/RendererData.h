@@ -62,10 +62,10 @@ class RendererData
     float _xminl, _yminl, _zminl, _rminl;
     float _xmaxl, _ymaxl, _zmaxl, _rmaxl;
 
-    float _attributeMin[NPROP];
-    float _attributeMax[NPROP];
-    float _attributeMinL[NPROP];
-    float _attributeMaxL[NPROP];
+    std::array<float,NPROP> _attributeMin;
+    std::array<float,NPROP> _attributeMax;
+    std::array<float,NPROP> _attributeMinL;
+    std::array<float,NPROP> _attributeMaxL;
   
     void minmaxAttributeGlb(const Attribute_t p);
     int  getMaster() const { return 0; }
@@ -77,6 +77,7 @@ class RendererData
     double time;
     size_t nBodySim;
 
+
   public:
     RendererData(const int rank, const int nrank, const MPI_Comm &comm) : 
       rank(rank), nrank(nrank), comm(comm), cameraPtr(nullptr), firstData(true)
@@ -84,6 +85,41 @@ class RendererData
     assert(rank < nrank);
     new_data = false;
   }
+
+    virtual RendererData& operator=(RendererData& rhs)
+    {
+      data = std::move(rhs.data);
+      new_data = rhs.new_data;
+      _xmin    = rhs._xmin;
+      _ymin    = rhs._ymin;
+      _zmin    = rhs._zmin;
+      _rmin    = rhs._rmin;
+      _xmax    = rhs._xmax;
+      _ymax    = rhs._ymax;
+      _zmax    = rhs._zmax;
+      _rmax    = rhs._rmax;
+      
+      _xminl   = rhs._xminl;
+      _yminl   = rhs._yminl;
+      _zminl   = rhs._zminl;
+      _rminl   = rhs._rminl;
+      _xmaxl   = rhs._xmaxl;
+      _ymaxl   = rhs._ymaxl;
+      _zmaxl   = rhs._zmaxl;
+      _rmaxl   = rhs._rmaxl;
+
+      _attributeMin = rhs._attributeMin;
+      _attributeMax = rhs._attributeMax;
+      
+      _attributeMinL = rhs._attributeMinL;
+      _attributeMaxL = rhs._attributeMaxL;
+
+      firstData = rhs.firstData;
+      time      = rhs.time;
+      nBodySim  = rhs.nBodySim;
+
+      return *this;
+    }
 
     double getTime() const { return time; }
     void setTime(const double time) { this->time = time; }
@@ -202,7 +238,7 @@ class RendererDataDistribute : public RendererData
     int NMAXSAMPLE;
     int sample_freq;
 
-    float xlow[3], xhigh[3];
+    std::array<float,3> xlow, xhigh;
     int npx, npy, npz;
     bool distributed;
     float hfac;
@@ -382,4 +418,48 @@ class RendererDataDistribute : public RendererData
     virtual float getBoundBoxLow (const int i) const {return  xlow[i];}
     virtual float getBoundBoxHigh(const int i) const {return xhigh[i];}
     virtual std::vector<int> getVisibilityOrder(const std::array<float,3> camPos) const;
+    
+    virtual RendererDataDistribute& operator=(RendererDataDistribute& rhs)
+    {
+      data = std::move(rhs.data);
+      new_data = rhs.new_data;
+      _xmin    = rhs._xmin;
+      _ymin    = rhs._ymin;
+      _zmin    = rhs._zmin;
+      _rmin    = rhs._rmin;
+      _xmax    = rhs._xmax;
+      _ymax    = rhs._ymax;
+      _zmax    = rhs._zmax;
+      _rmax    = rhs._rmax;
+      
+      _xminl   = rhs._xminl;
+      _yminl   = rhs._yminl;
+      _zminl   = rhs._zminl;
+      _rminl   = rhs._rminl;
+      _xmaxl   = rhs._xmaxl;
+      _ymaxl   = rhs._ymaxl;
+      _zmaxl   = rhs._zmaxl;
+      _rmaxl   = rhs._rmaxl;
+
+      _attributeMin = rhs._attributeMin;
+      _attributeMax = rhs._attributeMax;
+      
+      _attributeMinL = rhs._attributeMinL;
+      _attributeMaxL = rhs._attributeMaxL;
+
+      firstData = rhs.firstData;
+      time      = rhs.time;
+      nBodySim  = rhs.nBodySim;
+
+      xlow  = rhs.xlow;
+      xhigh = rhs.xhigh;
+      npx   = rhs.npx;
+      npy   = rhs.npy;
+      npz   = rhs.npz;
+      hfac  = rhs.hfac;
+
+      distributed = rhs.distributed;
+      
+      return *this;
+    }
 };
