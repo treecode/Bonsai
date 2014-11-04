@@ -715,6 +715,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
       assert(MPI_Comm_split(comm, 0, rank, &commAsync) == MPI_SUCCESS);
     }
     static auto newDataPtr = std::make_shared<RendererDataT>(rank,nranks,commAsync);
+    newDataPtr->unsetNewData();
     if (inSitu && fetchSharedData(quickSync, *newDataPtr, rank, nranks, commAsync, reduceDM, reduceS))
     {
       int nTotal, nLocal = newDataPtr->size();
@@ -723,7 +724,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
       if (nTotal > 0)
       {
         rescaleData(*newDataPtr, rank,nranks,commAsync, doDD,nmaxsample,hfac);
-        newDataPtr->unsetNewData();
+        newDataPtr->setNewData();
         return newDataPtr;
       }
     }
