@@ -80,6 +80,13 @@ ifeq ($(PNG),1)
 	LDFLAGS += -lpng
 endif
 
+ifeq ($(MPIMT),0)
+	CXXFLAGS +=
+else
+	CXXFLAGS += -D_MPIMT
+endif
+
+
 OBJ = main.o $(ENGINE)/renderloop.o anyoption.o $(ENGINE)/renderer.o paramgl.o RendererData.o RendererDataDistribute.o
 ifeq ($(ENGINE),smoke)
 	OBJ += tr.o

@@ -17,6 +17,11 @@ option(USE_MPI
   ON
   )
 
+option(USE_MPIMT
+  "On to build support for multi-threaded MPI"
+  ON
+)
+
 option(USE_GALACTICS
   "Include John Dubinsky galatics IC generator"
   OFF
@@ -64,6 +69,9 @@ add_definitions(-std=c++11)
 if (USE_MPI)
   add_definitions(-DUSE_MPI)
   add_definitions(-fPIE -Wno-main)
+if (USE_MPIMT)
+  add_definitions(-D_MPIMT)
+endif (USE_MPIMT)
 endif (USE_MPI)
 
 if (USE_THRUST)

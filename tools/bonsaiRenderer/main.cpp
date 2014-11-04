@@ -23,6 +23,10 @@
 #define USE_ICET
 #endif
 
+#if 0
+#define _MPIMT
+#endif
+
 #ifdef USE_ICET
 #include <IceT.h>
 #include <IceTGL.h>
@@ -705,15 +709,20 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
 
   auto fetchNewDataAsync = [&]() -> std::shared_ptr<RendererDataT>
   {
-    static auto newDataPtr = std::make_shared<RendererDataT>(rank,nranks,comm);
-    if (inSitu && fetchSharedData(quickSync, *newDataPtr, rank, nranks, comm, reduceDM, reduceS))
+    static MPI_Comm commAsync = 0;
+    if (!commAsync)
+    {
+      assert(MPI_Comm_split(comm, 0, rank, &commAsync) == MPI_SUCCESS);
+    }
+    static auto newDataPtr = std::make_shared<RendererDataT>(rank,nranks,commAsync);
+    if (inSitu && fetchSharedData(quickSync, *newDataPtr, rank, nranks, commAsync, reduceDM, reduceS))
     {
       int nTotal, nLocal = newDataPtr->size();
-      MPI_Allreduce(&nLocal, &nTotal, 1, MPI_INT, MPI_SUM, comm);
+      MPI_Allreduce(&nLocal, &nTotal, 1, MPI_INT, MPI_SUM, commAsync);
 
       if (nTotal > 0)
       {
-        rescaleData(*newDataPtr, rank,nranks,comm, doDD,nmaxsample,hfac);
+        rescaleData(*newDataPtr, rank,nranks,commAsync, doDD,nmaxsample,hfac);
         newDataPtr->unsetNewData();
         return newDataPtr;
       }
@@ -746,7 +755,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
       if (dataPtr)
         *rDataPtr = std::move(*dataPtr);
       fut = std::async(std::launch::async,fetchNewDataAsync);
-#if 1  /* set 1->0 to make it async */
+#ifdef _MPIMT
       while (fut.wait_for(span)==std::future_status::timeout)
       {
         std::cerr << "sync.." << std::flush;

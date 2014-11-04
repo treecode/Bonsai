@@ -68,7 +68,7 @@ static std::vector<std::vector<std::string>> lParseInput()
   return programs;
 }
 
-#if 1
+#if 0
 #define _MPIMT
 #endif
 
