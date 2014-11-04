@@ -1007,7 +1007,15 @@ int main(int argc, char** argv, MPI_Comm comm)
   MPI_Initialized(&mpiInitialized);
   MPI_Comm mpiCommWorld = MPI_COMM_WORLD;
   if (!mpiInitialized)
+  {
+#ifdef _MPIMT
+    int provided;
+    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
+    assert(MPI_THREAD_MULTIPLE == provided);
+#else
     MPI_Init(&argc, &argv);
+#endif
+  }
   else
     mpiCommWorld = comm;
 

@@ -68,10 +68,6 @@ static std::vector<std::vector<std::string>> lParseInput()
   return programs;
 }
 
-#if 0
-#define _MPIMT
-#endif
-
 int main(int argc, char *argv[]) 
 {
 #ifdef _MPIMT

@@ -19,14 +19,6 @@
 #include "anyoption.h"
 #include "RendererData.h"
 
-#if 0
-#define USE_ICET
-#endif
-
-#if 0
-#define _MPIMT
-#endif
-
 #ifdef USE_ICET
 #include <IceT.h>
 #include <IceTGL.h>
@@ -633,7 +625,15 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
   int mpiInitialized = 0;
   MPI_Initialized(&mpiInitialized);
   if (!mpiInitialized)
+  {
+#ifdef _MPIMT
+    int provided;
+    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
+    assert(MPI_THREAD_MULTIPLE == provided);
+#else
     MPI_Init(&argc, &argv);
+#endif
+  }
   else
     comm = commWorld;
 
