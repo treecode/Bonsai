@@ -1843,6 +1843,7 @@ class Demo
         size_t IDval = ID.getID();
 
         bool hasRHO = rhoMax > 0.0;
+        int nps = 1;
         if (m_renderer.getDisplayMode() == SmokeRenderer::VOLUMETRIC)
         {
           hasRHO = false;
@@ -1850,10 +1851,11 @@ class Demo
         int typeBase = 0;
         if (m_renderer.getDisplayMode() == SmokeRenderer::VOLUMETRIC_NEW)
         {
-          const int ns = 16;
-          hasRHO = (IDval%ns) != 0;
-          IDval /= ns;
+          nps = 16;
+          hasRHO = (IDval%nps) != 0;
+          IDval /= nps;
           typeBase = 128;
+          sizes[i] = 4.0*m_renderer.getParticleRadius();
         }
 
         float4 color = make_float4(0.0f);
@@ -1920,7 +1922,7 @@ class Demo
               const float Mstar = sDisk.sampleMass(IDval);
               const float4 Cstar = sDisk.getColour(Mstar);
 #endif
-              color = ((IDval & 1023) == 0) ? /* one in 1000 stars glows a bit */
+              color = ((IDval & (1024/nps - 1)) == 0) ? /* one in 1000 stars glows a bit */
                 sGlow.getColour(sGlow.sampleMass(IDval)) :  (0) ? color : make_float4(Cstar.x*0.01f, Cstar.y*0.01f, Cstar.z*0.01f, Cstar.w);
               color.w = 1.0f;
               break;
