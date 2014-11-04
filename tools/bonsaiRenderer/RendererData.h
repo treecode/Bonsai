@@ -422,7 +422,7 @@ class RendererDataDistribute : public RendererData
     virtual RendererDataDistribute& operator=(RendererDataDistribute&& rhs)
     {
       data = std::move(rhs.data);
-      new_data = rhs.new_data;
+      new_data = true; //rhs.new_data;
       _xmin    = rhs._xmin;
       _ymin    = rhs._ymin;
       _zmin    = rhs._zmin;

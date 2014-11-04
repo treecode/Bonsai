@@ -701,6 +701,25 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     }
   }
 
+  auto fetchNewDataAsync = [&]() -> std::shared_ptr<RendererDataT>
+  {
+    static auto newDataPtr = std::make_shared<RendererDataT>(rank,nranks,comm);
+    if (inSitu && fetchSharedData(quickSync, *newDataPtr, rank, nranks, comm, reduceDM, reduceS))
+    {
+      int nTotal, nLocal = newDataPtr->size();
+      MPI_Allreduce(&nLocal, &nTotal, 1, MPI_INT, MPI_SUM, comm);
+
+      if (nTotal > 0)
+      {
+        rescaleData(*newDataPtr, rank,nranks,comm, doDD,nmaxsample,hfac);
+        newDataPtr->unsetNewData();
+        return newDataPtr;
+      }
+    }
+
+    return nullptr;
+  };
+
 
   auto dataSetFunc = [&](const int code) -> void 
   {
@@ -714,23 +733,9 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
       ::exit(0);
     }
 
-    if (inSitu )
-    {
-      static auto newDataPtr = std::make_shared<RendererDataT>(rank,nranks,comm);
-      if (fetchSharedData(quickSync, *newDataPtr, rank, nranks, comm, reduceDM, reduceS))
-      {
-        int nTotal, nLocal = newDataPtr->size();
-        MPI_Allreduce(&nLocal, &nTotal, 1, MPI_INT, MPI_SUM, comm);
-
-        if (nTotal > 0)
-        {
-          rescaleData(*newDataPtr, rank,nranks,comm, doDD,nmaxsample,hfac);
-          newDataPtr->setNewData();
-          *rDataPtr = std::move(*newDataPtr);
-          newDataPtr->unsetNewData();
-        }
-      }
-    }
+    auto dataPtr = fetchNewDataAsync();
+    if (dataPtr)
+      *rDataPtr = std::move(*dataPtr);
   };
   std::function<void(int)> updateFunc = dataSetFunc;
 
