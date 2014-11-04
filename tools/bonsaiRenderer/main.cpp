@@ -746,7 +746,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
       if (dataPtr)
         *rDataPtr = std::move(*dataPtr);
       fut = std::async(std::launch::async,fetchNewDataAsync);
-#if 0  /* set 0->1 to make it sync */
+#if 1  /* set 1->0 to make it async */
       while (fut.wait_for(span)==std::future_status::timeout)
       {
         std::cerr << "sync.." << std::flush;
