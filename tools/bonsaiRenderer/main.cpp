@@ -755,7 +755,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
       if (dataPtr)
         *rDataPtr = std::move(*dataPtr);
       fut = std::async(std::launch::async,fetchNewDataAsync);
-#ifdef _MPIMT
+#ifndef _MPIMT
       while (fut.wait_for(span)==std::future_status::timeout)
       {
         std::cerr << "sync.." << std::flush;
