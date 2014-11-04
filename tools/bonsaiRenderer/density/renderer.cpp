@@ -231,14 +231,14 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles, const int _rank
   m_particleShadowProg = new GLSLProgram(mblurVS, mblurGS, particleShadowPS);
 #else
   m_particleProg = new GLSLProgram(particleVS, particlePS);
-  m_particleAAProg = new GLSLProgram(particleVS, particleAAPS);
-  //m_particleAAProg = new GLSLProgram(particleVS, splotchGS, particleAAPS, GL_POINTS, GL_TRIANGLE_STRIP);
+  //m_particleAAProg = new GLSLProgram(particleVS, particleAAPS);
+  m_particleAAProg = new GLSLProgram(particleVS, volnewGS, particleAAPS, GL_POINTS, GL_TRIANGLE_STRIP);
   //m_particleShadowProg = new GLSLProgram(particleVS, particleShadowPS);
   
   //Original volume rendering, no GS
-  m_particleShadowProg = new GLSLProgram(particleVS, particleShadowPS);
+  //m_particleShadowProg = new GLSLProgram(particleVS, particleShadowPS);
   //Original volume rendering, with GS
-  //m_particleShadowProg = new GLSLProgram(particleVS, splotchGS, particleShadowPS, GL_POINTS, GL_TRIANGLE_STRIP);
+  m_particleShadowProg = new GLSLProgram(particleVS, volnewGS, particleShadowPS, GL_POINTS, GL_TRIANGLE_STRIP);
 
 #endif
 
@@ -248,8 +248,8 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles, const int _rank
   m_compositeProg = new GLSLProgram(passThruVS, compositePS);
 
   m_starFilterProg = new GLSLProgram(passThruVS, starFilterPS);
-  m_volumeProg = new GLSLProgram(volumeVS, volumePS);
-  //m_volumeProg = new GLSLProgram(volumeVS, splotchGS, volumePS, GL_POINTS, GL_TRIANGLE_STRIP);
+  // m_volumeProg = new GLSLProgram(volumeVS, volumePS);
+  m_volumeProg = new GLSLProgram(volumeVS, volnewGS, volumePS, GL_POINTS, GL_TRIANGLE_STRIP);
 
   //m_downSampleProg = new GLSLProgram(passThruVS, downSample4PS);
   m_downSampleProg = new GLSLProgram(passThruVS, downSample2PS);
