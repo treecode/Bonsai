@@ -1113,11 +1113,13 @@ void SmokeRenderer::drawSlices()
     }
 #else
     // opposite order
+#if 0  /* eg: doens't work in distributed rendering mode */
     if (m_enableAA) {
       drawSliceLightViewAA(i);
     } else {
       drawSliceLightView(i);
     }
+#endif
     if (m_doBlur) {
       blurLightBuffer();
     }

@@ -1902,8 +1902,24 @@ class Demo
             {
               //Normal disk
               color = ((IDval % m_brightFreq) != 0) ? starColor : ((IDval / m_brightFreq) & 1) ? color2 : color3;
+#if 0
+              float vel = m_idata.attribute(RendererData::VEL,i);
+              float rho = m_idata.attribute(RendererData::RHO,i);
+              vel = 255.0f*(vel - velMin) * scaleVEL;
+              rho = 255.0f*(rho - rhoMin) * scaleRHO;
+              const int ix = (int)vel;
+              const int iy = (int)rho;
+              assert(ix >= 0 && ix < 256);
+              assert(iy >= 0 && iy < 256);
+              float4 Cstar ;
+              Cstar.x = colorMap[iy][ix][0];
+              Cstar.y = colorMap[iy][ix][1];
+              Cstar.z = colorMap[iy][ix][2];
+              Cstar.w = type + typeBase;
+#else
               const float Mstar = sDisk.sampleMass(IDval);
               const float4 Cstar = sDisk.getColour(Mstar);
+#endif
               color = ((IDval & 1023) == 0) ? /* one in 1000 stars glows a bit */
                 sGlow.getColour(sGlow.sampleMass(IDval)) :  (0) ? color : make_float4(Cstar.x*0.01f, Cstar.y*0.01f, Cstar.z*0.01f, Cstar.w);
               color.w = 1.0f;
