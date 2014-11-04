@@ -736,16 +736,25 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     }
 
 
-    std::future<std::shared_ptr<RendererDataT>> fut = std::async(std::launch::async,fetchNewDataAsync);
-    std::chrono::milliseconds span (100);
-    while (fut.wait_for(span)==std::future_status::timeout)
+    static bool first = true;
+    static const std::chrono::milliseconds span(1);
+    static std::future<std::shared_ptr<RendererDataT>> fut = std::async(std::launch::async,fetchNewDataAsync);
+    if (fut.wait_for(span)==std::future_status::ready || first)
     {
-      std::cerr << "crap.";
+      first = false;
+      auto dataPtr = fut.get();
+      if (dataPtr)
+        *rDataPtr = std::move(*dataPtr);
+      fut = std::async(std::launch::async,fetchNewDataAsync);
+#if 0
+      while (fut.wait_for(span)==std::future_status::timeout)
+      {
+        std::cerr << "crap.." << std::flush;
+      }
+#endif
     }
 
-    auto dataPtr = fut.get();
-    if (dataPtr)
-      *rDataPtr = std::move(*dataPtr);
+
   };
   std::function<void(int)> updateFunc = dataSetFunc;
 
