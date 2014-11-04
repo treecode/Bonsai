@@ -86,7 +86,7 @@ class RendererData
     new_data = false;
   }
 
-    virtual RendererData& operator=(RendererData& rhs)
+    virtual RendererData& operator=(RendererData&& rhs)
     {
       data = std::move(rhs.data);
       new_data = rhs.new_data;
@@ -419,7 +419,7 @@ class RendererDataDistribute : public RendererData
     virtual float getBoundBoxHigh(const int i) const {return xhigh[i];}
     virtual std::vector<int> getVisibilityOrder(const std::array<float,3> camPos) const;
     
-    virtual RendererDataDistribute& operator=(RendererDataDistribute& rhs)
+    virtual RendererDataDistribute& operator=(RendererDataDistribute&& rhs)
     {
       data = std::move(rhs.data);
       new_data = rhs.new_data;

@@ -726,7 +726,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
         {
           rescaleData(*newDataPtr, rank,nranks,comm, doDD,nmaxsample,hfac);
           newDataPtr->setNewData();
-          *rDataPtr = *newDataPtr;
+          *rDataPtr = std::move(*newDataPtr);
           newDataPtr->unsetNewData();
         }
       }
