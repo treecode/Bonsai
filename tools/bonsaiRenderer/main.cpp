@@ -746,10 +746,10 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
       if (dataPtr)
         *rDataPtr = std::move(*dataPtr);
       fut = std::async(std::launch::async,fetchNewDataAsync);
-#if 0
+#if 0  /* set 0->1 to make it sync */
       while (fut.wait_for(span)==std::future_status::timeout)
       {
-        std::cerr << "crap.." << std::flush;
+        std::cerr << "sync.." << std::flush;
       }
 #endif
     }
