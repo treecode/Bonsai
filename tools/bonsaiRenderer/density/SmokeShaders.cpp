@@ -1181,7 +1181,7 @@ STRINGIFY(
     {                                                                  \n
       vec4 c = texture2D(tex, gl_TexCoord[0].xy);                    \n
 //      c.rgb *= 100;
-      c.rgb = 1.0 - exp(-c.rgb);          \n
+//      c.rgb = 1.0 - exp(-c.rgb);          \n
       c.rgb *= scale;
       c.rgb = pow(c.rgb, gamma);          \n
       c.a   = 1.0;
