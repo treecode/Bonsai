@@ -1506,7 +1506,7 @@ class Float16Compressor
 
   public:
 
-#if 0
+#if 1 /* slow IEEE cvt, set 1->0 to use fast conversion, but may fail on denormals (?) */
   static uint16_t compress(float value)
   {
     Bits v, s;
