@@ -1190,3 +1190,25 @@ STRINGIFY(
   );
 
 
+const char *volnewCompositePS = 
+STRINGIFY(
+    uniform sampler2D tex;                                             \n
+    uniform sampler2D glowTex;                                         \n
+    uniform float glowIntensity;                                       \n
+    uniform float scale;                         \n
+    uniform float gamma;
+    void main()                                                        \n
+    {                                                                  \n
+      vec4 c = texture2D(tex, gl_TexCoord[0].xy);                    \n
+      c += texture2D(glowTex, gl_TexCoord[0].xy) * glowIntensity;  \n
+//      c.rgb *= 100;
+      c.rgb = 1.0 - exp(-c.rgb);          \n
+      c.rgb *= scale;
+      // vignette
+      float d = length(gl_TexCoord[0].xy*2.0-1.0);
+      c.rgb *= 1.0 - smoothstep(0.9, 1.5, d);
+      c.rgb = pow(c.rgb, gamma);          \n
+      c.a   = 1.0;
+      gl_FragColor = c;                                              \n
+    }                                                                  \n
+  );

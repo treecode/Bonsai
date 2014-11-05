@@ -267,6 +267,7 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles, const int _rank
       GL_POINTS, GL_TRIANGLE_STRIP
       );
   m_volnew2texProg = new GLSLProgram(passThruVS, volnew2texPS);
+  m_volnewCompositeProg = new GLSLProgram(passThruVS, volnewCompositePS);
 
   glClampColorARB(GL_CLAMP_VERTEX_COLOR_ARB, GL_FALSE);
   glClampColorARB(GL_CLAMP_FRAGMENT_COLOR_ARB, GL_FALSE);
@@ -3906,19 +3907,37 @@ void SmokeRenderer::volumetricNew()
 
   composeImages(m_imageTex[0]);
 
-
   glDisable(GL_BLEND);
+
+#if 1  /* use filters */
+
+  if (m_glowIntensity > 0.0f || m_flareIntensity > 0.0f) 
+  {
+    downSample();
+  }
+  if (m_glowRadius > 0.0f && m_glowIntensity > 0.0f) 
+  {
+    doGlowFilter();
+  }
+
+  glViewport(0, 0, mWindowW, mWindowH);
+  m_volnewCompositeProg->enable();
+  m_volnewCompositeProg->bindTexture("tex", m_imageTex[0], GL_TEXTURE_2D, 0);
+  m_volnewCompositeProg->bindTexture("glowTex", m_downSampledTex[0], GL_TEXTURE_2D, 3);
+  m_volnewCompositeProg->setUniform1f("scale", m_imageBrightness);
+  m_volnewCompositeProg->setUniform1f("glowIntensity", m_glowIntensity);
+  m_volnewCompositeProg->setUniform1f("gamma", m_gamma);
+  drawQuad();
+  m_volnewCompositeProg->disable();
+
+#else
   m_volnew2texProg->enable();
   m_volnew2texProg->bindTexture("tex", m_imageTex[0], GL_TEXTURE_2D, 0);
-#if 0
-  m_volnew2texProg->setUniform1f("scale", 0.1*m_imageBrightnessPre);
-  m_volnew2texProg->setUniform1f("gamma", m_gammaPre);
-#else
   m_volnew2texProg->setUniform1f("scale", m_imageBrightness);
   m_volnew2texProg->setUniform1f("gamma", m_gamma);
-#endif
   drawQuad();
   m_volnew2texProg->disable();
+#endif
 }
 
 // render scene depth to texture

@@ -2,7 +2,7 @@ render_params_points
 render_params_volumetric
 slices 1
 displayed_slices 1
-sprite_size 0.0416
+sprite_size 0.0544
 scale_[log] -0.464
 dust_scale 12
 dust_alpha 0.316
@@ -25,11 +25,11 @@ star_blur_radius 40
 star_threshold 1.2
 star_power 1.2
 star_intensity 0
-glow_radius 25.2
-glow_intensity 0.1
-flare_intensity 0
-flare_threshold 0.72
-flare_radius 40.8
+glow_radius 23.6
+glow_intensity 0.54
+flare_intensity 0.044
+flare_threshold 0.44
+flare_radius 8.8
 skybox_brightness 0.24
 render_params_splotch
 star_scale_[log] 0
@@ -69,7 +69,7 @@ brightness_[post] 1
 gamma_[post] 1
 slices 1
 displayed_slices 1
-sprite_size 0.0416
+sprite_size 0.0544
 scale_[log] -0.464
 dust_scale 12
 dust_alpha 0.316
@@ -92,9 +92,9 @@ star_blur_radius 40
 star_threshold 1.2
 star_power 1.2
 star_intensity 0
-glow_radius 25.2
-glow_intensity 0.1
-flare_intensity 0
-flare_threshold 0.72
-flare_radius 40.8
+glow_radius 23.6
+glow_intensity 0.54
+flare_intensity 0.044
+flare_threshold 0.44
+flare_radius 8.8
 skybox_brightness 0.24
