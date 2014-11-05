@@ -397,6 +397,7 @@ void octree::dumpDataMPI()
     {
       MPI_Comm_rank(MPI_COMM_WORLD, &worldRank);  
     }
+    assert(worldRank%2 == 0);
 
     const int destRank = worldRank + 1;
 

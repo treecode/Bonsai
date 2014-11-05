@@ -206,6 +206,7 @@ bool fetchSharedDataMPI(const bool quickSync, RendererData &rData, const int ran
   static int worldRank = -1;
   if (worldRank == -1)
     MPI_Comm_rank(MPI_COMM_WORLD, &worldRank);  
+  assert(worldRank%2 == 1);
   const int srcRank = worldRank - 1;
   
   static MPI_Request  req[2];
