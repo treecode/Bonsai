@@ -200,6 +200,147 @@ bool fetchSharedData(const bool quickSync, RendererData &rData, const int rank, 
   return completed;
 }
 
+bool fetchSharedDataMPI(const bool quickSync, RendererData &rData, const int rank, const int nrank, const MPI_Comm &comm,
+    const int reduceDM = 1, const int reduceS = 1)
+{
+  static int worldRank = -1;
+  if (worldRank == -1)
+    MPI_Comm_rank(MPI_COMM_WORLD, &worldRank);  
+  const int srcRank = worldRank - 1;
+  
+  static MPI_Request  req[2];
+  static MPI_Status   status[2];
+
+  static MPI_Datatype MPI_Header = 0;
+  static MPI_Datatype MPI_Data   = 0;
+  if (!MPI_Header)
+  {
+    int ss = sizeof(BonsaiSharedHeader) / sizeof(char);
+    assert(0 == sizeof(BonsaiSharedHeader) % sizeof(char));
+    MPI_Type_contiguous(ss, MPI_BYTE, &MPI_Header);
+    MPI_Type_commit(&MPI_Header);
+  }
+  if (!MPI_Data)
+  {
+    int ss = sizeof(BonsaiSharedData) / sizeof(char);
+    assert(0 == sizeof(BonsaiSharedData) % sizeof(char));
+    MPI_Type_contiguous(ss, MPI_BYTE, &MPI_Data);
+    MPI_Type_commit(&MPI_Data);
+  }
+
+  BonsaiSharedHeader header;
+  std::vector<BonsaiSharedData> data;
+  
+  MPI_Barrier(comm);  /* global barrier, make sure all ranks send data */
+  static int sendCount = 0;
+  const int tagBase = 131313177;
+  MPI_Irecv(&header, 1, MPI_Header, srcRank, tagBase+2*sendCount+0, MPI_COMM_WORLD, &req[0]);
+  MPI_Wait(&req[0], &status[0]);
+//  assert(status[0] == MPI_SUCCESS);
+
+  data.resize(header.nBodies);
+  MPI_Irecv(&data[0], data.size(), MPI_Data, srcRank, tagBase+2*sendCount+1, MPI_COMM_WORLD, &req[1]);
+  MPI_Wait(&req[1], &status[1]);
+//  assert(status[1] == MPI_SUCCESS);
+//
+
+  sendCount++;
+  sendCount = sendCount % 4 ;  /* permit only 4 buffer , 
+                                  ensure this number is the same in runtime/src/gpu_iterate.cpp
+                                */
+  
+  MPI_Barrier(comm); /* global barrier, to make sure every one received what is theirs */
+
+//  static float tLast = -1.0f;
+  assert(!rData.isNewData());
+
+  const float tCurrent = header.tCurrent;
+  terminateRenderer = tCurrent == -1;
+  bool completed = false;
+  {
+//    tLast = tCurrent;
+    completed = true;
+
+    // data
+    const size_t nBodies = header.nBodies;
+
+    const size_t size = data.size();
+    assert(size == nBodies);
+
+    /* skip particles that failed to get density, or with too big h */
+    auto skipPtcl = [&](const int i)
+    {
+      return (data[i].rho == 0 || data[i].h == 0.0 || data[i].h > 100);
+    };
+
+    size_t nDM = 0, nS = 0;
+    constexpr int ntypecount = 10;
+    std::array<size_t,ntypecount> ntypeloc, ntypeglb;
+    std::fill(ntypeloc.begin(), ntypeloc.end(), 0);
+    for (size_t i = 0; i < size; i++)
+    {
+      const int type = data[i].ID.getType();
+      if  (type < ntypecount)
+        ntypeloc[type]++;
+      if (skipPtcl(i))
+        continue;
+      switch (type)
+      {
+        case 0:
+          nDM++;
+          break;
+        default:
+          nS++;
+      }
+    }
+
+    MPI_Reduce(&ntypeloc, &ntypeglb, ntypecount, MPI_LONG_LONG, MPI_SUM, 0, comm);
+    if (rank == 0)
+    {
+      for (int type = 0; type < ntypecount; type++)
+        if (ntypeglb[type] > 0)
+          fprintf(stderr, " ptype= %d:  np= %zu \n",type, ntypeglb[type]);
+    }
+
+
+    rData.resize(nS);
+    rData.setTime(tCurrent);
+    size_t ip = 0;
+    for (size_t i = 0; i < size; i++)
+    {
+      if (skipPtcl(i))
+        continue;
+      if (data[i].ID.getType() == 0 )  /* pick stars only */
+        continue;
+
+      rData.posx(ip) = data[i].x;
+      rData.posy(ip) = data[i].y;
+      rData.posz(ip) = data[i].z;
+      rData.ID  (ip) = data[i].ID;
+      rData.attribute(RendererData::MASS, ip) = data[i].mass;
+      rData.attribute(RendererData::VEL,  ip) =
+        std::sqrt(
+            data[i].vx*data[i].vx+
+            data[i].vy*data[i].vy+
+            data[i].vz*data[i].vz);
+      rData.attribute(RendererData::RHO, ip) = data[i].rho;
+      rData.attribute(RendererData::H,   ip) = data[i].h;
+
+      ip++;
+      assert(ip <= nS);
+    }
+    rData.resize(ip);
+    rData.setNbodySim(ip);
+
+  }
+
+  if (completed)
+    rData.computeMinMax();
+
+
+  return completed;
+}
+
 void rescaleData(RendererData &rData, 
     const int rank,
     const int nrank,
@@ -536,6 +677,8 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
   int nCameraFrame = 0;
   float hfac = 1.0f;
 
+  bool mpiRenderMode = false;
+
 
   {
     AnyOption opt;
@@ -563,11 +706,13 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     ADDUSAGE("     --camera       #   camera path file");
     ADDUSAGE("     --cameraframe  #   Reframe original camera path to # frames. [ignore]");
     ADDUSAGE("     --image        #   image base filename");
+    ADDUSAGE("     --mpirendermode    use MPI to communicate with the renderer. Must only be used with bonsai_driver. [disabled]");
 
 
     opt.setFlag  ( "help" ,        'h');
     opt.setOption( "infile",       'i');
     opt.setFlag  ( "insitu",       'I');
+		opt.setFlag( "mpirendermode");
     opt.setOption( "reduceDM");
     opt.setOption( "sleep");
     opt.setOption( "reduceS");
@@ -597,6 +742,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     if ((optarg = opt.getValue("infile")))       fileName           = std::string(optarg);
     if ((optarg = opt.getValue("reduceDM"))) reduceDM       = atoi(optarg);
     if ((optarg = opt.getValue("reduceS"))) reduceS       = atoi(optarg);
+    if (opt.getFlag("mpirendermode")) mpiRenderMode = true;
 #ifndef PARTICLESRENDERER
     if ((optarg = opt.getValue("fullscreen")))	 fullScreenMode     = std::string(optarg);
     if (opt.getFlag("stereo"))  stereo = true;
@@ -716,7 +862,11 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     }
     static auto newDataPtr = std::make_shared<RendererDataT>(rank,nranks,commAsync);
     newDataPtr->unsetNewData();
-    if (inSitu && fetchSharedData(quickSync, *newDataPtr, rank, nranks, commAsync, reduceDM, reduceS))
+
+    std::function<decltype(fetchSharedData)> fetch = 
+      mpiRenderMode ? fetchSharedDataMPI : fetchSharedData; 
+
+    if (inSitu && fetch(quickSync, *newDataPtr, rank, nranks, commAsync, reduceDM, reduceS))
     {
       int nTotal, nLocal = newDataPtr->size();
       MPI_Allreduce(&nLocal, &nTotal, 1, MPI_INT, MPI_SUM, commAsync);

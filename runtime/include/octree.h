@@ -437,7 +437,7 @@ protected:
   float         t_current, t_previous;
   float         snapshotIter;   
   float         quickDump, quickRatio;
-  bool          quickSync, useMPIIO;
+  bool          quickSync, useMPIIO, mpiRenderMode;
   string        snapshotFile;
   float         nextSnapTime;
   float         nextQuickDump;
@@ -714,6 +714,7 @@ public:
         const float ratio,
         const bool sync);
   void dumpData();
+  void dumpDataMPI();
 
   //Subfunctions of iterate, should probally be private 
   void predict(tree_structure &tree);
@@ -1005,12 +1006,13 @@ public:
          const float _quickRatio = 0.1,
          const bool  _quickSync = true,
          const bool  _useMPIIO   = false,
+         const bool  _mpiRenderMode = false,
          float tempTimeStep = 1.0 / 16.0, float tempTend = 1000,
          int _iterEnd = (1<<30),
          int maxDistT = -1, const int _rebuild = 2,
          bool direct = false)
   : mpiCommWorld(comm), rebuild_tree_rate(_rebuild), procId(0), nProcs(1), thisPartLETExTime(0), useDirectGravity(direct),
-  quickDump(_quickDump), quickRatio(_quickRatio), quickSync(_quickSync), useMPIIO(_useMPIIO), nextQuickDump(0.0)
+  quickDump(_quickDump), quickRatio(_quickRatio), quickSync(_quickSync), useMPIIO(_useMPIIO), mpiRenderMode(_mpiRenderMode), nextQuickDump(0.0)
   {
 #if USE_B40C
     sorter = 0;

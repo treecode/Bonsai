@@ -742,6 +742,8 @@ int main(int argc, char** argv, MPI_Comm comm)
   double tStartupStart = get_time_main();       
   double tStartModel   = 0;
   double tEndModel     = 0;
+
+  bool mpiRenderMode = false;
   
   
 
@@ -814,11 +816,13 @@ int main(int argc, char** argv, MPI_Comm comm)
 		ADDUSAGE("     --sphere   #       use spherical model with # particles per proc");
 		ADDUSAGE("     --cube     #       use cube model with # particles per proc");
     ADDUSAGE("     --diskmode         use diskmode to read same input file all MPI taks and randomly shuffle its positions");
+    ADDUSAGE("     --mpirendermode    use MPI to communicate with the renderer. Must only be used with bonsai_driver. [disabled]");
 		ADDUSAGE(" ");
 
 
 		opt.setFlag( "help" ,   'h');
 		opt.setFlag( "diskmode");
+		opt.setFlag( "mpirendermode");
 		opt.setOption( "infile",  'i');
 		opt.setOption( "bonsaifile",  'f');
 		opt.setFlag  ( "restart");
@@ -878,6 +882,7 @@ int main(int argc, char** argv, MPI_Comm comm)
     if (opt.getFlag("restart")) restartSim = true;
     if (opt.getFlag("displayfps")) displayFPS = true;
     if (opt.getFlag("diskmode")) diskmode = true;
+    if (opt.getFlag("mpirendermode")) mpiRenderMode = true;
     if(opt.getFlag("stereo"))   stereo = true;
 
 #if ENABLE_LOG
@@ -1025,7 +1030,7 @@ int main(int argc, char** argv, MPI_Comm comm)
       argv, devID, theta, eps, 
       snapshotFile, snapshotIter,  
       quickDump, quickRatio, quickSync,
-      useMPIIO,
+      useMPIIO,mpiRenderMode,
       timeStep,
       tEnd, iterEnd, (int)remoDistance, rebuild_tree_rate, direct);
 
