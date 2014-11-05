@@ -383,21 +383,43 @@ void octree::dumpDataMPI()
 
     static MPI_Request  req[2];
     static MPI_Status status[2];
-    
 
-    if (worldRank == -1)
+    bool ready2send = true;
+    if (worldRank != -1)
+    {
+      int ready2sendHeader;
+      int ready2sendData;
+      MPI_Test(&req[0], &ready2sendHeader, &status[0]);
+      MPI_Test(&req[1], &ready2sendData,   &status[1]);
+      ready2send = false;
+      if (ready2sendHeader && ready2sendData)
+        ready2send = true;
+    }
+    else
+    {
       MPI_Comm_rank(MPI_COMM_WORLD, &worldRank);  
+    }
+
     const int destRank = worldRank + 1;
 
-    static int sendCount = 0;
-    const int tagBase = 131313177;
-    MPI_Isend(&header,            1, MPI_Header, destRank, tagBase+2*sendCount+0, MPI_COMM_WORLD, &req[0]);
-    MPI_Isend(&data[0], data.size(), MPI_Data,   destRank, tagBase+2*sendCount+1, MPI_COMM_WORLD, &req[1]);
-    sendCount++;
-    sendCount = sendCount % 4 ;  /* permit only 4 buffer */
-    
-    if (worldRank != -1)
-      MPI_Waitall(2, req, status);
+  
+
+    if (ready2send)
+    {
+      static BonsaiSharedHeader header2send;
+      static std::vector<BonsaiSharedData> data2send;
+
+      header2send = std::move(header);
+      data2send   = std::move(data);
+
+      static int sendCount = 0;
+      const int tagBase = 131313177;
+      MPI_Isend(&header2send,                 1, MPI_Header, destRank, tagBase+2*sendCount+0, MPI_COMM_WORLD, &req[0]);
+      MPI_Isend(&data2send[0], data2send.size(), MPI_Data,   destRank, tagBase+2*sendCount+1, MPI_COMM_WORLD, &req[1]);
+      sendCount++;
+      sendCount = sendCount % 4 ;  /* permit only 4 buffer */
+//      MPI_Waitall(2, req, status);
+    }
     
   }
 }

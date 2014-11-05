@@ -228,8 +228,8 @@ bool fetchSharedDataMPI(const bool quickSync, RendererData &rData, const int ran
     MPI_Type_commit(&MPI_Data);
   }
 
-  BonsaiSharedHeader header;
-  std::vector<BonsaiSharedData> data;
+  static BonsaiSharedHeader header;
+  static std::vector<BonsaiSharedData> data;
   
   MPI_Barrier(comm);  /* global barrier, make sure all ranks send data */
   static int sendCount = 0;
