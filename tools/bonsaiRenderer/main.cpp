@@ -783,6 +783,12 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
   else
     comm = commWorld;
 
+  if (mpiRenderMode)
+    assert(mpiInitialized);
+
+
+
+
   int nranks, rank;
   MPI_Comm_size(comm, &nranks);
   MPI_Comm_rank(comm, &rank);

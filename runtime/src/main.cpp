@@ -1024,6 +1024,9 @@ int main(int argc, char** argv, MPI_Comm comm)
   else
     mpiCommWorld = comm;
 
+  if (mpiRenderMode)
+    assert(mpiInitialized);
+
   //Creat the octree class and set the properties
   octree *tree = new octree(
       mpiCommWorld,
