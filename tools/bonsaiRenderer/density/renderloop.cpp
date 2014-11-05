@@ -1871,9 +1871,15 @@ class Demo
           assert(ix >= 0 && ix < 256);
           assert(iy >= 0 && iy < 256);
           float4 Cstar ;
+#if 0
           Cstar.x = colorMap[iy][ix][0]*1.2+10;
           Cstar.y = colorMap[iy][ix][1]*1.2+10;
           Cstar.z = colorMap[iy][ix][2]*0.4+10;
+#else
+          Cstar.x = colorMap[iy][ix][0]*1.2+0;
+          Cstar.y = colorMap[iy][ix][1]*1.2+0;
+          Cstar.z = colorMap[iy][ix][2]*0.6+0;
+#endif
           Cstar.w = type + typeBase;
           color   = Cstar;
 #if 1
