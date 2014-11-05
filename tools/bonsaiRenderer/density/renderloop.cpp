@@ -1934,7 +1934,12 @@ class Demo
                 sGlow.getColour(sGlow.sampleMass(IDval)) :  (0) ? color : make_float4(Cstar.x*0.01f, Cstar.y*0.01f, Cstar.z*0.01f, Cstar.w);
               color.w = 1.0f;
               if (glow && typeBase == 128)
+              {
                 color.w = 5.0f;
+                color.x *= 3.0f;
+                color.y *= 3.0f;
+                color.z *= 3.0f;
+              }
               break;
             }              
             case 3:   /* Dust */
