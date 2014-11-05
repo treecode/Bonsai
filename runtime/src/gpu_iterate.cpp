@@ -374,7 +374,10 @@ void octree::dumpDataMPI()
       p.vy   = localTree.bodies_vel[i].y;
       p.vz   = localTree.bodies_vel[i].z;
       p.vw   = localTree.bodies_vel[i].w;
-      p.rho  = localTree.bodies_dens[i].x;
+      if (procId != 2)
+        p.rho  = localTree.bodies_dens[i].x;
+      else
+        p.rho = 0.0;
       p.h    = localTree.bodies_h[i];
       p.ID   = lGetIDType(localTree.bodies_ids[i]);
     }
