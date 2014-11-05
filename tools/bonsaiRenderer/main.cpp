@@ -666,7 +666,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
   bool stereo     = false;
 #endif
   int nmaxsample = 10000;
-  bool doDD = false;
+  bool doDD = true;
   std::string display;
 
   bool inSitu = false;
@@ -700,7 +700,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     ADDUSAGE("     --fullscreen  #    set fullscreen mode string");
     ADDUSAGE("     --stereo           enable stereo rendering");
 #endif
-    ADDUSAGE(" -d  --doDD             enable domain decomposition  [disabled]");
+    ADDUSAGE("     --dontDD           disable domain decomposition  [enabled]");
     ADDUSAGE(" -s  --nmaxsample   #   set max number of samples for DD [" << nmaxsample << "]");
     ADDUSAGE("     --hfac         #   set scaling factor for 'h' in DD [" << hfac << "]");
     ADDUSAGE(" -D  --display      #   set DISPLAY=display, otherwise inherited from environment");
@@ -723,7 +723,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     opt.setOption( "image");
     opt.setOption( "hfac");
     opt.setFlag("stereo");
-    opt.setFlag("doDD", 'd');
+    opt.setFlag("dontDD");
     opt.setOption("nmaxsample", 's');
     opt.setOption("display", 'D');
     opt.setFlag  ( "noquicksync");
@@ -749,7 +749,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     if (opt.getFlag("stereo"))  stereo = true;
 #endif
     if ((optarg = opt.getValue("nmaxsample"))) nmaxsample = atoi(optarg);
-    if (opt.getFlag("doDD"))  doDD = true;
+    if (opt.getFlag("dontDD"))  doDD = false;
     if ((optarg = opt.getValue("display"))) display = std::string(optarg);
     if ((optarg = opt.getValue("sleep"))) sleeptime = atoi(optarg);
     if (opt.getFlag("noquicksync")) quickSync = false;

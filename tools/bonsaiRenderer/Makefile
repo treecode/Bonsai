@@ -41,7 +41,7 @@ LDFLAGS += -pie -rdynamic -lpthread
 #-L$(PWD)/lib/linux -lGLEW_x86_64
 
 
-ifeq ($(FP32),1)
+ifeq ($(FP16),0)
 	CXXFLAGS += -DTEX_FLOAT32
 else
 	CXXFLAGS += -DTEX_FLOAT16
@@ -54,12 +54,18 @@ ifeq ($(COPY),1)
 	CXXFLAGS += -D__COMPOSITE_COPY
 endif
 
-ifeq ($(NONBLOCK),1)
-	CXXFLAGS += -D__COMPOSITE_NONBLOCK
+ifeq ($(NONBLOCK),0)
+	ifeq ($(PROFILE),1)
+		CXXFLAGS += -D__COMPOSITE_PROFILE
+	endif
 else
-ifeq ($(PROFILE),1)
-	CXXFLAGS += -D__COMPOSITE_PROFILE
+	CXXFLAGS += -D__COMPOSITE_NONBLOCK
 endif
+
+ifeq ($(MPIMT),0)
+	CXXFLAGS +=
+else
+	CXXFLAGS += -D_MPIMT
 endif
 
 ifeq ($(ICET),1)
@@ -80,11 +86,6 @@ ifeq ($(PNG),1)
 	LDFLAGS += -lpng
 endif
 
-ifeq ($(MPIMT),0)
-	CXXFLAGS +=
-else
-	CXXFLAGS += -D_MPIMT
-endif
 
 
 OBJ = main.o $(ENGINE)/renderloop.o anyoption.o $(ENGINE)/renderer.o paramgl.o RendererData.o RendererDataDistribute.o
