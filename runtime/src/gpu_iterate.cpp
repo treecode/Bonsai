@@ -391,9 +391,7 @@ void octree::dumpDataMPI()
       int ready2sendData;
       MPI_Test(&req[0], &ready2sendHeader, &status[0]);
       MPI_Test(&req[1], &ready2sendData,   &status[1]);
-      ready2send = false;
-      if (ready2sendHeader && ready2sendData)
-        ready2send = true;
+      ready2send = ready2sendHeader && ready2sendData;
     }
     else
     {
