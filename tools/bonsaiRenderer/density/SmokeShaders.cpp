@@ -1028,24 +1028,24 @@ STRINGIFY(
       if (type == 0.0)                                        \n
       {
         col.a = dustAlpha;
-        pointSize = 2.0*pointRadius * ageScale;
+        pointSize = 1.0*pointRadius * ageScale;
       } 
       else if (type == 1.0) 
       {
         col.rgb *= overBrightThreshold; 
-        pointSize = 2.0*pointRadius;
+        pointSize = 1.0*pointRadius;
       }
       else if (type == 5.0)
       {
         col.rgb *= overBrightThreshold;
         col.b += 64.0*random(dist*124);
-        pointSize = 2.0*pointRadius;
+        pointSize = 1.0*pointRadius;
       }
       else if (type == 2.0) 
       {
         // star
         col.rgb *= overBright;
-        pointSize = 2.0*pointRadius;
+        pointSize = 1.0*pointRadius;
       } 
       else if (type == 3.0) 
       {
@@ -1053,7 +1053,7 @@ STRINGIFY(
           gl_Position.w = -1.0;
           wpos.w = -1.0;
         }
-        pointSize = 2.0*pointRadius;
+        pointSize = 1.0*pointRadius;
       }
       else if (type == 128.0)                                 \n
       {                                                       \n
@@ -1181,7 +1181,7 @@ STRINGIFY(
     {                                                                  \n
       vec4 c = texture2D(tex, gl_TexCoord[0].xy);                    \n
 //      c.rgb *= 100;
-//      c.rgb = 1.0 - exp(-c.rgb);          \n
+      c.rgb = 1.0 - exp(-c.rgb);          \n
       c.rgb *= scale;
       c.rgb = pow(c.rgb, gamma);          \n
       c.a   = 1.0;
