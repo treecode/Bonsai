@@ -402,8 +402,6 @@ void octree::dumpDataMPI()
 
     const int destRank = worldRank + 1;
 
-  
-
     if (ready2send)
     {
       static BonsaiSharedHeader header2send;
@@ -418,7 +416,6 @@ void octree::dumpDataMPI()
       MPI_Isend(&data2send[0], data2send.size(), MPI_Data,   destRank, tagBase+2*sendCount+1, MPI_COMM_WORLD, &req[1]);
       sendCount++;
       sendCount = sendCount % 4 ;  /* permit only 4 buffer */
-//      MPI_Waitall(2, req, status);
     }
     
   }
