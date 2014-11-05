@@ -234,7 +234,7 @@ bool fetchSharedDataMPI(const bool quickSync, RendererData &rData, const int ran
   
 //  MPI_Barrier(comm);  /* global barrier, make sure all ranks send data */
   static int sendCount = 0;
-  const int tagBase = 131313177;
+  const int tagBase = 42;
   MPI_Irecv(&header, 1, MPI_Header, srcRank, tagBase+2*sendCount+0, MPI_COMM_WORLD, &req[0]);
   MPI_Wait(&req[0], &status[0]);
 //  assert(status[0] == MPI_SUCCESS);

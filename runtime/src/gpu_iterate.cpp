@@ -410,7 +410,7 @@ void octree::dumpDataMPI()
       data2send   = std::move(data);
 
       static int sendCount = 0;
-      const int tagBase = 131313177;
+      const int tagBase = 42;
       MPI_Isend(&header2send,                 1, MPI_Header, destRank, tagBase+2*sendCount+0, MPI_COMM_WORLD, &req[0]);
       MPI_Isend(&data2send[0], data2send.size(), MPI_Data,   destRank, tagBase+2*sendCount+1, MPI_COMM_WORLD, &req[1]);
       sendCount++;
