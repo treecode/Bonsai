@@ -886,6 +886,9 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     return nullptr;
   };
 
+#ifdef ASYNC_OMP
+  std::shared_ptr<RendererDataT>  dataPtr(nullptr);
+#endif
 
   auto dataSetFunc = [&](const int code) -> void 
   {
@@ -899,6 +902,8 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
       ::exit(0);
     }
 
+
+#ifndef ASYNC_OMP
 
     static bool first = true;
     static const std::chrono::milliseconds span(1);
@@ -922,6 +927,25 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
 #endif
     }
 
+#else  /* ASYNC_OMP */
+
+    static bool first = true;
+    if (first)
+    {
+      dataPtr = fetchNewDataAsync();
+      first = false;
+    }
+    int ready = dataPtr != nullptr;
+    int readyGlobal;
+    MPI_Allreduce(&ready, &readyGlobal, 1, MPI_INT, MPI_MIN, comm);
+    if (readyGlobal)
+    {
+      *rDataPtr = std::move(*dataPtr);
+      dataPtr = nullptr;
+    }
+
+#endif /* ASYNC_OMP */
+
 
   };
   std::function<void(int)> updateFunc = dataSetFunc;
@@ -939,16 +963,29 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
   icetDiagnostics(ICET_DIAG_FULL);
 #endif
 
-  initAppRenderer(argc, argv, 
-      rank, nranks, comm,
-      *rDataPtr,
-      fullScreenMode.c_str(), 
-      stereo,
-      updateFunc,
-      imageFileName);
+#ifdef ASYNC_OMP
+#pragma omp parallel num_threads(2)
+  if (omp_get_thread_num() == 0)
+#endif
+  {
+    initAppRenderer(argc, argv, 
+        rank, nranks, comm,
+        *rDataPtr,
+        fullScreenMode.c_str(), 
+        stereo,
+        updateFunc,
+        imageFileName);
+  }
+#ifdef ASYNC_OMP
+  else while(1)
+  {
+    if (dataPtr == nullptr)
+      dataPtr = fetchNewDataAsync();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+#endif
 
-  while(1) 
-    return 0;
+  return 0;
 }
 
 

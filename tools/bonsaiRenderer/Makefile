@@ -54,6 +54,10 @@ ifeq ($(COPY),1)
 	CXXFLAGS += -D__COMPOSITE_COPY
 endif
 
+ifeq ($(ASYNC_OMP),1)
+	CXXFLAGS += -DASYNC_OMP
+endif
+
 ifeq ($(NONBLOCK),0)
 	ifeq ($(PROFILE),1)
 		CXXFLAGS += -D__COMPOSITE_PROFILE
