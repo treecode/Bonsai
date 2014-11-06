@@ -961,7 +961,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
 
 #ifndef ASYNC_OMP
 
-  dataSetFunc(0);
+  dataSetFunc(0);  /* eg: feature: to fix: for the first time dataSetFunc(0) must be called, otherwise everything crashes .. */
   initAppRenderer(argc, argv, 
       rank, nranks, comm,
       *rDataPtr,
@@ -989,8 +989,8 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
   {
     if (!start)
     {
-      dataSetFunc(0);
-      start = true;
+      dataSetFunc(0);  /* eg: feature: to fix: for the first time dataSetFunc(0) must be called, otherwise everything crashes .. */
+      start = true;  
     }
 
     static MPI_Comm commAsync = 0;
