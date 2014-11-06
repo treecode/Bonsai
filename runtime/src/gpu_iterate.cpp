@@ -384,7 +384,7 @@ void octree::dumpDataMPI()
     static MPI_Request  req[2];
     static MPI_Status status[2];
 
-    bool ready2send = true;
+    int ready2send = 1;
     if (worldRank != -1)
     {
       int ready2sendHeader;
@@ -401,7 +401,10 @@ void octree::dumpDataMPI()
 
     const int destRank = worldRank + 1;
 
-    if (ready2send)
+    int ready2sendGlobal;
+    MPI_Allreduce(&ready2send, &ready2sendGlobal, 1, MPI_INT, MPI_MIN, mpiCommWorld);
+
+    if (ready2sendGlobal)
     {
       static BonsaiSharedHeader header2send;
       static std::vector<BonsaiSharedData> data2send;
