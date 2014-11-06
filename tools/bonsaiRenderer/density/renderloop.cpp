@@ -1929,7 +1929,7 @@ class Demo
               const float Mstar = sDisk.sampleMass(IDval);
               const float4 Cstar = sDisk.getColour(Mstar);
 #endif
-              const bool glow = (IDval & (1024/nps-1)) == 0;
+              const bool glow = (IDval & (2048/nps-1)) == 0;
               color = glow ? /* one in 1000 stars glows a bit */
                 sGlow.getColour(sGlow.sampleMass(IDval)) :  (0) ? color : make_float4(Cstar.x*0.01f, Cstar.y*0.01f, Cstar.z*0.01f, Cstar.w);
               color.w = 1.0f;

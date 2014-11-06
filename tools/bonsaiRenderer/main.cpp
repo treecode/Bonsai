@@ -232,7 +232,6 @@ bool fetchSharedDataMPI(const bool quickSync, RendererData &rData, const int ran
   static BonsaiSharedHeader header;
   static std::vector<BonsaiSharedData> data;
   
-  MPI_Barrier(comm);  /* global barrier, make sure all ranks send data */
   static int sendCount = 0;
   const int tagBase = 42;
   MPI_Irecv(&header, 1, MPI_Header, srcRank, tagBase+2*sendCount+0, MPI_COMM_WORLD, &req[0]);
@@ -250,8 +249,6 @@ bool fetchSharedDataMPI(const bool quickSync, RendererData &rData, const int ran
                                   ensure this number is the same in runtime/src/gpu_iterate.cpp
                                 */
   
- // MPI_Barrier(comm); /* global barrier, to make sure every one received what is theirs */
-
 //  static float tLast = -1.0f;
   assert(!rData.isNewData());
 
