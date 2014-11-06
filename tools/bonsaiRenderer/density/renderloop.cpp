@@ -701,7 +701,7 @@ class Demo
     const float lineSpacing = 140.0f;
 
     float Myr = m_idata.getTime() * 9.767;
-    glPrintf(x, y, "MYears:    %.2f Myr", Myr);
+    glPrintf(x, y, "MYears:    %.2f ", Myr);
     y -= lineSpacing;
 
 
