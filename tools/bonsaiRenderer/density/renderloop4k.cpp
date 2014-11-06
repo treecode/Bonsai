@@ -12,7 +12,7 @@
 #elif 0
 #define  WINX 2048
 #define  WINY 1536
-#elif 1
+#elif 0
 #define WINX 1920
 #define WINY 1080
 #elif 1
@@ -1851,7 +1851,7 @@ class Demo
         int typeBase = 0;
         if (m_renderer.getDisplayMode() == SmokeRenderer::VOLUMETRIC_NEW)
         {
-          nps = 16;
+          nps = 64;
           hasRHO = (IDval%nps) != 0;
           IDval /= nps;
           typeBase = 128;
@@ -1871,28 +1871,42 @@ class Demo
           assert(ix >= 0 && ix < 256);
           assert(iy >= 0 && iy < 256);
           float4 Cstar ;
-#if 0
-          Cstar.x = colorMap[iy][ix][0]*1.2+10;
-          Cstar.y = colorMap[iy][ix][1]*1.2+10;
-          Cstar.z = colorMap[iy][ix][2]*0.4+10;
-#else
           Cstar.x = colorMap[iy][ix][0]*1.2+0;
           Cstar.y = colorMap[iy][ix][1]*1.2+0;
           Cstar.z = colorMap[iy][ix][2]*0.6+0;
-#endif
           Cstar.w = type + typeBase;
           color   = Cstar;
-#if 1
           if (typeBase == 128)
           {
             color.x *= 1.0/256;
             color.y *= 1.0/256;
             color.z *= 1.0/256;
           }
-#endif
         }
         else
         {
+          float vel = m_idata.attribute(RendererData::VEL,i);
+          float rho = m_idata.attribute(RendererData::RHO,i);
+          vel = 255.0f*(vel - velMin) * scaleVEL;
+          rho = 255.0f*(rho - rhoMin) * scaleRHO;
+          const int ix = (int)vel;
+          const int iy = (int)rho;
+          assert(ix >= 0 && ix < 256);
+          assert(iy >= 0 && iy < 256);
+          float4 Cstar ;
+          Cstar.x = colorMap[iy][ix][0]*1.2+0;
+          Cstar.y = colorMap[iy][ix][1]*1.2+0;
+          Cstar.z = colorMap[iy][ix][2]*0.6+0;
+          Cstar.w = type + typeBase;
+          color   = Cstar;
+          if (typeBase == 128)
+          {
+            color.x *= 1.0/256;
+            color.y *= 1.0/256;
+            color.z *= 1.0/256;
+          }
+          color.w = 0;
+          Cstar = color;
           switch(type)
           {
             case 0:   /* DM */
@@ -1901,10 +1915,13 @@ class Demo
               break;
             case 1:   /* Bulge */
             {
-              const float Mstar = sBulge.sampleMass(IDval);
-              const float4 Cstar = sBulge.getColour(Mstar);
-              const float fdim = 0.01f;
-              color = Cstar * make_float4(fdim, fdim, fdim, 2.0f);
+              if (drand48() < 0.99)
+              {
+                const float Mstar = sBulge.sampleMass(IDval);
+                const float4 Cstar = sBulge.getColour(Mstar);
+                const float fdim = 0.01f;
+                color = Cstar * make_float4(fdim, fdim, fdim, 2.0f);
+              }
               break;
             }            
             case 2:   /* Disk */
@@ -1926,10 +1943,13 @@ class Demo
               Cstar.z = colorMap[iy][ix][2];
               Cstar.w = type + typeBase;
 #else
-              const float Mstar = sDisk.sampleMass(IDval);
-              const float4 Cstar = sDisk.getColour(Mstar);
+              if (drand48() < 0.999)
+              {
+                const float Mstar = sDisk.sampleMass(IDval);
+                Cstar = sDisk.getColour(Mstar);
+              }
 #endif
-              const bool glow = (IDval & (2048/nps-1)) == 0;
+              const bool glow = (IDval & (512-1)) == 0;
               color = glow ? /* one in 1000 stars glows a bit */
                 sGlow.getColour(sGlow.sampleMass(IDval)) :  (0) ? color : make_float4(Cstar.x*0.01f, Cstar.y*0.01f, Cstar.z*0.01f, Cstar.w);
               color.w = 1.0f;

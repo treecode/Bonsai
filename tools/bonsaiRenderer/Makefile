@@ -88,7 +88,13 @@ endif
 
 
 
-OBJ = main.o $(ENGINE)/renderloop.o anyoption.o $(ENGINE)/renderer.o paramgl.o RendererData.o RendererDataDistribute.o
+OBJ = main.o anyoption.o $(ENGINE)/renderer.o paramgl.o RendererData.o RendererDataDistribute.o
+
+ifeq ($(4K),1)
+	OBJ += $(ENGINE)/renderloop4k.o 
+else
+	OBJ += $(ENGINE)/renderloop.o 
+endif
 ifeq ($(ENGINE),smoke)
 	OBJ += tr.o
 	OBJ += smoke/GLSLProgram.o

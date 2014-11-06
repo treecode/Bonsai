@@ -36,6 +36,7 @@ else()
   add_definitions("-Wno-literal-suffix") # FIX for OpenMPI with gcc491
   add_definitions("-Wno-main") # Do not generate warrning on main
   add_definitions("-Werror")
+  add_definitions("-fPIE")
 endif()
 
 #
@@ -64,4 +65,4 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 # exe
 #
 add_executable(snapServe ${SRC_FILES})
-target_link_libraries(snapServe bonsai_tools_common ${MPI_C_LIBRARIES})
+target_link_libraries(snapServe bonsai_tools_common ${MPI_C_LIBRARIES} -lrt -rdynamic -pie)
