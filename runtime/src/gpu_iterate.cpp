@@ -434,6 +434,20 @@ void octree::dumpDataCommon(
 
   if (sync)
     while (!header[0].done_writing);
+  else
+  {
+    static bool first = true;
+    if (first)
+    {
+      first = false;
+      header[0].done_writing = true;
+    }
+    int ready = header[0].done_writing;
+    int readyGlobal;
+    MPI_Allreduce(&ready, &readyGlobal, 1, MPI_INT, MPI_MIN, mpiCommWorld);
+    if (!readyGlobal)
+      return;
+  }
     
   /* write header */
 
