@@ -3189,7 +3189,7 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   static unsigned long long frameCount = 0;
 #ifdef __COMPOSITE_NONBLOCK
   const int even = frameCount&1;
-  const int odd  = !even;
+  const int odd  = 1 - even;
   frameCount++;
 #else
   const int even = 0;
@@ -3233,13 +3233,6 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   assert(pbo_rb[0]);
   assert(pbo_rb[1]);
 
-  if (frameCount == 0)
-  {
-    glBindTexture(GL_TEXTURE_2D, m_imageTex[4]);
-    glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_rb[0]);
-    glBindTexture(GL_TEXTURE_2D, m_imageTex[5]);
-    glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_rb[1]);
-  }
   glBindTexture(GL_TEXTURE_2D, m_imageTex[4+even]);
   glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_rb[even]);
   
