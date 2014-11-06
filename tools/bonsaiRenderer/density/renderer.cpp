@@ -1850,8 +1850,8 @@ static void lCompose(
 #endif
 //#else /* TEX_FLOAT16 */
 static void lCompose(
-    float4* imgSrc,
-    float4* imgDst,
+    float* imgSrc,
+    float* imgDst,
     const int rank, const int nrank, const MPI_Comm &comm,
     const int2 imgCrd,
     const int2 imgSize,
@@ -3095,7 +3095,7 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
   else
   {
     lCompose(
-        &imgLoc[0], &imgGlb[0], 
+        (float*)&imgLoc[0], (float*)&imgGlb[0], 
         rank, nrank, comm,
         wCrd, wSize, viewPort,
         m_domainView ? m_domainViewIdx : -1,
@@ -3222,7 +3222,7 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   static GLuint pbo_rb[2] = {0};
   if (!pbo_rb[0])
   {
-    const int pbo_size = 2*2000*2000*sizeof(float4);
+    const int pbo_size = 2*4096*3072*sizeof(float4);
     glGenBuffers(2, pbo_rb);
     glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_rb[0]);
     glBufferData(GL_PIXEL_PACK_BUFFER, pbo_size, 0, GL_STATIC_READ);
@@ -3245,7 +3245,7 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
 #else /* TEX_FLOAT16 */
   glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, 0);
   glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_rb[odd]);
-  float4 *rptr = (float4*)glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, wSizePrev.x*wSizePrev.y*sizeof(float4), GL_MAP_READ_BIT);
+  float *rptr = (float*)glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, wSizePrev.x*wSizePrev.y*sizeof(float4), GL_MAP_READ_BIT);
 #endif /* TEX_FLOAT16 */
   assert(wSizePrev.x*wSizePrev.y >= 0);
   assert(rptr != nullptr || wSizePrev.x*wSizePrev.y == 0);
@@ -3275,7 +3275,7 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   static GLuint pbo_wb = 0;
   if (!pbo_wb)
   {
-    const int pbo_size = 2*2000*2000*sizeof(float4);
+    const int pbo_size = 2*4096*3072*sizeof(float4);
     glGenBuffers(1, &pbo_wb);
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo_wb);
     glBufferData(GL_PIXEL_UNPACK_BUFFER, pbo_size, 0, GL_STATIC_DRAW);
@@ -3290,7 +3290,7 @@ void SmokeRenderer::composeImages(const GLuint imgTex)
   uint16_t* wptr = (uint16_t*)glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, wb_size*sizeof(uint16_t), GL_MAP_WRITE_BIT);
 #else
   const int wb_size = w*h*4;
-  float4* wptr = (float4*)glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, wb_size*sizeof(float), GL_MAP_WRITE_BIT);
+  float* wptr = (float*)glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, wb_size*sizeof(float), GL_MAP_WRITE_BIT);
 #endif
   assert(wptr != nullptr);
   glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
