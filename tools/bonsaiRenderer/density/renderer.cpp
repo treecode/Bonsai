@@ -144,7 +144,7 @@ SmokeRendererParams::SmokeRendererParams() :
   //    m_cubemapTex(0),
   m_flareThreshold(0.5f),
   m_flareIntensity(0.0f),
-  m_sourceIntensity(0.5f),
+  m_sourceIntensity(1.0f),
   m_flareRadius(50.0f),
   m_skyboxBrightness(0.5f),
   m_cullDarkMatter(true),
@@ -1333,7 +1333,7 @@ void SmokeRenderer::compositeResult()
     m_compositeProg->bindTexture("glowTex", m_downSampledTex[0], GL_TEXTURE_2D, 3);
     m_compositeProg->bindTexture("flareTex", m_downSampledTex[2], GL_TEXTURE_2D, 4);
     m_compositeProg->setUniform1f("scale", m_imageBrightness);
-    m_compositeProg->setUniform1f("sourceIntensity", m_sourceIntensity);
+    m_compositeProg->setUniform1f("sourceIntensity", 0.5f*m_sourceIntensity);
     m_compositeProg->setUniform1f("glowIntensity", m_glowIntensity);
     m_compositeProg->setUniform1f("starIntensity", m_starIntensity);
     m_compositeProg->setUniform1f("flareIntensity", m_flareIntensity);
@@ -3911,6 +3911,10 @@ void SmokeRenderer::volumetricNew()
 
 #if 1  /* use filters */
 
+  if (m_starBlurRadius > 0.0f && m_starIntensity > 0.0f) 
+  {
+    doStarFilter();
+  }
   if (m_glowIntensity > 0.0f || m_flareIntensity > 0.0f) 
   {
     downSample();
@@ -3926,6 +3930,10 @@ void SmokeRenderer::volumetricNew()
   m_volnewCompositeProg->bindTexture("glowTex", m_downSampledTex[0], GL_TEXTURE_2D, 3);
   m_volnewCompositeProg->setUniform1f("scale", m_imageBrightness);
   m_volnewCompositeProg->setUniform1f("glowIntensity", m_glowIntensity);
+  m_volnewCompositeProg->bindTexture("blurTexH", m_imageTex[1], GL_TEXTURE_2D, 1);
+  m_volnewCompositeProg->bindTexture("blurTexV", m_imageTex[2], GL_TEXTURE_2D, 2);
+  m_volnewCompositeProg->setUniform1f("starIntensity", m_starIntensity);
+  m_volnewCompositeProg->setUniform1f("sourceIntensity", m_sourceIntensity);
   m_volnewCompositeProg->setUniform1f("gamma", m_gamma);
   drawQuad();
   m_volnewCompositeProg->disable();
@@ -4407,7 +4415,7 @@ void SmokeRenderer::initParams()
   m_params[VOLUMETRIC]->AddParam(new Param<float>("blur radius", m_blurRadius, 0.0f, 10.0f, 0.1f, &m_blurRadius));
   m_params[VOLUMETRIC]->AddParam(new Param<int>("blur passes", m_blurPasses, 0, 10, 1, &m_blurPasses));
 
-  m_params[VOLUMETRIC]->AddParam(new Param<float>("source intensity", m_sourceIntensity, 0.0f, 1.0f, 0.01f, &m_sourceIntensity));
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("source intensity", m_sourceIntensity, 0.0f, 2.0f, 0.01f, &m_sourceIntensity));
   m_params[VOLUMETRIC]->AddParam(new Param<float>("star blur radius", m_starBlurRadius, 0.0f, 100.0f, 1.0f, &m_starBlurRadius));
   m_params[VOLUMETRIC]->AddParam(new Param<float>("star threshold", m_starThreshold, 0.0f, 100.0f, 0.1f, &m_starThreshold));
   m_params[VOLUMETRIC]->AddParam(new Param<float>("star power", m_starPower, 0.0f, 100.0f, 0.1f, &m_starPower));
@@ -4456,7 +4464,7 @@ void SmokeRenderer::initParams()
   m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("image gamma", m_gamma, 0.0f, 2.0f, 0.0f, &m_gamma));
   m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("blur radius", m_blurRadius, 0.0f, 10.0f, 0.1f, &m_blurRadius));
   m_params[VOLUMETRIC_NEW]->AddParam(new Param<int>("blur passes", m_blurPasses, 0, 10, 1, &m_blurPasses));
-  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("source intensity", m_sourceIntensity, 0.0f, 1.0f, 0.01f, &m_sourceIntensity));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("source intensity", m_sourceIntensity, 0.0f, 2.0f, 0.01f, &m_sourceIntensity));
   m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("star blur radius", m_starBlurRadius, 0.0f, 100.0f, 1.0f, &m_starBlurRadius));
   m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("star threshold", m_starThreshold, 0.0f, 100.0f, 0.1f, &m_starThreshold));
   m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("star power", m_starPower, 0.0f, 100.0f, 0.1f, &m_starPower));
@@ -4467,5 +4475,6 @@ void SmokeRenderer::initParams()
   m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("flare threshold", m_flareThreshold, 0.0f, 10.0f, 0.01f, &m_flareThreshold));
   m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("flare radius", m_flareRadius, 0.0f, 100.0f, 0.01f, &m_flareRadius));
   m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("skybox brightness", m_skyboxBrightness, 0.0f, 1.0f, 0.01f, &m_skyboxBrightness));
+
 
 }
