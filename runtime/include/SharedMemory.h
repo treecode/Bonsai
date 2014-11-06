@@ -92,7 +92,11 @@ class SharedMemoryBase
     }
 
     ////////////////
-  
+ 
+    bool isLocked() const
+    {
+      return header->locked;
+    } 
     void acquireLock()
     {
       while (!__sync_bool_compare_and_swap(&header->locked, 0, 1));
