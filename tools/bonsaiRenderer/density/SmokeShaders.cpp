@@ -1193,16 +1193,23 @@ STRINGIFY(
 const char *volnewCompositePS = 
 STRINGIFY(
     uniform sampler2D tex;                                             \n
+    uniform sampler2D blurTexH;                                        \n
+    uniform sampler2D blurTexV;                                        \n
     uniform sampler2D glowTex;                                         \n
     uniform float glowIntensity;                                       \n
+    uniform float sourceIntensity;                                     \n
+    uniform float starIntensity;
     uniform float scale;                         \n
     uniform float gamma;
     void main()                                                        \n
     {                                                                  \n
-      vec4 c = texture2D(tex, gl_TexCoord[0].xy);                    \n
+      vec4 c = texture2D(tex, gl_TexCoord[0].xy) * sourceIntensity;   \n
+      if (starIntensity > 0) {
+        c += texture2D(blurTexH, gl_TexCoord[0].xy) * starIntensity;
+        c += texture2D(blurTexV, gl_TexCoord[0].xy) * starIntensity;
+      }
       c += texture2D(glowTex, gl_TexCoord[0].xy) * glowIntensity;  \n
-//      c.rgb *= 100;
-      c.rgb = 1.0 - exp(-c.rgb);          \n
+      c.rgb = 1.0 - exp(-c.rgb);                                    \n
       c.rgb *= scale;
       // vignette
       float d = length(gl_TexCoord[0].xy*2.0-1.0);
