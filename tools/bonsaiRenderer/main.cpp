@@ -887,7 +887,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
   };
 
 #ifdef ASYNC_OMP
-  std::shared_ptr<RendererDataT>  dataPtr(nullptr);
+  std::shared_ptr<RendererDataT> dataPtr(nullptr);
 #endif
 
   auto dataSetFunc = [&](const int code) -> void 
@@ -950,10 +950,6 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
   };
   std::function<void(int)> updateFunc = dataSetFunc;
 
-
-
-  dataSetFunc(0);
-
 #ifdef USE_ICET
 #error "IceT is not supported. Disable this error if you want IceT and proceed at your own risk.."
   //Setup the IceT context and communicators
@@ -963,11 +959,24 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
   icetDiagnostics(ICET_DIAG_FULL);
 #endif
 
-#ifdef ASYNC_OMP
+#ifndef ASYNC_OMP
+
+  dataSetFunc(0);
+  initAppRenderer(argc, argv, 
+      rank, nranks, comm,
+      *rDataPtr,
+      fullScreenMode.c_str(), 
+      stereo,
+      updateFunc,
+      imageFileName);
+
+#else
+  volatile bool start = false;
 #pragma omp parallel num_threads(2)
   if (omp_get_thread_num() == 0)
-#endif
   {
+    while (!start)
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
     initAppRenderer(argc, argv, 
         rank, nranks, comm,
         *rDataPtr,
@@ -976,13 +985,31 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
         updateFunc,
         imageFileName);
   }
-#ifdef ASYNC_OMP
   else while(1)
   {
-    if (dataPtr == nullptr)
+    if (!start)
+    {
+      dataSetFunc(0);
+      start = true;
+    }
+
+    static MPI_Comm commAsync = 0;
+    if (!commAsync)
+    {
+      assert(MPI_Comm_split(comm, 1, nranks + 2*rank, &commAsync) == MPI_SUCCESS);
+    }
+    
+    int ready = dataPtr == nullptr;
+    int readyGlobal;
+    MPI_Allreduce(&ready, &readyGlobal, 1, MPI_INT, MPI_MIN, commAsync);
+
+    if (readyGlobal)
+    {
       dataPtr = fetchNewDataAsync();
+    }
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
+
 #endif
 
   return 0;
