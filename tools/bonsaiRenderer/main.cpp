@@ -886,8 +886,8 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     return nullptr;
   };
 
-#ifdef ASYNC_OMP
-  std::shared_ptr<RendererDataT> dataPtr(nullptr);
+#ifdef ASYNC_OMP  /* eg: seems to work w/o being volatile, but be careful */
+  /* volatile */ std::shared_ptr<RendererDataT> dataPtr(nullptr);
 #endif
 
   auto dataSetFunc = [&](const int code) -> void 
