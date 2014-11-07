@@ -1718,7 +1718,7 @@ static void lCompose(
 #if 1 // def __COMPOSITE_PROFILE
     double nsendrecvloc = (senddispl[nrank] + recvdispl[nrank])*sizeof(uint16_t);
     double nsendrecv;
-    MPI_Allreduce(&nsendrecvloc, &nsendrecv, 1, MPI_DOUBLE, MPI_SUM, comm);
+    MPI_Reduce(&nsendrecvloc, &nsendrecv, 1, MPI_DOUBLE, MPI_SUM, master, comm);
     const double t1 = MPI_Wtime();
     if (rank == master)
     {
