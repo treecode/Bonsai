@@ -541,8 +541,9 @@ void RendererDataDistribute::distribute()
   const double t20 = MPI_Wtime();
 
   /* determine division */
-  vector3  xlow[NMAXPROC];
-  vector3 xhigh[NMAXPROC];
+  std::vector<vector3> xlowhigh(2*nrank);
+  vector3  *xlow = &xlowhigh[    0];
+  vector3 *xhigh = &xlowhigh[nrank];
   const float rmax = std::max(std::abs(_rmin), std::abs(_rmax)) * 1.0001;
 
   const int nsample = sample_array.size();
@@ -559,9 +560,10 @@ void RendererDataDistribute::distribute()
 
   const double t40 = MPI_Wtime();
 
-  const int nwords=nrank*3;
-  MPI_Bcast(& xlow[0],nwords,MPI_DOUBLE,getMaster(),comm);
-  MPI_Bcast(&xhigh[0],nwords,MPI_DOUBLE,getMaster(),comm);
+  {
+    const int nwords=nrank*3;
+    MPI_Bcast(&xlowhigh[0],2*nwords,MPI_DOUBLE,getMaster(),comm);
+  }
 
   bounds.resize(nrank);
   for (int p = 0; p < nrank; p++)
