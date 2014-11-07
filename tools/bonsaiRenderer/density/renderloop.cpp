@@ -2268,7 +2268,7 @@ void display()
   MPI_Reduce(&dt, &dtSum, 1, MPI_DOUBLE, MPI_SUM, showRank, thisComm);
 //  MPI_Barrier(thisComm);
   if (thisRank == showRank)
-    fprintf(stderr, " render= %g sec range=[ %g , %g ]  \n", dtSum/numRanks, dtMin, dtMax);
+    fprintf(stderr, " render= %g sec range= [ %g , %g ]  \n", dtSum/numRanks, dtMin, dtMax);
 
   fpsCount++;
 

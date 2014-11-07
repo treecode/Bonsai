@@ -349,19 +349,37 @@ void rescaleData(RendererData &rData,
 {
   if (doDD)
   {
+#ifdef DDDBG
     MPI_Barrier(comm);
+#endif
     const double t0 = MPI_Wtime();
     rData.randomShuffle();
     rData.setNMAXSAMPLE(nmaxsample);
     rData.set_hfac(hfac);
+#ifdef DDDBG
     fprintf(stderr, " rank= %d: pre n= %d\n", rank, rData.n());
+#endif
+    const double npre = rData.n();
     rData.distribute();
-    //    rData.distribute();
+#ifdef DDBG
     MPI_Barrier(comm);
-    const double t1 = MPI_Wtime();
     fprintf(stderr, " rank= %d: post n= %d\n", rank, rData.n());
-    if (rank == 0)
-      fprintf(stderr, " DD= %g sec \n", t1-t0);
+#endif
+    const double npost = rData.n();
+    const double t1 = MPI_Wtime();
+    double dt = t1 - t0;
+    double val[3] = {dt, npre, npost};
+    double min[3], max[3], sum[3];
+    const int showRank = std::min(nrank-1, 1);
+    MPI_Reduce(&val, &min, 3, MPI_DOUBLE, MPI_MIN, showRank, comm);
+    MPI_Reduce(&val, &max, 3, MPI_DOUBLE, MPI_MAX, showRank, comm);
+    MPI_Reduce(&val, &sum, 3, MPI_DOUBLE, MPI_SUM, showRank, comm);
+    if (rank == showRank)
+    {
+      fprintf(stderr, " npre=  %g   range= [ %g , %g ] : total= %g \n", sum[1]/nrank, min[1], max[1], sum[1]);
+      fprintf(stderr, " npost= %g   range= [ %g , %g ] : total= %g \n", sum[2]/nrank, min[2], max[2], sum[2]);
+      fprintf(stderr, " DD= %g sec  range= [ %g , %g ] \n", sum[0]/nrank, min[0], max[0]);
+    }
   }
 
   if (rank == 0) 
