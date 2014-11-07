@@ -51,7 +51,7 @@ class RendererData
     {
       float posx, posy, posz;
       IDType ID;
-      float attribute[NPROP];
+      std::array<float,NPROP> attribute;
     };
     std::vector<particle_t> data;
     bool new_data;
@@ -62,10 +62,10 @@ class RendererData
     float _xminl, _yminl, _zminl, _rminl;
     float _xmaxl, _ymaxl, _zmaxl, _rmaxl;
 
-    float _attributeMin[NPROP];
-    float _attributeMax[NPROP];
-    float _attributeMinL[NPROP];
-    float _attributeMaxL[NPROP];
+    std::array<float,NPROP> _attributeMin;
+    std::array<float,NPROP> _attributeMax;
+    std::array<float,NPROP> _attributeMinL;
+    std::array<float,NPROP> _attributeMaxL;
   
     void minmaxAttributeGlb(const Attribute_t p);
     int  getMaster() const { return 0; }
@@ -77,6 +77,7 @@ class RendererData
     double time;
     size_t nBodySim;
 
+
   public:
     RendererData(const int rank, const int nrank, const MPI_Comm &comm) : 
       rank(rank), nrank(nrank), comm(comm), cameraPtr(nullptr), firstData(true)
@@ -84,6 +85,41 @@ class RendererData
     assert(rank < nrank);
     new_data = false;
   }
+
+    virtual RendererData& operator=(RendererData&& rhs)
+    {
+      data = std::move(rhs.data);
+      new_data = rhs.new_data;
+      _xmin    = rhs._xmin;
+      _ymin    = rhs._ymin;
+      _zmin    = rhs._zmin;
+      _rmin    = rhs._rmin;
+      _xmax    = rhs._xmax;
+      _ymax    = rhs._ymax;
+      _zmax    = rhs._zmax;
+      _rmax    = rhs._rmax;
+      
+      _xminl   = rhs._xminl;
+      _yminl   = rhs._yminl;
+      _zminl   = rhs._zminl;
+      _rminl   = rhs._rminl;
+      _xmaxl   = rhs._xmaxl;
+      _ymaxl   = rhs._ymaxl;
+      _zmaxl   = rhs._zmaxl;
+      _rmaxl   = rhs._rmaxl;
+
+      _attributeMin = rhs._attributeMin;
+      _attributeMax = rhs._attributeMax;
+      
+      _attributeMinL = rhs._attributeMinL;
+      _attributeMaxL = rhs._attributeMaxL;
+
+      firstData = rhs.firstData;
+      time      = rhs.time;
+      nBodySim  = rhs.nBodySim;
+
+      return *this;
+    }
 
     double getTime() const { return time; }
     void setTime(const double time) { this->time = time; }
@@ -164,6 +200,7 @@ class RendererData
 
     virtual bool  isDistributed() const { return false; }
     virtual void  setNMAXSAMPLE(const int n) {};
+    virtual void set_hfac(const float h) {};
     virtual void  distribute() {}
     virtual float getBoundBoxLow (const int i) const 
     {
@@ -187,7 +224,9 @@ class RendererData
     }
     virtual std::vector<int> getVisibilityOrder(const std::array<float,3> camPos) const
     {
-      return std::vector<int>();
+      std::vector<int> order(nrank);
+      std::iota(order.begin(), order.end(), 0);
+      return order;
     }
 
 };
@@ -199,9 +238,11 @@ class RendererDataDistribute : public RendererData
     int NMAXSAMPLE;
     int sample_freq;
 
-    float xlow[3], xhigh[3];
+    std::vector<std::array<double,3>> bounds;
+    std::array<float,3> xlow, xhigh;
     int npx, npy, npz;
     bool distributed;
+    float hfac;
 
     using vector3 = std::array<double,3>;
     struct float4
@@ -279,13 +320,14 @@ class RendererDataDistribute : public RendererData
   public:
 
     RendererDataDistribute(const int rank, const int nrank, const MPI_Comm &comm) : 
-      RendererData(rank,nrank,comm), NMAXSAMPLE(200000), distributed(false)
+      RendererData(rank,nrank,comm), NMAXSAMPLE(100000), distributed(false), hfac(1.0f)
   {
     assert(nrank <= NMAXPROC);
   }
 
     virtual void setNMAXSAMPLE(const int n) {NMAXSAMPLE = n;}
     virtual bool isDistributed() const { return distributed; }
+    virtual void set_hfac(const float h) { hfac = h; }
 
   private:
 
@@ -305,12 +347,61 @@ class RendererDataDistribute : public RendererData
         const vector3 xlow[],
         const vector3 xhigh[]);
 
+    inline void which_boxes_z(
+			int p,
+			const vector3 &pos,
+			const float h,
+			const vector3 xlow[],
+			const vector3 xhigh[],
+			std::vector<int> &boxes);
+    inline void which_boxes_y(
+			int p,
+			const vector3 &pos,
+			const float h,
+			const vector3 xlow[],
+			const vector3 xhigh[],
+			std::vector<int> &boxes);
+    inline void which_boxes_x(
+			const vector3 &pos,
+			const float h,
+			const vector3 xlow[],
+			const vector3 xhigh[],
+			std::vector<int> &boxes);
     inline void which_boxes(
         const vector3 &pos,
         const float h,
         const vector3 xlow[],
         const vector3 xhigh[],
         std::vector<int> &boxes);
+    
+    inline void which_boxes_z(
+			int p, const int i,
+			const vector3 &pos,
+			const float h,
+			const vector3 xlow[],
+			const vector3 xhigh[],
+			std::vector<int> boxes[NMAXPROC]);
+    inline void which_boxes_y(
+			int p, const int i,
+			const vector3 &pos,
+			const float h,
+			const vector3 xlow[],
+			const vector3 xhigh[],
+			std::vector<int> boxes[NMAXPROC]);
+    inline void which_boxes_x(
+			const vector3 &pos,
+      const int i,
+			const float h,
+			const vector3 xlow[],
+			const vector3 xhigh[],
+			std::vector<int> boxes[NMAXPROC]);
+    inline void which_boxes(
+        const vector3 &pos,
+        const int i, 
+        const float h,
+        const vector3 xlow[],
+        const vector3 xhigh[],
+        std::vector<int> boxes[NMAXPROC]);
 
     void alltoallv(std::vector<particle_t> psend[], std::vector<particle_t> precv[]);
 
@@ -328,4 +419,49 @@ class RendererDataDistribute : public RendererData
     virtual float getBoundBoxLow (const int i) const {return  xlow[i];}
     virtual float getBoundBoxHigh(const int i) const {return xhigh[i];}
     virtual std::vector<int> getVisibilityOrder(const std::array<float,3> camPos) const;
+    
+    virtual RendererDataDistribute& operator=(RendererDataDistribute&& rhs)
+    {
+      data = std::move(rhs.data);
+      new_data = rhs.new_data;
+      _xmin    = rhs._xmin;
+      _ymin    = rhs._ymin;
+      _zmin    = rhs._zmin;
+      _rmin    = rhs._rmin;
+      _xmax    = rhs._xmax;
+      _ymax    = rhs._ymax;
+      _zmax    = rhs._zmax;
+      _rmax    = rhs._rmax;
+      
+      _xminl   = rhs._xminl;
+      _yminl   = rhs._yminl;
+      _zminl   = rhs._zminl;
+      _rminl   = rhs._rminl;
+      _xmaxl   = rhs._xmaxl;
+      _ymaxl   = rhs._ymaxl;
+      _zmaxl   = rhs._zmaxl;
+      _rmaxl   = rhs._rmaxl;
+
+      _attributeMin = rhs._attributeMin;
+      _attributeMax = rhs._attributeMax;
+      
+      _attributeMinL = rhs._attributeMinL;
+      _attributeMaxL = rhs._attributeMaxL;
+
+      firstData = rhs.firstData;
+      time      = rhs.time;
+      nBodySim  = rhs.nBodySim;
+
+      bounds = std::move(rhs.bounds);
+      xlow  = rhs.xlow;
+      xhigh = rhs.xhigh;
+      npx   = rhs.npx;
+      npy   = rhs.npy;
+      npz   = rhs.npz;
+      hfac  = rhs.hfac;
+
+      distributed = rhs.distributed;
+      
+      return *this;
+    }
 };

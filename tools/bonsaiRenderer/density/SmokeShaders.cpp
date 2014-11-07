@@ -431,6 +431,7 @@ const char *texture2DPS = STRINGIFY(
     vec4 c = texture2D(tex, gl_TexCoord[0].xy);                    \n
     c.rgb *= scale;
     c.rgb = pow(c.rgb, gamma);                                     \n
+    c.a = 1.0;
     gl_FragColor = c;                                              \n
     }                                                                  \n
     );
@@ -984,6 +985,30 @@ STRINGIFY(
     out varying vec4 vpos;                                    \n
     out varying vec4 vcol;                                    \n
     out varying float vsize;                                  \n
+
+    uint hash( uint x ) {
+      x += ( x << 10u );
+      x ^= ( x >>  6u );
+      x += ( x <<  3u );
+      x ^= ( x >> 11u );
+      x += ( x << 15u );
+      return x;
+    }
+
+    float floatConstruct( uint m ) {
+      const uint ieeeMantissa = 0x007FFFFFu; // binary32 mantissa bitmask
+      const uint ieeeOne      = 0x3F800000u; // 1.0 in IEEE binary32
+
+      m &= ieeeMantissa;                     // Keep only mantissa bits (fractional part)
+      m |= ieeeOne;                          // Add fractional part to 1.0
+
+      float  f = uintBitsToFloat( m );       // Range [1:2]
+      return f - 1.0;                        // Range [0:1]
+    }
+
+    float random( float x ) { 
+      return floatConstruct(hash(floatBitsToUint(x))); 
+    }
     void main()                                               \n
     {                                                         \n
       vec4 wpos = vec4(gl_Vertex.xyz, 1.0);                   \n
@@ -1003,18 +1028,24 @@ STRINGIFY(
       if (type == 0.0)                                        \n
       {
         col.a = dustAlpha;
-        pointSize = pointRadius * ageScale;
+        pointSize = 1.0*pointRadius * ageScale;
       } 
       else if (type == 1.0) 
       {
         col.rgb *= overBrightThreshold; 
-        pointSize = pointRadius;
+        pointSize = 1.0*pointRadius;
+      }
+      else if (type == 5.0)
+      {
+        col.rgb *= overBrightThreshold;
+        col.b += 64.0*random(dist*124);
+        pointSize = 1.0*pointRadius;
       }
       else if (type == 2.0) 
       {
         // star
         col.rgb *= overBright;
-        pointSize = pointRadius;
+        pointSize = 1.0*pointRadius;
       } 
       else if (type == 3.0) 
       {
@@ -1022,7 +1053,7 @@ STRINGIFY(
           gl_Position.w = -1.0;
           wpos.w = -1.0;
         }
-        pointSize = pointRadius;
+        pointSize = 1.0*pointRadius;
       }
       else if (type == 128.0)                                 \n
       {                                                       \n
@@ -1153,8 +1184,38 @@ STRINGIFY(
       c.rgb = 1.0 - exp(-c.rgb);          \n
       c.rgb *= scale;
       c.rgb = pow(c.rgb, gamma);          \n
+      c.a   = 1.0;
       gl_FragColor = c;                                              \n
     }                                                                  \n
   );
 
 
+const char *volnewCompositePS = 
+STRINGIFY(
+    uniform sampler2D tex;                                             \n
+    uniform sampler2D blurTexH;                                        \n
+    uniform sampler2D blurTexV;                                        \n
+    uniform sampler2D glowTex;                                         \n
+    uniform float glowIntensity;                                       \n
+    uniform float sourceIntensity;                                     \n
+    uniform float starIntensity;
+    uniform float scale;                         \n
+    uniform float gamma;
+    void main()                                                        \n
+    {                                                                  \n
+      vec4 c = texture2D(tex, gl_TexCoord[0].xy) * sourceIntensity;   \n
+      if (starIntensity > 0) {
+        c += texture2D(blurTexH, gl_TexCoord[0].xy) * starIntensity;
+        c += texture2D(blurTexV, gl_TexCoord[0].xy) * starIntensity;
+      }
+      c += texture2D(glowTex, gl_TexCoord[0].xy) * glowIntensity;  \n
+      c.rgb = 1.0 - exp(-c.rgb);                                    \n
+      c.rgb *= scale;
+      // vignette
+      float d = length(gl_TexCoord[0].xy*2.0-1.0);
+      c.rgb *= 1.0 - smoothstep(0.9, 1.5, d);
+      c.rgb = pow(c.rgb, gamma);          \n
+      c.a   = 1.0;
+      gl_FragColor = c;                                              \n
+    }                                                                  \n
+  );

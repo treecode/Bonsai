@@ -274,6 +274,155 @@ void octree::terminateIO() const
   }
 }
 
+static IDType lGetIDType(const long long id)
+{
+  IDType ID;
+  ID.setID(id);
+  ID.setType(3);     /* Everything is Dust until told otherwise */
+  if(id >= DISKID  && id < BULGEID)       
+  {
+    ID.setType(2);  /* Disk */
+    ID.setID(id - DISKID);
+  }
+  else if(id >= BULGEID && id < DARKMATTERID)  
+  {
+    ID.setType(1);  /* Bulge */
+    ID.setID(id - BULGEID);
+  }
+  else if (id >= DARKMATTERID)
+  {
+    ID.setType(0);  /* DM */
+    ID.setID(id - DARKMATTERID);
+  }
+  return ID;
+};
+
+void octree::dumpDataMPI()
+{
+  static MPI_Datatype MPI_Header = 0;
+  static MPI_Datatype MPI_Data   = 0;
+  if (!MPI_Header)
+  {
+    int ss = sizeof(BonsaiSharedHeader) / sizeof(char);
+    assert(0 == sizeof(BonsaiSharedHeader) % sizeof(char));
+    MPI_Type_contiguous(ss, MPI_BYTE, &MPI_Header);
+    MPI_Type_commit(&MPI_Header);
+  }
+  if (!MPI_Data)
+  {
+    int ss = sizeof(BonsaiSharedData) / sizeof(char);
+    assert(0 == sizeof(BonsaiSharedData) % sizeof(char));
+    MPI_Type_contiguous(ss, MPI_BYTE, &MPI_Data);
+    MPI_Type_commit(&MPI_Data);
+  }
+
+  BonsaiSharedHeader header;
+  std::vector<BonsaiSharedData> data;
+
+  if (t_current >= nextQuickDump && quickDump > 0)
+  {
+    localTree.bodies_pos.d2h();
+    localTree.bodies_vel.d2h();
+    localTree.bodies_ids.d2h();
+    localTree.bodies_h.d2h();
+    localTree.bodies_dens.d2h();
+
+    nextQuickDump += quickDump;
+    nextQuickDump = std::max(nextQuickDump, t_current);
+
+    if (procId == 0)
+      fprintf(stderr, "-- quickdumpMPI: nextQuickDump= %g  quickRatio= %g\n",
+          nextQuickDump, quickRatio);
+
+    const std::string fileNameBase = snapshotFile + "_quickMPI";
+    const float ratio = quickRatio;
+    assert(!quickSync);
+  
+    char fn[1024];
+    sprintf(fn,
+        "%s_%010.4f.bonsai", 
+        fileNameBase.c_str(), 
+        t_current);
+
+    const size_t nSnap = localTree.n;
+    const size_t dn = static_cast<size_t>(1.0/ratio);
+    assert(dn >= 1);
+    size_t nQuick = 0;
+    for (size_t i = 0; i < nSnap; i += dn)
+      nQuick++;
+
+
+    header.tCurrent = t_current;
+    header.nBodies  = nQuick;
+    for (int i = 0; i < 1024; i++)
+    {
+      header.fileName[i] = fn[i];
+      if (fn[i] == 0)
+        break;
+    }
+
+    data.resize(nQuick);
+#pragma omp parallel for schedule(static)
+    for (size_t i = 0; i < nSnap; i += dn)
+    {
+      auto &p = data[i/dn];
+      p.x    = localTree.bodies_pos[i].x;
+      p.y    = localTree.bodies_pos[i].y;
+      p.z    = localTree.bodies_pos[i].z;
+      p.mass = localTree.bodies_pos[i].w;
+      p.vx   = localTree.bodies_vel[i].x;
+      p.vy   = localTree.bodies_vel[i].y;
+      p.vz   = localTree.bodies_vel[i].z;
+      p.vw   = localTree.bodies_vel[i].w;
+      p.rho  = localTree.bodies_dens[i].x;
+      p.h    = localTree.bodies_h[i];
+      p.ID   = lGetIDType(localTree.bodies_ids[i]);
+    }
+
+    static int worldRank = -1;
+
+    static MPI_Request  req[2];
+    static MPI_Status status[2];
+
+    int ready2send = 1;
+    if (worldRank != -1)
+    {
+      int ready2sendHeader;
+      int ready2sendData;
+      MPI_Test(&req[0], &ready2sendHeader, &status[0]);
+      MPI_Test(&req[1], &ready2sendData,   &status[1]);
+      ready2send = ready2sendHeader && ready2sendData;
+    }
+    else
+    {
+      MPI_Comm_rank(MPI_COMM_WORLD, &worldRank);  
+    }
+    assert(worldRank%2 == 0);
+
+    const int destRank = worldRank + 1;
+
+    int ready2sendGlobal;
+    MPI_Allreduce(&ready2send, &ready2sendGlobal, 1, MPI_INT, MPI_MIN, mpiCommWorld);
+
+    if (ready2sendGlobal)
+    {
+      static BonsaiSharedHeader header2send;
+      static std::vector<BonsaiSharedData> data2send;
+
+      header2send = std::move(header);
+      data2send   = std::move(data);
+
+      static int sendCount = 0;
+      const int tagBase = 42;
+      MPI_Isend(&header2send,                 1, MPI_Header, destRank, tagBase+2*sendCount+0, MPI_COMM_WORLD, &req[0]);
+      MPI_Isend(&data2send[0], data2send.size(), MPI_Data,   destRank, tagBase+2*sendCount+1, MPI_COMM_WORLD, &req[1]);
+      sendCount++;
+      sendCount = sendCount % 4 ;  /* permit only 4 buffer */
+    }
+    
+  }
+}
+
 template<typename THeader, typename TData>
 void octree::dumpDataCommon(
     SharedMemoryBase<THeader> &header, SharedMemoryBase<TData> &data,
@@ -283,33 +432,22 @@ void octree::dumpDataCommon(
 {
   /********/
 
-  auto getIDType = [&](const long long id)
-  {
-    IDType ID;
-    ID.setID(id);
-    ID.setType(3);     /* Everything is Dust until told otherwise */
-    if(id >= DISKID  && id < BULGEID)       
-    {
-      ID.setType(2);  /* Disk */
-      ID.setID(id - DISKID);
-    }
-    else if(id >= BULGEID && id < DARKMATTERID)  
-    {
-      ID.setType(1);  /* Bulge */
-      ID.setID(id - BULGEID);
-    }
-    else if (id >= DARKMATTERID)
-    {
-      ID.setType(0);  /* DM */
-      ID.setID(id - DARKMATTERID);
-    }
-    return ID;
-  };
-
-  /********/
-
   if (sync)
     while (!header[0].done_writing);
+  else
+  {
+    static bool first = true;
+    if (first)
+    {
+      first = false;
+      header[0].done_writing = true;
+    }
+    int ready = header[0].done_writing;
+    int readyGlobal;
+    MPI_Allreduce(&ready, &readyGlobal, 1, MPI_INT, MPI_MIN, mpiCommWorld);
+    if (!readyGlobal)
+      return;
+  }
     
   /* write header */
 
@@ -358,13 +496,14 @@ void octree::dumpDataCommon(
     p.vw   = localTree.bodies_vel[i].w;
     p.rho  = localTree.bodies_dens[i].x;
     p.h    = localTree.bodies_h[i];
-    p.ID   = getIDType(localTree.bodies_ids[i]);
+    p.ID   = lGetIDType(localTree.bodies_ids[i]);
   }
   data.releaseLock();
 
   header[0].done_writing = false;
   header.releaseLock();
 }
+
 
 void octree::dumpData()
 {
@@ -751,7 +890,10 @@ bool octree::iterate_once(IterationData &idata) {
 
     if (useMPIIO)
     {
-      dumpData();
+      if (mpiRenderMode)
+        dumpDataMPI();
+      else
+        dumpData();
     }
     else if (snapshotIter > 0)
     {
@@ -981,7 +1123,10 @@ void octree::iterate_setup(IterationData &idata) {
   {
     nextSnapTime  = t_current;
     nextQuickDump = t_current;
-    dumpData();
+    if (mpiRenderMode)
+      dumpDataMPI();
+    else
+      dumpData();
   }
   else if(snapshotIter > 0)
   {

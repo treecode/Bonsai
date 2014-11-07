@@ -7,7 +7,7 @@ CFLAGS =  -Wall -Werror
 CUDA_TK  = /usr/local/cuda
 # CUDA_TK = $(HOME)/usr/local/cuda-5.5
 
-CXXFLAGS += -Wall -fopenmp -std=c++11  -fPIE 
+CXXFLAGS += -Wall -fopenmp -std=c++11  -fPIE  -ffast-math
 CXXFLAGS += -Werror
 #ignore warnings caused by openmpi
 CXXFLAGS += -Wno-literal-suffix
@@ -37,13 +37,12 @@ ENGINE=density
 INCLUDE_FLAGS= -I./ -I./$(ENGINE)/
 INCLUDE_FLAGS += -I$(CUDA_TK)/include 
 LDFLAGS = -lGL -lGLU -lglut -lGLEW -fopenmp -lrt
-LDFLAGS += -pie -rdynamic
-#-L$(PWD)/lib/linux -lGLEW_x86_64
+LDFLAGS += -pie -rdynamic -lpthread
 
 
-ifeq ($(PROFILE),1)
-	CXXFLAGS += -D__COMPOSITE_PROFILE
-endif
+OBJ = main.o anyoption.o $(ENGINE)/renderer.o paramgl.o RendererData.o RendererDataDistribute.o
+
+include Makefile.in
 
 ifeq ($(ICET),1)
 	ICETPATH=../../IceT
@@ -58,12 +57,7 @@ ifeq ($(APPLEOSX),1)
 	LDFLAGS = -framework OpenGL -L/opt/local/lib -lglut -lglew -fopenmp
 endif
 
-ifeq ($(PNG),1)
-	CXXFLAGS += -D_PNG
-	LDFLAGS += -lpng
-endif
 
-OBJ = main.o $(ENGINE)/renderloop.o anyoption.o $(ENGINE)/renderer.o paramgl.o RendererData.o RendererDataDistribute.o
 ifeq ($(ENGINE),smoke)
 	OBJ += tr.o
 	OBJ += smoke/GLSLProgram.o

@@ -1,3 +1,4 @@
+#undef NDEBUG
 #include <mpi.h>
 #include <dlfcn.h>
 #include <vector>
@@ -69,7 +70,13 @@ static std::vector<std::vector<std::string>> lParseInput()
 
 int main(int argc, char *argv[]) 
 {
+#ifdef _MPIMT
+  int provided;
+  MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
+  assert(MPI_THREAD_MULTIPLE == provided);
+#else
   MPI_Init(&argc, &argv);
+#endif
 
   int rank, nrank;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);

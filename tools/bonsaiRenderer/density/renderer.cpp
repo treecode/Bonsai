@@ -36,6 +36,16 @@
 #define USE_HALF_ANGLE 0
 #define MOTION_BLUR 0
 
+#ifndef TEX_FLOAT16
+#undef F16C
+#endif
+
+
+#ifdef F16C
+typedef uint16_t _v4si  __attribute__((vector_size(16)));
+typedef float    _v4sf  __attribute__((vector_size(16)));
+#endif
+
 
 #if 0
 #define USE_ICET
@@ -122,7 +132,6 @@ SmokeRendererParams::SmokeRendererParams() :
   m_glowIntensity(0.5f),
   m_ageScale(10.0f),
   m_enableVolume(false),
-  //  m_enableFilters(true),
   m_enableFilters(true),
   m_noiseFreq(0.05f),
   m_noiseAmp(1.0f),
@@ -135,7 +144,7 @@ SmokeRendererParams::SmokeRendererParams() :
   //    m_cubemapTex(0),
   m_flareThreshold(0.5f),
   m_flareIntensity(0.0f),
-  m_sourceIntensity(0.5f),
+  m_sourceIntensity(1.0f),
   m_flareRadius(50.0f),
   m_skyboxBrightness(0.5f),
   m_cullDarkMatter(true),
@@ -222,14 +231,14 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles, const int _rank
   m_particleShadowProg = new GLSLProgram(mblurVS, mblurGS, particleShadowPS);
 #else
   m_particleProg = new GLSLProgram(particleVS, particlePS);
-  m_particleAAProg = new GLSLProgram(particleVS, particleAAPS);
-  //m_particleAAProg = new GLSLProgram(particleVS, splotchGS, particleAAPS, GL_POINTS, GL_TRIANGLE_STRIP);
+  //m_particleAAProg = new GLSLProgram(particleVS, particleAAPS);
+  m_particleAAProg = new GLSLProgram(particleVS, volnewGS, particleAAPS, GL_POINTS, GL_TRIANGLE_STRIP);
   //m_particleShadowProg = new GLSLProgram(particleVS, particleShadowPS);
   
   //Original volume rendering, no GS
-  m_particleShadowProg = new GLSLProgram(particleVS, particleShadowPS);
+  //m_particleShadowProg = new GLSLProgram(particleVS, particleShadowPS);
   //Original volume rendering, with GS
-  //m_particleShadowProg = new GLSLProgram(particleVS, splotchGS, particleShadowPS, GL_POINTS, GL_TRIANGLE_STRIP);
+  m_particleShadowProg = new GLSLProgram(particleVS, volnewGS, particleShadowPS, GL_POINTS, GL_TRIANGLE_STRIP);
 
 #endif
 
@@ -239,8 +248,8 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles, const int _rank
   m_compositeProg = new GLSLProgram(passThruVS, compositePS);
 
   m_starFilterProg = new GLSLProgram(passThruVS, starFilterPS);
-  m_volumeProg = new GLSLProgram(volumeVS, volumePS);
-  //m_volumeProg = new GLSLProgram(volumeVS, splotchGS, volumePS, GL_POINTS, GL_TRIANGLE_STRIP);
+  // m_volumeProg = new GLSLProgram(volumeVS, volumePS);
+  m_volumeProg = new GLSLProgram(volumeVS, volnewGS, volumePS, GL_POINTS, GL_TRIANGLE_STRIP);
 
   //m_downSampleProg = new GLSLProgram(passThruVS, downSample4PS);
   m_downSampleProg = new GLSLProgram(passThruVS, downSample2PS);
@@ -258,6 +267,7 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles, const int _rank
       GL_POINTS, GL_TRIANGLE_STRIP
       );
   m_volnew2texProg = new GLSLProgram(passThruVS, volnew2texPS);
+  m_volnewCompositeProg = new GLSLProgram(passThruVS, volnewCompositePS);
 
   glClampColorARB(GL_CLAMP_VERTEX_COLOR_ARB, GL_FALSE);
   glClampColorARB(GL_CLAMP_FRAGMENT_COLOR_ARB, GL_FALSE);
@@ -354,7 +364,7 @@ SmokeRenderer::~SmokeRenderer()
   glDeleteTextures(1, &m_lightDepthTexture);
   glDeleteTextures(1, &mPosBufferTexture);
 
-  glDeleteTextures(4, m_imageTex);
+  glDeleteTextures(5, m_imageTex);
   glDeleteTextures(1, &m_depthTex);
   glDeleteTextures(3, m_downSampledTex);
 
@@ -1104,11 +1114,13 @@ void SmokeRenderer::drawSlices()
     }
 #else
     // opposite order
+#if 0  /* eg: doens't work in distributed rendering mode */
     if (m_enableAA) {
       drawSliceLightViewAA(i);
     } else {
       drawSliceLightView(i);
     }
+#endif
     if (m_doBlur) {
       blurLightBuffer();
     }
@@ -1321,7 +1333,7 @@ void SmokeRenderer::compositeResult()
     m_compositeProg->bindTexture("glowTex", m_downSampledTex[0], GL_TEXTURE_2D, 3);
     m_compositeProg->bindTexture("flareTex", m_downSampledTex[2], GL_TEXTURE_2D, 4);
     m_compositeProg->setUniform1f("scale", m_imageBrightness);
-    m_compositeProg->setUniform1f("sourceIntensity", m_sourceIntensity);
+    m_compositeProg->setUniform1f("sourceIntensity", 0.5f*m_sourceIntensity);
     m_compositeProg->setUniform1f("glowIntensity", m_glowIntensity);
     m_compositeProg->setUniform1f("starIntensity", m_starIntensity);
     m_compositeProg->setUniform1f("flareIntensity", m_flareIntensity);
@@ -1458,9 +1470,141 @@ void SmokeRenderer::render()
   glutReportErrors();
 }
 
+
+
+#ifdef TEX_FLOAT16
+class Float16Compressor
+{
+  union Bits
+  {
+    float f;
+    int32_t si;
+    uint32_t ui;
+  };
+
+  static int const shift = 13;
+  static int const shiftSign = 16;
+
+  static int32_t const infN = 0x7F800000; // flt32 infinity
+  static int32_t const maxN = 0x477FE000; // max flt16 normal as a flt32
+  static int32_t const minN = 0x38800000; // min flt16 normal as a flt32
+  static int32_t const signN = 0x80000000; // flt32 sign bit
+
+  static int32_t const infC = infN >> shift;
+  static int32_t const nanN = (infC + 1) << shift; // minimum flt16 nan as a flt32
+  static int32_t const maxC = maxN >> shift;
+  static int32_t const minC = minN >> shift;
+  static int32_t const signC = signN >> shiftSign; // flt16 sign bit
+
+  static int32_t const mulN = 0x52000000; // (1 << 23) / minN
+  static int32_t const mulC = 0x33800000; // minN / (1 << (23 - shift))
+
+  static int32_t const subC = 0x003FF; // max flt32 subnormal down shifted
+  static int32_t const norC = 0x00400; // min flt32 normal down shifted
+
+  static int32_t const maxD = infC - maxC - 1;
+  static int32_t const minD = minC - subC - 1;
+
+  public:
+
+#if 1 /* slow IEEE cvt, set 1->0 to use fast conversion, but may fail on denormals (?) */
+  static uint16_t compress(float value)
+  {
+    Bits v, s;
+    v.f = value;
+    uint32_t sign = v.si & signN;
+    v.si ^= sign;
+    sign >>= shiftSign; // logical shift
+    s.si = mulN;
+    s.si = s.f * v.f; // correct subnormals
+    v.si ^= (s.si ^ v.si) & -(minN > v.si);
+    v.si ^= (infN ^ v.si) & -((infN > v.si) & (v.si > maxN));
+    v.si ^= (nanN ^ v.si) & -((nanN > v.si) & (v.si > infN));
+    v.ui >>= shift; // logical shift
+    v.si ^= ((v.si - maxD) ^ v.si) & -(v.si > maxC);
+    v.si ^= ((v.si - minD) ^ v.si) & -(v.si > subC);
+    return v.ui | sign;
+  }
+
+  static float decompress(uint16_t value)
+  {
+    Bits v;
+    v.ui = value;
+    int32_t sign = v.si & signC;
+    v.si ^= sign;
+    sign <<= shiftSign;
+    v.si ^= ((v.si + minD) ^ v.si) & -(v.si > subC);
+    v.si ^= ((v.si + maxD) ^ v.si) & -(v.si > maxC);
+    Bits s;
+    s.si = mulC;
+    s.f *= v.si;
+    int32_t mask = -(norC > v.si);
+    v.si <<= shift;
+    v.si ^= (s.si ^ v.si) & mask;
+    v.si |= sign;
+    return v.f;
+  }
+#else
+  static uint16_t compress(float f)
+  {
+    union
+    {
+      uint32_t i;
+      float          f;
+    } bits;
+    bits.f = f;
+    int32_t  x  = bits.i;
+    uint32_t xs = x & 0x80000000u;  // Pick off sign bit
+    uint32_t xe = x & 0x7F800000u;  // Pick off exponent bits
+    uint32_t xm = x & 0x007FFFFFu;  // Pick off mantissa bits
+
+    uint32_t hs = (xs >> 16); // Sign bit
+    // Exponent unbias the single, then bias the halfp
+    int32_t hes = ((int)(xe >> 23)) - 127 + 15;
+    uint32_t he = (hes << 10); // Exponent
+    int32_t hm = (xm >> 13); // Mantissa
+    int32_t ret = (hs | he | hm);
+
+    if (xm & 0x00001000u) // Check for rounding
+      // Round, might overflow to inf, this is OK
+      ret += 1u;
+
+    return (uint16_t)ret;
+  }
+  static float decompress(uint16_t h)
+  {
+    uint32_t hs  = h & (int32_t)0x8000u;     // Pick off sign bit
+    uint32_t hem = h & (int32_t)0x7fffu;    // Pick off exponent-mantissa bits
+
+    uint32_t xs =  ((uint32_t) hs ) << 16;
+    uint32_t xem = ((uint32_t) hem) << 13;
+
+    xem += 0x38000000;      // (127 - 15) << 23
+
+    union
+    {
+      uint32_t i;
+      float    f;
+    } bits;
+    bits.i = xs | xem;
+    return bits.f;
+  }
+#endif
+
+};
+
+static inline float l_half2float(const uint16_t h)
+{
+  return Float16Compressor::decompress(h);
+}
+static inline uint16_t l_float2half(float f) 
+{
+  return Float16Compressor::compress(f);
+}
+
 static void lCompose(
-    float4* imgSrc,
-    float4* imgDst,
+    uint16_t* imgSrc,
+    uint16_t* imgDst,
     const int rank, const int nrank, const MPI_Comm &comm,
     const int2 imgCrd,
     const int2 imgSize,
@@ -1472,29 +1616,259 @@ static void lCompose(
   assert(imgCrd.y >= 0);
   assert(imgCrd.x + imgSize.x <= viewportSize.x);
   assert(imgCrd.y + imgSize.y <= viewportSize.y);
+  assert(!compositeOrder.empty());
 
-  if (compositeOrder.empty())
+  constexpr int master = 0;
+
+
+  /* compute which parts of img are sent to which rank */
+
+  const int nPixels = viewportSize.x*viewportSize.y;
+  const int nPixelsPerRank = (nPixels+nrank-1)/nrank; 
+
+  const int x0 = imgCrd.x;
+  const int y0 = imgCrd.y;
+  const int x1 = imgCrd.x + imgSize.x;
+  const int y1 = imgCrd.y + imgSize.y;
+
+  const int w = viewportSize.x;
+
+  const int imgBeg   =  y0   *w + x0;
+  const int imgEnd   = (y1-1)*w + x1-1;
+  const int imgWidth = imgSize.x;
+
+  using imgMetaData_t = std::array<int,6>;
+  constexpr  int mpiImgMetaDataSize = sizeof(imgMetaData_t)/sizeof(int);
+
+  static std::vector<imgMetaData_t> srcMetaData(nrank);
+  int totalSendCount = 0;
+  for (int p = 0; p < nrank; p++)
   {
-    compositeOrder.resize(nrank);
-    std::iota(compositeOrder.begin(),compositeOrder.end(), 0);
+    /* domain scanline beginning & end */
+    const int pbeg =    p * nPixelsPerRank;
+    const int pend = pbeg + nPixelsPerRank-1;
+
+    /* clip image with the domain scanline */
+    const int clipBeg = std::min(pend+1, std::max(pbeg,  imgBeg  ));
+    const int clipEnd = std::max(pbeg,   std::min(pend+1,imgEnd+1));
+
+    int sendcount = 0;
+    if (clipBeg < clipEnd)
+    {
+      const int i0 = clipBeg % w;
+      const int j0 = clipBeg / w;
+      const int i1 = (clipEnd-1) % w;
+      const int j1 = (clipEnd-1) / w;
+      assert(j0 >= y0);
+      assert(j1 <  y1);
+
+      /* compute number of pixels to send: 
+       * multiply hight (j1-j0+1) by image width */
+      /* but subtract top and bottom corners */
+
+      const int dxtop = std::max(0,std::min(i0-x0,   imgWidth));
+      const int dxbtm = std::max(0,std::min(x1-i1-1, imgWidth));
+      sendcount = (j1-j0+1)*imgWidth - dxtop - dxbtm;
+    }
+
+    srcMetaData[p] = imgMetaData_t{{x0,y0,x1,y1,totalSendCount,sendcount}};
+    totalSendCount += sendcount;
   }
+  if (!(totalSendCount == (x1-x0)*(y1-y0)))
+    fprintf(stderr, "rank= %d: totalSendCount= %d  wSize= %d (%d,%d)-(%d,%d) --- (%d,%d)\n",
+        rank, totalSendCount, (x1-x0)*(y1-y0),
+        x0,x1, y0,y1,
+        viewportSize.x,
+        viewportSize.y);
+  assert(totalSendCount == (x1-x0)*(y1-y0));
+
+  /* exchange metadata info */
+
+  static std::vector<imgMetaData_t> rcvMetaData(nrank);
+  MPI_Alltoall(&srcMetaData[0], mpiImgMetaDataSize, MPI_INT, &rcvMetaData[0], mpiImgMetaDataSize, MPI_INT, comm);
+
+  /* prepare counts & displacements for alltoallv */
+  
+  using imgData_t = std::array<uint16_t,4>;
+  constexpr int mpiImgDataSize = sizeof(imgData_t)/sizeof(uint16_t);
+
+  static std::vector<int> sendcount(nrank), senddispl(nrank+1);
+  static std::vector<int> recvcount(nrank), recvdispl(nrank+1);
+  senddispl[0] = recvdispl[0] = 0;
+  for (int p = 0; p < nrank; p++)
+  {
+    sendcount[p  ] = srcMetaData[p][5] * mpiImgDataSize;
+    recvcount[p  ] = rcvMetaData[p][5] * mpiImgDataSize;
+    senddispl[p+1] = senddispl[p] + sendcount[p];
+    recvdispl[p+1] = recvdispl[p] + recvcount[p];
+  }
+
+  static std::vector<imgData_t> recvbuf;
+  {
+    const int nrecv = recvdispl[nrank] / mpiImgDataSize;
+    recvbuf.resize(nrecv);
+
+#if 1 // def __COMPOSITE_PROFILE
+    const double t0 = MPI_Wtime();
+#endif
+    MPI_Alltoallv(
+             imgSrc, &sendcount[0], &senddispl[0], MPI_SHORT,
+        &recvbuf[0], &recvcount[0], &recvdispl[0], MPI_SHORT,
+        comm);
+#if 1 // def __COMPOSITE_PROFILE
+    double nsendrecvloc = (senddispl[nrank] + recvdispl[nrank])*sizeof(uint16_t);
+    double nsendrecv;
+    MPI_Reduce(&nsendrecvloc, &nsendrecv, 1, MPI_DOUBLE, MPI_SUM, master, comm);
+    const double t1 = MPI_Wtime();
+    if (rank == master)
+    {
+      const double dt = t1-t0;
+      const double bw = nsendrecv / dt;
+      fprintf(stderr, " MPI_Alltoallv: dt= %g  BW= %g MB/s  mem= %g MB\n", dt, bw/1e6, nsendrecv/1e6);
+    }
+#endif
+  }
+
+  /* pixel composition */
+
+
+  constexpr int NRANKMAX = 1024;
+  assert(nrank <= NRANKMAX);
+
+  for (int p = 0; p < nrank+1; p++)
+    recvdispl[p] /= mpiImgDataSize;
+
+  static std::vector<uint16_t> img2send;
+  img2send.resize(3*nPixelsPerRank);
+  const int pixelBeg =              rank * nPixelsPerRank;
+  const int pixelEnd = std::min(pixelBeg + nPixelsPerRank, nPixels);
+
+  constexpr int NBLOCK = 32;
+#pragma omp parallel for schedule(static)
+  for (int idxb = pixelBeg; idxb < pixelEnd; idxb += NBLOCK)
+  {
+    const int idx0 = idxb;
+    const int idx1 = std::min(idxb+NBLOCK,pixelEnd);
+
+    float4 imgLoc[NBLOCK] = {0.0f};
+
+    for (auto p : compositeOrder)
+      if (showDomain == -1 || showDomain == p)
+      {
+        const int x0   = rcvMetaData[p][0];
+        const int y0   = rcvMetaData[p][1];
+        const int x1   = rcvMetaData[p][2];
+        const int y1   = rcvMetaData[p][3];
+        const int offs = rcvMetaData[p][4];
+        const int cnt  = rcvMetaData[p][5];
+
+        const int base = recvdispl[p];
+        for (int idx = idx0; idx < idx1; idx++)
+        {
+          const int i = idx % viewportSize.x;
+          const int j = idx / viewportSize.x;
+          const int k = (j-y0)*(x1-x0) + (i-x0) - offs;
+#ifdef F16C
+          _v4sf &dst = *(_v4sf*)&imgLoc[idx - idx0];
+          const float w =  __builtin_ia32_vec_ext_v4sf(dst, 3);
+          if (x0 <= i && i < x1 &&
+              y0 <= j && j < y1 && 
+              k  >= 0 && k < cnt &&
+              w < 1.0f)
+          {
+            const auto &src = recvbuf[base + k];
+            const _v4si icol = (_v4si){src[0],src[1],src[2],src[3]};
+            _v4sf fcol;
+            __asm__("vcvtph2ps %1,%0" : "=x"(fcol) :"x"(icol));
+            const _v4sf alpha = __builtin_ia32_shufps(dst,dst, 0xFF);
+            const _v4sf one   = (_v4sf){1.0f,1.0f,1.0f,1.0f};
+            const _v4sf f = one - alpha;
+            dst += fcol * f;
+          }
+#else /* F16C */
+          float4 &dst = imgLoc[idx - idx0];
+          if (x0 <= i && i < x1 &&
+              y0 <= j && j < y1 && 
+              k  >= 0 && k < cnt &&
+              dst.w < 1.0f)
+          {
+            const auto &src = recvbuf[base + k];
+            const float r = l_half2float(src[0]);
+            const float g = l_half2float(src[1]);
+            const float b = l_half2float(src[2]);
+            const float w = l_half2float(src[3]);
+            const float f = 1.0f - dst.w;
+            dst.x += r * f;
+            dst.y += g * f;
+            dst.z += b * f;
+            dst.w += w * f;
+          }
+#endif  /* F16C */
+        }
+      }
+
+    for (int idx = idx0; idx < idx1; idx++)
+    {
+      const auto &col = imgLoc[idx - idx0];
+#ifdef F16C
+      const _v4sf fcol = (_v4sf){col.x,col.y,col.z,1.0f};
+      _v4si icol;
+      __asm__("vcvtps2ph $0,%1,%0" : "=x"(icol) :"x"(fcol));
+      const uint16_t r = *(reinterpret_cast<uint16_t*>(&icol) + 0);
+      const uint16_t g = *(reinterpret_cast<uint16_t*>(&icol) + 1);
+      const uint16_t b = *(reinterpret_cast<uint16_t*>(&icol) + 2);
+#else
+      const uint16_t r = col.x > 0.0f ? l_float2half(col.x) : 0;
+      const uint16_t g = col.y > 0.0f ? l_float2half(col.y) : 0;
+      const uint16_t b = col.z > 0.0f ? l_float2half(col.z) : 0;
+#endif
+      const int addr = idx - pixelBeg;
+      img2send[3*addr + 0] = r;
+      img2send[3*addr + 1] = g;
+      img2send[3*addr + 2] = b;
+    }
+  }
+
+  /* gather composited part of images into a single image on the master rank */
+  {
+#if 1 // def __COMPOSITE_PROFILE
+    const double t0 = MPI_Wtime();
+#endif
+    MPI_Gather(&img2send[0], nPixelsPerRank*3, MPI_SHORT, imgDst, 3*nPixelsPerRank, MPI_SHORT, master, comm);
+#if 1 //def __COMPOSITE_PROFILE
+    const double t1 = MPI_Wtime();
+    if (master == rank)
+    {
+      const double dt    = t1 - t0;
+      const double nrecv = nPixelsPerRank*3*nrank*sizeof(uint16_t);
+      const double bw    = nrecv / dt;
+      fprintf(stderr, " MPI_Gather: dt= %g  BW= %g MB/s  mem= %g MB\n", dt, bw/1e6, nrecv/1e6);
+    }
+#endif
+  }
+}
+#endif
+//#else /* TEX_FLOAT16 */
+static void lCompose(
+    float* imgSrc,
+    float* imgDst,
+    const int rank, const int nrank, const MPI_Comm &comm,
+    const int2 imgCrd,
+    const int2 imgSize,
+    const int2 viewportSize,
+    const int showDomain,
+    std::vector<int> compositeOrder)
+{
+  assert(imgCrd.x >= 0);
+  assert(imgCrd.y >= 0);
+  assert(imgCrd.x + imgSize.x <= viewportSize.x);
+  assert(imgCrd.y + imgSize.y <= viewportSize.y);
+  assert(!compositeOrder.empty());
 
   constexpr int master = 0;
 
   using imgData_t = std::array<float,4>;
   constexpr int mpiImgDataSize = sizeof(imgData_t)/sizeof(float);
-  static std::vector<imgData_t> sendbuf;
-
-  /* copy img pixels ot send buffer */
-
-  const int imgNPix = imgSize.x*imgSize.y;
-  if (imgNPix > 0)
-  {
-    sendbuf.resize(imgNPix);
-#pragma omp parallel for schedule(static)
-    for (int i = 0; i < imgNPix; i++)
-      sendbuf[i] = imgData_t{{imgSrc[i].x, imgSrc[i].y, imgSrc[i].z, imgSrc[i].w}};
-  }
 
   /* compute which parts of img are sent to which rank */
 
@@ -1583,7 +1957,7 @@ static void lCompose(
     const double t0 = MPI_Wtime();
 #endif
     MPI_Alltoallv(
-        &sendbuf[0], &sendcount[0], &senddispl[0], MPI_FLOAT,
+        imgSrc, &sendcount[0], &senddispl[0], MPI_FLOAT,
         &recvbuf[0], &recvcount[0], &recvdispl[0], MPI_FLOAT,
         comm);
 #ifdef __COMPOSITE_PROFILE
@@ -1614,7 +1988,7 @@ static void lCompose(
   const int pixelBeg =              rank * nPixelsPerRank;
   const int pixelEnd = std::min(pixelBeg + nPixelsPerRank, nPixels);
 
-  constexpr int NBLOCK = 16;
+  constexpr int NBLOCK = 32;
 #pragma omp parallel for schedule(static)
   for (int idxb = pixelBeg; idxb < pixelEnd; idxb += NBLOCK)
   {
@@ -1634,29 +2008,24 @@ static void lCompose(
         const int offs = rcvMetaData[p][4];
         const int cnt  = rcvMetaData[p][5];
 
+        const int base = recvdispl[p];
         for (int idx = idx0; idx < idx1; idx++)
         {
           const int i = idx % viewportSize.x;
           const int j = idx / viewportSize.x;
           const int k = (j-y0)*(x1-x0) + (i-x0) - offs;
+          float4 &dst = imgLoc[idx - pixelBeg];
           if (x0 <= i && i < x1 &&
               y0 <= j && j < y1 && 
-              k  >= 0 && k < cnt)
+              k  >= 0 && k < cnt &&
+              dst.w < 1.0f)
           {
-            float4 dst = imgLoc[idx - pixelBeg];
-            auto src = recvbuf[recvdispl[p] + k];
-            src[0] *= 1.0f - dst.w;
-            src[1] *= 1.0f - dst.w;
-            src[2] *= 1.0f - dst.w;
-            src[3] *= 1.0f - dst.w;
-
-            dst.x += src[0];
-            dst.y += src[1];
-            dst.z += src[2];
-            dst.w += src[3];
-
-            dst.w = std::min(dst.w, 1.0f);
-            imgLoc[idx - pixelBeg] = dst;
+            const auto &src = recvbuf[base + k];
+            const float f = 1.0f - dst.w;
+            dst.x += src[0] * f;
+            dst.y += src[1] * f;
+            dst.z += src[2] * f;
+            dst.w = std::min(dst.w + src[3] * f, 1.0f);
           }
         }
       }
@@ -1680,6 +2049,7 @@ static void lCompose(
 #endif
   }
 }
+//#endif /* TEX_FLOAT16 */
 
 static void lCompose(
     const float4* imgSrc,
@@ -2346,6 +2716,7 @@ static void lCompose(
 //This function is called by icet to draw stuff
 #ifdef USE_ICET
 static double dtIcetCallback = 0;
+static MPI_Comm glbComm;
 static void drawCallback(
     const IceTDouble *projection_matrix, 
     const IceTDouble *modelview_matrix,
@@ -2392,6 +2763,8 @@ static void drawCallback(
   }
 #else
 #ifdef __COMPOSITE_PROFILE
+  glFinish();
+  MPI_Barrier(glbComm);
   const double t0 = MPI_Wtime();
 #endif
   glPixelStorei(GL_PACK_ROW_LENGTH, (GLint)icetImageGetWidth(result));
@@ -2404,6 +2777,8 @@ static void drawCallback(
       colors_float + 4*( readback_viewport[0] + width*readback_viewport[1]));	
   glPixelStorei(GL_PACK_ROW_LENGTH, 0);
 #ifdef __COMPOSITE_PROFILE
+  glFinish();
+  MPI_Barrier(glbComm);
   const double t1 = MPI_Wtime();
   dtIcetCallback = t1-t0;
 #endif
@@ -2720,7 +3095,7 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
   else
   {
     lCompose(
-        &imgLoc[0], &imgGlb[0], 
+        (float*)&imgLoc[0], (float*)&imgGlb[0], 
         rank, nrank, comm,
         wCrd, wSize, viewPort,
         m_domainView ? m_domainViewIdx : -1,
@@ -2783,6 +3158,212 @@ void SmokeRenderer::composeImages(const GLuint imgTex, const GLuint depthTex)
 
   m_fbo->Disable();
 }
+void SmokeRenderer::composeImages(const GLuint imgTex)
+{
+  GLint w, h, internalformat;
+  glBindTexture(GL_TEXTURE_2D, imgTex);
+  glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH,  &w);
+  glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &h);
+  glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &internalformat);
+  glBindTexture(GL_TEXTURE_2D,0);
+
+#ifdef __COMPOSITE_PROFILE 
+  glFinish();
+  MPI_Barrier(comm);
+  double t00 = MPI_Wtime();
+#endif
+
+
+
+  /* determine visible viewport bounds */ 
+
+  const auto &visibleViewport = getVisibleViewport();
+  int2 wCrd  = make_int2(visibleViewport[0], visibleViewport[1]);
+  int2 wSize = make_int2(visibleViewport[2], visibleViewport[3]);
+  const int2 viewPort = make_int2(mWindowW,mWindowH);
+
+  static int2 wCrdPrev  = wCrd;
+  static int2 wSizePrev = wSize;
+  static auto compositingOrderPrev = compositingOrder;
+  
+  static unsigned long long frameCount = 0;
+#ifdef __COMPOSITE_NONBLOCK
+  const int even = frameCount&1;
+  const int odd  = 1 - even;
+  frameCount++;
+#else
+  const int even = 0;
+  const int odd  = 0;
+  wCrdPrev = wCrd;
+  wSizePrev = wSize;
+  compositingOrderPrev = compositingOrder;
+#endif
+
+  m_fbo->Bind();
+  m_fbo->AttachTexture(GL_TEXTURE_2D, imgTex, GL_COLOR_ATTACHMENT0_EXT);
+  if (frameCount == 0)
+  {
+    glBindTexture(GL_TEXTURE_2D, m_imageTex[4]);  
+    glCopyTexImage2D(GL_TEXTURE_2D,0,internalformat, wCrd.x,wCrd.y,wSize.x,wSize.y,0);
+    glBindTexture(GL_TEXTURE_2D, m_imageTex[5]);  
+    glCopyTexImage2D(GL_TEXTURE_2D,0,internalformat, wCrd.x,wCrd.y,wSize.x,wSize.y,0);
+  }
+  glBindTexture(GL_TEXTURE_2D, m_imageTex[4+even]);  
+  glCopyTexImage2D(GL_TEXTURE_2D,0,internalformat, wCrd.x,wCrd.y,wSize.x,wSize.y,0);
+  glBindTexture(GL_TEXTURE_2D, 0);
+  m_fbo->Disable();
+
+#ifdef __COMPOSITE_PROFILE 
+  glFinish();
+  MPI_Barrier(comm);
+  double t10 = MPI_Wtime();
+#endif
+
+  static GLuint pbo_rb[2] = {0};
+  if (!pbo_rb[0])
+  {
+    const int pbo_size = 2*4096*3072*sizeof(float4);
+    glGenBuffers(2, pbo_rb);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_rb[0]);
+    glBufferData(GL_PIXEL_PACK_BUFFER, pbo_size, 0, GL_STATIC_READ);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_rb[1]);
+    glBufferData(GL_PIXEL_PACK_BUFFER, pbo_size, 0, GL_STATIC_READ);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+  }
+  assert(pbo_rb[0]);
+  assert(pbo_rb[1]);
+
+  glBindTexture(GL_TEXTURE_2D, m_imageTex[4+even]);
+  glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_rb[even]);
+  
+
+  /* copy texture to read-back pbo  & map it */
+#ifdef TEX_FLOAT16
+  glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_HALF_FLOAT, 0);
+  glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_rb[odd]);
+  uint16_t *rptr = (uint16_t*)glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, wSizePrev.x*wSizePrev.y*4*sizeof(uint16_t), GL_MAP_READ_BIT);
+#else /* TEX_FLOAT16 */
+  glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, 0);
+  glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_rb[odd]);
+  float *rptr = (float*)glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, wSizePrev.x*wSizePrev.y*sizeof(float4), GL_MAP_READ_BIT);
+#endif /* TEX_FLOAT16 */
+  assert(wSizePrev.x*wSizePrev.y >= 0);
+  assert(rptr != nullptr || wSizePrev.x*wSizePrev.y == 0);
+
+#ifdef __COMPOSITE_COPY
+  {
+    static std::vector<float> rb_buf;
+    rb_buf.resize(2*w*h*4);
+  
+    auto src = rptr;
+    rptr = (decltype(src))&rb_buf[0];
+#pragma omp parallel for schedule(static)
+    for (int i = 0; i  < wSizePrev.x*wSizePrev.y*4; i++)
+      rptr[i] = src[i];
+  }
+#endif
+
+  glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+  glBindTexture(GL_TEXTURE_2D,0);
+
+#ifdef __COMPOSITE_PROFILE
+  glFinish();
+  MPI_Barrier(comm);
+  const double t60 = MPI_Wtime();
+#endif
+  
+  static GLuint pbo_wb = 0;
+  if (!pbo_wb)
+  {
+    const int pbo_size = 2*4096*3072*sizeof(float4);
+    glGenBuffers(1, &pbo_wb);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo_wb);
+    glBufferData(GL_PIXEL_UNPACK_BUFFER, pbo_size, 0, GL_STATIC_DRAW);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+  }
+  assert(pbo_wb);
+
+  /* map write-back buffer */
+  glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo_wb);
+#ifdef TEX_FLOAT16
+  const int wb_size = w*h*3;
+  uint16_t* wptr = (uint16_t*)glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, wb_size*sizeof(uint16_t), GL_MAP_WRITE_BIT);
+#else
+  const int wb_size = w*h*4;
+  float* wptr = (float*)glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, wb_size*sizeof(float), GL_MAP_WRITE_BIT);
+#endif
+  assert(wptr != nullptr);
+  glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
+  {
+#ifdef __COMPOSITE_COPY
+    static std::vector<float> wb_buf;
+    wb_buf.resize(2*w*h*4);
+    auto wb_pbo_buf = wptr;
+    wptr = reinterpret_cast<decltype(wb_pbo_buf)>(&wb_buf[0]);
+#endif
+
+    lCompose(rptr, wptr,
+        rank, nrank, comm,
+        wCrdPrev, wSizePrev, viewPort,
+        m_domainView ? m_domainViewIdx : -1,
+        compositingOrderPrev);
+    wCrdPrev = wCrd;
+    wSizePrev = wSize;
+    compositingOrderPrev = compositingOrder;
+
+#ifdef __COMPOSITE_COPY
+#pragma omp parallel for schedule(static)
+    for (int i = 0; i < wb_size; i++)
+      wb_pbo_buf[i] = wptr[i];
+    wptr = wb_pbo_buf;
+#endif
+  }
+
+  
+  /* unmap write-back buffer */ 
+  glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo_wb);
+  glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
+  glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
+  /* unmap read-back buffer */ 
+  glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_rb[odd]);
+  glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+  glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+
+ 
+#ifdef __COMPOSITE_PROFILE
+  glFinish();
+  MPI_Barrier(comm);
+  const double t70 = MPI_Wtime();
+#endif
+
+  if (isMaster())
+  {
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo_wb);
+    glBindTexture(GL_TEXTURE_2D, imgTex);
+#ifdef TEX_FLOAT16
+    glTexSubImage2D(GL_TEXTURE_2D,0, 0,0,w,h, GL_RGB, GL_HALF_FLOAT, 0);
+#else
+    glTexSubImage2D(GL_TEXTURE_2D,0, 0,0,w,h, GL_RGBA, GL_FLOAT, 0);
+#endif
+    glBindTexture(GL_TEXTURE_2D,0);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
+#ifdef __COMPOSITE_PROFILE
+    glFinish();
+    const double t80 = MPI_Wtime();
+    fprintf(stderr, "total= %g: rb= %g [%g %g]  compose= %g  wb= %g\n", t80 - t00,
+        t60-t00,
+        t10-t00, t60-t10,
+        t70-t60,
+        t80-t70);
+#endif
+  }
+ 
+
+}
+
 
 /* some code samples and ideas are taken from IceT */
 std::array<int,4> SmokeRenderer::getVisibleViewport() const
@@ -3003,7 +3584,7 @@ void SmokeRenderer::splotchDraw()
   glDisable(GL_CLIP_DISTANCE4);
   glDisable(GL_CLIP_DISTANCE5);
 
-#if 1
+#ifdef __COMPOSITE_PROFILE
   glFlush();
   glFinish();
 #endif
@@ -3178,15 +3759,19 @@ void SmokeRenderer::splotchDrawSort()
 
   /********* compose ********/
 
-#if 1
+#ifdef __COMPOSITE_PROFILE
   glFlush();
   glFinish();
 #endif
   m_fbo->Disable();
 
 
+  assert(!depthTex);
 
-  composeImages(m_imageTex[0], depthTex);
+  if (depthTex)
+    composeImages(m_imageTex[0], depthTex);
+  else
+    composeImages(m_imageTex[0]);
 
 
   glDisable(GL_BLEND);
@@ -3203,72 +3788,6 @@ void SmokeRenderer::splotchDrawSort()
 
 void SmokeRenderer::volumetricNew()
 {
-#if 0
-  calcVectors();
-  depthSortCopy();
-  m_batchSize = mNumParticles / m_numSlices;
-  m_srcLightTexture = 0;
-
-  setLightColor(m_lightColor);
-
-  // clear light buffer
-  m_fbo->Bind();
-  glDrawBuffer(GL_COLOR_ATTACHMENT0_EXT);
-  m_fbo->AttachTexture(GL_TEXTURE_2D, m_lightTexture[m_srcLightTexture], GL_COLOR_ATTACHMENT0_EXT);
-  m_fbo->AttachTexture(GL_TEXTURE_2D, 0, GL_COLOR_ATTACHMENT1_EXT);
-  m_fbo->AttachTexture(GL_TEXTURE_2D, 0, GL_DEPTH_ATTACHMENT_EXT);
-  //glClearColor(1.0 - m_lightColor[0], 1.0 - m_lightColor[1], 1.0 - m_lightColor[2], 0.0);
-  glClearColor(m_lightColor[0], m_lightColor[1], m_lightColor[2], 0.0);
-  //glClearColor(0.0f, 0.0f, 0.0f, 0.0f);	// clear to transparent
-  glClear(GL_COLOR_BUFFER_BIT);
-
-  // clear volume image
-  m_fbo->AttachTexture(GL_TEXTURE_2D, m_imageTex[0], GL_COLOR_ATTACHMENT0_EXT);
-  glClearColor(0.0, 0.0, 0.0, 0.0); 
-  glClear(GL_COLOR_BUFFER_BIT);
-
-  /*
-  // bind vbo as buffer texture
-  glBindTexture(GL_TEXTURE_BUFFER_EXT, mPosBufferTexture);
-  glTexBufferEXT(GL_TEXTURE_BUFFER_EXT, GL_RGBA32F_ARB, mPosVbo);
-  */
-
-  glMatrixMode(GL_TEXTURE);
-  glLoadMatrixf((GLfloat *) m_shadowMatrix.get_value());
-
-  // render slices
-  if (m_numDisplayedSlices > m_numSlices) m_numDisplayedSlices = m_numSlices;
-
-
-  for(int i=0; i<m_numDisplayedSlices; i++) 
-  {
-    m_fbo->AttachTexture(GL_TEXTURE_2D, m_imageTex[0], GL_COLOR_ATTACHMENT0_EXT);
-    //m_fbo->AttachTexture(GL_TEXTURE_2D, m_depthTex, GL_DEPTH_ATTACHMENT_EXT);
-    m_fbo->AttachTexture(GL_TEXTURE_2D, 0, GL_DEPTH_ATTACHMENT_EXT);
-    glViewport(0, 0, m_imageW, m_imageH);
-
-
-
-    glColor4f(1.0, 1.0, 1.0, m_spriteAlpha_volume);
-     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-    drawPointSprites(m_particleProg, i*m_batchSize, m_batchSize, true, true);
-  }
-
-  m_fbo->Disable();
-
-  glActiveTexture(GL_TEXTURE0);
-  glMatrixMode(GL_TEXTURE);
-  glLoadIdentity();
-
-
-  composeImages(m_imageTex[0]);
-      
-  compositeResult();
-
-#else  /*************/
-
-  GLuint depthTex = 0;
-
   m_fbo->Bind();
   m_fbo->AttachTexture(GL_TEXTURE_2D, m_imageTex[0], GL_COLOR_ATTACHMENT0_EXT);
   m_fbo->AttachTexture(GL_TEXTURE_2D, 0, GL_DEPTH_ATTACHMENT_EXT);
@@ -3336,6 +3855,7 @@ void SmokeRenderer::volumetricNew()
   prog->setUniform1f("dustAlpha", m_dustAlpha);
   prog->setUniform1f("fogDist", m_fog);
   prog->setUniform1f("cullDarkMatter", (float) m_cullDarkMatter);
+ 
 
   // PS
   prog->bindTexture("spriteTex",  m_sphTex, GL_TEXTURE_2D, 1);
@@ -3350,6 +3870,7 @@ void SmokeRenderer::volumetricNew()
   prog->setUniformfv("p3o", (GLfloat*)&m_clippingPlane[3], 4, 1);
   prog->setUniformfv("p4o", (GLfloat*)&m_clippingPlane[4], 4, 1);
   prog->setUniformfv("p5o", (GLfloat*)&m_clippingPlane[5], 4, 1);
+  
 
 
   //glClientActiveTexture(GL_TEXTURE0);
@@ -3371,28 +3892,52 @@ void SmokeRenderer::volumetricNew()
 
   /********* compose ********/
 
-#if 1
+#ifdef __COMPOSITE_PROFILE
   glFlush();
   glFinish();
 #endif
   m_fbo->Disable();
 
-  composeImages(m_imageTex[0], depthTex);
-
+  composeImages(m_imageTex[0]);
 
   glDisable(GL_BLEND);
+
+#if 1  /* use filters */
+
+  if (m_starBlurRadius > 0.0f && m_starIntensity > 0.0f) 
+  {
+    doStarFilter();
+  }
+  if (m_glowIntensity > 0.0f || m_flareIntensity > 0.0f) 
+  {
+    downSample();
+  }
+  if (m_glowRadius > 0.0f && m_glowIntensity > 0.0f) 
+  {
+    doGlowFilter();
+  }
+
+  glViewport(0, 0, mWindowW, mWindowH);
+  m_volnewCompositeProg->enable();
+  m_volnewCompositeProg->bindTexture("tex", m_imageTex[0], GL_TEXTURE_2D, 0);
+  m_volnewCompositeProg->bindTexture("glowTex", m_downSampledTex[0], GL_TEXTURE_2D, 3);
+  m_volnewCompositeProg->setUniform1f("scale", m_imageBrightness);
+  m_volnewCompositeProg->setUniform1f("glowIntensity", m_glowIntensity);
+  m_volnewCompositeProg->bindTexture("blurTexH", m_imageTex[1], GL_TEXTURE_2D, 1);
+  m_volnewCompositeProg->bindTexture("blurTexV", m_imageTex[2], GL_TEXTURE_2D, 2);
+  m_volnewCompositeProg->setUniform1f("starIntensity", m_starIntensity);
+  m_volnewCompositeProg->setUniform1f("sourceIntensity", m_sourceIntensity);
+  m_volnewCompositeProg->setUniform1f("gamma", m_gamma);
+  drawQuad();
+  m_volnewCompositeProg->disable();
+
+#else
   m_volnew2texProg->enable();
   m_volnew2texProg->bindTexture("tex", m_imageTex[0], GL_TEXTURE_2D, 0);
-#if 0
-  m_volnew2texProg->setUniform1f("scale", 0.1*m_imageBrightnessPre);
-  m_volnew2texProg->setUniform1f("gamma", m_gammaPre);
-#else
   m_volnew2texProg->setUniform1f("scale", m_imageBrightness);
   m_volnew2texProg->setUniform1f("gamma", m_gamma);
-#endif
   drawQuad();
   m_volnew2texProg->disable();
-
 #endif
 }
 
@@ -3571,7 +4116,9 @@ void SmokeRenderer::createBuffers(int w, int h)
 
   // create texture for image buffer
   GLint format = GL_RGBA32F;
-  //  format = GL_RGBA16F_ARB;
+#ifdef TEX_FLOAT16
+  format = GL_RGBA16F_ARB;
+#endif
   //GLint format = GL_LUMINANCE16F_ARB;
   //GLint format = GL_RGBA8;
   m_imageTex[0] = createTexture(GL_TEXTURE_2D, m_imageW, m_imageH, format, GL_RGBA);
@@ -3579,6 +4126,7 @@ void SmokeRenderer::createBuffers(int w, int h)
   m_imageTex[2] = createTexture(GL_TEXTURE_2D, m_imageW, m_imageH, format, GL_RGBA);
   m_imageTex[3] = createTexture(GL_TEXTURE_2D, m_imageW, m_imageH, format, GL_RGBA);
   m_imageTex[4] = createTexture(GL_TEXTURE_2D, m_imageW, m_imageH, format, GL_RGBA);
+  m_imageTex[5] = createTexture(GL_TEXTURE_2D, m_imageW, m_imageH, format, GL_RGBA);
 
   //  m_depthTex = createTexture(GL_TEXTURE_2D, m_imageW, m_imageH, GL_DEPTH_COMPONENT24_ARB, GL_DEPTH_COMPONENT);
   m_depthTex = createTexture(GL_TEXTURE_2D, m_imageW, m_imageH, GL_DEPTH_COMPONENT32_ARB, GL_DEPTH_COMPONENT);
@@ -3860,7 +4408,7 @@ void SmokeRenderer::initParams()
   m_params[VOLUMETRIC]->AddParam(new Param<float>("blur radius", m_blurRadius, 0.0f, 10.0f, 0.1f, &m_blurRadius));
   m_params[VOLUMETRIC]->AddParam(new Param<int>("blur passes", m_blurPasses, 0, 10, 1, &m_blurPasses));
 
-  m_params[VOLUMETRIC]->AddParam(new Param<float>("source intensity", m_sourceIntensity, 0.0f, 1.0f, 0.01f, &m_sourceIntensity));
+  m_params[VOLUMETRIC]->AddParam(new Param<float>("source intensity", m_sourceIntensity, 0.0f, 2.0f, 0.01f, &m_sourceIntensity));
   m_params[VOLUMETRIC]->AddParam(new Param<float>("star blur radius", m_starBlurRadius, 0.0f, 100.0f, 1.0f, &m_starBlurRadius));
   m_params[VOLUMETRIC]->AddParam(new Param<float>("star threshold", m_starThreshold, 0.0f, 100.0f, 0.1f, &m_starThreshold));
   m_params[VOLUMETRIC]->AddParam(new Param<float>("star power", m_starPower, 0.0f, 100.0f, 0.1f, &m_starPower));
@@ -3909,7 +4457,7 @@ void SmokeRenderer::initParams()
   m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("image gamma", m_gamma, 0.0f, 2.0f, 0.0f, &m_gamma));
   m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("blur radius", m_blurRadius, 0.0f, 10.0f, 0.1f, &m_blurRadius));
   m_params[VOLUMETRIC_NEW]->AddParam(new Param<int>("blur passes", m_blurPasses, 0, 10, 1, &m_blurPasses));
-  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("source intensity", m_sourceIntensity, 0.0f, 1.0f, 0.01f, &m_sourceIntensity));
+  m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("source intensity", m_sourceIntensity, 0.0f, 2.0f, 0.01f, &m_sourceIntensity));
   m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("star blur radius", m_starBlurRadius, 0.0f, 100.0f, 1.0f, &m_starBlurRadius));
   m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("star threshold", m_starThreshold, 0.0f, 100.0f, 0.1f, &m_starThreshold));
   m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("star power", m_starPower, 0.0f, 100.0f, 0.1f, &m_starPower));
@@ -3920,5 +4468,6 @@ void SmokeRenderer::initParams()
   m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("flare threshold", m_flareThreshold, 0.0f, 10.0f, 0.01f, &m_flareThreshold));
   m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("flare radius", m_flareRadius, 0.0f, 100.0f, 0.01f, &m_flareRadius));
   m_params[VOLUMETRIC_NEW]->AddParam(new Param<float>("skybox brightness", m_skyboxBrightness, 0.0f, 1.0f, 0.01f, &m_skyboxBrightness));
+
 
 }
