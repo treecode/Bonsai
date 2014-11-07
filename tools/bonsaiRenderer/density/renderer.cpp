@@ -1708,14 +1708,14 @@ static void lCompose(
     const int nrecv = recvdispl[nrank] / mpiImgDataSize;
     recvbuf.resize(nrecv);
 
-#ifdef __COMPOSITE_PROFILE
+#if 1 // def __COMPOSITE_PROFILE
     const double t0 = MPI_Wtime();
 #endif
     MPI_Alltoallv(
              imgSrc, &sendcount[0], &senddispl[0], MPI_SHORT,
         &recvbuf[0], &recvcount[0], &recvdispl[0], MPI_SHORT,
         comm);
-#ifdef __COMPOSITE_PROFILE
+#if 1 // def __COMPOSITE_PROFILE
     double nsendrecvloc = (senddispl[nrank] + recvdispl[nrank])*sizeof(uint16_t);
     double nsendrecv;
     MPI_Allreduce(&nsendrecvloc, &nsendrecv, 1, MPI_DOUBLE, MPI_SUM, comm);
@@ -1831,11 +1831,11 @@ static void lCompose(
 
   /* gather composited part of images into a single image on the master rank */
   {
-#ifdef __COMPOSITE_PROFILE
+#if 1 // def __COMPOSITE_PROFILE
     const double t0 = MPI_Wtime();
 #endif
     MPI_Gather(&img2send[0], nPixelsPerRank*3, MPI_SHORT, imgDst, 3*nPixelsPerRank, MPI_SHORT, master, comm);
-#ifdef __COMPOSITE_PROFILE
+#if 1 //def __COMPOSITE_PROFILE
     const double t1 = MPI_Wtime();
     if (master == rank)
     {
