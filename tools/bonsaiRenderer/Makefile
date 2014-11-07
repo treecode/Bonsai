@@ -40,6 +40,9 @@ LDFLAGS = -lGL -lGLU -lglut -lGLEW -fopenmp -lrt
 LDFLAGS += -pie -rdynamic -lpthread
 #-L$(PWD)/lib/linux -lGLEW_x86_64
 
+ifeq ($(DDDBG),1)
+	CXXFLAGS += -DDDBG
+endif
 
 ifeq ($(FP16),0)
 	CXXFLAGS += -DTEX_FLOAT32

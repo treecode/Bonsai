@@ -1,6 +1,12 @@
 #include "RendererData.h"
 #include <omp.h>
 
+#ifdef DDDBG
+#define DDALLRANK 1
+#else
+#define DDALLRANK 0
+#endif
+
 
 void RendererDataDistribute::create_division()
 { 
@@ -516,8 +522,9 @@ void RendererDataDistribute::exchange_particles_alltoall_vector(
   const double t60 = MPI_Wtime();
 
 #if 1
-  fprintf(stderr, "xchg: rank= %d: dt= %g [ %g %g %g %g %g %g  ]\n", rank, t60-t00,
-      t10-t00,t20-t10,t30-t20,t40-t30,t50-t40,t60-t50);
+  if (DDALLRANK || rank == 0)
+    fprintf(stderr, "xchg: rank= %d: dt= %g [ %g %g %g %g %g %g  ]\n", rank, t60-t00,
+        t10-t00,t20-t10,t30-t20,t40-t30,t50-t40,t60-t50);
 #endif
 }
 
@@ -539,7 +546,7 @@ void RendererDataDistribute::distribute()
   const float rmax = std::max(std::abs(_rmin), std::abs(_rmax)) * 1.0001;
 
   const int nsample = sample_array.size();
-  if (rank == 0)
+  if (DDALLRANK || rank == 0)
     fprintf(stderr, " -- nsample= %d\n", nsample);
   std::vector<float4> pos(nsample);
 #pragma omp parallel for schedule(static)
@@ -592,10 +599,11 @@ void RendererDataDistribute::distribute()
 #endif
   distributed = true;
   const double t70 = MPI_Wtime();
-  MPI_Barrier(comm);
+//  MPI_Barrier(comm);
 #if 1
-  fprintf(stderr, "dist: rank= %d: dt= %g [ %g %g %g %g %g %g %g ]\n", rank, t70-t00,
-      t10-t00,t20-t10,t30-t20,t40-t30,t50-t40,t60-t50,t70-t60);
+  if (0 || rank == 0)
+    fprintf(stderr, "dist: rank= %d: dt= %g [ %g %g %g %g %g %g %g ]\n", rank, t70-t00,
+        t10-t00,t20-t10,t30-t20,t40-t30,t50-t40,t60-t50,t70-t60);
 #endif
 }
 
