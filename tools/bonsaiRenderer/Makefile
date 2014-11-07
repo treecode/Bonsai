@@ -38,42 +38,11 @@ INCLUDE_FLAGS= -I./ -I./$(ENGINE)/
 INCLUDE_FLAGS += -I$(CUDA_TK)/include 
 LDFLAGS = -lGL -lGLU -lglut -lGLEW -fopenmp -lrt
 LDFLAGS += -pie -rdynamic -lpthread
-#-L$(PWD)/lib/linux -lGLEW_x86_64
 
-ifeq ($(DDDBG),1)
-	CXXFLAGS += -DDDBG
-endif
 
-ifeq ($(FP16),0)
-	CXXFLAGS += -DTEX_FLOAT32
-else
-	CXXFLAGS += -DTEX_FLOAT16
-	ifeq ($(F16C),1)
-		CXXFLAGS += -DF16C
-	endif
-endif
+OBJ = main.o anyoption.o $(ENGINE)/renderer.o paramgl.o RendererData.o RendererDataDistribute.o
 
-ifeq ($(COPY),1)
-	CXXFLAGS += -D__COMPOSITE_COPY
-endif
-
-ifeq ($(ASYNC_OMP),1)
-	CXXFLAGS += -DASYNC_OMP
-endif
-
-ifeq ($(NONBLOCK),0)
-	ifeq ($(PROFILE),1)
-		CXXFLAGS += -D__COMPOSITE_PROFILE
-	endif
-else
-	CXXFLAGS += -D__COMPOSITE_NONBLOCK
-endif
-
-ifeq ($(MPIMT),0)
-	CXXFLAGS +=
-else
-	CXXFLAGS += -D_MPIMT
-endif
+include Makefile.in
 
 ifeq ($(ICET),1)
 	ICETPATH=../../IceT
@@ -88,20 +57,7 @@ ifeq ($(APPLEOSX),1)
 	LDFLAGS = -framework OpenGL -L/opt/local/lib -lglut -lglew -fopenmp
 endif
 
-ifeq ($(PNG),1)
-	CXXFLAGS += -D_PNG
-	LDFLAGS += -lpng
-endif
 
-
-
-OBJ = main.o anyoption.o $(ENGINE)/renderer.o paramgl.o RendererData.o RendererDataDistribute.o
-
-ifeq ($(4K),1)
-	OBJ += $(ENGINE)/renderloop4k.o 
-else
-	OBJ += $(ENGINE)/renderloop.o 
-endif
 ifeq ($(ENGINE),smoke)
 	OBJ += tr.o
 	OBJ += smoke/GLSLProgram.o

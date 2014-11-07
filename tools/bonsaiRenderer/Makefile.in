@@ -1,0 +1,47 @@
+ifeq ($(DDDBG),1)
+	CXXFLAGS += -DDDBG
+endif
+
+ifeq ($(FP16),0)
+	CXXFLAGS += -DTEX_FLOAT32
+else
+	CXXFLAGS += -DTEX_FLOAT16
+	ifeq ($(F16C),1)
+		CXXFLAGS += -DF16C
+	endif
+endif
+
+ifeq ($(COPY),1)
+	CXXFLAGS += -D__COMPOSITE_COPY
+endif
+
+ifeq ($(ASYNC_OMP),0)
+else
+	CXXFLAGS += -DASYNC_OMP
+endif
+
+ifeq ($(NONBLOCK),0)
+	ifeq ($(PROFILE),1)
+		CXXFLAGS += -D__COMPOSITE_PROFILE
+	endif
+else
+	CXXFLAGS += -D__COMPOSITE_NONBLOCK
+endif
+
+ifeq ($(MPIMT),0)
+	CXXFLAGS +=
+else
+	CXXFLAGS += -D_MPIMT
+endif
+
+
+ifeq ($(PNG),1)
+	CXXFLAGS += -D_PNG
+	LDFLAGS += -lpng
+endif
+
+ifeq ($(4K),1)
+	OBJ += $(ENGINE)/renderloop4k.o 
+else
+	OBJ += $(ENGINE)/renderloop.o 
+endif
