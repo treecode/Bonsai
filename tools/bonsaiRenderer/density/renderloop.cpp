@@ -2243,7 +2243,7 @@ void onexit() {
 
 unsigned long long fpsCount;
 double timeBegin;
-static int thisRank;
+static int thisRank, numRanks;
 static MPI_Comm thisComm;
 static std::string imageFileName;
 void display()
@@ -2251,7 +2251,7 @@ void display()
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
   theDemo->step();
-  MPI_Barrier(thisComm);
+//  MPI_Barrier(thisComm);
   const double t0 = MPI_Wtime();
   theDemo->display();
 
@@ -2260,9 +2260,14 @@ void display()
   //glutReportErrors();
   glutSwapBuffers();
   const double t1 = MPI_Wtime();
-  MPI_Barrier(thisComm);
+  double dt = t1 - t0;
+  double dtMin, dtMax, dtSum;
+  MPI_Reduce(&dt, &dtMin, 1, MPI_DOUBLE, MPI_MIN, 0, thisComm);
+  MPI_Reduce(&dt, &dtMax, 1, MPI_DOUBLE, MPI_MAX, 0, thisComm);
+  MPI_Reduce(&dt, &dtSum, 1, MPI_DOUBLE, MPI_SUM, 0, thisComm);
+//  MPI_Barrier(thisComm);
   if (thisRank == 0)
-    fprintf(stderr, " render= %g sec \n", t1-t0);
+    fprintf(stderr, " render= %g sec range=[ %g , %g ]  \n", dtSum/numRanks, dtMin, dtMax);
 
   fpsCount++;
 
@@ -2628,6 +2633,7 @@ void initAppRenderer(int argc, char** argv,
     const std::string imagefn)
 {
   dataSetFunc = func;
+  numRanks = nrank;
   thisRank = rank;
   thisComm = comm;
   assert(rank < nrank);
