@@ -556,6 +556,10 @@ void RendererDataDistribute::distribute()
   MPI_Bcast(& xlow[0],nwords,MPI_DOUBLE,getMaster(),comm);
   MPI_Bcast(&xhigh[0],nwords,MPI_DOUBLE,getMaster(),comm);
 
+  bounds.resize(nrank);
+  for (int p = 0; p < nrank; p++)
+    bounds[p] = {xlow[p][0],xlow[p][1],xlow[p][2]};
+
 #if 0
   if (isMaster())
   {
@@ -597,7 +601,6 @@ void RendererDataDistribute::distribute()
 
 std::vector<int> RendererDataDistribute::getVisibilityOrder(const std::array<float,3> camPos) const
 {
-  using float3 = std::array<float,3>;
   if (!isDistributed())
   {
     std::vector<int> order(nrank);
@@ -605,15 +608,7 @@ std::vector<int> RendererDataDistribute::getVisibilityOrder(const std::array<flo
     return order;
   }
   const double t0 = MPI_Wtime();
-  static std::vector<float3> bounds(nrank);
-  float3 xlow = {{
-    getBoundBoxLow(0),
-      getBoundBoxLow(1),
-      getBoundBoxLow(2)
-  }};
-  MPI_Allgather(&xlow, 3, MPI_FLOAT, &bounds[0], 3, MPI_FLOAT, comm);
-
-  const double t1 = MPI_Wtime();
+  assert(static_cast<int>(bounds.size()) == nrank);
 
   auto xdi = [=](int ix, int iy, int iz)
   {
@@ -674,13 +669,16 @@ std::vector<int> RendererDataDistribute::getVisibilityOrder(const std::array<flo
       }
     }
   }
-  const double t2 = MPI_Wtime();
-  if (isMaster())
-    fprintf(stderr, " globalOrder: tot= %g  algorithm %g sec \n", t2-t0, t2-t1);
 
   assert(!compositingOrder.empty());
   assert(static_cast<int>(compositingOrder.size()) == nrank);
+#pragma omp parallel for schedule(static)
   for (int i = 0; i < nrank; i++)
     assert(compositingOrder[i] >= 0 && compositingOrder[i] < nrank);
+
+  const double t2 = MPI_Wtime();
+  if (isMaster())
+    fprintf(stderr, " globalOrder: algorithm %g sec \n", t2-t0);
+
   return compositingOrder;
 }

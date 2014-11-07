@@ -238,6 +238,7 @@ class RendererDataDistribute : public RendererData
     int NMAXSAMPLE;
     int sample_freq;
 
+    std::vector<std::array<double,3>> bounds;
     std::array<float,3> xlow, xhigh;
     int npx, npy, npz;
     bool distributed;
@@ -451,6 +452,7 @@ class RendererDataDistribute : public RendererData
       time      = rhs.time;
       nBodySim  = rhs.nBodySim;
 
+      bounds = std::move(rhs.bounds);
       xlow  = rhs.xlow;
       xhigh = rhs.xhigh;
       npx   = rhs.npx;
