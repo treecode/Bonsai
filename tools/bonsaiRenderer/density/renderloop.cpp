@@ -2262,11 +2262,12 @@ void display()
   const double t1 = MPI_Wtime();
   double dt = t1 - t0;
   double dtMin, dtMax, dtSum;
-  MPI_Reduce(&dt, &dtMin, 1, MPI_DOUBLE, MPI_MIN, 0, thisComm);
-  MPI_Reduce(&dt, &dtMax, 1, MPI_DOUBLE, MPI_MAX, 0, thisComm);
-  MPI_Reduce(&dt, &dtSum, 1, MPI_DOUBLE, MPI_SUM, 0, thisComm);
+  const int showRank = std::min(numRanks-1, 1);
+  MPI_Reduce(&dt, &dtMin, 1, MPI_DOUBLE, MPI_MIN, showRank, thisComm);
+  MPI_Reduce(&dt, &dtMax, 1, MPI_DOUBLE, MPI_MAX, showRank, thisComm);
+  MPI_Reduce(&dt, &dtSum, 1, MPI_DOUBLE, MPI_SUM, showRank, thisComm);
 //  MPI_Barrier(thisComm);
-  if (thisRank == 0)
+  if (thisRank == showRank)
     fprintf(stderr, " render= %g sec range=[ %g , %g ]  \n", dtSum/numRanks, dtMin, dtMax);
 
   fpsCount++;
