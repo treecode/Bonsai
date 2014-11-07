@@ -273,6 +273,7 @@ extern void displayTimers();    // For profiling counter display
 // fps
 bool displayFps = false;
 double fps = 0.0;
+double fps_glob = 0.0;
 int fpsLimit = 5;
 //cudaEvent_t startEvent, stopEvent;
 
@@ -718,7 +719,7 @@ class Demo
 
     if (displayFps)
     {
-      glPrintf(x, y, "FPS:       %.2f", fps);
+      glPrintf(x, y, "FPS:       %.2f", fps_glob);
       y -= lineSpacing;
     }
 
@@ -2269,6 +2270,18 @@ void display()
 //  MPI_Barrier(thisComm);
   if (thisRank == showRank)
     fprintf(stderr, " render= %g sec range= [ %g , %g ]  \n", dtSum/numRanks, dtMin, dtMax);
+  static int countFps = 0;
+  static double dtFps = 0;
+  countFps++;
+  dtFps += dt;
+
+  fps_glob = countFps/dtFps;
+
+  if (countFps == 16)
+  {
+    countFps = 0;
+    dtFps = 0.0;
+  }
 
   fpsCount++;
 
