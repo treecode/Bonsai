@@ -924,7 +924,11 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
 #ifndef ASYNC_OMP
 
     static bool first = true;
+#ifndef _MPIMT
+    static const std::chrono::milliseconds span(100);
+#else
     static const std::chrono::milliseconds span(1);
+#endif
     static std::future<std::shared_ptr<RendererDataT>> fut = std::async(std::launch::async,fetchNewDataAsync);
     int ready = fut.wait_for(span)==std::future_status::ready || first;
     int readyGlobal;
