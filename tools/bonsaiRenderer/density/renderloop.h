@@ -11,5 +11,6 @@ void initAppRenderer(int argc, char** argv,
                      const char *fulleScreenMode /* = "" */,
                      const bool stereo /* = false */,
                      std::function<void(int)> &updateFunc,
-                     const std::string imagefn);
+                     const std::string imagefn,
+                     const std::string systemName);
 #endif // _RENDERLOOP_H_

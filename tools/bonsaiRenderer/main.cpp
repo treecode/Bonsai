@@ -674,6 +674,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
 {
 
   std::string fileName;
+  std::string systemName("");
   int reduceDM    =  10;
   int reduceS=  1;
 #ifndef PARTICLESRENDERER
@@ -723,12 +724,13 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     ADDUSAGE("     --cameraframe  #   Reframe original camera path to # frames. [ignore]");
     ADDUSAGE("     --image        #   image base filename");
     ADDUSAGE("     --mpirendermode    use MPI to communicate with the renderer. Must only be used with bonsai_driver. [disabled]");
+    ADDUSAGE("     --system #    Name of the system that is used.");
 
 
     opt.setFlag  ( "help" ,        'h');
     opt.setOption( "infile",       'i');
     opt.setFlag  ( "insitu",       'I');
-		opt.setFlag( "mpirendermode");
+    opt.setFlag( "mpirendermode");
     opt.setOption( "reduceDM");
     opt.setOption( "sleep");
     opt.setOption( "reduceS");
@@ -742,6 +744,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     opt.setOption("nmaxsample", 's');
     opt.setOption("display", 'D');
     opt.setFlag  ( "noquicksync");
+    opt.setOption("system");
 
     opt.processCommandArgs( argc, argv );
 
@@ -772,6 +775,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     if ((optarg = opt.getValue("camera"))) cameraFileName = std::string(optarg);
     if ((optarg = opt.getValue("cameraframe"))) nCameraFrame = std::atoi(optarg);
     if ((optarg = opt.getValue("hfac"))) hfac = std::atof(optarg);
+    if ((optarg = opt.getValue("system"))) systemName  = std::string(optarg);
 
     if ((fileName.empty() && !inSitu) ||
         reduceDM < 0 || reduceS < 0)
@@ -990,7 +994,8 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
       fullScreenMode.c_str(), 
       stereo,
       updateFunc,
-      imageFileName);
+      imageFileName,
+      systemName);
 
 #else
   volatile bool start = false;
@@ -1005,7 +1010,8 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
         fullScreenMode.c_str(), 
         stereo,
         updateFunc,
-        imageFileName);
+        imageFileName,
+	systemName);
   }
   else while(1)
   {

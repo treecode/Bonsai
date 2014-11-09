@@ -76,6 +76,11 @@ static inline double rtc(void)
 float TstartGlow;
 float dTstartGlow;
 
+int totalNodes = -1;
+int renderNodes = -1;
+std::string systemName;
+
+
 #define DEG2RAD(a) ((a)/57.295)
 //for stereo
 enum EYE
@@ -443,6 +448,7 @@ class Demo
       m_params(m_renderer.getParams()),
       m_brightFreq(100),
       m_displayBodiesSec(false),
+      m_displayNodeCount(true),
       m_cameraRollHome(0.0f),
       m_cameraRoll(0.0f),
       m_enableStats(true)
@@ -703,6 +709,32 @@ class Demo
     float Myr = m_idata.getTime() * 9.767;
     glPrintf(x, y, "MYears:    %.2f ", Myr);
     y -= lineSpacing;
+
+
+    if(systemName.size() == 0)
+    {
+	    if(m_displayNodeCount)
+	    {
+	    	glPrintf(x,y, "Nodes: %d (%d Sim, %d Viz)", 
+		    totalNodes,totalNodes-renderNodes, renderNodes);
+    		y -= lineSpacing;
+	    }
+    }
+    else
+    {
+	    if(m_displayNodeCount)
+	    {
+	    	glPrintf(x,y, "System: %s Nodes: %d (%d Sim, %d Viz)", 
+		    systemName.c_str(), totalNodes,totalNodes-renderNodes, renderNodes);
+	    }
+	    else
+	    {
+	    	glPrintf(x,y, "System: %s", systemName.c_str());
+	    }
+    	    y -= lineSpacing;
+    }
+
+
 
 
     const float gbodies = nbodies_glb * 1.0e-6;
@@ -1592,7 +1624,7 @@ class Demo
         break;
 	
       case 'k':
-	sendCommandToBonsai(1001);
+	m_displayNodeCount = !m_displayNodeCount;
 	break;
 
       case 'W':
@@ -2230,6 +2262,7 @@ class Demo
   bool m_flyMode;
   bool m_directGravitation;
   bool m_displayBodiesSec;
+  bool m_displayNodeCount;
   bool m_enableStats;
 
   bool m_keyDown[256];
@@ -2709,11 +2742,19 @@ void initAppRenderer(int argc, char** argv,
     const char *fullScreenMode,
     const bool stereo,
     std::function<void(int)> &func,
-    const std::string imagefn)
+    const std::string imagefn,
+    const std::string _systemName)
 {
   dataSetFunc = func;
   thisRank = rank;
   thisComm = comm;
+
+  
+  MPI_Comm_size(MPI_COMM_WORLD, &totalNodes);
+  MPI_Comm_size(thisComm, 	&renderNodes);
+  systemName = _systemName;
+
+
   assert(rank < nrank);
   assert(idata.n() <= MAX_PARTICLES);
   initGL(argc, argv, rank, nrank, comm, fullScreenMode, stereo);
