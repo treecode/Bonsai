@@ -301,6 +301,28 @@ static void lReadBonsaiFile(
 }
 
 
+void readJumpSnapshots(const std::string inFileName)
+{
+	//Read the snapshots that we can cycle between during runtime
+	string line;
+	ifstream inFile(inFileName);
+	if(inFile.is_open())
+	{
+		while(getline(inFile, line))
+		{
+			fprintf(stderr,"RECEI: %s \n", line.c_str());
+		}
+		inFile.close();
+	}
+	else
+	{
+		fprintf(stderr,"Failed to open the file that contains the names of the jump snapshots\n");
+	}
+
+}
+
+
+
 void read_tipsy_file_parallel(const MPI_Comm &mpiCommWorld,
     vector<real4> &bodyPositions, vector<real4> &bodyVelocities,
                               vector<ullong> &bodiesIDs,  float eps2, string fileName,
@@ -710,6 +732,7 @@ int main(int argc, char** argv, MPI_Comm comm)
   string fileName          =  "";
   string logFileName       = "gpuLog.log";
   string snapshotFile      = "snapshot_";
+  string snapJumpFileName;
   std::string bonsaiFileName;
   float snapshotIter       = -1;
   float  remoDistance      = -1.0;
@@ -817,6 +840,7 @@ int main(int argc, char** argv, MPI_Comm comm)
 		ADDUSAGE("     --cube     #       use cube model with # particles per proc");
     ADDUSAGE("     --diskmode         use diskmode to read same input file all MPI taks and randomly shuffle its positions");
     ADDUSAGE("     --mpirendermode    use MPI to communicate with the renderer. Must only be used with bonsai_driver. [disabled]");
+    ADDUSAGE("  --snapsjumpfile #     filename of a file that contains a list of snapshots that can be cycled through");
 		ADDUSAGE(" ");
 
 
@@ -832,6 +856,7 @@ int main(int argc, char** argv, MPI_Comm comm)
 		opt.setOption( "eps",     'e' );
 		opt.setOption( "theta",   'o' );
 		opt.setOption( "rebuild", 'r' );
+		opt.setOption( "snapsjumpfile");
     opt.setOption( "plummer");
 #ifdef GALACTICS
     opt.setOption( "milkyway");
@@ -908,6 +933,7 @@ int main(int argc, char** argv, MPI_Comm comm)
     if ((optarg = opt.getValue("eps")))          eps                = (float) atof  (optarg);
     if ((optarg = opt.getValue("theta")))        theta              = (float) atof  (optarg);
     if ((optarg = opt.getValue("snapname")))     snapshotFile       = string(optarg);
+    if ((optarg = opt.getValue("snapsjumpfile"))) snapJumpFileName  = string(optarg);
     if ((optarg = opt.getValue("snapiter")))     snapshotIter       = (float) atof  (optarg);
     if ((optarg = opt.getValue("quickdump")))    quickDump          = (float) atof  (optarg);
     if ((optarg = opt.getValue("quickratio")))   quickRatio         = (float) atof  (optarg);
@@ -1376,6 +1402,15 @@ int main(int argc, char** argv, MPI_Comm comm)
   }
   else
     assert(0);
+
+
+
+  if(snapJumpFileName.size() > 0)
+  {
+	readJumpSnapshots(snapJumpFileName);
+  }
+
+
 
   tree->mpiSync();
 
