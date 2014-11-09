@@ -1459,7 +1459,8 @@ class Demo
         break;
       case 27: // escape
         //      displayTimers();
-        dataSetFunc(-1);
+	if(m_keyModifiers == GLUT_ACTIVE_SHIFT)
+	        dataSetFunc(-1);
         break;
       case 'p':
         cycleDisplayMode();
