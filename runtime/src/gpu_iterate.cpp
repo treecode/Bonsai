@@ -241,6 +241,102 @@ void octree::makeLET()
   letRunning = false;
 }
 
+
+#define MAXSNAP 8
+static std::vector < float4 > snapPos;
+static std::vector < float4 > snapVel;
+static std::vector < size_t > snapIDS;
+static std::vector < float  > snaph;
+// static std::vector < float4 > snapAcc0;
+
+BonsaiSharedHeader 	      snapHeader[MAXSNAP];
+std::vector<BonsaiSharedData> snapData[MAXSNAP];
+
+int    nBodies[MAXSNAP];
+float2 nTimes [MAXSNAP];
+
+float loadSnapshot(const int snapshotID, octree &tree)
+{
+  const int nNew 	= snapHeader[snapshotID].nBodies;
+  const float snapTime =  snapHeader[snapshotID].tCurrent;
+
+fprintf(stderr,"Current; %d   new: %d \n ", tree.localTree.n, nNew);
+
+  int memSize = MULTI_GPU_MEM_INCREASE*nNew;
+
+  tree.localTree.setN(nNew);
+
+  tree.localTree.bodies_pos. cresize(memSize + 1, false);
+  tree.localTree.bodies_acc0.cresize(memSize,     false);
+  tree.localTree.bodies_acc1.cresize(memSize,     false);
+  tree.localTree.bodies_vel. cresize(memSize,     false);
+  tree.localTree.bodies_time.cresize(memSize,     false);
+  tree.localTree.bodies_ids. cresize(memSize + 1, false);
+  tree.localTree.bodies_Ppos.cresize(memSize + 1, false);
+  tree.localTree.bodies_Pvel.cresize(memSize + 1, false);
+  tree.localTree.bodies_key. cresize(memSize + 1, false);
+  tree.localTree.bodies_h.   cresize(memSize + 1, false);
+  
+  tree.reallocateParticleMemory(tree.localTree); //Resize preserves original data
+  
+fprintf(stderr,"MEMORY ALLOCATED\n");
+
+  //Copy data
+  //
+#pragma omp parallel for schedule(static)      
+  for(int i=0; i < nNew; i++)
+  {
+	tree.localTree.bodies_pos[i]   =  snapPos[i];
+	tree.localTree.bodies_vel[i]   =  snapVel[i];
+	tree.localTree.bodies_ids[i]   =  snapIDS[i];
+	tree.localTree.bodies_h[i]     =  snaph[i];
+	tree.localTree.bodies_time[i]  = make_float2(snapTime, snapTime);
+	
+	tree.localTree.bodies_pos[i].x =  snapData[snapshotID][i].x;
+	tree.localTree.bodies_pos[i].y =  snapData[snapshotID][i].y;
+	tree.localTree.bodies_pos[i].z =  snapData[snapshotID][i].z;
+	tree.localTree.bodies_pos[i].w =  snapData[snapshotID][i].mass;
+
+	tree.localTree.bodies_vel[i].x =  snapData[snapshotID][i].vx;
+	tree.localTree.bodies_vel[i].y =  snapData[snapshotID][i].vy;
+	tree.localTree.bodies_vel[i].z =  snapData[snapshotID][i].vz;
+	tree.localTree.bodies_vel[i].w =  snapData[snapshotID][i].vw;
+	
+	tree.localTree.bodies_h[i] =  snapData[snapshotID][i].h;
+
+	if(snapData[snapshotID][i].ID.getType() == 0)
+		tree.localTree.bodies_ids[i]   =  snapData[snapshotID][i].ID.getID() + DARKMATTERID;
+	else if(snapData[snapshotID][i].ID.getType() == 1)
+		tree.localTree.bodies_ids[i]   =  snapData[snapshotID][i].ID.getID() + BULGEID;
+	else if(snapData[snapshotID][i].ID.getType() == 2)
+		tree.localTree.bodies_ids[i]   =  snapData[snapshotID][i].ID.getID() + DISKID;
+	else
+		assert(0);
+  }
+
+  tree.localTree.bodies_acc1.zeroMem();
+  tree.localTree.bodies_acc0.zeroMem();
+
+  tree.localTree.bodies_pos.h2d();
+  tree.localTree.bodies_vel.h2d();
+  tree.localTree.bodies_time.h2d();
+  tree.localTree.bodies_ids.h2d();
+  tree.localTree.bodies_h.h2d();
+
+
+  //Fill the predicted arrays
+  tree.localTree.bodies_Ppos.copy(tree.localTree.bodies_pos, tree.localTree.n);
+  tree.localTree.bodies_Pvel.copy(tree.localTree.bodies_pos, tree.localTree.n);  
+
+
+  fprintf(stderr,"SNAP LOADED\n");
+  return snapTime;  
+}
+
+
+
+
+
 template<typename T>
 static void lHandShake(SharedMemoryBase<T> &header)
 {
@@ -602,6 +698,87 @@ bool octree::iterate_once(IterationData &idata) {
       idata.totalDomWait = 0;
       idata.totalPredCor = 0;
     }
+   
+   static int snapShotCounter = 0; 
+    if(iter == 15  || iter == 1200 || iter == 2400 || 	
+       iter == 3600 || iter == 4800 || iter == 6000 ||
+       iter == 2000 || iter == 1000)
+    {
+      snapData[snapShotCounter].resize(this->localTree.n);
+
+      snapPos.resize(this->localTree.n);
+      snapVel.resize(this->localTree.n);
+      snapIDS.resize(this->localTree.n);
+      snaph.resize(this->localTree.n);
+
+      localTree.bodies_pos.d2h();      
+      localTree.bodies_vel.d2h();
+      localTree.bodies_ids.d2h();
+      localTree.bodies_h.d2h();  
+      localTree.bodies_acc0.d2h();
+      
+   #pragma omp parallel for schedule(static)    
+      for(int i=0; i < this->localTree.n; i++)
+      {
+        snapPos[i]    = localTree.bodies_pos[i];
+        snapVel[i]    = localTree.bodies_vel[i];
+        snapIDS[i]    = localTree.bodies_ids[i];
+        snaph[i]      = localTree.bodies_h[i];     
+
+	snapData[snapShotCounter][i].x = localTree.bodies_pos[i].x;
+	snapData[snapShotCounter][i].y = localTree.bodies_pos[i].y;
+	snapData[snapShotCounter][i].z = localTree.bodies_pos[i].z;
+	snapData[snapShotCounter][i].mass = localTree.bodies_pos[i].w;
+	snapData[snapShotCounter][i].vx = localTree.bodies_vel[i].x;
+	snapData[snapShotCounter][i].vy = localTree.bodies_vel[i].y;
+	snapData[snapShotCounter][i].vz = localTree.bodies_vel[i].z;
+	snapData[snapShotCounter][i].vw = localTree.bodies_vel[i].w;
+	snapData[snapShotCounter][i].h  = localTree.bodies_h[i];
+	snapData[snapShotCounter][i].ID  = lGetIDType(localTree.bodies_ids[i]);
+      }
+          
+
+      snapHeader[snapShotCounter].nBodies  = this->localTree.n;
+      snapHeader[snapShotCounter].tCurrent = t_current;
+
+      snapShotCounter++;
+      fprintf(stderr,"Recorded snapshot\n");
+    }
+      
+
+    int renderCommand = 0;
+    if(procId == 0)
+    {
+	    //Test if the renderer has send us a command
+	    static MPI_Request reqRenderer;
+	    static MPI_Status  statRenderer;
+    	    int worldRank    = -1;
+	    MPI_Comm_rank(MPI_COMM_WORLD, &worldRank);  
+
+	    //Test if the renderer has sent us a command. If so read it
+	    MPI_Iprobe(worldRank+1,1337, MPI_COMM_WORLD, &renderCommand, &statRenderer);
+	    if(renderCommand)
+	    {
+		MPI_Recv(&renderCommand, 1, MPI_INT, worldRank+1, 1337, MPI_COMM_WORLD, &statRenderer);
+	    }
+    }
+	
+    //All processes should process the same command, so let the root broadcast it
+    MPI_Bcast(&renderCommand, 1, MPI_INT, 0, mpiCommWorld);
+
+    if(renderCommand)
+    {
+	    if(renderCommand >= 1001 && renderCommand <= 1008)
+	    {
+		//Load snapshot and reset the time when data is dumped
+	    	nextQuickDump =   loadSnapshot(renderCommand - 1001, *this);
+
+	    }
+
+	fprintf(stderr,"%d RECEIVED COMMAND  : %d \n", procId, renderCommand);
+    }
+
+    //
 
 
     LOG("At the start of iterate:\n");
@@ -615,7 +792,7 @@ bool octree::iterate_once(IterationData &idata) {
     devContext.startTiming(execStream->s());
     predict(this->localTree);
     devContext.stopTiming("Predict", 9, execStream->s());
-
+fprintf(stderr,"Predict finished \n");
     idata.totalPredCor += get_time() - tTempTime;
 
     if(nProcs > 1)
@@ -888,12 +1065,14 @@ bool octree::iterate_once(IterationData &idata) {
     }//Statistics dumping
 
 
-    if (useMPIIO)
+    if (useMPIIO)    
     {
+	    if(iter > 15){
       if (mpiRenderMode)
         dumpDataMPI();
       else
         dumpData();
+	    }
     }
     else if (snapshotIter > 0)
     {
@@ -1123,10 +1302,13 @@ void octree::iterate_setup(IterationData &idata) {
   {
     nextSnapTime  = t_current;
     nextQuickDump = t_current;
+
+    if(iter > 15){
     if (mpiRenderMode)
       dumpDataMPI();
     else
       dumpData();
+    }
   }
   else if(snapshotIter > 0)
   {
