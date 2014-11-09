@@ -243,11 +243,6 @@ void octree::makeLET()
 
 
 #define MAXSNAP 8
-static std::vector < float4 > snapPos;
-static std::vector < float4 > snapVel;
-static std::vector < size_t > snapIDS;
-static std::vector < float  > snaph;
-// static std::vector < float4 > snapAcc0;
 
 BonsaiSharedHeader 	      snapHeader[MAXSNAP];
 std::vector<BonsaiSharedData> snapData[MAXSNAP];
@@ -286,10 +281,6 @@ fprintf(stderr,"MEMORY ALLOCATED\n");
 #pragma omp parallel for schedule(static)      
   for(int i=0; i < nNew; i++)
   {
-	tree.localTree.bodies_pos[i]   =  snapPos[i];
-	tree.localTree.bodies_vel[i]   =  snapVel[i];
-	tree.localTree.bodies_ids[i]   =  snapIDS[i];
-	tree.localTree.bodies_h[i]     =  snaph[i];
 	tree.localTree.bodies_time[i]  = make_float2(snapTime, snapTime);
 	
 	tree.localTree.bodies_pos[i].x =  snapData[snapshotID][i].x;
@@ -706,25 +697,15 @@ bool octree::iterate_once(IterationData &idata) {
     {
       snapData[snapShotCounter].resize(this->localTree.n);
 
-      snapPos.resize(this->localTree.n);
-      snapVel.resize(this->localTree.n);
-      snapIDS.resize(this->localTree.n);
-      snaph.resize(this->localTree.n);
 
       localTree.bodies_pos.d2h();      
       localTree.bodies_vel.d2h();
       localTree.bodies_ids.d2h();
       localTree.bodies_h.d2h();  
-      localTree.bodies_acc0.d2h();
       
    #pragma omp parallel for schedule(static)    
       for(int i=0; i < this->localTree.n; i++)
       {
-        snapPos[i]    = localTree.bodies_pos[i];
-        snapVel[i]    = localTree.bodies_vel[i];
-        snapIDS[i]    = localTree.bodies_ids[i];
-        snaph[i]      = localTree.bodies_h[i];     
-
 	snapData[snapShotCounter][i].x = localTree.bodies_pos[i].x;
 	snapData[snapShotCounter][i].y = localTree.bodies_pos[i].y;
 	snapData[snapShotCounter][i].z = localTree.bodies_pos[i].z;
