@@ -425,6 +425,7 @@ class Demo
       //	    m_displayMode(SmokeRenderer::POINTS),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.2f),
       m_autopilot(true),
+      m_bonsaiPause(false),
       m_renderingEnabled(true),
       m_displayBoxes(false), 
       m_domainView(false),
@@ -1487,8 +1488,25 @@ class Demo
         toggleDomainView();
         break;
       case ' ':
-        fprintf(stderr, " Toggle autopilot @ frame= %d\n", m_frameCount);
-        togglePause();
+	if(m_keyModifiers == GLUT_ACTIVE_SHIFT)	
+	{
+		if(m_bonsaiPause)
+		{
+			//Resume
+  			sendCommandToBonsai(2001);
+		}
+		else
+		{
+			//Pauze
+			sendCommandToBonsai(2000);
+		}
+		m_bonsaiPause = !m_bonsaiPause;
+	}
+	else
+	{
+        	fprintf(stderr, " Toggle autopilot @ frame= %d\n", m_frameCount);
+	        togglePause();
+	}
         break;
       case 27: // escape
         //      displayTimers();
@@ -1729,7 +1747,8 @@ class Demo
   {
     int modifiers = glutGetModifiers(); // freeglut complains about this, but it seems to work
     
-    if(modifiers == GLUT_ACTIVE_CTRL)    
+    //if(modifiers == GLUT_ACTIVE_CTRL)    
+    if(1)    
     {
 	    switch (key)
 	    {
@@ -2233,6 +2252,7 @@ class Demo
   bool m_stereoEnabled;
 
   bool m_autopilot;
+  bool m_bonsaiPause;
   bool m_displayBoxes;
   bool m_domainView;
   bool m_displaySliders;

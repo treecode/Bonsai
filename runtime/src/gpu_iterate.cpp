@@ -718,46 +718,72 @@ bool octree::iterate_once(IterationData &idata) {
 	snapData[snapShotCounter][i].ID  = lGetIDType(localTree.bodies_ids[i]);
       }
           
-
       snapHeader[snapShotCounter].nBodies  = this->localTree.n;
       snapHeader[snapShotCounter].tCurrent = t_current;
 
       snapShotCounter++;
       fprintf(stderr,"Recorded snapshot\n");
     }
-      
+     
+
+    bool simPaused = false;
+
+    /*
+     * [1001 - 1008]  Jump through time
+     * 2000         Simulation is paused
+     * 2001	    Continue the simulation
+     *
+     *
+     * */
+
 
     int renderCommand = 0;
-    if(procId == 0)
+    do
     {
-	    //Test if the renderer has send us a command
-	    static MPI_Request reqRenderer;
-	    static MPI_Status  statRenderer;
-    	    int worldRank    = -1;
-	    MPI_Comm_rank(MPI_COMM_WORLD, &worldRank);  
+	    if(procId == 0)
+	    {
+		    //Test if the renderer has send us a command
+		    static MPI_Request reqRenderer;
+		    static MPI_Status  statRenderer;
+		    int worldRank    = -1;
+		    MPI_Comm_rank(MPI_COMM_WORLD, &worldRank);  
 
-	    //Test if the renderer has sent us a command. If so read it
-	    MPI_Iprobe(worldRank+1,1337, MPI_COMM_WORLD, &renderCommand, &statRenderer);
+		    //Test if the renderer has sent us a command. If so read it
+		    MPI_Iprobe(worldRank+1,1337, MPI_COMM_WORLD, &renderCommand, &statRenderer);
+		    if(renderCommand)
+		    {
+			MPI_Recv(&renderCommand, 1, MPI_INT, worldRank+1, 1337, MPI_COMM_WORLD, &statRenderer);
+		    }
+		    else
+		    {
+			    //No command, but if we are paused reuse the pause command to stay in pause mode
+			    if(simPaused) renderCommand = 2000;
+		    }
+	    }
+		
+	    //All processes should process the same command, so let the root broadcast it
+	    MPI_Bcast(&renderCommand, 1, MPI_INT, 0, mpiCommWorld);
+
 	    if(renderCommand)
 	    {
-		MPI_Recv(&renderCommand, 1, MPI_INT, worldRank+1, 1337, MPI_COMM_WORLD, &statRenderer);
+		    if(renderCommand >= 1001 && renderCommand <= 1008)
+		    {
+			//Load snapshot and reset the time when data is dumped
+			nextQuickDump =   loadSnapshot(renderCommand - 1001, *this);
+		    }
+		    if(renderCommand == 2000)
+		    {
+			    simPaused = true;
+			    usleep(1000); //Sleep for a second
+		    }
+		    if(renderCommand == 2001)
+		    {
+			    simPaused = false;
+		    }
+
+		fprintf(stderr,"%d RECEIVED COMMAND  : %d \n", procId, renderCommand);
 	    }
-    }
-	
-    //All processes should process the same command, so let the root broadcast it
-    MPI_Bcast(&renderCommand, 1, MPI_INT, 0, mpiCommWorld);
-
-    if(renderCommand)
-    {
-	    if(renderCommand >= 1001 && renderCommand <= 1008)
-	    {
-		//Load snapshot and reset the time when data is dumped
-	    	nextQuickDump =   loadSnapshot(renderCommand - 1001, *this);
-
-	    }
-
-	fprintf(stderr,"%d RECEIVED COMMAND  : %d \n", procId, renderCommand);
-    }
+    } while(simPaused);
 
     //
 
