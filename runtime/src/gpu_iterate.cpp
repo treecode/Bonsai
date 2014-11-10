@@ -247,15 +247,14 @@ void octree::makeLET()
 BonsaiSharedHeader 	      snapHeader[MAXSNAP];
 std::vector<BonsaiSharedData> snapData[MAXSNAP];
 
-int    nBodies[MAXSNAP];
-float2 nTimes [MAXSNAP];
+int    maxSnapJumpFiles = MAXSNAP;
+int    snapJumpCounter  = 0;
 
 float loadSnapshot(const int snapshotID, octree &tree)
 {
   const int nNew 	= snapHeader[snapshotID].nBodies;
   const float snapTime =  snapHeader[snapshotID].tCurrent;
 
-fprintf(stderr,"Current; %d   new: %d \n ", tree.localTree.n, nNew);
 
   int memSize = MULTI_GPU_MEM_INCREASE*nNew;
 
@@ -274,7 +273,6 @@ fprintf(stderr,"Current; %d   new: %d \n ", tree.localTree.n, nNew);
   
   tree.reallocateParticleMemory(tree.localTree); //Resize preserves original data
   
-fprintf(stderr,"MEMORY ALLOCATED\n");
 
   //Copy data
   //
@@ -319,12 +317,8 @@ fprintf(stderr,"MEMORY ALLOCATED\n");
   tree.localTree.bodies_Ppos.copy(tree.localTree.bodies_pos, tree.localTree.n);
   tree.localTree.bodies_Pvel.copy(tree.localTree.bodies_pos, tree.localTree.n);  
 
-
-  fprintf(stderr,"SNAP LOADED\n");
   return snapTime;  
 }
-
-
 
 
 
@@ -691,9 +685,12 @@ bool octree::iterate_once(IterationData &idata) {
     }
    
    static int snapShotCounter = 0; 
+#if 0 
     if(iter == 15  || iter == 1200 || iter == 2400 || 	
        iter == 3600 || iter == 4800 || iter == 6000 ||
        iter == 2000 || iter == 1000)
+#endif
+    if(iter == -10)	    
     {
       snapData[snapShotCounter].resize(this->localTree.n);
 
@@ -781,7 +778,7 @@ bool octree::iterate_once(IterationData &idata) {
 			    simPaused = false;
 		    }
 
-		fprintf(stderr,"%d RECEIVED COMMAND  : %d \n", procId, renderCommand);
+//		fprintf(stderr,"%d RECEIVED COMMAND  : %d \n", procId, renderCommand);
 	    }
     } while(simPaused);
 
@@ -799,7 +796,6 @@ bool octree::iterate_once(IterationData &idata) {
     devContext.startTiming(execStream->s());
     predict(this->localTree);
     devContext.stopTiming("Predict", 9, execStream->s());
-fprintf(stderr,"Predict finished \n");
     idata.totalPredCor += get_time() - tTempTime;
 
     if(nProcs > 1)

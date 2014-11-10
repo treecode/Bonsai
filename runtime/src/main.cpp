@@ -59,6 +59,8 @@ http://github.com/treecode/Bonsai
 #include "BonsaiIO.h"
 #include <array>
 
+#include "SharedMemory.h"
+#include "BonsaiSharedData.h"
 
 #if ENABLE_LOG
   bool ENABLE_RUNTIME_LOG;
@@ -301,24 +303,189 @@ static void lReadBonsaiFile(
 }
 
 
-void readJumpSnapshots(const std::string inFileName)
-{
-	//Read the snapshots that we can cycle between during runtime
-	string line;
-	ifstream inFile(inFileName);
-	if(inFile.is_open())
-	{
-		while(getline(inFile, line))
-		{
-			fprintf(stderr,"RECEI: %s \n", line.c_str());
-		}
-		inFile.close();
-	}
-	else
-	{
-		fprintf(stderr,"Failed to open the file that contains the names of the jump snapshots\n");
-	}
+#define MAXSNAP 8
+extern BonsaiSharedHeader 		snapHeader[MAXSNAP];
+extern std::vector<BonsaiSharedData> 	snapData[MAXSNAP];
+extern int            			 snapJumpCounter;
+extern int 	 			 maxSnapJumpFiles;
 
+void readJumpSnapshots(const std::string inFileName,
+                       const MPI_Comm &comm,
+                       const int rank,
+                       const int nrank,
+                       const int reduceFactor = 1)
+{
+  //Read the snapshots that we can cycle between during runtime
+  string line;
+  ifstream inFile(inFileName);
+  if(inFile.is_open())
+  {
+    int snapShotNumber = 0;
+    while(getline(inFile, line))
+    {
+      std::string fileName(line);
+      std::vector<real4 > bodyPositions;
+      std::vector<real4 > bodyVelocities;
+      std::vector<ullong> bodyIDs;
+      std::vector<float>  bodyH;
+      const bool restart = false;
+      
+      if (rank == 0) std::cerr << " >>> Reading Bonsai file format : " << fileName <<  std::endl;
+
+      BonsaiIO::Core *in;
+      try
+      {
+        in = new BonsaiIO::Core(rank, nrank, comm, BonsaiIO::READ, fileName);
+      }
+      catch (const std::exception &e)
+      {
+        if (rank == 0)
+                fprintf(stderr, "Something went wrong: %s \n", e.what());
+        MPI_Finalize();
+        exit(0);
+      }
+
+      std::vector<BonsaiIO::DataTypeBase*> data;
+      typedef float float3[3];
+      typedef float float2[2];
+
+      using IDType = BonsaiIO::DataType<IDType>;
+      using Pos    = BonsaiIO::DataType<real4>;
+      using Vel    = BonsaiIO::DataType<float3>;
+      using RhoH   = BonsaiIO::DataType<float2>;
+      data.push_back(new IDType("DM:IDType"));
+      data.push_back(new Pos   ("DM:POS:real4"));
+      data.push_back(new Vel   ("DM:VEL:float[3]"));
+      data.push_back(new RhoH  ("DM:RHOH:float[2]"));
+      data.push_back(new IDType("Stars:IDType"));
+      data.push_back(new Pos   ("Stars:POS:real4"));
+      data.push_back(new Vel   ("Stars:VEL:float[3]"));
+      data.push_back(new RhoH  ("Stars:RHOH:float[2]"));
+
+      const double dtRead = lReadBonsaiFields(rank, comm, data, *in, reduceFactor, restart);
+
+      const auto &DM_IDType = lBonsaiSafeCast<IDType>(data[0]);
+      const auto &DM_Pos    = lBonsaiSafeCast<Pos   >(data[1]);
+      const auto &DM_Vel    = lBonsaiSafeCast<Vel   >(data[2]);
+      const auto &DM_RhoH   = lBonsaiSafeCast<RhoH  >(data[3]);
+      const auto &S_IDType  = lBonsaiSafeCast<IDType>(data[4]);
+      const auto &S_Pos     = lBonsaiSafeCast<Pos   >(data[5]);
+      const auto &S_Vel     = lBonsaiSafeCast<Vel   >(data[6]);
+      const auto &S_RhoH    = lBonsaiSafeCast<RhoH  >(data[7]);
+
+      const size_t nDM = DM_IDType.size();
+      assert(nDM == DM_Pos.size());
+      assert(nDM == DM_Vel.size());
+
+      const size_t nS = S_IDType.size();
+      assert(nS == S_Pos.size());
+      assert(nS == S_Vel.size());
+
+
+      snapData[snapJumpCounter].resize(nDM+nS);
+
+      snapHeader[snapJumpCounter].nBodies  = nDM+nS;
+      snapHeader[snapJumpCounter].tCurrent = static_cast<float>(in->getTime()); 
+
+
+      
+      /* store DM */
+      constexpr int ntypecount = 10;
+      std::array<size_t,ntypecount> ntypeloc, ntypeglb;
+      std::fill(ntypeloc.begin(), ntypeloc.end(), 0);
+      for (int i = 0; i < nDM; i++)
+      {
+        ntypeloc[0]++;
+	snapData[snapJumpCounter][i].x    = DM_Pos[i].x;
+	snapData[snapJumpCounter][i].y    = DM_Pos[i].y;
+	snapData[snapJumpCounter][i].z    = DM_Pos[i].z;
+	snapData[snapJumpCounter][i].mass = DM_Pos[i].w;
+	snapData[snapJumpCounter][i].mass *= reduceFactor;
+
+	snapData[snapJumpCounter][i].vx    = DM_Vel[i][0];
+	snapData[snapJumpCounter][i].vy    = DM_Vel[i][1];
+	snapData[snapJumpCounter][i].vz    = DM_Vel[i][2];
+	snapData[snapJumpCounter][i].vw    = 0;
+      
+	
+	snapData[snapJumpCounter][i].h     = DM_RhoH[i][1];
+	//snapData[snapJumpCounter][i].ID    = DM_IDType[i].getID() + DARKMATTERID;
+	snapData[snapJumpCounter][i].ID.setID(DM_IDType[i].getID());
+	snapData[snapJumpCounter][i].ID.setType(DM_IDType[i].getType());
+      }
+
+      for (int i = 0; i < nS; i++)
+      {
+	snapData[snapJumpCounter][i+nDM].x    = S_Pos[i].x;
+	snapData[snapJumpCounter][i+nDM].y    = S_Pos[i].y;
+	snapData[snapJumpCounter][i+nDM].z    = S_Pos[i].z;
+	snapData[snapJumpCounter][i+nDM].mass = S_Pos[i].w;
+	snapData[snapJumpCounter][i+nDM].mass *= reduceFactor;
+
+	snapData[snapJumpCounter][i+nDM].vx    = S_Vel[i][0];
+	snapData[snapJumpCounter][i+nDM].vy    = S_Vel[i][1];
+	snapData[snapJumpCounter][i+nDM].vz    = S_Vel[i][2];
+	snapData[snapJumpCounter][i+nDM].vw    = 0;
+	
+	snapData[snapJumpCounter][i+nDM].h     = S_RhoH[i][1];
+	snapData[snapJumpCounter][i+nDM].ID.setID(S_IDType[i].getID());
+	snapData[snapJumpCounter][i+nDM].ID.setType(S_IDType[i].getType());
+#if 0
+	snapData[snapJumpCounter][i+nDM].ID    = S_IDType[i].getID();
+
+        switch (S_IDType[i].getType())
+        {
+          case 1:  /*  Bulge */
+                snapData[snapJumpCounter][i+nDM].ID += BULGEID;
+                break;
+          case 2:  /*  Disk */
+                snapData[snapJumpCounter][i+nDM].ID += DISKID;
+                break;
+        }
+#endif	
+
+        if (S_IDType[i].getType() < ntypecount)
+          ntypeloc[S_IDType[i].getType()]++;
+      }
+
+      MPI_Reduce(&ntypeloc, &ntypeglb, ntypecount, MPI_LONG_LONG, MPI_SUM, 0, comm);
+      if (rank == 0)
+      {
+        size_t nsum = 0;
+        for (int type = 0; type < ntypecount; type++)
+        {
+          nsum += ntypeglb[type];
+          if (ntypeglb[type] > 0)
+                fprintf(stderr, "bonsai-read: ptype= %d:  np= %zu \n",type, ntypeglb[type]);
+        }
+        assert(nsum > 0);
+      }
+
+
+      LOGF(stderr,"Read time from snapshot: %f \n", in->getTime());
+      
+      float tSnap = static_cast<float>(in->getTime());
+      int   nSnap = nDM + nS;
+
+
+      in->close();
+
+      for (auto d : data)
+            delete d;
+      delete in;
+
+
+      snapJumpCounter++;
+
+      if(snapJumpCounter >= maxSnapJumpFiles) break; 
+      
+    } //End while
+    inFile.close();
+  }
+  else
+  {
+          fprintf(stderr,"Failed to open the file that contains the names of the jump snapshots\n");
+  }
 }
 
 
@@ -702,6 +869,7 @@ volatile IOSharedData_t ioSharedData;
 // std::vector<real4>   ioThreadVel;
 // std::vector<ullong>  ioThreadIDs;
 //volatile sharedIOThreadStruct ioThreadProps;
+
 
 
 
@@ -1118,10 +1286,17 @@ int main(int argc, char** argv, MPI_Comm comm)
 #ifdef USE_MPI
 
   //Used on Titan and Piz Daint
-  #if 1
+  #if 0
     omp_set_num_threads(16);
   #pragma omp parallel
     {
+
+	    if(procId == 0)
+	    {
+		    fprintf(stderr,"Total number of OMP threads: %d \n", omp_get_num_threads());
+	    }
+
+
       int tid = omp_get_thread_num();
       cpu_set_t cpuset;
       CPU_ZERO(&cpuset);
@@ -1133,18 +1308,19 @@ int main(int argc, char** argv, MPI_Comm comm)
       for (i = 0; i < CPU_SETSIZE; i++)
         if (CPU_ISSET(i, &cpuset))
           set = i;
-      //    fprintf(stderr,"[Proc: %d ] Thread %d bound to: %d Total cores: %d\n",
-      //        procId, tid,  set, num_cores);
+      	if(procId == 0)
+          fprintf(stderr,"[Proc: %d ] Thread %d bound to: %d Total cores: %d\n",
+              procId, tid,  set, num_cores);
     }
   #endif
 
 
-  #if 0
-    omp_set_num_threads(4);
+  #if 1
+    omp_set_num_threads(8);
     //default
     // int cpulist[] = {0,1,2,3,8,9,10,11};
-    int cpulist[] = {0,1,2,3, 8,9,10,11, 4,5,6,7, 12,13,14,15}; //HA-PACS
-    //int cpulist[] = {0,1,2,3,4,5,6,7};
+    //int cpulist[] = {0,1,2,3, 8,9,10,11, 4,5,6,7, 12,13,14,15}; //HA-PACS
+    int cpulist[] = {0,1,2,3,4,5,6,7};
     //int cpulist[] = {0,2,4,6, 8,10,12,14};
     //int cpulist[] = {1,3,5,7, 9,11,13,15};
     //int cpulist[] = {1,9,5,11, 3,7,13,15};
@@ -1156,8 +1332,8 @@ int main(int argc, char** argv, MPI_Comm comm)
     {
       int tid = omp_get_thread_num();
       //int core_id = procId*4+tid;
-      int core_id = (procId%4)*4+tid;
-      core_id     = cpulist[core_id];
+      //int core_id = (procId%4)*4+tid;
+      int core_id     = cpulist[tid];
 
       int num_cores = sysconf(_SC_NPROCESSORS_ONLN);
 
@@ -1407,7 +1583,12 @@ int main(int argc, char** argv, MPI_Comm comm)
 
   if(snapJumpFileName.size() > 0)
   {
-	readJumpSnapshots(snapJumpFileName);
+        const MPI_Comm &comm = mpiCommWorld;
+	readJumpSnapshots(snapJumpFileName,
+			  comm,
+			  procId,
+			  nProcs,
+			  reduce_bodies_factor);
   }
 
 
