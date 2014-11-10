@@ -278,6 +278,7 @@ extern void displayTimers();    // For profiling counter display
 // fps
 bool displayFps = false;
 double fps = 0.0;
+double fps_glob = 0.0;
 int fpsLimit = 5;
 //cudaEvent_t startEvent, stopEvent;
 
@@ -1947,7 +1948,7 @@ class Demo
         int typeBase = 0;
         if (m_renderer.getDisplayMode() == SmokeRenderer::VOLUMETRIC_NEW)
         {
-          nps = 64;
+          nps = 16;
           hasRHO = (IDval%nps) != 0;
           IDval /= nps;
           typeBase = 128;
@@ -1967,42 +1968,28 @@ class Demo
           assert(ix >= 0 && ix < 256);
           assert(iy >= 0 && iy < 256);
           float4 Cstar ;
+#if 0
+          Cstar.x = colorMap[iy][ix][0]*1.2+10;
+          Cstar.y = colorMap[iy][ix][1]*1.2+10;
+          Cstar.z = colorMap[iy][ix][2]*0.4+10;
+#else
           Cstar.x = colorMap[iy][ix][0]*1.2+0;
           Cstar.y = colorMap[iy][ix][1]*1.2+0;
           Cstar.z = colorMap[iy][ix][2]*0.6+0;
+#endif
           Cstar.w = type + typeBase;
           color   = Cstar;
+#if 1
           if (typeBase == 128)
           {
             color.x *= 1.0/256;
             color.y *= 1.0/256;
             color.z *= 1.0/256;
           }
+#endif
         }
         else
         {
-          float vel = m_idata.attribute(RendererData::VEL,i);
-          float rho = m_idata.attribute(RendererData::RHO,i);
-          vel = 255.0f*(vel - velMin) * scaleVEL;
-          rho = 255.0f*(rho - rhoMin) * scaleRHO;
-          const int ix = (int)vel;
-          const int iy = (int)rho;
-          assert(ix >= 0 && ix < 256);
-          assert(iy >= 0 && iy < 256);
-          float4 Cstar ;
-          Cstar.x = colorMap[iy][ix][0]*1.2+0;
-          Cstar.y = colorMap[iy][ix][1]*1.2+0;
-          Cstar.z = colorMap[iy][ix][2]*0.6+0;
-          Cstar.w = type + typeBase;
-          color   = Cstar;
-          if (typeBase == 128)
-          {
-            color.x *= 1.0/256;
-            color.y *= 1.0/256;
-            color.z *= 1.0/256;
-          }
-          color.w = 0;
-          Cstar = color;
           switch(type)
           {
             case 0:   /* DM */
@@ -2011,13 +1998,10 @@ class Demo
               break;
             case 1:   /* Bulge */
             {
-              if (drand48() < 0.99)
-              {
-                const float Mstar = sBulge.sampleMass(IDval);
-                const float4 Cstar = sBulge.getColour(Mstar);
-                const float fdim = 0.01f;
-                color = Cstar * make_float4(fdim, fdim, fdim, 2.0f);
-              }
+              const float Mstar = sBulge.sampleMass(IDval);
+              const float4 Cstar = sBulge.getColour(Mstar);
+              const float fdim = 0.01f;
+              color = Cstar * make_float4(fdim, fdim, fdim, 2.0f);
               break;
             }            
             case 2:   /* Disk */
@@ -2039,13 +2023,10 @@ class Demo
               Cstar.z = colorMap[iy][ix][2];
               Cstar.w = type + typeBase;
 #else
-              if (drand48() < 0.999)
-              {
-                const float Mstar = sDisk.sampleMass(IDval);
-                Cstar = sDisk.getColour(Mstar);
-              }
+              const float Mstar = sDisk.sampleMass(IDval);
+              const float4 Cstar = sDisk.getColour(Mstar);
 #endif
-              const bool glow = (IDval & (512-1)) == 0;
+              const bool glow = (IDval & (2048/nps-1)) == 0;
               color = glow ? /* one in 1000 stars glows a bit */
                 sGlow.getColour(sGlow.sampleMass(IDval)) :  (0) ? color : make_float4(Cstar.x*0.01f, Cstar.y*0.01f, Cstar.z*0.01f, Cstar.w);
               color.w = 1.0f;
@@ -2360,7 +2341,7 @@ void onexit() {
 
 unsigned long long fpsCount;
 double timeBegin;
-static int thisRank;
+static int thisRank, numRanks;
 static MPI_Comm thisComm;
 static std::string imageFileName;
 void display()
@@ -2368,7 +2349,7 @@ void display()
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
   theDemo->step();
-  MPI_Barrier(thisComm);
+//  MPI_Barrier(thisComm);
   const double t0 = MPI_Wtime();
   theDemo->display();
 
@@ -2377,9 +2358,27 @@ void display()
   //glutReportErrors();
   glutSwapBuffers();
   const double t1 = MPI_Wtime();
-  MPI_Barrier(thisComm);
-  if (thisRank == 0)
-    fprintf(stderr, " render= %g sec \n", t1-t0);
+  double dt = t1 - t0;
+  double dtMin, dtMax, dtSum;
+  const int showRank = std::min(numRanks-1, 1);
+  MPI_Reduce(&dt, &dtMin, 1, MPI_DOUBLE, MPI_MIN, showRank, thisComm);
+  MPI_Reduce(&dt, &dtMax, 1, MPI_DOUBLE, MPI_MAX, showRank, thisComm);
+  MPI_Reduce(&dt, &dtSum, 1, MPI_DOUBLE, MPI_SUM, showRank, thisComm);
+//  MPI_Barrier(thisComm);
+  if (thisRank == showRank)
+    fprintf(stderr, " render= %g sec range= [ %g , %g ]  \n", dtSum/numRanks, dtMin, dtMax);
+  static int countFps = 0;
+  static double dtFps = 0;
+  countFps++;
+  dtFps += dt;
+
+  fps_glob = countFps/dtFps;
+
+  if (countFps == 16)
+  {
+    countFps = 0;
+    dtFps = 0.0;
+  }
 
   fpsCount++;
 
@@ -2746,6 +2745,7 @@ void initAppRenderer(int argc, char** argv,
     const std::string _systemName)
 {
   dataSetFunc = func;
+  numRanks = nrank;
   thisRank = rank;
   thisComm = comm;
 
