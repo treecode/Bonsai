@@ -252,12 +252,14 @@ int    snapJumpCounter  = 0;
 float loadSnapshot(const int snapshotID, octree &tree)
 {
 
+
   if(snapshotID >= snapJumpCounter) return tree.get_t_current(); //Dont load data we do not have	
 
 
   const int nNew 	= snapHeader[snapshotID].nBodies;
   const float snapTime =  snapHeader[snapshotID].tCurrent;
 
+  fprintf(stderr,"Going to load snapshot: %d bodies: %d\n", snapshotID, nNew);
 
   int memSize = MULTI_GPU_MEM_INCREASE*nNew;
 
@@ -319,6 +321,8 @@ float loadSnapshot(const int snapshotID, octree &tree)
   //Fill the predicted arrays
   tree.localTree.bodies_Ppos.copy(tree.localTree.bodies_pos, tree.localTree.n);
   tree.localTree.bodies_Pvel.copy(tree.localTree.bodies_pos, tree.localTree.n);  
+	
+  fprintf(stderr,"Loaded snapshot: %d \n", snapshotID);
 
   return snapTime;  
 }
@@ -770,6 +774,10 @@ bool octree::iterate_once(IterationData &idata) {
 		    {
 			//Load snapshot and reset the time when data is dumped
 			nextQuickDump =   loadSnapshot(renderCommand - 1001, *this);
+			lastTotal = -10;
+			sort_bodies(localTree, true, true);
+			build(localTree);
+			sort_bodies(localTree, true, true);
 		    }
 		    if(renderCommand == 2000)
 		    {
@@ -792,7 +800,13 @@ bool octree::iterate_once(IterationData &idata) {
     if(snapJumpCounter > 0 && t_current > 1000)
     {
 	nextQuickDump =	loadSnapshot(0, *this);
+	lastTotal = -10;
+	sort_bodies(localTree, true, true);
+	build(localTree);
+	sort_bodies(localTree, true, true);
     }
+
+
 
 
     LOG("At the start of iterate:\n");

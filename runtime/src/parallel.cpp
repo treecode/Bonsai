@@ -1170,8 +1170,14 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys2,    int  nSa
 #if 1  /* LB: use load balancing */
     {
       static double prevDurStep = -1;
-      static int prevSampFreq = -1;
+//      static int prevSampFreq = -1;
       prevDurStep = (prevDurStep <= 0) ? lastExecTime : prevDurStep;
+
+      if(lastExecTime < 0)
+      {
+	      prevDurStep  = 10;
+	      lastExecTime = 10;
+      }
 
       double timeLocal = (lastExecTime + prevDurStep) / 2;
       double timeSum = 0.0;
