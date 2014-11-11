@@ -404,8 +404,13 @@ void octree::build (tree_structure &tree) {
   {
     cerr << "The tree has become too deep, the program will exit. \n";
     cerr << "Consider the removal of far away particles to prevent a too large box. \n";
-    exit(0);
+    exit(0);  
   }
+
+  if(level < 5)
+	{
+fprintf(stderr,"Low level: %d  node: %d  n: %d \n", level, procId, tree.n);
+	}
 
   link_tree.setWork(n_nodes, 128);
   link_tree.printWorkSize("Link_tree: ");
@@ -552,6 +557,8 @@ void octree::parallelDataSummary(tree_structure &tree,
   }
 
   //updateBoundaries = true; //TEST, keep always update for now
+  if(lastExecTime < 0)
+	  updateBoundaries = true;
 
 
   real4 r_min = {+1e10, +1e10, +1e10, +1e10};
