@@ -303,11 +303,12 @@ static void lReadBonsaiFile(
 }
 
 
+
+//Make sure MAXSNAP matches the one in gpu_iterate.cpp
 #define MAXSNAP 8
 extern BonsaiSharedHeader 		snapHeader[MAXSNAP];
 extern std::vector<BonsaiSharedData> 	snapData[MAXSNAP];
 extern int            			 snapJumpCounter;
-extern int 	 			 maxSnapJumpFiles;
 
 void readJumpSnapshots(const std::string inFileName,
                        const MPI_Comm &comm,
@@ -477,7 +478,7 @@ void readJumpSnapshots(const std::string inFileName,
 
       snapJumpCounter++;
 
-      if(snapJumpCounter >= maxSnapJumpFiles) break; 
+      if(snapJumpCounter >=  MAXSNAP) break; 
       
     } //End while
     inFile.close();

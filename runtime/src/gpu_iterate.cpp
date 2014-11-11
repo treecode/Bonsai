@@ -247,11 +247,14 @@ void octree::makeLET()
 BonsaiSharedHeader 	      snapHeader[MAXSNAP];
 std::vector<BonsaiSharedData> snapData[MAXSNAP];
 
-int    maxSnapJumpFiles = MAXSNAP;
 int    snapJumpCounter  = 0;
 
 float loadSnapshot(const int snapshotID, octree &tree)
 {
+
+  if(snapshotID >= snapJumpCounter) return tree.get_t_current(); //Dont load data we do not have	
+
+
   const int nNew 	= snapHeader[snapshotID].nBodies;
   const float snapTime =  snapHeader[snapshotID].tCurrent;
 
