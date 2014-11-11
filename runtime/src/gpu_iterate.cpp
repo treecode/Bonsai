@@ -786,6 +786,13 @@ bool octree::iterate_once(IterationData &idata) {
     } while(simPaused);
 
     //
+    //
+    
+    //DEMO specific: Go back to the first stored snapshot after T > 1000
+    if(snapJumpCounter > 0 && t_current > 1000)
+    {
+	nextQuickDump =	loadSnapshot(0, *this);
+    }
 
 
     LOG("At the start of iterate:\n");
@@ -1487,7 +1494,8 @@ void octree::iterate() {
   IterationData idata;
   iterate_setup(idata);
 
-  for(int i=0; i < 10000000; i++) //Large number, limit
+//  for(int i=0; i < 10000000; i++) //Large number, limit
+  while(1)  
   {
     if (true == iterate_once(idata))
     {
