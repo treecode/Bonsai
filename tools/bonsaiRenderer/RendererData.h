@@ -77,6 +77,9 @@ class RendererData
     double time;
     size_t nBodySim;
 
+    float bonsaiFPS;
+    float updateFPS;
+
 
   public:
     RendererData(const int rank, const int nrank, const MPI_Comm &comm) : 
@@ -118,6 +121,9 @@ class RendererData
       time      = rhs.time;
       nBodySim  = rhs.nBodySim;
 
+      bonsaiFPS = rhs.bonsaiFPS;
+      updateFPS = rhs.updateFPS;
+
       return *this;
     }
 
@@ -126,6 +132,12 @@ class RendererData
     void setNbodySim(const size_t n) { nBodySim = n; }
     size_t getNbodySim() const { return nBodySim; }
 
+    void setBonsaiFPS(const float fps) {this->bonsaiFPS = fps;} 
+    float getBonsaiFPS()const {return bonsaiFPS;}
+
+    void setUpdateFPS(const float fps) {this->updateFPS = fps;} 
+    float getUpdateFPS()const {return updateFPS;}
+    
     void setCameraPath(const CameraPath *ptr) { cameraPtr = ptr; }
     bool isCameraPath() const { return cameraPtr != nullptr; }
     const CameraPath& getCamera() const {return *cameraPtr;}
@@ -451,6 +463,8 @@ class RendererDataDistribute : public RendererData
       firstData = rhs.firstData;
       time      = rhs.time;
       nBodySim  = rhs.nBodySim;
+      bonsaiFPS = rhs.bonsaiFPS;
+      updateFPS = rhs.updateFPS;
 
       bounds = std::move(rhs.bounds);
       xlow  = rhs.xlow;

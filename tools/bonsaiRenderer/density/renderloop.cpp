@@ -712,7 +712,7 @@ class Demo
     glPrintf(x, y, "MYears:    %.2f ", Myr);
     y -= lineSpacing;
 
-
+#if 0
     if(systemName.size() == 0)
     {
 	    if(m_displayNodeCount)
@@ -735,24 +735,39 @@ class Demo
 	    }
     	    y -= lineSpacing;
     }
+#endif
 
+    if(m_displayNodeCount)
+    {
+   	glPrintf(x,y, "Nodes:     %d (%d Sim, %d Viz)", 
+	    totalNodes,totalNodes-renderNodes, renderNodes);
+    	y -= lineSpacing;
+    }
+
+
+    if(systemName.size() != 0)
+    {
+        glPrintf(x,y, "System:    %s", systemName.c_str());
+        y -= lineSpacing;
+    }
 
 
 
     const float gbodies = nbodies_glb * 1.0e-6;
-    glPrintf(x, y, "BODIES:    %.2f Million", gbodies);
-    y -= lineSpacing;
+//    glPrintf(x, y, "BODIES:    %.2f Million", gbodies);
+  //  y -= lineSpacing;
 
     if (m_displayBodiesSec) 
     {
-      double frameTime = 1.0 / fps;
-      glPrintf(x, y, "BODIES/SEC:%.0f", bodies / frameTime);
+      //double frameTime = 1.0 / fps;
+      glPrintf(x, y, "BODIES:    %.2f Million", gbodies);
+//      glPrintf(x, y, "BODIES/SEC:%.0f", bodies / frameTime);
       y -= lineSpacing;
     }
 
     if (displayFps)
     {
-      glPrintf(x, y, "FPS:       %.2f", fps);
+      glPrintf(x, y, "FPS:       %.2f render, %.2f Bonsai, %.2f update", fps, m_idata.getBonsaiFPS(), m_idata.getUpdateFPS());
       y -= lineSpacing;
     }
 

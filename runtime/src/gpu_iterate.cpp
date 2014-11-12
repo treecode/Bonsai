@@ -42,6 +42,8 @@ float runningLETTimeSum;
 float lastTotal;
 float lastLocal;
 
+double bonsaiFPS;
+
 inline float host_int_as_float(int val)
 {
   union{int i; float f;} itof; //__int_as_float
@@ -440,14 +442,16 @@ void octree::dumpDataMPI()
       nQuick++;
 
 
-    header.tCurrent = t_current;
-    header.nBodies  = nQuick;
+    header.tCurrent  = t_current;
+    header.bonsaiFPS = bonsaiFPS;
+    header.nBodies   = nQuick;
     for (int i = 0; i < 1024; i++)
     {
       header.fileName[i] = fn[i];
       if (fn[i] == 0)
         break;
     }
+
 
     data.resize(nQuick);
 #pragma omp parallel for schedule(static)
@@ -807,8 +811,10 @@ bool octree::iterate_once(IterationData &idata) {
     }
 
 
+    //mpiSync();
 
 
+    double tIterStart = get_time();
     LOG("At the start of iterate:\n");
     
     bool forceTreeRebuild = false;
@@ -1058,6 +1064,14 @@ bool octree::iterate_once(IterationData &idata) {
     double de = compute_energies(this->localTree);
     devContext.stopTiming("Energy", 7, execStream->s());
     idata.totalPredCor += get_time() - tTempTime;
+    
+    
+    
+    double dtSim = 0;
+    double tIterEnd  = get_time();
+    dtSim 	     = tIterEnd - tIterStart;
+    bonsaiFPS        = 1.0 / dtSim;
+
 
     if(statisticsIter > 0)
     {
@@ -1177,6 +1191,9 @@ bool octree::iterate_once(IterationData &idata) {
       return true;
     }
     iter++; 
+
+
+
 
     return false;
 }

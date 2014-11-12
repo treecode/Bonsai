@@ -303,6 +303,7 @@ bool fetchSharedDataMPI(const bool quickSync, RendererData &rData, const int ran
 
     rData.resize(nS);
     rData.setTime(tCurrent);
+    rData.setBonsaiFPS(header.bonsaiFPS);
     size_t ip = 0;
     for (size_t i = 0; i < size; i++)
     {
@@ -334,6 +335,20 @@ bool fetchSharedDataMPI(const bool quickSync, RendererData &rData, const int ran
 
   if (completed)
     rData.computeMinMax();
+
+
+  if(completed)
+  {
+    static double tUpdatePrev = -1;
+
+    const double tCur = MPI_Wtime();
+    if(tUpdatePrev > 0 )
+    {
+      const double dtUp = tCur - tUpdatePrev;
+      rData.setUpdateFPS(1. / dtUp);
+    }
+    tUpdatePrev = tCur;
+  }
 
 
   return completed;

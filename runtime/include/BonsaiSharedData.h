@@ -13,6 +13,7 @@
 struct BonsaiSharedHeader
 {
   float tCurrent;
+  float bonsaiFPS;
   size_t nBodies;
   char fileName[256];
   bool handshake;
