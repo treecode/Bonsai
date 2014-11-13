@@ -1067,10 +1067,6 @@ bool octree::iterate_once(IterationData &idata) {
     
     
     
-    double dtSim = 0;
-    double tIterEnd  = get_time();
-    dtSim 	     = tIterEnd - tIterStart;
-    bonsaiFPS        = 1.0 / dtSim;
 
 
     if(statisticsIter > 0)
@@ -1193,6 +1189,10 @@ bool octree::iterate_once(IterationData &idata) {
     iter++; 
 
 
+    double dtSim = 0;
+    double tIterEnd  = get_time();
+    dtSim 	     = tIterEnd - tIterStart;
+    bonsaiFPS        = 1.0 / dtSim;
 
 
     return false;
