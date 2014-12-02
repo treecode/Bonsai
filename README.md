@@ -3,7 +3,7 @@ Bonsai -- A GPU gravitational [BH]-tree code
 
 Copyright [2010-2012] 
   Jeroen Bédorf <bedorf@strw.leidenuniv.nl>
-  Evghenii Gaburov <egaburov.work@gmail.com>
+  Evghenii Gaburov <egaburov@dds.nl>
 
 License
 -------
