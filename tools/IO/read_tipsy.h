@@ -202,10 +202,10 @@ class ReadTipsy
           continue;
         }
 
-
         switch (whichOne)
         {
           case 1:
+	    if (reduceFactorFirst > 0){
             if (firstCount % reduceFactorFirst == 0)
             {
               positions.w *= reduceFactorFirst;
@@ -213,8 +213,10 @@ class ReadTipsy
               firstPos.push_back(positions);
               firstVel.push_back(velocity);
             }
+	    }
             break;
           case 2:
+	    if(reduceFactorSecond > 0){
             if (secondCount % reduceFactorSecond == 0)
             {
               positions.w *= reduceFactorSecond;
@@ -222,6 +224,7 @@ class ReadTipsy
               secondPos.push_back(positions);
               secondVel.push_back(velocity);
             }
+	    }
             break;
           default: 
             assert(whichOne == 1 || whichOne == 2);
