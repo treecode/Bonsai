@@ -178,6 +178,7 @@ namespace BonsaiIO
       size_t numElements;
     public:
       DataTypeBase(const std::string _name) : name(_name), numElements(0) {};
+      virtual             ~DataTypeBase() {};    
       const std::string& getName() const {return name;}
       size_t size() const { return numElements; }
 

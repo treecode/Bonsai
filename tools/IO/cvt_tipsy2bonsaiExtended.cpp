@@ -144,15 +144,40 @@ int main(int argc, char * argv[])
     {
       fprintf(stderr, " ------------------------------------------------------------------------\n");
       fprintf(stderr, " Usage: \n");
-      fprintf(stderr, " %s  baseName nDomains outputName \n", argv[0]);
+      fprintf(stderr, " %s  baseName nDomains outputName reduceDM reduceStar  startLoop endLoop Incr \n", argv[0]);
       fprintf(stderr, " ------------------------------------------------------------------------\n");
     }
     exit(-1);
   }
-  
-  const std::string baseName(argv[1]);
+ 
+  	
+  int startLoop = atoi(argv[6]);
+  int endLoop   = atoi(argv[7]);
+  int increase  = atoi(argv[8]);
+
+
+
+
+
+for(int i=startLoop; i <= endLoop; i+= increase)
+{
+
+  char buff[512];
+
+  sprintf(buff, argv[1], i);
+  const std::string baseName(buff);
+
+  sprintf(buff, argv[3], i);
+  const std::string outputName(buff);
+
+  //const std::string baseName(argv[1]);
   const int nDomains = atoi(argv[2]);
-  const std::string outputName(argv[3]);
+  //const std::string outputName(argv[3]);
+
+
+  if( rank == 0)
+	  fprintf(stderr,"Basename: %s  outputname: %s \n", baseName.c_str(), outputName.c_str());
+
 
 
   int reduceFactorFirst  = 1;
@@ -259,7 +284,7 @@ int main(int argc, char * argv[])
     fprintf(stderr, "All operations done in   %g sec \n", dtAllGlb);
 
 
-
+}
 
   MPI_Finalize();
 

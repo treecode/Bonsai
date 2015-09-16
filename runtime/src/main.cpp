@@ -596,14 +596,21 @@ void read_tipsy_file_parallel(const MPI_Comm &mpiCommWorld,
 //    #endif
 //    const float fsum = fdisk + fhalo + fbulge;
 
-    const float fsum = (float)(nHalo + nBulge + nDisk);
-    const int ndisk  = (int)  (nMilkyWay * nDisk /fsum);
-    const int nbulge = (int)  (nMilkyWay * nBulge/fsum);
-    const int nhalo  = (int)  (nMilkyWay * nHalo /fsum);
+    size_t nMilkyWay2 = nMilkyWay;
+    const double fsum = (float)(nHalo + nBulge + nDisk);
+    int ndisk  = (int)  (nMilkyWay2 * nDisk /fsum);
+    int nbulge = (int)  (nMilkyWay2 * nBulge/fsum);
+    int nhalo  = (int)  (nMilkyWay2 * nHalo /fsum);
 
     assert(ndisk  > 0);
     assert(nbulge > 0);
     assert(nhalo  > 0);
+
+    ndisk = max(1, ndisk);
+    nbulge = max(1, nbulge);
+    nhalo = max(1, nhalo);
+
+
 
     if (procId == 0)
       fprintf(stderr,"Requested numbers: ndisk= %d  nbulge= %d  nhalo= %d :: ntotal= %d\n",

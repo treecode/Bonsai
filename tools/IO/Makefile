@@ -34,10 +34,11 @@ PROG2 = readBonsai
 PROG3 = benchmark
 PROG4 = cvt_tipsy_gtc12_2bonsai
 PROG5 = cvt_bonsai2dumbp
-
+PROG6 = cvt_tipsy2bonsaiExtended
+PROG7 = readBonsaiExtended
 RM = /bin/rm
 
-all:	  $(PROG1) $(PROG2) $(PROG3) $(PROG4) $(PROG5)
+all:	  $(PROG1) $(PROG2) $(PROG3) $(PROG4) $(PROG5) $(PROG6) $(PROG7)
 
 
 $(PROG1): $(OBJ1) 

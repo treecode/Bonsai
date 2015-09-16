@@ -94,7 +94,10 @@ class ReadTipsy
       {
         if (rank == 0)
           fprintf(stderr, " reading domain %d [ %d %d ] \n", domain, domainsBegEnd[rank].first, domainsBegEnd[rank].second);
-        const std::string fullFileName = baseFileName + (domains2read>1 ? std::to_string(domain) : std::string());
+	
+	std::string fullFileName = baseFileName;
+	if(_domains2read > 1)
+		fullFileName.assign( baseFileName + (domains2read>1 ? std::to_string(domain) : std::string()));
 
         std::ifstream inputFile(fullFileName, std::ios::in | std::ios::binary);
         if(!inputFile.is_open())
@@ -202,10 +205,10 @@ class ReadTipsy
           continue;
         }
 
-
         switch (whichOne)
         {
           case 1:
+	    if (reduceFactorFirst > 0){
             if (firstCount % reduceFactorFirst == 0)
             {
               positions.w *= reduceFactorFirst;
@@ -213,8 +216,10 @@ class ReadTipsy
               firstPos.push_back(positions);
               firstVel.push_back(velocity);
             }
+	    }
             break;
           case 2:
+	    if(reduceFactorSecond > 0){
             if (secondCount % reduceFactorSecond == 0)
             {
               positions.w *= reduceFactorSecond;
@@ -222,6 +227,7 @@ class ReadTipsy
               secondPos.push_back(positions);
               secondVel.push_back(velocity);
             }
+	    }
             break;
           default: 
             assert(whichOne == 1 || whichOne == 2);
