@@ -182,10 +182,16 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
   cudaStreamCreate(&m_copyStreamSortDepth);
   cudaStreamCreate(&m_copyStreamSortIndices);
 
-  cudaDeviceEnablePeerAccess(devID, 0);
+    if(renderDevID != devID)
+    {
+	cudaDeviceEnablePeerAccess(devID, 0);
 	cudaSetDevice(devID);
-
 	cudaDeviceEnablePeerAccess( renderDevID, 0 );
+    }
+    {cudaError_t res =cudaGetLastError(); fprintf(stderr, "Errors during OpenGL init: %s  %s:%d\n",  cudaGetErrorString(res), __FILE__,__LINE__); }
+//  cudaDeviceEnablePeerAccess(devID, 0);
+//	cudaSetDevice(devID);
+//cudaDeviceEnablePeerAccess( renderDevID, 0 );
 
 	//Allocate additional arrays
   cudaMalloc( &mParticleDepths_devID, mMaxParticles*sizeof(float));
