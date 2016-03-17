@@ -103,6 +103,8 @@ set (IO_CCFILES
   src/anyoption.cpp
   )
 
+set(BINARY_DRIVER_NAME bonsai_driver)
+
 set(CMAKE_DEBUG_POSTFIX "D")
 
 include_directories(${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/renderer)
@@ -309,7 +311,7 @@ add_executable(${BINARY_IO_NAME}
   ${IO_CCFILES}
   )
 
-add_executable(bonsai_driver
+add_executable(${BINARY_DRIVER_NAME}
   src/driver.cpp
   )
 
@@ -327,6 +329,7 @@ endif(USE_GALACTICS OR USE_GALACTICS_IFORT)
 target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES} -lrt -pie -rdynamic)
 target_link_libraries(${BINARY_CLR_NAME}  -lrt -pie -rdynamic)
 target_link_libraries(${BINARY_IO_NAME}  -lrt -pie -rdynamic)
+target_link_libraries(${BINARY_DRIVER_NAME}  -lrt -pie -rdynamic -ldl)
 
 #copy test data file
 file(COPY ${CMAKE_SOURCE_DIR}/../inputExamples/model3_child_compact.tipsy DESTINATION ${CMAKE_BINARY_DIR})
