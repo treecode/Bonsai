@@ -12,5 +12,8 @@
 *.la
 *.a
 
-#Temporary editor files
+# Temporary editor files
 *~
+
+# Out of source build directories
+build*
