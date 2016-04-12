@@ -52,6 +52,7 @@ double drand48()
 #include "renderloop.h"
 #include "plummer.h"
 #include "disk_shuffle.h"
+#include "Galaxies.h"
 #ifdef GALACTICS
 #include "galactics.h"
 #endif
@@ -1444,7 +1445,9 @@ int main(int argc, char** argv)
   //Start the integration
 #ifdef USE_OPENGL
   octree::IterationData idata;
-  initAppRenderer(argc, argv, tree, idata, displayFPS, stereo);
+  Galaxies galaxies;
+  galaxies.push_back(Galaxy(bodyPositions, bodyVelocities, bodyIDs));
+  initAppRenderer(argc, argv, tree, idata, displayFPS, stereo, galaxies);
   LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
 #else
   tree->mpiSync();

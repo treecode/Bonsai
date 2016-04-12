@@ -306,7 +306,7 @@ void glPrintf(float x, float y, const char* format, ...)
 class BonsaiDemo
 {
 public:
-  BonsaiDemo(octree *tree, octree::IterationData &idata) 
+  BonsaiDemo(octree *tree, octree::IterationData &idata, Galaxies const& galaxies)
     : m_tree(tree), m_idata(idata), iterationsRemaining(true),
 //       m_renderer(tree->localTree.n + tree->localTree.n_dust),
       m_renderer(tree->localTree.n + tree->localTree.n_dust, MAX_PARTICLES),
@@ -338,7 +338,8 @@ public:
       m_displayBodiesSec(true),
       m_cameraRollHome(0.0f),
       m_cameraRoll(0.0f),
-      m_enableStats(true)
+      m_enableStats(true),
+      m_galaxies(galaxies)
   {
     m_windowDims = make_int2(1024, 768);
     m_cameraTrans = make_float3(0, -2, -100);
@@ -1006,6 +1007,12 @@ public:
       m_cameraRoll -= 2.0f;
       break;
     case 'W':
+      break;
+    case 'a':
+    case 'A':
+      // release additional galaxy
+      releaseGalaxy();
+      break;
     default:
       break;
     }
@@ -1392,6 +1399,35 @@ public:
 
   }
 
+  void releaseGalaxy()
+  {
+	size_t old_size = m_tree->localTree.n;
+    m_tree->localTree.setN(old_size + m_galaxies[0].bodyPositions.size());
+    m_tree->allocateParticleMemory(m_tree->localTree);
+
+    //copy(m_galaxies[0].bodyPositions.begin(), m_galaxies[0].bodyPositions.end(), m_tree->localTree.bodies_pos + m_tree->localTree.n);
+
+    for(size_t i(0); i != m_galaxies[0].bodyPositions.size(); ++i)
+    {
+      m_tree->localTree.bodies_pos[old_size + i] = m_galaxies[0].bodyPositions[i];
+      m_tree->localTree.bodies_vel[old_size + i] = m_galaxies[0].bodyVelocities[i];
+      m_tree->localTree.bodies_ids[old_size + i] = m_galaxies[0].bodyIDs[i];
+      m_tree->localTree.bodies_Ppos[old_size + i] = m_galaxies[0].bodyPositions[i];
+      m_tree->localTree.bodies_Pvel[old_size + i] = m_galaxies[0].bodyVelocities[i];
+      m_tree->localTree.bodies_time[old_size + i] = make_float2(m_tree->get_t_current(), m_tree->get_t_current());
+    }
+
+    m_tree->localTree.bodies_pos.free_mem();
+
+    // Load data onto the device
+    m_tree->localTree.bodies_pos.h2d();
+    m_tree->localTree.bodies_vel.h2d();
+    m_tree->localTree.bodies_ids.h2d();
+    m_tree->localTree.bodies_Ppos.h2d();
+    m_tree->localTree.bodies_Pvel.h2d();
+    m_tree->localTree.bodies_time.h2d();
+  }
+
   octree *m_tree;
   octree::IterationData &m_idata;
   bool iterationsRemaining;
@@ -1469,6 +1505,8 @@ public:
 
   ParamListGL *m_colorParams;
   ParamListGL *m_params;    // current
+
+  Galaxies const& m_galaxies;
 
   // saved cameras
   struct Camera {
@@ -1886,12 +1924,11 @@ void initGL(int argc, char** argv, const char *fullScreenMode, bool &stereo)
   atexit(onexit);
 }
 
-
 void initAppRenderer(int argc, char** argv, octree *tree, 
-                     octree::IterationData &idata, bool showFPS, bool stereo) {
+                     octree::IterationData &idata, bool showFPS, bool stereo, Galaxies const& galaxies) {
   displayFps = showFPS;
   //initGL(argc, argv);
-  theDemo = new BonsaiDemo(tree, idata);
+  theDemo = new BonsaiDemo(tree, idata, galaxies);
   if (stereo)
     theDemo->toggleStereo(); //SV assuming stereo is set to disable by default.
   glutMainLoop();
