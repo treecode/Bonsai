@@ -1403,21 +1403,29 @@ public:
   {
 	size_t old_size = m_tree->localTree.n;
     m_tree->localTree.setN(old_size + m_galaxies[0].bodyPositions.size());
-    m_tree->allocateParticleMemory(m_tree->localTree);
 
-    //copy(m_galaxies[0].bodyPositions.begin(), m_galaxies[0].bodyPositions.end(), m_tree->localTree.bodies_pos + m_tree->localTree.n);
+    std::copy(m_galaxies[0].bodyPositions.begin(), m_galaxies[0].bodyPositions.end(),
+      &(m_tree->localTree.bodies_pos[old_size]));
+    copy(m_galaxies[0].bodyVelocities.begin(), m_galaxies[0].bodyVelocities.end(),
+      &(m_tree->localTree.bodies_vel[old_size]));
+    copy(m_galaxies[0].bodyIDs.begin(), m_galaxies[0].bodyIDs.end(),
+      &(m_tree->localTree.bodies_ids[old_size]));
+    copy(m_galaxies[0].bodyPositions.begin(), m_galaxies[0].bodyPositions.end(),
+      &(m_tree->localTree.bodies_Ppos[old_size]));
+    copy(m_galaxies[0].bodyVelocities.begin(), m_galaxies[0].bodyVelocities.end(),
+      &(m_tree->localTree.bodies_Pvel[old_size]));
+//    std::fill(&(m_tree->localTree.bodies_Pvel[old_size]), &(m_tree->localTree.bodies_Pvel[old_size + old_size]),
+//      make_float2(m_tree->get_t_current(), m_tree->get_t_current()));
 
     for(size_t i(0); i != m_galaxies[0].bodyPositions.size(); ++i)
     {
-      m_tree->localTree.bodies_pos[old_size + i] = m_galaxies[0].bodyPositions[i];
-      m_tree->localTree.bodies_vel[old_size + i] = m_galaxies[0].bodyVelocities[i];
-      m_tree->localTree.bodies_ids[old_size + i] = m_galaxies[0].bodyIDs[i];
-      m_tree->localTree.bodies_Ppos[old_size + i] = m_galaxies[0].bodyPositions[i];
-      m_tree->localTree.bodies_Pvel[old_size + i] = m_galaxies[0].bodyVelocities[i];
+//      m_tree->localTree.bodies_pos[old_size + i] = m_galaxies[0].bodyPositions[i];
+//      m_tree->localTree.bodies_vel[old_size + i] = m_galaxies[0].bodyVelocities[i];
+//      m_tree->localTree.bodies_ids[old_size + i] = m_galaxies[0].bodyIDs[i];
+//      m_tree->localTree.bodies_Ppos[old_size + i] = m_galaxies[0].bodyPositions[i];
+//      m_tree->localTree.bodies_Pvel[old_size + i] = m_galaxies[0].bodyVelocities[i];
       m_tree->localTree.bodies_time[old_size + i] = make_float2(m_tree->get_t_current(), m_tree->get_t_current());
     }
-
-    m_tree->localTree.bodies_pos.free_mem();
 
     // Load data onto the device
     m_tree->localTree.bodies_pos.h2d();
