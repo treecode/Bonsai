@@ -16,12 +16,11 @@
 <stringAttribute key="org.eclipse.cdt.launch.DEBUGGER_START_MODE" value="run"/>
 <booleanAttribute key="org.eclipse.cdt.launch.DEBUGGER_STOP_AT_MAIN" value="true"/>
 <stringAttribute key="org.eclipse.cdt.launch.DEBUGGER_STOP_AT_MAIN_SYMBOL" value="main"/>
-<stringAttribute key="org.eclipse.cdt.launch.PROGRAM_ARGUMENTS" value="-i model3_child_compact.tipsy -T 1000"/>
+<stringAttribute key="org.eclipse.cdt.launch.PROGRAM_ARGUMENTS" value="-i ${env_var:ESO_DATA}/model3_child_compact.tipsy&#10;-T 1000"/>
 <stringAttribute key="org.eclipse.cdt.launch.PROGRAM_NAME" value="build_release_gnu/bonsai2_slowdust"/>
 <stringAttribute key="org.eclipse.cdt.launch.PROJECT_ATTR" value="Bonsai"/>
 <booleanAttribute key="org.eclipse.cdt.launch.PROJECT_BUILD_CONFIG_AUTO_ATTR" value="true"/>
 <stringAttribute key="org.eclipse.cdt.launch.PROJECT_BUILD_CONFIG_ID_ATTR" value="com.nvidia.cuda.ide.toolchain.base.1360504251.307964146"/>
-<stringAttribute key="org.eclipse.cdt.launch.WORKING_DIRECTORY" value="/home/doserbd/git/Bonsai/build_release_gnu"/>
 <listAttribute key="org.eclipse.debug.core.MAPPED_RESOURCE_PATHS">
 <listEntry value="/Bonsai"/>
 </listAttribute>

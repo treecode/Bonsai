@@ -16,7 +16,7 @@
 <stringAttribute key="org.eclipse.cdt.launch.DEBUGGER_START_MODE" value="run"/>
 <booleanAttribute key="org.eclipse.cdt.launch.DEBUGGER_STOP_AT_MAIN" value="true"/>
 <stringAttribute key="org.eclipse.cdt.launch.DEBUGGER_STOP_AT_MAIN_SYMBOL" value="main"/>
-<stringAttribute key="org.eclipse.cdt.launch.PROGRAM_ARGUMENTS" value="-i /data/bernd/HITS/ESO_WarOfGalaxies/BonsaiGTC12DemoFiles/testSolar_5M.tipsy&#10;-T 1000&#10;-o 1.2&#10;-t 0.0625&#10;-r 1&#10;--eps 0.2&#10;--Tglow 4300&#10;--dTglow 50&#10;--reducebodies 100&#10;--log"/>
+<stringAttribute key="org.eclipse.cdt.launch.PROGRAM_ARGUMENTS" value="-i ${env_var:ESO_DATA}/BonsaiGTC12DemoFiles/testSolar_5M.tipsy&#10;-T 1000&#10;-o 1.2&#10;-t 0.0625&#10;-r 1&#10;--eps 0.2&#10;--Tglow 4300&#10;--dTglow 50&#10;--reducebodies 100&#10;--log"/>
 <stringAttribute key="org.eclipse.cdt.launch.PROGRAM_NAME" value="build_release_gnu/bonsai2_slowdust"/>
 <stringAttribute key="org.eclipse.cdt.launch.PROJECT_ATTR" value="Bonsai"/>
 <booleanAttribute key="org.eclipse.cdt.launch.PROJECT_BUILD_CONFIG_AUTO_ATTR" value="true"/>
