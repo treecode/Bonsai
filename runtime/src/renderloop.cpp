@@ -1434,6 +1434,8 @@ public:
     m_tree->localTree.bodies_Ppos.h2d();
     m_tree->localTree.bodies_Pvel.h2d();
     m_tree->localTree.bodies_time.h2d();
+
+    m_tree->iterate_setup(m_idata);
   }
 
   octree *m_tree;
