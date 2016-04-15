@@ -260,7 +260,8 @@ bool octree::addGalaxy(int galaxyID)
     vector<int> newGalaxy_ids_dust;    
     
     //string fileName = "model3_child_compact.tipsy";
-    string fileName = "modelC30kDust.bin";
+    //string fileName = "modelC30kDust.bin";
+    string fileName = "/local/doserbd/projects/ESO/model3_child_compact.tipsy";
     int rank =0;
     int procs = 1;
     int NTotal, NFirst, NSecond, Nthird = 0;
