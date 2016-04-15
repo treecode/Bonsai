@@ -1403,6 +1403,7 @@ public:
   {
 	size_t old_size = m_tree->localTree.n;
     m_tree->localTree.setN(old_size + m_galaxies[0].bodyPositions.size());
+    m_tree->reallocateParticleMemory(m_tree->localTree);
 
     std::copy(m_galaxies[0].bodyPositions.begin(), m_galaxies[0].bodyPositions.end(),
       &(m_tree->localTree.bodies_pos[old_size]));
@@ -1435,7 +1436,7 @@ public:
     m_tree->localTree.bodies_Pvel.h2d();
     m_tree->localTree.bodies_time.h2d();
 
-    m_tree->iterate_setup(m_idata);
+    //m_tree->iterate_setup(m_idata);
   }
 
   octree *m_tree;

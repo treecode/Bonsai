@@ -63,10 +63,7 @@ inline int getTreeWalkBlocksPerSM(int devMajor, int devMinor)
 
 //Factor of extra memory we allocate during multi-GPU runs. By allocating a bit extra
 //we reduce the number of memory allocations when particle numbers fluctuate. 1.1 == 10% extra
-//#define MULTI_GPU_MEM_INCREASE 1.1
-
-// Dirty hack to test adding an additional galaxy
-#define MULTI_GPU_MEM_INCREASE 2.1
+#define MULTI_GPU_MEM_INCREASE 1.1
 
 //If USE_HASH_TABLE_DOMAIN_DECOMP is set to 1 we build a hash-table, otherwise we use
 //sampling particles to get an idea of the domain space used to compute the domain
