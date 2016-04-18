@@ -261,14 +261,15 @@ bool octree::addGalaxy(int galaxyID)
     
     //string fileName = "model3_child_compact.tipsy";
     //string fileName = "modelC30kDust.bin";
-    string fileName = "/local/doserbd/projects/ESO/model3_child_compact.tipsy";
-    int rank =0;
+    string fileName = "/local/doserbd/projects/ESO/BonsaiGTC12DemoFiles/testSolar_5M_galaxy2.tipsy";
+    int rank = 0;
     int procs = 1;
     int NTotal, NFirst, NSecond, Nthird = 0;
+    int reduce_bodies = 50;
     read_tipsy_file_parallel(newGalaxy_pos, newGalaxy_vel, newGalaxy_ids, 0, fileName, 
                              rank, procs, NTotal, NFirst, NSecond, NThird, this,
                              newGalaxy_pos_dust, newGalaxy_vel_dust, newGalaxy_ids_dust,
-                             1, 1, false);
+                             reduce_bodies, 1, false);
     
 
     int n_addGalaxy      = (int) newGalaxy_pos.size();

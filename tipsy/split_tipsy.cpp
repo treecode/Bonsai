@@ -53,11 +53,11 @@ int main(int argc, char** argv)
     std::cout << "nstar = " << h.nstar << std::endl;
 
     double x,y,z;
-    double S[DIM] = {0.0};
+    Eigen::Vector3d S;
+    S.setZero();
+
 //    Eigen::Matrix3d I;
-//    Eigen::Vector3d S;
 //    I.setZero();
-//    S.setZero();
 
     dark_particle d;
     for (int i = 0; i < h.ndark; ++i)
@@ -78,9 +78,9 @@ int main(int argc, char** argv)
 //        I(2,1) += -z*y;
 //        I(2,2) += x*x + y*y;
 
-        S[0] += x;
-        S[1] += y;
-        S[2] += z;
+        S(0) += x;
+        S(1) += y;
+        S(2) += z;
     }
 
     star_particle s;
@@ -102,9 +102,9 @@ int main(int argc, char** argv)
 //        I(2,1) += -z*y;
 //        I(2,2) += x*x + y*y;
 
-        S[0] += x;
-        S[1] += y;
-        S[2] += z;
+        S(0) += x;
+        S(1) += y;
+        S(2) += z;
     }
 
     is.seekg(after_header);
@@ -115,10 +115,7 @@ int main(int argc, char** argv)
 //    std::cout << eigen_solver.eigenvectors().col(1) << std::endl;
 //    std::cout << eigen_solver.eigenvectors().col(2) << std::endl;
 
-    std::cout << "center = " << S[0] << std::endl;
-    S[0] /= h.nbodies;
-    S[1] /= h.nbodies;
-    S[2] /= h.nbodies;
+    S /= h.nbodies;
     std::cout << "center = " << S[0] << std::endl;
 
     head h1, h2;
@@ -126,14 +123,14 @@ int main(int argc, char** argv)
     for (int i = 0; i < h.ndark; ++i)
     {
         is.read((char*) &d, sizeof(d));
-        if (d.pos[0] > S[0]) ++h1.ndark;
+        if (d.pos[0] > S(0)) ++h1.ndark;
         else ++h2.ndark;
     }
 
     for (int i = 0; i < h.nstar; ++i)
     {
         is.read((char*) &s, sizeof(s));
-        if (s.pos[0] > S[0]) ++h1.nstar;
+        if (s.pos[0] > S(0)) ++h1.nstar;
         else ++h2.nstar;
     }
 
@@ -154,14 +151,14 @@ int main(int argc, char** argv)
     for (int i = 0; i < h.ndark; ++i)
     {
         is.read((char*) &d, sizeof(d));
-        if (d.pos[0] > S[0]) os1.write((char*) &d, sizeof(d));
+        if (d.pos[0] > S(0)) os1.write((char*) &d, sizeof(d));
         else os2.write((char*) &d, sizeof(d));
     }
 
     for (int i = 0; i < h.nstar; ++i)
     {
         is.read((char*) &s, sizeof(s));
-        if (s.pos[0] > S[0]) os1.write((char*) &s, sizeof(s));
+        if (s.pos[0] > S(0)) os1.write((char*) &s, sizeof(s));
         else os2.write((char*) &s, sizeof(s));
     }
 
