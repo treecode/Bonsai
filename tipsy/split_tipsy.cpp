@@ -36,8 +36,10 @@ struct star_particle {
 
 int main(int argc, char** argv)
 {
-    if (argc != 2) exit(1);
-    std::cout << "file = " << argv[1] << std::endl;    
+    if (argc != 2) {
+        std::cout << "Usage: " << argv[0] << " <file>" << std::endl;    
+        exit(1);
+    }
 
     std::ifstream is(argv[1], std::ios::binary);
 
