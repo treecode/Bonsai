@@ -2,11 +2,11 @@
  * Galaxies.h
  *
  *  Created on: Apr 12, 2016
- *      Author: Bernd Doser <bernd.doser@hits.org>
+ *      Author: Bernd Doser <bernd.doser@h-its.org>
  */
 
-#ifndef GALAXIES_H_
-#define GALAXIES_H_
+#ifndef GALAXY_H_
+#define GALAXY_H_
 
 #include <vector>
 
@@ -28,6 +28,4 @@ struct Galaxy
   std::vector<int> bodyIDs;
 };
 
-typedef std::vector<Galaxy> Galaxies;
-
-#endif /* GALAXIES_H_ */
+#endif /* GALAXY_H_ */

@@ -1,38 +1,7 @@
 #include <fstream>
 #include <iostream>
 #include <Eigen/Eigenvalues>
-
-#define DIM 3
-
-struct head {
-
-	head() : time(0.0), nbodies(0), ndim(DIM), nsph(0), ndark(0), nstar(0) {}
-
-    double time;
-    int nbodies;
-    int ndim;
-    int nsph;
-    int ndark;
-    int nstar;
-};
-
-struct dark_particle {
-    float mass;
-    float pos[DIM];
-    float vel[DIM];
-    float eps;
-    int phi;
-};
-
-struct star_particle {
-    float mass;
-    float pos[DIM];
-    float vel[DIM];
-    float metals;
-    float tform;
-    float eps;
-    int phi;
-};
+#include "tipsy.h"
 
 int main(int argc, char** argv)
 {
@@ -163,6 +132,4 @@ int main(int argc, char** argv)
         if (s.pos[0] > S(0)) os1.write((char*) &s, sizeof(s));
         else os2.write((char*) &s, sizeof(s));
     }
-
 }
-
