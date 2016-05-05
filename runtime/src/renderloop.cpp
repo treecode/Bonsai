@@ -306,7 +306,7 @@ void glPrintf(float x, float y, const char* format, ...)
 class BonsaiDemo
 {
 public:
-  BonsaiDemo(octree *tree, octree::IterationData &idata, Galaxies const& galaxies)
+  BonsaiDemo(octree *tree, octree::IterationData &idata, GalaxyStore const& galaxyStore)
     : m_tree(tree), m_idata(idata), iterationsRemaining(true),
 //       m_renderer(tree->localTree.n + tree->localTree.n_dust),
       m_renderer(tree->localTree.n + tree->localTree.n_dust, MAX_PARTICLES),
@@ -339,7 +339,7 @@ public:
       m_cameraRollHome(0.0f),
       m_cameraRoll(0.0f),
       m_enableStats(true),
-      m_galaxies(galaxies)
+      m_galaxyStore(galaxyStore)
   {
     m_windowDims = make_int2(1024, 768);
     m_cameraTrans = make_float3(0, -2, -100);
@@ -1521,7 +1521,7 @@ public:
   ParamListGL *m_colorParams;
   ParamListGL *m_params;    // current
 
-  Galaxies const& m_galaxies;
+  GalaxyStore const& m_galaxyStore;
 
   // saved cameras
   struct Camera {
@@ -1940,10 +1940,10 @@ void initGL(int argc, char** argv, const char *fullScreenMode, bool &stereo)
 }
 
 void initAppRenderer(int argc, char** argv, octree *tree, 
-                     octree::IterationData &idata, bool showFPS, bool stereo, Galaxies const& galaxies) {
+                     octree::IterationData &idata, bool showFPS, bool stereo, GalaxyStore const& galaxyStore) {
   displayFps = showFPS;
   //initGL(argc, argv);
-  theDemo = new BonsaiDemo(tree, idata, galaxies);
+  theDemo = new BonsaiDemo(tree, idata, galaxyStore);
   if (stereo)
     theDemo->toggleStereo(); //SV assuming stereo is set to disable by default.
   glutMainLoop();

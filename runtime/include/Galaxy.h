@@ -13,8 +13,10 @@
 typedef float4 real4;
 typedef float real;
 
-struct Galaxy
+/// One defined galaxy
+class Galaxy
 {
+ public:
   Galaxy(std::vector<real4> const& bodyPositions,
 		 std::vector<real4> const& bodyVelocities,
 		 std::vector<int> const& bodyIDs)
@@ -22,6 +24,10 @@ struct Galaxy
      bodyVelocities(bodyVelocities),
      bodyIDs(bodyIDs)
   {}
+
+  //real4 getTotalVelocity();
+
+ private:
 
   std::vector<real4> bodyPositions;
   std::vector<real4> bodyVelocities;
