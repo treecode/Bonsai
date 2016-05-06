@@ -98,7 +98,10 @@ set (CCFILES
   src/dustFunctions.cpp
   src/log.cpp
   src/hostConstruction.cpp
-  )
+  src/Galaxy.cpp
+  src/GalaxyStore.cpp
+  src/FileIO.cpp
+)
 
 set (HFILES
   include/my_cuda_rt.h
@@ -110,7 +113,7 @@ set (HFILES
   include/vector_math.h
   include/depthSort.h
   include/sort.h
-  )
+)
 
 set (CUFILES
   CUDAkernels/build_tree.cu
@@ -120,7 +123,7 @@ set (CUFILES
   CUDAkernels/timestep.cu
   CUDAkernels/depthSort.cu
   CUDAkernels/dev_direct_gravity.cu
-  )
+)
 
 if (COMPILE_SM30)
   set (CUFILES 

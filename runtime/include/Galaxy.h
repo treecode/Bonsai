@@ -8,30 +8,23 @@
 #ifndef GALAXY_H_
 #define GALAXY_H_
 
+#include <my_cuda_rt.h>
 #include <vector>
 
-typedef float4 real4;
-typedef float real;
-
 /// One defined galaxy
-class Galaxy
+struct Galaxy
 {
- public:
-  Galaxy(std::vector<real4> const& bodyPositions,
-		 std::vector<real4> const& bodyVelocities,
-		 std::vector<int> const& bodyIDs)
-   : bodyPositions(bodyPositions),
-     bodyVelocities(bodyVelocities),
-     bodyIDs(bodyIDs)
-  {}
 
-  //real4 getTotalVelocity();
+  real4 getTotalVelocity();
 
- private:
+  std::vector<real4> pos;
+  std::vector<real4> vel;
+  std::vector<int> ids;
 
-  std::vector<real4> bodyPositions;
-  std::vector<real4> bodyVelocities;
-  std::vector<int> bodyIDs;
+  std::vector<real4> pos_dust;
+  std::vector<real4> vel_dust;
+  std::vector<int> ids_dust;
+
 };
 
 #endif /* GALAXY_H_ */
