@@ -59,10 +59,11 @@ int main() {
     fcntl(last_fd, F_SETFL, O_NONBLOCK); /* Change the socket into non-blocking state */
     fcntl(new_fd, F_SETFL, O_NONBLOCK);  /* Change the socket into non-blocking state */
 
+    int i;
     for(;;) {
-		for (int i = sockfd; i <= last_fd; ++i) {
+		for (i = sockfd; i <= last_fd; ++i) {
 			std::cout << "Round number " << i << std::endl;
-       		if (i == sockfd) {
+       		if (i = sockfd) {
 		 		sin_size = sizeof(struct sockaddr_in);
         		if ((new_fd = accept(sockfd, (struct sockaddr *)&clientAddr, &sin_size)) == -1)
         			perror("accept");
