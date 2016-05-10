@@ -69,7 +69,7 @@ int main() {
     for(;;) {
 		for (int i = sockfd; i <= last_fd; ++i) {
 			std::cout << "Round number " << i << std::endl;
-       		if (i !y= sockfd) {
+       		if (i != sockfd) {
 		 		sin_size = sizeof(struct sockaddr_in);
         		if ((new_fd = accept(sockfd, (struct sockaddr *)&clientAddr, &sin_size)) == -1)
         			perror("accept");
