@@ -24,11 +24,19 @@ using namespace std;
 
 #define SERVER_PORT htons(50007)
 #define BACKLOG 10
+#define BUFFERSIZE 1024
 
 int main() {
 
-    char buffer[1000];
+    char buffer[BUFFERSIZE];
     int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+
+    if (sockfd == -1) {
+    	perror("socket");
+        exit(1);
+    }
+
+    int last_fd = sockfd;
 
     sockaddr_in serverAddr;
     serverAddr.sin_family = AF_INET;
@@ -40,6 +48,7 @@ int main() {
        Necessary so that server can use a specific port */
     if (bind(sockfd, (struct sockaddr*)&serverAddr, sizeof(struct sockaddr)) == -1) {
         perror("bind");
+        exit(1);
     }
 
     // wait for a client
@@ -48,22 +57,19 @@ int main() {
         perror("listen");
         exit(1);
     }
-    std::cout << "Connected to client." << std::endl;
 
     sockaddr_in clientAddr;
     socklen_t sin_size = sizeof(struct sockaddr_in);
-    int new_fd = accept(sockfd,(struct sockaddr*)&clientAddr, &sin_size);
+    int new_fd = accept(sockfd, (struct sockaddr*)&clientAddr, &sin_size);
   	if (new_fd == -1) perror("accept");
 
-    int last_fd = sockfd;
-    fcntl(last_fd, F_SETFL, O_NONBLOCK); /* Change the socket into non-blocking state */
-    fcntl(new_fd, F_SETFL, O_NONBLOCK);  /* Change the socket into non-blocking state */
+    fcntl(new_fd, F_SETFL, O_NONBLOCK);
+    fcntl(last_fd, F_SETFL, O_NONBLOCK);
 
-    int i;
     for(;;) {
-		for (i = sockfd; i <= last_fd; ++i) {
+		for (int i = sockfd; i <= last_fd; ++i) {
 			std::cout << "Round number " << i << std::endl;
-       		if (i = sockfd) {
+       		if (i !y= sockfd) {
 		 		sin_size = sizeof(struct sockaddr_in);
         		if ((new_fd = accept(sockfd, (struct sockaddr *)&clientAddr, &sin_size)) == -1)
         			perror("accept");
@@ -74,7 +80,6 @@ int main() {
 			else {
 	    		std::cout << "Wait for message ... " << std::endl;
 	    		int n = recv(new_fd, buffer, sizeof(buffer), 0);
-	    		std::cout << "n = " << std::endl;
 				if (n < 1) {
 					perror("recv - non blocking \n");
 	    			printf("Round %d, and the data read size is: n=%d \n",i,n);
@@ -87,5 +92,6 @@ int main() {
 				}
 			}
 		}
+		sleep(1);
     }
 }

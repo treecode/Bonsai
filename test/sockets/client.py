@@ -2,6 +2,7 @@ import socket
 import sys
 
 HOST, PORT = "localhost", 50007
+BUFFERSIZE = 1024
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.connect((HOST, PORT))
@@ -29,9 +30,12 @@ while 1:
         velocity = float(raw_input("Which velocity? [0 <= velocity <= 100]: "))
         print "velocity = ", velocity
     
-    data = str(user_id) + "|" + str(galaxy_type) + "|" + str(angle) + "|" + str(velocity)
-    print "Galaxy (", data, ") was released."
-    s.send(data)
+    send_data = str(user_id) + "|" + str(galaxy_type) + "|" + str(angle) + "|" + str(velocity)
+    print "Galaxy (", send_data, ") was released."
+    s.send(send_data)
+    
+    recv_data = s.recv(BUFFERSIZE)
+    print "Received data:", recv_data
 
 s.shutdown(socket.SHUT_RDWR)
 s.close()
