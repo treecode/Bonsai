@@ -16,11 +16,11 @@
 <stringAttribute key="org.eclipse.cdt.launch.DEBUGGER_START_MODE" value="run"/>
 <booleanAttribute key="org.eclipse.cdt.launch.DEBUGGER_STOP_AT_MAIN" value="true"/>
 <stringAttribute key="org.eclipse.cdt.launch.DEBUGGER_STOP_AT_MAIN_SYMBOL" value="main"/>
-<stringAttribute key="org.eclipse.cdt.launch.PROGRAM_ARGUMENTS" value="-i ${env_var:ESO_DATA}/BonsaiGTC12DemoFiles/testSolar_5M.tipsy&#10;-T 1000&#10;-o 1.2&#10;-t 0.0625&#10;-r 1&#10;--eps 0.2&#10;--Tglow 4300&#10;--dTglow 50&#10;--reducebodies 100&#10;--log"/>
+<stringAttribute key="org.eclipse.cdt.launch.PROGRAM_ARGUMENTS" value="-i ${env_var:ESO_DATA}/war-of-galaxies/testSolar_5M.tipsy&#10;-T 1000&#10;-o 1.2&#10;-t 0.0625&#10;-r 1&#10;--eps 0.2&#10;--Tglow 4300&#10;--dTglow 50&#10;--reducebodies 100&#10;--log"/>
 <stringAttribute key="org.eclipse.cdt.launch.PROGRAM_NAME" value="build_device_debug_gnu/bonsai2_slowdust"/>
 <stringAttribute key="org.eclipse.cdt.launch.PROJECT_ATTR" value="Bonsai"/>
 <booleanAttribute key="org.eclipse.cdt.launch.PROJECT_BUILD_CONFIG_AUTO_ATTR" value="true"/>
-<stringAttribute key="org.eclipse.cdt.launch.PROJECT_BUILD_CONFIG_ID_ATTR" value="com.nvidia.cuda.ide.toolchain.base.1360504251.1242495427"/>
+<stringAttribute key="org.eclipse.cdt.launch.PROJECT_BUILD_CONFIG_ID_ATTR" value=""/>
 <listAttribute key="org.eclipse.debug.core.MAPPED_RESOURCE_PATHS">
 <listEntry value="/Bonsai"/>
 </listAttribute>

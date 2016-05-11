@@ -36,8 +36,8 @@
   #include <unistd.h>
 #endif
 
-
 #include "log.h"
+#include "Galaxy.h"
 
 #define PRINT_MPI_DEBUG
 
@@ -875,10 +875,11 @@ public:
     my_dev::kernel correctDust;
   #endif
   
-  //
-  //Function for setting up the mergers
+  // Function for setting up the mergers
   bool addGalaxy(int galaxyID);
 
+  // WarOfGalaxies: add galaxy to simulation
+  void releaseGalaxy(Galaxy const& galaxy);
 
   //Library interface functions  
   void  setEps(float eps);
