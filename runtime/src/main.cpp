@@ -617,6 +617,7 @@ int main(int argc, char** argv)
   int nMWfork   =  4;
 
   std::string war_of_galaxies_path;
+  int wogPort = 50007;
 
 	/************** beg - command line arguments ********/
 #if 1
@@ -1277,7 +1278,7 @@ int main(int argc, char** argv)
   octree::IterationData idata;
   GalaxyStore galaxyStore;
   if (!war_of_galaxies_path.empty()) galaxyStore.init(war_of_galaxies_path, tree);
-  initAppRenderer(argc, argv, tree, idata, displayFPS, stereo, galaxyStore);
+  initAppRenderer(argc, argv, tree, idata, displayFPS, stereo, galaxyStore, wogPort);
   LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
 #else
   tree->mpiSync();

@@ -30,6 +30,7 @@
 #include "paramgl.h"
 #include "depthSort.h"
 #include "tr.h"
+#include "WOGSocketManager.h"
 
 float TstartGlow;
 float dTstartGlow;
@@ -305,7 +306,7 @@ void glPrintf(float x, float y, const char* format, ...)
 class BonsaiDemo
 {
 public:
-  BonsaiDemo(octree *tree, octree::IterationData &idata, GalaxyStore const& galaxyStore)
+  BonsaiDemo(octree *tree, octree::IterationData &idata, GalaxyStore const& galaxyStore, int wogPort)
     : m_tree(tree), m_idata(idata), iterationsRemaining(true),
 //       m_renderer(tree->localTree.n + tree->localTree.n_dust),
       m_renderer(tree->localTree.n + tree->localTree.n_dust, MAX_PARTICLES),
@@ -338,7 +339,8 @@ public:
       m_cameraRollHome(0.0f),
       m_cameraRoll(0.0f),
       m_enableStats(true),
-      m_galaxyStore(galaxyStore)
+      m_galaxyStore(galaxyStore),
+      m_wogSocketManager(wogPort)
   {
     m_windowDims = make_int2(1024, 768);
     m_cameraTrans = make_float3(0, -2, -100);
@@ -1477,6 +1479,7 @@ public:
   ParamListGL *m_params;    // current
 
   GalaxyStore const& m_galaxyStore;
+  WOGSocketManager const& m_wogSocketManager;
 
   // saved cameras
   struct Camera {
@@ -1799,14 +1802,21 @@ void keyUp(unsigned char key, int /*x*/, int /*y*/)
 
 void special(int key, int x, int y)
 {
-    theDemo->special(key);
-    glutPostRedisplay();
+  theDemo->special(key);
+  glutPostRedisplay();
 }
 
 void idle(void)
 {
-	std::cout << "OpenGl idle was called." << std::endl;
-    glutPostRedisplay();
+  std::cout << "OpenGl idle was called." << std::endl;
+  int n = recv(wogSocket, buffer, sizeof(buffer), 0);
+  if (n > 0) {
+    buffer[n] = '\0';
+    std::cout << "The string is: " << buffer << std::endl;
+    if (send(wogSocket, "Hello, world!\n", 14, 0) == -1) perror("send");
+    m_tree->releaseGalaxy(theDemo->m_galaxyStore.galaxies[0]);
+  }
+  glutPostRedisplay();
 }
 
 void initGL(int argc, char** argv, const char *fullScreenMode, bool &stereo)
@@ -1895,11 +1905,11 @@ void initGL(int argc, char** argv, const char *fullScreenMode, bool &stereo)
   atexit(onexit);
 }
 
-void initAppRenderer(int argc, char** argv, octree *tree, 
-                     octree::IterationData &idata, bool showFPS, bool stereo, GalaxyStore const& galaxyStore) {
+void initAppRenderer(int argc, char** argv, octree *tree, octree::IterationData &idata,
+		             bool showFPS, bool stereo, GalaxyStore const& galaxyStore, int wogPort) {
   displayFps = showFPS;
   //initGL(argc, argv);
-  theDemo = new BonsaiDemo(tree, idata, galaxyStore);
+  theDemo = new BonsaiDemo(tree, idata, galaxyStore, wogPort);
   if (stereo)
     theDemo->toggleStereo(); //SV assuming stereo is set to disable by default.
   glutMainLoop();
