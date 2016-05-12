@@ -1479,7 +1479,7 @@ public:
   ParamListGL *m_params;    // current
 
   GalaxyStore const& m_galaxyStore;
-  WOGSocketManager const& m_wogSocketManager;
+  WOGSocketManager m_wogSocketManager;
 
   // saved cameras
   struct Camera {
@@ -1809,12 +1809,9 @@ void special(int key, int x, int y)
 void idle(void)
 {
   std::cout << "OpenGl idle was called." << std::endl;
-  int n = recv(wogSocket, buffer, sizeof(buffer), 0);
-  if (n > 0) {
-    buffer[n] = '\0';
-    std::cout << "The string is: " << buffer << std::endl;
-    if (send(wogSocket, "Hello, world!\n", 14, 0) == -1) perror("send");
-    m_tree->releaseGalaxy(theDemo->m_galaxyStore.galaxies[0]);
+  if (theDemo->m_wogSocketManager.getRequest())
+  {
+	theDemo->m_tree->releaseGalaxy(theDemo->m_galaxyStore.galaxies[0]);
   }
   glutPostRedisplay();
 }

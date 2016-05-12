@@ -1,7 +1,8 @@
 import socket
 import sys
 
-HOST, PORT = "localhost", 50007
+HOST = 'localhost'
+PORT = 50007
 BUFFERSIZE = 1024
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
