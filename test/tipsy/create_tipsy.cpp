@@ -3,7 +3,7 @@
 
 int main()
 {
-	head h(0.0, 1, DIM, 0, 0, 1);
+    head h(0.0, 1, DIM, 0, 0, 1);
 
     std::ofstream os("test.tipsy", std::ios::binary);
     os.write((char*) &h, sizeof(h));
