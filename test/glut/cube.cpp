@@ -8,6 +8,7 @@
 #include <GL/gl.h>
 #include <GL/glu.h>
 #include <GL/glut.h>
+#include <iostream>
 
 void init(void)
 {
@@ -22,13 +23,16 @@ void display(void)
    glLoadIdentity ();             /* clear the matrix */
            /* viewing transformation  */
    gluLookAt (0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
-   glScalef (1.0, 2.0, 1.0);      /* modeling transformation */
+   glScalef (1.0, 1.0, 1.0);      /* modeling transformation */
    glutWireCube (1.0);
+   glTranslated(1.0, 1.0, 0.0);
+   glutSolidSphere(0.01, 100, 100);
    glFlush ();
 }
 
 void reshape (int w, int h)
 {
+   std::cout << w << ", " << h << std::endl;
    glViewport (0, 0, (GLsizei) w, (GLsizei) h);
    glMatrixMode (GL_PROJECTION);
    glLoadIdentity ();
