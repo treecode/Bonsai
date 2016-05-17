@@ -17,6 +17,10 @@ class GalaxyStore
 
   void init(std::string const& path, octree *tree);
 
+  Galaxy getGalaxy(int user_id, int galaxy_id, double angle, double velocity) const;
+
+ private:
+
   std::vector<Galaxy> galaxies;
 
 };

@@ -8,6 +8,8 @@
 #ifndef WOGSOCKETMANAGER_H_
 #define WOGSOCKETMANAGER_H_
 
+#include "octree.h"
+#include "GalaxyStore.h"
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netdb.h>
@@ -29,60 +31,15 @@ struct sockaddr_in;
 class WOGSocketManager
 {
  public:
-  WOGSocketManager(int port)
-  {
-    serverSocket = socket(AF_INET, SOCK_STREAM, 0);
-    if (serverSocket == -1) {
-      perror("socket");
-      throw std::runtime_error("socket error");
-    }
 
-    sockaddr_in serverAddr;
-    serverAddr.sin_family = AF_INET;
-    serverAddr.sin_port = htons(port);
-    serverAddr.sin_addr.s_addr = INADDR_ANY;
+  // Constructor opening sockets and reading input galaxies
+  WOGSocketManager(int port);
 
-    if (bind(serverSocket, (struct sockaddr*)&serverAddr, sizeof(struct sockaddr)) == -1) {
-      perror("bind");
-      throw std::runtime_error("bind error");
-    }
+  // Constructor closing the sockets
+  ~WOGSocketManager();
 
-    // wait for a client
-    if (listen(serverSocket, 5) == -1) {
-      perror("listen");
-      throw std::runtime_error("listen error");
-    }
-
-    sockaddr_in clientAddr;
-    socklen_t sin_size = sizeof(struct sockaddr_in);
-    transferSocket = accept(serverSocket, (struct sockaddr*)&clientAddr, &sin_size);
-  	if (transferSocket == -1) {
-      perror("accept");
-      throw std::runtime_error("accept error");
-  	}
-
-    fcntl(transferSocket, F_SETFL, O_NONBLOCK);
-  }
-
-  ~WOGSocketManager()
-  {
-    close(transferSocket);
-    close(serverSocket);
-  }
-
-  bool getRequest()
-  {
-	char buffer[BUFFERSIZE];
-    int n = recv(transferSocket, buffer, sizeof(buffer), 0);
-    if (n > 0) {
-      buffer[n] = '\0';
-      std::cout << "The string is: " << buffer << std::endl;
-      std::string message = "1";
-      if (send(transferSocket, message.c_str(), message.size(), 0) == -1) perror("send");
-      return true;
-    }
-    return false;
-  }
+  // Release Galaxy if requested by socket
+  void release(octree *tree, GalaxyStore const& galaxyStore);
 
  private:
 

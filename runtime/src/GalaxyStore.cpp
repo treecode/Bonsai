@@ -8,18 +8,20 @@
 #include "FileIO.h"
 #include "GalaxyStore.h"
 #include <stdexcept>
-#include <dirent.h>
+#include <string>
 
 void GalaxyStore::init(std::string const& path, octree *tree)
 {
-	DIR *dirp = opendir(path.c_str());
-	if (!dirp) throw ::std::runtime_error("Can't open GalaxyStore directory " + path);
-	dirent *dp;
-	while ((dp = readdir(dirp)))
+	std::vector<std::string> filenames;
+	filenames.push_back("galaxy_type_1.tipsy");
+	filenames.push_back("galaxy_type_2.tipsy");
+	filenames.push_back("galaxy_type_3.tipsy");
+	filenames.push_back("galaxy_type_4.tipsy");
+
+	for (std::vector<std::string>::const_iterator iterFileCur(filenames.begin()), iterFileEnd(filenames.end());
+	    iterFileCur != iterFileEnd; ++iterFileCur)
 	{
-		std::string filename(dp->d_name);
-		if (filename.substr(filename.find_last_of(".")) != ".tipsy") continue;
-		std::cout << "Read file " << filename << " into GalaxyStore." << std::endl;
+		std::cout << "Read file " << *iterFileCur << " into GalaxyStore." << std::endl;
 
 		Galaxy galaxy;
 		int Total2 = 0;
@@ -28,7 +30,7 @@ void GalaxyStore::init(std::string const& path, octree *tree)
 		int NThird = 0;
 
 		read_tipsy_file_parallel(galaxy.pos, galaxy.vel, galaxy.ids,
-			0.0, (path + "/" + filename).c_str(), 0, 1, Total2, NFirst, NSecond, NThird, tree,
+			0.0, (path + "/" + *iterFileCur).c_str(), 0, 1, Total2, NFirst, NSecond, NThird, tree,
 			galaxy.pos_dust, galaxy.vel_dust, galaxy.ids_dust, 50, 1, false);
 
 		real4 cm = galaxy.getCenterOfMass();
@@ -46,5 +48,13 @@ void GalaxyStore::init(std::string const& path, octree *tree)
 
 		galaxies.push_back(galaxy);
 	}
-	closedir(dirp);
+}
+
+Galaxy GalaxyStore::getGalaxy(int user_id, int galaxy_id, double angle, double velocity) const
+{
+	Galaxy galaxy(galaxies[galaxy_id]);
+
+
+
+    return galaxy;
 }

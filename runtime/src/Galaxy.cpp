@@ -69,3 +69,23 @@ void Galaxy::steady()
         vel[i].z -= total_velocity.z;
     }
 }
+
+void Galaxy::add_position(real x, real y, real z)
+{
+    for (size_t i(0); i != pos.size(); ++i)
+    {
+        pos[i].x += x;
+        pos[i].y += y;
+        pos[i].z += z;
+    }
+}
+
+void Galaxy::add_velocity(real x, real y, real z)
+{
+    for (size_t i(0); i != vel.size(); ++i)
+    {
+        vel[i].x += x;
+        vel[i].y += y;
+        vel[i].z += z;
+    }
+}

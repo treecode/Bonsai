@@ -1,6 +1,6 @@
-
-
 CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
+
+add_definitions("-std=gnu++11")
 
 option(CUDA_VERBOSE_PTXAS
   "On to enable verbose output from the PTXAS assembler."
@@ -101,6 +101,7 @@ set (CCFILES
   src/Galaxy.cpp
   src/GalaxyStore.cpp
   src/FileIO.cpp
+  src/WOGSocketManager.cpp
 )
 
 set (HFILES

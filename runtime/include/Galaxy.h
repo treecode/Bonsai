@@ -26,6 +26,12 @@ struct Galaxy
   /// Remove total velocity
   void steady();
 
+  /// Move center of the galaxy
+  void add_position(real x, real y, real z);
+
+  /// Accelerate the galaxy
+  void add_velocity(real x, real y, real z);
+
   std::vector<real4> pos;
   std::vector<real4> vel;
   std::vector<int> ids;

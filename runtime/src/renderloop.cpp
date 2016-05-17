@@ -1009,11 +1009,6 @@ public:
       break;
     case 'W':
       break;
-    case 'a':
-    case 'A':
-      // release additional galaxy
-      m_tree->releaseGalaxy(m_galaxyStore.galaxies[0]);
-      break;
     default:
       break;
     }
@@ -1808,11 +1803,7 @@ void special(int key, int x, int y)
 
 void idle(void)
 {
-  std::cout << "OpenGl idle was called." << std::endl;
-  if (theDemo->m_wogSocketManager.getRequest())
-  {
-	theDemo->m_tree->releaseGalaxy(theDemo->m_galaxyStore.galaxies[0]);
-  }
+  theDemo->m_wogSocketManager.release(theDemo->m_tree, theDemo->m_galaxyStore);
   glutPostRedisplay();
 }
 

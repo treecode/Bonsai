@@ -460,7 +460,9 @@ void octree::releaseGalaxy(Galaxy const& galaxy)
   // Resize preserves original data
   this->reallocateParticleMemory(this->localTree);
 
-  setupMergerModel(currentGalaxy_pos, currentGalaxy_vel, currentGalaxy_ids, newGalaxy_pos, newGalaxy_vel, newGalaxy_ids);
+  currentGalaxy_pos.insert(currentGalaxy_pos.end(), newGalaxy_pos.begin(), newGalaxy_pos.end());
+  currentGalaxy_vel.insert(currentGalaxy_vel.end(), newGalaxy_vel.begin(), newGalaxy_vel.end());
+  currentGalaxy_ids.insert(currentGalaxy_ids.end(), newGalaxy_ids.begin(), newGalaxy_ids.end());
 
   #ifdef USE_DUST
     this->localTree.setNDust(n_addGalaxy_dust + this->localTree.n_dust);
