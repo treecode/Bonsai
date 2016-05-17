@@ -10,6 +10,8 @@
 #include <stdexcept>
 #include <string>
 
+const double pi = std::acos(-1);
+
 void GalaxyStore::init(std::string const& path, octree *tree)
 {
 	std::vector<std::string> filenames;
@@ -54,7 +56,22 @@ Galaxy GalaxyStore::getGalaxy(int user_id, int galaxy_id, double angle, double v
 {
 	Galaxy galaxy(galaxies[galaxy_id]);
 
+	double sinus = sin(angle * pi / 180);
+	double cosinus = cos(angle * pi / 180);
 
+	if (user_id == 1) {
+	  galaxy.add_position( 100,  100, 0);
+      galaxy.add_velocity(velocity * -sinus, velocity * -cosinus, 0);
+	} else if (user_id == 2) {
+      galaxy.add_position( 100, -100, 0);
+      galaxy.add_velocity(velocity * -cosinus, velocity * sinus, 0);
+	} else if (user_id == 3) {
+      galaxy.add_position(-100, -100, 0);
+      galaxy.add_velocity(velocity * sinus, velocity * cosinus, 0);
+	} else if (user_id == 4) {
+      galaxy.add_position(-100,  100, 0);
+      galaxy.add_velocity(velocity * cosinus, velocity * -sinus, 0);
+	}
 
     return galaxy;
 }

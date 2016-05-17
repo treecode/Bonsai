@@ -674,7 +674,7 @@ public:
           glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
           glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
           glRotatef(m_cameraRoll, 0.0, 0.0, 1.0);
-          glRotatef(90.0f, 1.0f, 0.0f, 0.0f); // rotate galaxies into XZ plane
+          //glRotatef(90.0f, 1.0f, 0.0f, 0.0f); // rotate galaxies into XZ plane
         }
 
         glGetFloatv(GL_MODELVIEW_MATRIX, m_modelView);
@@ -1104,7 +1104,9 @@ public:
 
     float distanceToCenter = radius / sinf(0.5f * fovRads);
     
-    m_cameraTrans = center + make_float3(0, 0, -distanceToCenter*0.2f);
+    //m_cameraTrans = center + make_float3(0, 0, -distanceToCenter*0.2f);
+    m_cameraTrans = make_float3(0, 0, -500);
+    printf("camera trans %f %f %f \n",m_cameraTrans.x, m_cameraTrans.y, m_cameraTrans.z);
 
 #if 0
     /* JB This came with stereo, seems to break rotation */
