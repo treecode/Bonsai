@@ -54,7 +54,7 @@ void GalaxyStore::init(std::string const& path, octree *tree)
 
 Galaxy GalaxyStore::getGalaxy(int user_id, int galaxy_id, double angle, double velocity) const
 {
-	Galaxy galaxy(galaxies[galaxy_id]);
+	Galaxy galaxy(galaxies[galaxy_id - 1]);
 
 	double sinus = sin(angle * pi / 180);
 	double cosinus = cos(angle * pi / 180);
