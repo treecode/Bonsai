@@ -881,6 +881,9 @@ public:
   // WarOfGalaxies: add galaxy to simulation
   void releaseGalaxy(Galaxy const& galaxy);
 
+  // WarOfGalaxies: remove galaxy via id
+  void removeGalaxy(int id);
+
   //Library interface functions  
   void  setEps(float eps);
   float getEps();

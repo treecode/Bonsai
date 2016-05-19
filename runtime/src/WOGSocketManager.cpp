@@ -6,6 +6,9 @@
  */
 
 #include "WOGSocketManager.h"
+#include "jsoncons/json.hpp"
+
+using jsoncons::json;
 
 auto split(std::string const& s, char separator) -> std::vector<std::string>
 {
@@ -63,25 +66,43 @@ WOGSocketManager::~WOGSocketManager()
 
 void WOGSocketManager::release(octree *tree, GalaxyStore const& galaxyStore)
 {
-  std::string buffer;
-  buffer.resize(BUFFERSIZE);
-  int n = recv(transferSocket, &buffer[0], BUFFERSIZE, 0);
+  char buffer[BUFFERSIZE];
+  int n = recv(transferSocket, buffer, BUFFERSIZE, 0);
   if (n <= 0) return;
-  std::cout << "The string is: " << buffer << std::endl;
 
-  auto values = split(buffer, '|');
-  int user_id = std::stoi(values[0]);
-  int galaxy_id = std::stoi(values[1]);
-  double angle = std::stod(values[2]);
-  double velocity = std::stod(values[3]);
+  buffer[n] = '\0';
+  std::string buffer_string(buffer);
+  std::cout << "The string is: " << buffer_string << std::endl;
 
-  std::cout << "user_id: " << user_id << std::endl;
-  std::cout << "galaxy_id: " << galaxy_id << std::endl;
-  std::cout << "angle: " << angle << std::endl;
-  std::cout << "velocity: " << velocity << std::endl;
+  std::istringstream iss(buffer_string);
+  json recv_data;
+  iss >> recv_data;
 
-  tree->releaseGalaxy(galaxyStore.getGalaxy(user_id, galaxy_id, angle, velocity));
+  std::cout << "task: " << recv_data["task"].as<std::string>() << std::endl;
+  std::cout << "user_id: " << recv_data["user_id"].as<int>() << std::endl;
+  std::cout << "galaxy_id: " << recv_data["galaxy_id"].as<int>() << std::endl;
+  std::cout << "angle: " << recv_data["angle"].as<double>() << std::endl;
+  std::cout << "velocity: " << recv_data["velocity"].as<double>() << std::endl;
 
-  std::string message = "1";
-  if (send(transferSocket, message.c_str(), message.size(), 0) == -1) perror("send");
+  if (recv_data["task"].as<std::string>() == "release")
+  {
+    tree->releaseGalaxy(galaxyStore.getGalaxy(
+      recv_data["user_id"].as<int>(),
+      recv_data["galaxy_id"].as<int>(),
+      recv_data["angle"].as<double>(),
+      recv_data["velocity"].as<double>()));
+  }
+  else if (recv_data["task"].as<std::string>() == "remove")
+  {
+	tree->removeGalaxy(recv_data["user_id"].as<int>());
+  }
+
+  json send_data;
+  send_data["last_operation"] = recv_data["task"].as<std::string>();
+
+  std::ostringstream oss;
+  oss << send_data;
+  std::string send_data_string = oss.str();
+
+  if (send(transferSocket, send_data_string.c_str(), send_data_string.size(), 0) == -1) perror("send");
 }
