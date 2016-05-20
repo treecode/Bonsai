@@ -26,9 +26,6 @@ struct Galaxy
   /// Remove total velocity
   void steady();
 
-  /// Set id of all particles to given id
-  void set_id(int id);
-
   /// Move center of the galaxy
   void translate(real x, real y, real z);
 

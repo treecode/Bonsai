@@ -1,17 +1,7 @@
+#include "tipsy.h"
 #include <fstream>
 #include <iostream>
-
-#define MAXDIM 3
-
-typedef float Real;
-
-struct dark_particle {
-    Real mass;
-    Real pos[MAXDIM];
-    Real vel[MAXDIM];
-    Real eps;
-    int phi;
-};
+#include <set>
 
 int main(int argc, char** argv)
 {
@@ -40,12 +30,29 @@ int main(int argc, char** argv)
     std::cout << "nstar= " << nstar << std::endl;    
 
     // dark particles
+    std::set<int> dark_phis;
+
+    for (int i = 0; i != ndark; ++i)
     {
         dark_particle d;
-    
         is.read((char*) &d, sizeof(d));
-
-        std::cout << "mass = " << d.mass << std::endl;    
+        dark_phis.insert(d.phi);
     }
+
+    std::cout << dark_phis.size() << std::endl;
+    for (auto p : dark_phis) std::cout << p << std::endl;
+
+    // star particles
+    std::set<int> star_phis;
+
+    for (int i = 0; i != nstar; ++i)
+    {
+        star_particle s;
+        is.read((char*) &s, sizeof(s));
+        star_phis.insert(s.phi);
+    }
+
+    std::cout << star_phis.size() << std::endl;
+    for (auto s : star_phis) std::cout << s << std::endl;
 }
 
