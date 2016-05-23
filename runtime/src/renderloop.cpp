@@ -1805,7 +1805,7 @@ void special(int key, int x, int y)
 
 void idle(void)
 {
-  theDemo->m_wogSocketManager.release(theDemo->m_tree, theDemo->m_galaxyStore);
+  theDemo->m_wogSocketManager.execute(theDemo->m_tree, theDemo->m_galaxyStore);
   glutPostRedisplay();
 }
 

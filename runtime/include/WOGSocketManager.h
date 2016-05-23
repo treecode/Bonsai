@@ -27,24 +27,31 @@
 struct sockaddr_in;
 
 #define BUFFERSIZE 1024
+#define NUMBER_OF_USERS 4
+#define DUMMY_PARTICLES 440
 
+/// Control interconnection via UNIX socket
 class WOGSocketManager
 {
  public:
 
-  // Constructor opening sockets and reading input galaxies
+  /// Constructor opening sockets and reading input galaxies
   WOGSocketManager(int port);
 
-  // Constructor closing the sockets
+  /// Constructor closing the sockets
   ~WOGSocketManager();
 
-  // Release Galaxy if requested by socket
-  void release(octree *tree, GalaxyStore const& galaxyStore);
+  /// Execute a client request
+  void execute(octree *tree, GalaxyStore const& galaxyStore);
 
  private:
 
-  int serverSocket;
-  int transferSocket;
+  int server_socket;
+
+  int client_socket;
+
+  /// Number of particles of user
+  std::array<int, NUMBER_OF_USERS> user_particles;
 
 };
 

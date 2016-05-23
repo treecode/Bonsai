@@ -879,10 +879,10 @@ public:
   bool addGalaxy(int galaxyID);
 
   // WarOfGalaxies: add galaxy to simulation
-  void releaseGalaxy(Galaxy const& galaxy);
+  void releaseGalaxy(Galaxy const& galaxy, int position);
 
   // WarOfGalaxies: remove galaxy via id
-  void removeGalaxy(int id);
+  void removeGalaxy(int begin_particle, int end_particle);
 
   //Library interface functions  
   void  setEps(float eps);
