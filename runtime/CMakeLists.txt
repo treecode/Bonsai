@@ -48,8 +48,8 @@ option(USE_B40C
   ON
   )
   
-option(COMPILE_SM30
-  "On to enable SM30 compilation"
+option(COMPILE_SM35
+  "On to enable SM35 compilation"
   ON
   )
 
@@ -145,7 +145,7 @@ set (CUFILES
   CUDAkernels/dev_direct_gravity.cu
   )
 
-if (COMPILE_SM30)
+if (COMPILE_SM35)
   set (CUFILES 
     ${CUFILES}
     CUDAkernels/dev_approximate_gravity_warp_new.cu  
@@ -154,13 +154,13 @@ if (COMPILE_SM30)
   set(GENCODE -gencode arch=compute_35,code=sm_35 -gencode arch=compute_35,code=compute_35 -Xptxas=-v -ftz=true)
   #  set(GENCODE -gencode arch=compute_35,code=sm_35 -gencode arch=compute_35,code=compute_35 -Xptxas=-v -ftz=true -lineinfo)
 
-else (COMPILE_SM30)
+else (COMPILE_SM35)
   set (CUFILES
     ${CUFILES}
 	CUDAkernels/dev_approximate_gravity_warp_fermi.cu  
 	)
   set(GENCODE -gencode arch=compute_20,code=sm_20 -gencode arch=compute_20,code=compute_20)
-endif (COMPILE_SM30)
+endif (COMPILE_SM35)
 
 set (CUHFILES
   CUDAkernels/support_kernels.cu

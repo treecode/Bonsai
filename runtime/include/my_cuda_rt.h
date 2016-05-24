@@ -23,6 +23,8 @@
 #include <cuda_runtime.h>
 #include <vector_functions.h>
 
+#include <thrust/device_ptr.h>
+
 #include <iostream>
 #include "log.h"
 
@@ -553,7 +555,7 @@ namespace my_dev {
     //sourcemem -> The memory buffer that acts as the parent
     //n         -> The number of elements of type T for the child
     //offset    -> The offset, this *MUST* be the return value of previous calls
-    //             to this function to ensure allignment. Note this is the number
+    //             to this function to ensure alignment. Note this is the number
     //             of elements in type uint
     int  cmalloc_copy(dev_mem<uint> &sourcemem, const int n, const int offset)
     {
@@ -563,15 +565,10 @@ namespace my_dev {
       this->pinned_mem  = sourcemem.get_pinned();
       this->flags       = sourcemem.get_flags();
       this->childMemory = true;
-      
-      size = n;
+      this->size 		= n;
      
       
-      void* ParentHost_ptr = &sourcemem[offset]; 
-      //Dont forget to add the allignment values      
-      //The following line has a bug, it first casts and then adds offset*sizeof ELEMENTS
-      //host_ptr = (T*)ParentHost_ptr +  allignOffset*sizeof(uint); 
-      //This line correctly increases the memory location with number of bytes before castings      
+      void* ParentHost_ptr = &sourcemem[offset];
       host_ptr = (T*) ((char*)ParentHost_ptr);
 
 
@@ -582,12 +579,11 @@ namespace my_dev {
       DeviceMemPtr      = (void*)(size_t)(hDeviceMem);
       hDeviceMem_flag   = true;      
       
-      //Compute the allignment
+      //Compute the alignment
       int currentOffset = offset + ((n*sizeof(T)) / sizeof(uint));
       int padding       = getGlobalMemAllignmentPadding(currentOffset);
 
-      //TODO for safety we could add a check if we go outside 
-      //the memory bounds
+      //TODO for safety we could add a check if we go outside the memory bounds of sourcemem
 
       return currentOffset + padding;
     }    
@@ -819,6 +815,7 @@ namespace my_dev {
 
     //////////////
 
+
     void d2h(bool OCL_BLOCKING = true, cudaStream_t stream = 0)   {      
 
       d2h(size, OCL_BLOCKING, stream);
@@ -943,6 +940,17 @@ namespace my_dev {
       //Copy data from src_buffer in our own device buffer
       CU_SAFE_CALL(cudaMemcpy((void*)(size_t)(hDeviceMem + offset), src_buffer.d(), n*sizeof(T), cudaMemcpyDeviceToDevice));
     }
+    void copy_devonly(T* src, const int n, int offset = 0)
+    {
+      CU_SAFE_CALL(cudaMemcpy((void*)(size_t)(hDeviceMem + offset), src, sizeof(T)*n, cudaMemcpyDeviceToDevice));
+    }
+    void copy_devonly_async(dev_mem &src_buffer, const int n, int offset = 0, cudaStream_t stream = 0)
+    {
+      CU_SAFE_CALL(cudaMemcpyAsync((void*)(size_t)(hDeviceMem + offset), src_buffer.d(), sizeof(T)*n, cudaMemcpyDeviceToDevice, stream));
+    }
+
+
+
     
     /////////
     
@@ -950,7 +958,13 @@ namespace my_dev {
     
     void *  get_devMem() {return (void*)hDeviceMem;}
     void* d() {return (void*)hDeviceMem;}
-    
+   
+    thrust::device_ptr<T> thrustPtr()
+    {
+        thrust::device_ptr<T> temp = thrust::device_pointer_cast(hDeviceMem);
+        return temp;
+    }
+
     T* raw_p() {return  hDeviceMem;}
 
     void*   p() {return &hDeviceMem;}

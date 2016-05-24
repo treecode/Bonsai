@@ -93,13 +93,6 @@ typedef unsigned long long ullong; //ulonglong1
 
 
 
-
-
-
-#ifdef USE_B40C
-#include "sort.h"
-#endif
-
 struct morton_struct {
   uint2 key;
   int   value;
@@ -128,8 +121,7 @@ typedef struct bodyStruct
   real4  Pvel;
   float2 time;
   unsigned long long id;
-//  float    id;
-//  int    temp;
+
 
 #ifdef DO_BLOCK_TIMESTEP_EXCHANGE_MPI
   uint4 key;
@@ -208,7 +200,7 @@ class tree_structure
     my_dev::dev_mem<real4> bodies_acc1;    //Acceleration
     my_dev::dev_mem<float2> bodies_time;  //The timestep details (.x=tb, .y=te
     my_dev::dev_mem<ullong>   bodies_ids;
-    my_dev::dev_mem<int>   oriParticleOrder;  //Used in the correct function to speedup reorder
+    my_dev::dev_mem<uint>   oriParticleOrder;  //Used in the correct function to speedup reorder
     
     //Density related buffers
     my_dev::dev_mem<real>  bodies_h;       //The particles search radius
@@ -256,13 +248,13 @@ class tree_structure
 
     //Combined buffers:
     /*
-    Buffer1 used during: Sorting, Tree-construction, and Tree-traverse:
-    Sorting:
-      - SrcValues, Output, simpleKeys, permutation, output32b, valuesOutput
-    Tree-construction:
-      - ValidList, compactList
-    Tree-traverse:
-      - Interactions, NGB, Active_partliist
+      Buffer1 used during: Sorting, Tree-construction, and Tree-traverse:
+      Sorting:
+        - SrcValues, Output, simpleKeys, permutation, output32b, valuesOutput
+      Tree-construction:
+        - ValidList, compactList
+      Tree-traverse:
+        - Interactions, NGB, Active_partlist
     */
 
     my_dev::dev_mem<uint> generalBuffer1;
@@ -490,13 +482,6 @@ protected:
 
   // scan & sort algorithm
   my_dev::kernel  compactCount, exScanBlock, compactMove, splitMove;
-  my_dev::kernel  sortCount, sortMove;
-  my_dev::kernel  extractInt, reOrderKeysValues;
-  my_dev::kernel  convertKey64to96, extractKeyAndPerm;
-  my_dev::kernel  dataReorderR4;
-  my_dev::kernel  dataReorderF2;
-  my_dev::kernel  dataReorderI1;
-  my_dev::kernel  dataReorderCombined;
 
   // tree construction kernels
   my_dev::kernel  build_key_list;
@@ -538,9 +523,6 @@ protected:
   //Parallel kernels
   my_dev::kernel domainCheck;
   my_dev::kernel extractSampleParticles;
-//  my_dev::kernel extractOutOfDomainR4;
-  //my_dev::kernel extractOutOfDomainBody;
-  //my_dev::kernel insertNewParticles;
   my_dev::kernel internalMove;
 
   my_dev::kernel build_parallel_grps;
@@ -549,16 +531,11 @@ protected:
   my_dev::kernel domainCheckSFC;
   my_dev::kernel internalMoveSFC;
   my_dev::kernel internalMoveSFC2;
-  //my_dev::kernel extractOutOfDomainParticlesAdvancedSFC;
   my_dev::kernel extractOutOfDomainParticlesAdvancedSFC2;
   my_dev::kernel insertNewParticlesSFC;
   my_dev::kernel extractSampleParticlesSFC;
   my_dev::kernel domainCheckSFCAndAssign;
 
-#ifdef USE_B40C
-  Sort90 *sorter;
-#endif
-  
   ///////////////////////
 
   /////////////////
@@ -573,12 +550,7 @@ protected:
   int3   get_crd(uint2);
   real4  get_pos(uint2, real, tree_structure&);
 
-  //uint2  get_mask(int);
-//  uint4  get_mask(int);
   uint2  get_imask(uint2);
-
-//  int   cmp_uint4(uint4 a, uint4 b);
-//  int   find_key(uint4 key, uint2 cij, uint4 *keys);
 
   int find_key(uint2, vector<uint2>&,         int, int);
   int find_key(uint2, vector<morton_struct>&, int, int);
@@ -640,18 +612,17 @@ public:
                    my_dev::dev_mem<uint> &output, int N, int *validCount);
    void gpuSplit(my_dev::context&, my_dev::dev_mem<uint> &srcValues,
                  my_dev::dev_mem<uint> &output, int N, int *validCount);
-   void gpuSort(my_dev::context &devContext,
-                my_dev::dev_mem<uint4> &srcValues,
-                my_dev::dev_mem<uint4> &output,
-                my_dev::dev_mem<uint4> &buffer,
-                int N, int numberOfBits, int subItems,
-                tree_structure &tree);
+   void gpuSort(my_dev::dev_mem<uint4> &srcKeys,
+                my_dev::dev_mem<uint>   &permutation, //For 32bit values
+                my_dev::dev_mem<uint>   &tempB,       //For 32bit values
+                my_dev::dev_mem<uint>   &tempC,       //For 32bit keys
+                my_dev::dev_mem<uint>   &tempD,       //For 32bit keys
+                my_dev::dev_mem<char>   &tempE,       //For sorting space
+                int N);
 
-   void gpuSort_32b(my_dev::context &devContext,
-                    my_dev::dev_mem<uint> &srcKeys,     my_dev::dev_mem<uint> &srcValues,
-                    my_dev::dev_mem<int>  &keysOutput,  my_dev::dev_mem<uint> &keysAPing,
-                    my_dev::dev_mem<uint> &valuesOutput,my_dev::dev_mem<uint> &valuesAPing,
-                    int N, int numberOfBits);
+   template <typename T>
+   void dataReorder(const int N, my_dev::dev_mem<uint> &permutation,
+                            my_dev::dev_mem<T>  &dIn, my_dev::dev_mem<T>  &dOut);
 
 
     void desort_bodies(tree_structure &tree);
@@ -1014,10 +985,6 @@ public:
   : mpiCommWorld(comm), rebuild_tree_rate(_rebuild), procId(0), nProcs(1), thisPartLETExTime(0), useDirectGravity(direct),
   quickDump(_quickDump), quickRatio(_quickRatio), quickSync(_quickSync), useMPIIO(_useMPIIO), mpiRenderMode(_mpiRenderMode), nextQuickDump(0.0)
   {
-#if USE_B40C
-    sorter = 0;
-#endif
-
     devContext_flag = false;
     iter            = 0;
     t_current       = t_previous = 0;
@@ -1136,11 +1103,6 @@ public:
 
     if(fullGrpAndLETRequest)    delete[] fullGrpAndLETRequest;
     if(fullGrpAndLETRequestStatistics) delete[] fullGrpAndLETRequestStatistics;
-
-
-#if USE_B40C
-    delete sorter;
-#endif
   };
 
   void setUseDirectGravity(bool s) { useDirectGravity = s;    }

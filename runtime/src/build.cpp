@@ -70,14 +70,6 @@ void octree::allocateParticleMemory(tree_structure &tree)
     tree.generalBuffer1.cmalloc(tempSize, true);
 
 
-
-
-
-  #ifdef USE_B40C
-    sorter = new Sort90(n_bodies, tree.generalBuffer1.d());
-//     sorter = new Sort90(n_bodies);
-  #endif
-
   //Tree properties, tree size is not known at forehand so
   //allocate worst possible outcome
   int tempmem = n_bodies ; //Some default size in case tree.n is small
@@ -203,13 +195,6 @@ void octree::reallocateParticleMemory(tree_structure &tree)
 
   //General buffer is used at multiple locations and reused in different functions
   tree.generalBuffer1.cresize(tempSize, reduce);
-
-  #ifdef USE_B40C
-    delete sorter;
-    sorter = new Sort90(n_bodies, tree.generalBuffer1.d());
-    //sorter = new Sort90(n_bodies);
-  #endif
-
 
   my_dev::base_mem::printMemUsage();
 }
