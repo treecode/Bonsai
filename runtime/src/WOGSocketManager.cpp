@@ -53,10 +53,10 @@ WOGSocketManager::WOGSocketManager(int port)
   sockaddr_in clientAddr;
   socklen_t sin_size = sizeof(struct sockaddr_in);
   client_socket = accept(server_socket, (struct sockaddr*)&clientAddr, &sin_size);
-	if (client_socket == -1) {
+  if (client_socket == -1) {
     perror("accept");
     throw std::runtime_error("accept error");
-	}
+  }
 
   fcntl(client_socket, F_SETFL, O_NONBLOCK);
 }
@@ -105,27 +105,15 @@ void WOGSocketManager::execute(octree *tree, GalaxyStore const& galaxyStore)
 
 	Galaxy galaxy = galaxyStore.getGalaxy(user_id, galaxy_id, angle, velocity);
 
-	int position = std::accumulate(user_particles.begin(), user_particles.begin() + user_id - 1, DUMMY_PARTICLES);
+	for (auto & id : galaxy.ids) id = id - id % 10 + user_id;
 
-    #ifdef DEBUG_PRINT
-      std::cout << "position: " << position << std::endl;
-    #endif
-
-    tree->releaseGalaxy(galaxy, position);
+    tree->releaseGalaxy(galaxy);
 	user_particles[user_id - 1] += galaxy.pos.size();
   }
   else if (task == "remove")
   {
-	int begin_particle = std::accumulate(user_particles.begin(), user_particles.begin() + user_id - 1, DUMMY_PARTICLES);
-	int end_particle = begin_particle + user_particles[user_id - 1];
-
-    #ifdef DEBUG_PRINT
-      std::cout << "begin_particle: " << begin_particle << std::endl;
-      std::cout << "end_particle: " << end_particle << std::endl;
-    #endif
-
-    tree->removeGalaxy(begin_particle, end_particle);
-	user_particles[user_id - 1] = 0;
+    tree->removeGalaxy(user_id);
+    user_particles[user_id - 1] = 0;
   }
 
   json send_data;

@@ -18,7 +18,20 @@ struct head {
     int nstar;
 };
 
-struct dark_particle {
+struct dark_particle
+{
+    dark_particle(float mass = 0.0, float posx = 0.0, float posy = 0.0, float posz = 0.0,
+        float velx = 0.0, float vely = 0.0, float velz = 0.0, float eps = 0.0, int phi = 0)
+      : mass(mass), eps(eps), phi(phi)
+    {
+        pos[0] = posx;
+        pos[1] = posy;
+        pos[2] = posz;
+        vel[0] = velx;
+        vel[1] = vely;
+        vel[2] = velz;
+    }
+
     float mass;
     float pos[DIM];
     float vel[DIM];

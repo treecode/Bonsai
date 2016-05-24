@@ -28,7 +28,8 @@ struct sockaddr_in;
 
 #define BUFFERSIZE 1024
 #define NUMBER_OF_USERS 4
-#define DUMMY_PARTICLES 440
+#define DUMMY_PARTICLES 1
+#define MAX_NUMBER_OF_PARTICLES_OF_USER 100000
 
 /// Control interconnection via UNIX socket
 class WOGSocketManager

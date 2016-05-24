@@ -414,7 +414,7 @@ bool octree::addGalaxy(int galaxyID)
   
 }
 
-void octree::releaseGalaxy(Galaxy const& galaxy, int position)
+void octree::releaseGalaxy(Galaxy const& galaxy)
 {
   // Get particle data back to the host so we can add our new data
   this->localTree.bodies_pos.d2h();
@@ -428,10 +428,10 @@ void octree::releaseGalaxy(Galaxy const& galaxy, int position)
   vector<real4> new_pos;
   vector<real4> new_vel;
   vector<int> new_ids;
-  int old_nb_particles = this->localTree.n + this->localTree.n_dust;
+  int old_nb_particles = this->localTree.n;
   int new_nb_particles = old_nb_particles + galaxy.pos.size();
 
-  for (int i(0); i != position; ++i)
+  for (int i(0); i != old_nb_particles; ++i)
   {
     new_pos.push_back(this->localTree.bodies_pos[i]);
     new_vel.push_back(this->localTree.bodies_vel[i]);
@@ -443,13 +443,6 @@ void octree::releaseGalaxy(Galaxy const& galaxy, int position)
     new_pos.push_back(galaxy.pos[i]);
     new_vel.push_back(galaxy.vel[i]);
     new_ids.push_back(galaxy.ids[i]);
-  }
-
-  for (int i(position); i != old_nb_particles; ++i)
-  {
-    new_pos.push_back(this->localTree.bodies_pos[i]);
-    new_vel.push_back(this->localTree.bodies_vel[i]);
-    new_ids.push_back(this->localTree.bodies_ids[i]);
   }
 
   // Set new size of the buffers
@@ -466,7 +459,7 @@ void octree::releaseGalaxy(Galaxy const& galaxy, int position)
   float2 curTime = this->localTree.bodies_time[0];
   for (int i(0); i != new_nb_particles; ++i)
     this->localTree.bodies_time[i] = curTime;
-  for (int i(position); i != position + galaxy.pos.size(); ++i)
+  for (int i(old_nb_particles); i != new_nb_particles; ++i)
     this->localTree.bodies_acc0[i] = make_float4(0.0, 0.0, 0.0, 0.0);
   this->localTree.bodies_acc1.zeroMem();
 
@@ -483,7 +476,7 @@ void octree::releaseGalaxy(Galaxy const& galaxy, int position)
   resetEnergy();
 }
 
-void octree::removeGalaxy(int begin_particle, int end_particle)
+void octree::removeGalaxy(int user_id)
 {
   // Get particle data back to the host so we can add our new data
   this->localTree.bodies_pos.d2h();
@@ -497,21 +490,16 @@ void octree::removeGalaxy(int begin_particle, int end_particle)
   vector<real4> new_pos;
   vector<real4> new_vel;
   vector<int> new_ids;
-  int old_nb_particles = this->localTree.n + this->localTree.n_dust;
-  int new_nb_particles = old_nb_particles - end_particle + begin_particle;
+  int old_nb_particles = this->localTree.n;
+  int new_nb_particles = 0;
 
-  for (int i(0); i != begin_particle; ++i)
+  for (int i(0); i != old_nb_particles; ++i)
   {
+	if (this->localTree.bodies_ids[i] % 10 == user_id) continue;
     new_pos.push_back(this->localTree.bodies_pos[i]);
     new_vel.push_back(this->localTree.bodies_vel[i]);
     new_ids.push_back(this->localTree.bodies_ids[i]);
-  }
-
-  for (int i(end_particle); i != old_nb_particles; ++i)
-  {
-    new_pos.push_back(this->localTree.bodies_pos[i]);
-    new_vel.push_back(this->localTree.bodies_vel[i]);
-    new_ids.push_back(this->localTree.bodies_ids[i]);
+    ++new_nb_particles;
   }
 
   // Set new size of the buffers
