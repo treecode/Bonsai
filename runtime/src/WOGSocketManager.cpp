@@ -62,27 +62,28 @@ void WOGSocketManager::execute(octree *tree, GalaxyStore const& galaxyStore)
 
   buffer[n] = '\0';
   std::string buffer_string(buffer);
-#ifdef DEBUG_PRINT
-  std::cout << "The string is: " << buffer_string << std::endl;
-#endif
+  #ifdef DEBUG_PRINT
+    std::cout << "The string is: " << buffer_string << std::endl;
+  #endif
 
   std::istringstream iss(buffer_string);
   json recv_data;
   iss >> recv_data;
 
   std::string task = recv_data["task"].as<std::string>();
-  int user_id = recv_data["user_id"].as<int>();
 
-#ifdef DEBUG_PRINT
-  std::cout << "task: " << task << std::endl;
-  std::cout << "user_id: " << user_id << std::endl;
-#endif
+  #ifdef DEBUG_PRINT
+    std::cout << "task: " << task << std::endl;
+  #endif
+
+  json send_data;
 
   if (task == "release")
   {
     int galaxy_id = recv_data["galaxy_id"].as<int>();
     double angle = recv_data["angle"].as<double>();
     double velocity = recv_data["velocity"].as<double>();
+    int user_id = recv_data["user_id"].as<int>();
 
     #ifdef DEBUG_PRINT
       std::cout << "galaxy_id: " << galaxy_id << std::endl;
@@ -95,22 +96,41 @@ void WOGSocketManager::execute(octree *tree, GalaxyStore const& galaxyStore)
 	for (auto & id : galaxy.ids) id = id - id % 10 + user_id;
 
 	// Remove particles first if user exceeded his limit
-	if (user_particles[user_id - 1] + galaxy.pos.size() > max_number_of_particles_of_user) {
-      tree->removeGalaxy(user_id);
-      user_particles[user_id - 1] = 0;
+	int particles_to_remove = user_particles[user_id - 1] + galaxy.pos.size() - max_number_of_particles_of_user;
+	if (particles_to_remove > 0) {
+      tree->removeGalaxy(user_id, particles_to_remove);
+      user_particles[user_id - 1] -= particles_to_remove;
 	}
 
     tree->releaseGalaxy(galaxy);
 	user_particles[user_id - 1] += galaxy.pos.size();
+
+	send_data["last_operation"] = task;
   }
   else if (task == "remove")
   {
-    tree->removeGalaxy(user_id);
-    user_particles[user_id - 1] = 0;
-  }
+    int user_id = recv_data["user_id"].as<int>();
 
-  json send_data;
-  send_data["last_operation"] = task;
+    #ifdef DEBUG_PRINT
+      std::cout << "user_id: " << user_id << std::endl;
+    #endif
+
+    tree->removeGalaxy(user_id, user_particles[user_id - 1]);
+    user_particles[user_id - 1] = 0;
+
+	send_data["last_operation"] = task;
+  }
+  else if (task == "report")
+  {
+	send_data["user_1"] = user_particles[0];
+	send_data["user_2"] = user_particles[1];
+	send_data["user_3"] = user_particles[2];
+	send_data["user_4"] = user_particles[3];
+  }
+  else
+  {
+    throw std::runtime_error("Unkown task: " + task);
+  }
 
   std::ostringstream oss;
   oss << send_data;

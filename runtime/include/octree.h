@@ -881,8 +881,8 @@ public:
   // WarOfGalaxies: add galaxy to simulation
   void releaseGalaxy(Galaxy const& galaxy);
 
-  // WarOfGalaxies: remove all galaxies with user_id
-  void removeGalaxy(int user_id);
+  // WarOfGalaxies: remove particles of a user
+  void removeGalaxy(int user_id, int number_of_particles);
 
   //Library interface functions  
   void  setEps(float eps);
