@@ -10,6 +10,7 @@
 
 #include "octree.h"
 #include "GalaxyStore.h"
+#include <array>
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netdb.h>
@@ -25,11 +26,6 @@
 #include <stdexcept>
 
 struct sockaddr_in;
-
-#define BUFFERSIZE 1024
-#define NUMBER_OF_USERS 4
-#define DUMMY_PARTICLES 1
-#define MAX_NUMBER_OF_PARTICLES_OF_USER 100000
 
 /// Control interconnection via UNIX socket
 class WOGSocketManager
@@ -51,8 +47,17 @@ class WOGSocketManager
 
   int client_socket;
 
+  /// Buffer size for socket data transmission
+  static const int buffer_size = 1024;
+
+  /// Number of users
+  static const int number_of_users = 4;
+
+  /// Maximal number of particles of a user
+  static const int max_number_of_particles_of_user = 100000;
+
   /// Number of particles of user
-  std::array<int, NUMBER_OF_USERS> user_particles;
+  std::array<int, number_of_users> user_particles;
 
 };
 

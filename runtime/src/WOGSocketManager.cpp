@@ -12,19 +12,6 @@ using jsoncons::json;
 
 #define DEBUG_PRINT
 
-auto split(std::string const& s, char separator) -> std::vector<std::string>
-{
-  std::vector<std::string> result;
-  std::string::size_type p = 0;
-  std::string::size_type q;
-  while ((q = s.find(separator, p)) != std::string::npos) {
-    result.emplace_back(s, p, q - p);
-    p = q + 1;
-  }
-  result.emplace_back(s, p);
-  return result;
-}
-
 WOGSocketManager::WOGSocketManager(int port)
  : user_particles{{0, 0, 0, 0}}
 {
@@ -69,8 +56,8 @@ WOGSocketManager::~WOGSocketManager()
 
 void WOGSocketManager::execute(octree *tree, GalaxyStore const& galaxyStore)
 {
-  char buffer[BUFFERSIZE];
-  int n = recv(client_socket, buffer, BUFFERSIZE, 0);
+  char buffer[buffer_size];
+  int n = recv(client_socket, buffer, buffer_size, 0);
   if (n <= 0) return;
 
   buffer[n] = '\0';
@@ -106,6 +93,12 @@ void WOGSocketManager::execute(octree *tree, GalaxyStore const& galaxyStore)
 	Galaxy galaxy = galaxyStore.getGalaxy(user_id, galaxy_id, angle, velocity);
 
 	for (auto & id : galaxy.ids) id = id - id % 10 + user_id;
+
+	// Remove particles first if user exceeded his limit
+	if (user_particles[user_id - 1] + galaxy.pos.size() > max_number_of_particles_of_user) {
+      tree->removeGalaxy(user_id);
+      user_particles[user_id - 1] = 0;
+	}
 
     tree->releaseGalaxy(galaxy);
 	user_particles[user_id - 1] += galaxy.pos.size();
