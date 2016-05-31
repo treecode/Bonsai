@@ -74,22 +74,22 @@ void Galaxy::steady()
   }
 }
 
-void Galaxy::translate(real x, real y, real z)
+void Galaxy::translate(real4 w)
 {
   for (auto &p : pos)
   {
-    p.x += x;
-    p.y += y;
-    p.z += z;
+    p.x += w.x;
+    p.y += w.y;
+    p.z += w.z;
   }
 }
 
-void Galaxy::accelerate(real x, real y, real z)
+void Galaxy::accelerate(real4 w)
 {
   for (auto &v : vel)
   {
-    v.x += x;
-    v.y += y;
-    v.z += z;
+    v.x += w.x;
+    v.y += w.y;
+    v.z += w.z;
   }
 }

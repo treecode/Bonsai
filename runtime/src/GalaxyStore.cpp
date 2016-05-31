@@ -15,16 +15,11 @@ const double pi = std::acos(-1);
 
 void GalaxyStore::init(std::string const& path, octree *tree)
 {
-	std::vector<std::string> filenames;
-	filenames.push_back("galaxy_type_1.tipsy");
-	filenames.push_back("galaxy_type_2.tipsy");
-	filenames.push_back("galaxy_type_3.tipsy");
-	filenames.push_back("galaxy_type_4.tipsy");
-
-	for (std::vector<std::string>::const_iterator iterFileCur(filenames.begin()), iterFileEnd(filenames.end());
-	    iterFileCur != iterFileEnd; ++iterFileCur)
+	for (int i = 0;; ++i)
 	{
-		std::cout << "Read file " << *iterFileCur << " into GalaxyStore." << std::endl;
+		std::string filename = path + "/galaxy_type_" + std::to_string(i) + ".tipsy";
+		if (access(filename.c_str(), F_OK) == -1) break;
+		std::cout << "Read file " << filename << " into GalaxyStore." << std::endl;
 
 		Galaxy galaxy;
 		int Total2 = 0;
@@ -33,7 +28,7 @@ void GalaxyStore::init(std::string const& path, octree *tree)
 		int NThird = 0;
 
 		read_tipsy_file_parallel(galaxy.pos, galaxy.vel, galaxy.ids,
-			0.0, (path + "/" + *iterFileCur).c_str(), 0, 1, Total2, NFirst, NSecond, NThird, tree,
+			0.0, filename.c_str(), 0, 1, Total2, NFirst, NSecond, NThird, tree,
 			galaxy.pos_dust, galaxy.vel_dust, galaxy.ids_dust, 50, 1, false);
 
 		real4 cm = galaxy.getCenterOfMass();
@@ -53,26 +48,9 @@ void GalaxyStore::init(std::string const& path, octree *tree)
 	}
 }
 
-Galaxy GalaxyStore::getGalaxy(int user_id, int galaxy_id, double angle, double velocity) const
+Galaxy GalaxyStore::getGalaxy(int galaxy_id) const
 {
-	Galaxy galaxy(galaxies[galaxy_id - 1]);
-
-	double sinus = sin(angle * pi / 180);
-	double cosinus = cos(angle * pi / 180);
-
-	if (user_id == 1) {
-	  galaxy.translate( 100,  100, 0);
-      galaxy.accelerate(velocity * -sinus, velocity * -cosinus, 0);
-	} else if (user_id == 2) {
-      galaxy.translate( 100, -100, 0);
-      galaxy.accelerate(velocity * -cosinus, velocity * sinus, 0);
-	} else if (user_id == 3) {
-      galaxy.translate(-100, -100, 0);
-      galaxy.accelerate(velocity * sinus, velocity * cosinus, 0);
-	} else if (user_id == 4) {
-      galaxy.translate(-100,  100, 0);
-      galaxy.accelerate(velocity * cosinus, velocity * -sinus, 0);
-	}
-
-    return galaxy;
+	if (galaxy_id < 0 or galaxy_id >= galaxies.size())
+		std::cout << "WARNING: Requested qalaxy " << galaxy_id << " is not available." << std::endl;
+	return galaxies[galaxy_id];
 }

@@ -43,6 +43,9 @@ class WOGSocketManager
 
  private:
 
+  /// Execute a client request
+  void execute_json(octree *tree, GalaxyStore const& galaxyStore, std::string buffer);
+
   int server_socket;
 
   int client_socket;

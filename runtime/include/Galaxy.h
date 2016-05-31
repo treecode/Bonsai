@@ -27,10 +27,10 @@ struct Galaxy
   void steady();
 
   /// Move center of the galaxy
-  void translate(real x, real y, real z);
+  void translate(real4 w);
 
   /// Accelerate the galaxy
-  void accelerate(real x, real y, real z);
+  void accelerate(real4 w);
 
   std::vector<real4> pos;
   std::vector<real4> vel;

@@ -671,6 +671,7 @@ int main(int argc, char** argv)
 		ADDUSAGE("     --sphere   #           use spherical model with # particles per proc");
         ADDUSAGE("     --diskmode             use diskmode to read same input file all MPI taks and randomly shuffle its positions");
         ADDUSAGE("     --war-of-galaxies #    input path for WarOfGalaxies");
+        ADDUSAGE("     --port #               Port for WarOfGalaxies");
 		ADDUSAGE(" ");
 
 
@@ -714,6 +715,7 @@ int main(int argc, char** argv)
     opt.setFlag("stereo");
 #endif
 	opt.setOption("war-of-galaxies");
+	opt.setOption("port");
 
     opt.processCommandArgs( argc, argv );
 
@@ -762,6 +764,7 @@ int main(int argc, char** argv)
     if ((optarg = opt.getValue("reducebodies"))) reduce_bodies_factor = atoi  (optarg);
     if ((optarg = opt.getValue("reducedust")))	 reduce_dust_factor = atoi  (optarg);
     if ((optarg = opt.getValue("war-of-galaxies"))) war_of_galaxies_path = string(optarg);
+    if ((optarg = opt.getValue("port")))         wogPort = atoi(optarg);
 #if USE_OPENGL
     if ((optarg = opt.getValue("fullscreen")))	 fullScreenMode     = string(optarg);
     if ((optarg = opt.getValue("Tglow")))	 TstartGlow  = (float)atof(optarg);

@@ -1141,6 +1141,7 @@ public:
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
+    std::cout << "m_fov = " << m_fov << std::endl;
     gluPerspective(m_fov, 
                    (float) m_windowDims.x / (float) m_windowDims.y, 
                    0.0001 * distanceToCenter, 

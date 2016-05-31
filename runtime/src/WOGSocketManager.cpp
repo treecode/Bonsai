@@ -26,6 +26,8 @@ WOGSocketManager::WOGSocketManager(int port)
   serverAddr.sin_port = htons(port);
   serverAddr.sin_addr.s_addr = INADDR_ANY;
 
+  std::cout << "Bind server socket to port " << std::to_string(port) << std::endl;
+
   if (bind(server_socket, (struct sockaddr*)&serverAddr, sizeof(struct sockaddr)) == -1) {
     perror("bind");
     throw std::runtime_error("bind error");
@@ -59,14 +61,29 @@ void WOGSocketManager::execute(octree *tree, GalaxyStore const& galaxyStore)
   char buffer[buffer_size];
   int n = recv(client_socket, buffer, buffer_size, 0);
   if (n <= 0) return;
-
   buffer[n] = '\0';
-  std::string buffer_string(buffer);
+
+  try {
+    execute_json(tree, galaxyStore, buffer);
+  } catch ( ... ) {
+    json send_data;
+	send_data["response"] = "Can't interpret last request";
+
+    std::ostringstream oss;
+    oss << send_data;
+    std::string send_data_string = oss.str();
+
+    if (send(client_socket, send_data_string.c_str(), send_data_string.size(), 0) == -1) perror("send");
+  }
+}
+
+void WOGSocketManager::execute_json(octree *tree, GalaxyStore const& galaxyStore, std::string buffer)
+{
   #ifdef DEBUG_PRINT
-    std::cout << "The string is: " << buffer_string << std::endl;
+    std::cout << "The string is: " << buffer << std::endl;
   #endif
 
-  std::istringstream iss(buffer_string);
+  std::istringstream iss(buffer);
   json recv_data;
   iss >> recv_data;
 
@@ -80,32 +97,54 @@ void WOGSocketManager::execute(octree *tree, GalaxyStore const& galaxyStore)
 
   if (task == "release")
   {
-    int galaxy_id = recv_data["galaxy_id"].as<int>();
-    double angle = recv_data["angle"].as<double>();
-    double velocity = recv_data["velocity"].as<double>();
     int user_id = recv_data["user_id"].as<int>();
+    int galaxy_id = recv_data["galaxy_id"].as<int>();
+    std::vector<double> vector_position = recv_data["position"].as<std::vector<double>>();
+    std::vector<double> vector_velocity = recv_data["velocity"].as<std::vector<double>>();
+
+    double camera_distance = 500.0;
+    double fovy = 60.0;
+    double screen_high = 2 * camera_distance * tan(fovy * M_PI / 360.0);
+    double screen_width = 2 * camera_distance * tan(fovy * M_PI / 360.0);
+
+    real4 position;
+    position.x = vector_position.size() > 0 ?  vector_position[0] * screen_width : 0.0;
+    position.y = vector_position.size() > 1 ? -vector_position[1] * screen_high : 0.0;
+    position.z = vector_position.size() > 2 ?  vector_position[2] : 0.0;
+
+    // Shift center to upper left corner
+    position.x -= screen_high * 0.5;
+    position.y += screen_width * 0.5;
+
+    real4 velocity;
+    velocity.x = vector_velocity.size() > 0 ? vector_velocity[0] * 100 : 0.0;
+    velocity.y = vector_velocity.size() > 1 ? vector_velocity[1] * 100 : 0.0;
+    velocity.z = vector_velocity.size() > 2 ? vector_velocity[2] * 100 : 0.0;
 
     #ifdef DEBUG_PRINT
+      std::cout << "user_id: " << user_id << std::endl;
       std::cout << "galaxy_id: " << galaxy_id << std::endl;
-      std::cout << "angle: " << angle << std::endl;
-      std::cout << "velocity: " << velocity << std::endl;
+      std::cout << "position: " << position.x << " " << position.y << " " << position.z << std::endl;
+      std::cout << "velocity: " << velocity.x << " " << velocity.y << std::endl;
     #endif
 
-	Galaxy galaxy = galaxyStore.getGalaxy(user_id, galaxy_id, angle, velocity);
+	Galaxy galaxy = galaxyStore.getGalaxy(galaxy_id);
+	galaxy.translate(position);
+    galaxy.accelerate(velocity);
 
 	for (auto & id : galaxy.ids) id = id - id % 10 + user_id;
 
 	// Remove particles first if user exceeded his limit
-	int particles_to_remove = user_particles[user_id - 1] + galaxy.pos.size() - max_number_of_particles_of_user;
-	if (particles_to_remove > 0) {
-      tree->removeGalaxy(user_id, particles_to_remove);
-      user_particles[user_id - 1] -= particles_to_remove;
-	}
+//	int particles_to_remove = user_particles[user_id - 1] + galaxy.pos.size() - max_number_of_particles_of_user;
+//	if (particles_to_remove > 0) {
+//      tree->removeGalaxy(user_id, particles_to_remove);
+//      user_particles[user_id - 1] -= particles_to_remove;
+//	}
 
     tree->releaseGalaxy(galaxy);
 	user_particles[user_id - 1] += galaxy.pos.size();
 
-	send_data["last_operation"] = task;
+	send_data["response"] = "Galaxy was released.";
   }
   else if (task == "remove")
   {
@@ -118,7 +157,7 @@ void WOGSocketManager::execute(octree *tree, GalaxyStore const& galaxyStore)
     tree->removeGalaxy(user_id, user_particles[user_id - 1]);
     user_particles[user_id - 1] = 0;
 
-	send_data["last_operation"] = task;
+	send_data["response"] = "All particles of user" + std::to_string(user_id) + " were removed.";
   }
   else if (task == "report")
   {
