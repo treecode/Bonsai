@@ -306,7 +306,7 @@ void glPrintf(float x, float y, const char* format, ...)
 class BonsaiDemo
 {
 public:
-  BonsaiDemo(octree *tree, octree::IterationData &idata, GalaxyStore const& galaxyStore, int wogPort)
+  BonsaiDemo(octree *tree, octree::IterationData &idata, GalaxyStore const& galaxyStore, int wogPort, real wogCameraDistance)
     : m_tree(tree), m_idata(idata), iterationsRemaining(true),
 //       m_renderer(tree->localTree.n + tree->localTree.n_dust),
       m_renderer(tree->localTree.n + tree->localTree.n_dust, MAX_PARTICLES),
@@ -340,7 +340,7 @@ public:
       m_cameraRoll(0.0f),
       m_enableStats(true),
       m_galaxyStore(galaxyStore),
-      m_wogSocketManager(wogPort)
+      m_wogSocketManager(wogPort, 1024, 768, m_fov, m_farZ, wogCameraDistance)
   {
     m_windowDims = make_int2(1024, 768);
     m_cameraTrans = make_float3(0, -2, -100);
@@ -1897,10 +1897,12 @@ void initGL(int argc, char** argv, const char *fullScreenMode, bool &stereo)
 }
 
 void initAppRenderer(int argc, char** argv, octree *tree, octree::IterationData &idata,
-		             bool showFPS, bool stereo, GalaxyStore const& galaxyStore, int wogPort) {
+		             bool showFPS, bool stereo, GalaxyStore const& galaxyStore, int wogPort,
+		             real wogCameraDistance)
+{
   displayFps = showFPS;
   //initGL(argc, argv);
-  theDemo = new BonsaiDemo(tree, idata, galaxyStore, wogPort);
+  theDemo = new BonsaiDemo(tree, idata, galaxyStore, wogPort, wogCameraDistance);
   if (stereo)
     theDemo->toggleStereo(); //SV assuming stereo is set to disable by default.
   glutMainLoop();

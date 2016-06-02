@@ -476,7 +476,7 @@ void octree::releaseGalaxy(Galaxy const& galaxy)
   resetEnergy();
 }
 
-void octree::removeGalaxy(int user_id, int number_of_particles)
+void octree::removeGalaxy(int user_id)
 {
   // Get particle data back to the host so we can add our new data
   this->localTree.bodies_pos.d2h();
@@ -493,13 +493,9 @@ void octree::removeGalaxy(int user_id, int number_of_particles)
   int old_nb_particles = this->localTree.n;
   int new_nb_particles = 0;
 
-  int count = 0;
   for (int i(0); i != old_nb_particles; ++i)
   {
-	if (this->localTree.bodies_ids[i] % 10 == user_id and count < number_of_particles) {
-      ++count;
-      continue;
-	}
+	if (this->localTree.bodies_ids[i] % 10 == user_id) continue;
     new_pos.push_back(this->localTree.bodies_pos[i]);
     new_vel.push_back(this->localTree.bodies_vel[i]);
     new_ids.push_back(this->localTree.bodies_ids[i]);
@@ -2013,7 +2009,7 @@ double octree::compute_energies(tree_structure &tree)
   
   if(mpiGetRank() == 0)
   {
-#if 0
+#if 1
   LOG("iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n",
 		  iter, this->t_current, Etot, Ekin, Epot, de, de_max, dde, dde_max, get_time() - tinit);  
   LOGF(stderr, "iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n", 

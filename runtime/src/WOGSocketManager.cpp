@@ -12,9 +12,19 @@ using jsoncons::json;
 
 #define DEBUG_PRINT
 
-WOGSocketManager::WOGSocketManager(int port)
- : user_particles{{0, 0, 0, 0}}
+WOGSocketManager::WOGSocketManager(int port, int window_width, int window_height, real fovy, real farZ, real camera_distance)
+ : user_particles{{0, 0, 0, 0}},
+   window_width(window_width),
+   window_height(window_height),
+   fovy(fovy),
+   farZ(farZ),
+   camera_distance(camera_distance),
+   simulation_plane_width(0.0),
+   simulation_plane_height(0.0),
+   deletion_radius_square(0.0)
 {
+  reshape(window_width, window_height);
+
   server_socket = socket(AF_INET, SOCK_STREAM, 0);
   if (server_socket == -1) {
     perror("socket");
@@ -111,49 +121,38 @@ void WOGSocketManager::execute_json(octree *tree, GalaxyStore const& galaxyStore
     std::vector<double> vector_position = recv_data["position"].as<std::vector<double>>();
     std::vector<double> vector_velocity = recv_data["velocity"].as<std::vector<double>>();
 
-    double camera_distance = 500.0;
-    double fovy = 60.0;
-    double screen_high = 2 * camera_distance * tan(fovy * M_PI / 360.0);
-    double screen_width = screen_high * m_windowDims.x / m_windowDims.y;
-
     real4 position;
-    position.x = vector_position.size() > 0 ?  vector_position[0] * screen_width : 0.0;
-    position.y = vector_position.size() > 1 ? -vector_position[1] * screen_high : 0.0;
-    position.z = vector_position.size() > 2 ?  vector_position[2] : 0.0;
+    position.x = vector_position.size() > 0 ? vector_position[0] * simulation_plane_width : 0.0;
+    position.y = vector_position.size() > 1 ? vector_position[1] * simulation_plane_height : 0.0;
+    position.z = vector_position.size() > 2 ? vector_position[2] : 0.0;
 
-    // Shift center to upper left corner
-    position.x -= screen_high * 0.5;
-    position.y += screen_width * 0.5;
+    // Shift center to lower left corner
+    position.x -= simulation_plane_width * 0.5;
+    position.y -= simulation_plane_height * 0.5;
 
     real4 velocity;
-    velocity.x = vector_velocity.size() > 0 ?  vector_velocity[0] * 100 : 0.0;
-    velocity.y = vector_velocity.size() > 1 ? -vector_velocity[1] * 100 : 0.0;
-    velocity.z = vector_velocity.size() > 2 ?  vector_velocity[2] * 100 : 0.0;
+    velocity.x = vector_velocity.size() > 0 ? vector_velocity[0] * window_width / simulation_plane_width : 0.0;
+    velocity.y = vector_velocity.size() > 1 ? vector_velocity[1] * window_height / simulation_plane_height : 0.0;
+    velocity.z = vector_velocity.size() > 2 ? vector_velocity[2] : 0.0;
 
     #ifdef DEBUG_PRINT
       std::cout << "user_id: " << user_id << std::endl;
       std::cout << "galaxy_id: " << galaxy_id << std::endl;
       std::cout << "position: " << position.x << " " << position.y << " " << position.z << std::endl;
-      std::cout << "velocity: " << velocity.x << " " << velocity.y << std::endl;
+      std::cout << "velocity: " << velocity.x << " " << velocity.y << " " << velocity.z << std::endl;
     #endif
 
 	Galaxy galaxy = galaxyStore.getGalaxy(galaxy_id);
 	galaxy.translate(position);
     galaxy.accelerate(velocity);
 
+    // Since the particle ids are not needed for the simulation, we use them to store the user_id in the first digit.
 	for (auto & id : galaxy.ids) id = id - id % 10 + user_id;
 
-	// Remove particles first if user exceeded his limit
-//	int particles_to_remove = user_particles[user_id - 1] + galaxy.pos.size() - max_number_of_particles_of_user;
-//	if (particles_to_remove > 0) {
-//      tree->removeGalaxy(user_id, particles_to_remove);
-//      user_particles[user_id - 1] -= particles_to_remove;
-//	}
-
     tree->releaseGalaxy(galaxy);
-	user_particles[user_id - 1] += galaxy.pos.size();
+	user_particles[user_id] += galaxy.pos.size();
 
-	send_data["response"] = "Galaxy was released.";
+	send_data["response"] = "Galaxy with " + std::to_string(galaxy.pos.size()) + " particles of user " + std::to_string(user_id) + " was released.";
   }
   else if (task == "remove")
   {
@@ -163,17 +162,17 @@ void WOGSocketManager::execute_json(octree *tree, GalaxyStore const& galaxyStore
       std::cout << "user_id: " << user_id << std::endl;
     #endif
 
-    tree->removeGalaxy(user_id, user_particles[user_id - 1]);
-    user_particles[user_id - 1] = 0;
+    tree->removeGalaxy(user_id);
+    user_particles[user_id] = 0;
 
 	send_data["response"] = "All particles of user " + std::to_string(user_id) + " were removed.";
   }
   else if (task == "report")
   {
-	send_data["user_1"] = user_particles[0];
-	send_data["user_2"] = user_particles[1];
-	send_data["user_3"] = user_particles[2];
-	send_data["user_4"] = user_particles[3];
+	send_data["user_0"] = user_particles[0];
+	send_data["user_1"] = user_particles[1];
+	send_data["user_2"] = user_particles[2];
+	send_data["user_3"] = user_particles[3];
   }
   else
   {
@@ -185,4 +184,20 @@ void WOGSocketManager::execute_json(octree *tree, GalaxyStore const& galaxyStore
   std::string send_data_string = oss.str();
 
   if (send(client_socket, send_data_string.c_str(), send_data_string.size(), 0) == -1) perror("send");
+}
+
+void WOGSocketManager::reshape(int width, int height)
+{
+  window_width = width;
+  window_height = height;
+  real aspect_ratio = window_width / window_height;
+
+  simulation_plane_height = 2 * camera_distance * tan(fovy * M_PI / 360.0);
+  simulation_plane_width = simulation_plane_height * aspect_ratio;
+
+  real4 rear_corner;
+  rear_corner.y = camera_distance * tan(fovy * M_PI / 360.0);
+  rear_corner.x = rear_corner.y * aspect_ratio;
+  rear_corner.z = farZ - camera_distance;
+  deletion_radius_square = rear_corner.x * rear_corner.x + rear_corner.y * rear_corner.y + rear_corner.z * rear_corner.z;
 }

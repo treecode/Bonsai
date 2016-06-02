@@ -618,6 +618,7 @@ int main(int argc, char** argv)
 
   std::string war_of_galaxies_path;
   int wogPort = 50007;
+  real wogCameraDistance = 500.0;
 
 	/************** beg - command line arguments ********/
 #if 1
@@ -1281,7 +1282,7 @@ int main(int argc, char** argv)
   octree::IterationData idata;
   GalaxyStore galaxyStore;
   if (!war_of_galaxies_path.empty()) galaxyStore.init(war_of_galaxies_path, tree);
-  initAppRenderer(argc, argv, tree, idata, displayFPS, stereo, galaxyStore, wogPort);
+  initAppRenderer(argc, argv, tree, idata, displayFPS, stereo, galaxyStore, wogPort, wogCameraDistance);
   LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
 #else
   tree->mpiSync();

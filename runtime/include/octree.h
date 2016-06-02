@@ -882,7 +882,7 @@ public:
   void releaseGalaxy(Galaxy const& galaxy);
 
   // WarOfGalaxies: remove particles of a user
-  void removeGalaxy(int user_id, int number_of_particles);
+  void removeGalaxy(int user_id);
 
   // WarOfGalaxies: remove particles continuously and return the number
   int removeParticles();
