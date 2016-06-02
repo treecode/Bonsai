@@ -6,8 +6,33 @@
 #include "../profiling/bonsai_timing.h"
 PROF_MODULE(build_tree);
 
+#if 0
+__device__ float atomicMin(float* address, float val)
+{
+  int* addressI = (int*)address;
+  int old = *addressI, prev;
+  do {
+    prev = old;
+    old  = atomicCAS(addressI, prev, __float_as_int(::fminf(val, __int_as_float(prev))));
+  } while (prev != old);
+  return __int_as_float(old);
+}
+__device__ float atomicMax(float* address, float val)
+{
+  int* addressI = (int*)address;
+  int old = *addressI, prev;
+  do {
+    prev = old;
+    old  = atomicCAS(addressI, prev, __float_as_int(::fmaxf(val, __int_as_float(prev))));
+  } while (prev != old);
+  return __int_as_float(old);
+}
+#endif
 
-KERNEL_DECLARE(gpu_boundaryReduction)(const int n_particles,
+
+//TODO merge boundaryReduction and groupBoundary reduction
+//into a single kernel. And remove the 256 constant make it blockDim.x
+KERNEL_DECLARE(gpu_boundaryReduction)(const int         n_particles,
                                             real4      *positions,
                                             float3     *output_min,
                                             float3     *output_max)
@@ -15,7 +40,6 @@ KERNEL_DECLARE(gpu_boundaryReduction)(const int n_particles,
   CUXTIMER("boundaryReduction");
   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   const uint tid = threadIdx.x;
-  //const uint idx = bid * blockDim.x + tid;
 
   volatile __shared__ float3 shmem[512];
   float3 r_min = make_float3(+1e10f, +1e10f, +1e10f);
@@ -42,22 +66,14 @@ KERNEL_DECLARE(gpu_boundaryReduction)(const int n_particles,
     if (i             < n_particles)
     {
       pos = positions[i];
-      r_min.x = fminf(pos.x, r_min.x);
-      r_min.y = fminf(pos.y, r_min.y);
-      r_min.z = fminf(pos.z, r_min.z);
-      r_max.x = fmaxf(pos.x, r_max.x);
-      r_max.y = fmaxf(pos.y, r_max.y);
-      r_max.z = fmaxf(pos.z, r_max.z);
+      r_min.x = fminf(pos.x, r_min.x); r_min.y = fminf(pos.y, r_min.y); r_min.z = fminf(pos.z, r_min.z);
+      r_max.x = fmaxf(pos.x, r_max.x); r_max.y = fmaxf(pos.y, r_max.y); r_max.z = fmaxf(pos.z, r_max.z);
     }
     if (i + blockSize < n_particles)
     {
       pos = positions[i + blockSize];
-      r_min.x = fminf(pos.x, r_min.x);
-      r_min.y = fminf(pos.y, r_min.y);
-      r_min.z = fminf(pos.z, r_min.z);
-      r_max.x = fmaxf(pos.x, r_max.x);
-      r_max.y = fmaxf(pos.y, r_max.y);
-      r_max.z = fmaxf(pos.z, r_max.z);
+      r_min.x = fminf(pos.x, r_min.x); r_min.y = fminf(pos.y, r_min.y); r_min.z = fminf(pos.z, r_min.z);
+      r_max.x = fmaxf(pos.x, r_max.x); r_max.y = fmaxf(pos.y, r_max.y); r_max.z = fmaxf(pos.z, r_max.z);
     }
     i += gridSize;
   }
@@ -87,6 +103,12 @@ KERNEL_DECLARE(gpu_boundaryReduction)(const int n_particles,
     //Compiler doesnt allow: volatile float3 = float3
     output_min[bid].x = sh_rmin[0].x; output_min[bid].y = sh_rmin[0].y; output_min[bid].z = sh_rmin[0].z;
     output_max[bid].x = sh_rmax[0].x; output_max[bid].y = sh_rmax[0].y; output_max[bid].z = sh_rmax[0].z;
+//    atomicMin(&output_min[0].x, sh_rmin[0].x);
+//    atomicMin(&output_min[0].y, sh_rmin[0].y);
+//    atomicMin(&output_min[0].z, sh_rmin[0].z);
+//    atomicMax(&output_max[0].x, sh_rmax[0].x);
+//    atomicMax(&output_max[0].y, sh_rmax[0].y);
+//    atomicMax(&output_max[0].z, sh_rmax[0].z);
   }
 
 }
@@ -169,6 +191,7 @@ KERNEL_DECLARE(gpu_boundaryReductionGroups)(const int n_groups,
     sh_MinMax(tid, tid +  2, &r_min, &r_max, sh_rmin,sh_rmax);
     sh_MinMax(tid, tid +  1, &r_min, &r_max, sh_rmin,sh_rmax);
   }
+
 
   // write result for this block to global mem
   if (tid == 0)

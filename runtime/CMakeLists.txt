@@ -140,6 +140,7 @@ set (CUFILES
   CUDAkernels/compute_propertiesD.cu
   CUDAkernels/particles.cu
   CUDAkernels/sortKernels.cu
+  CUDAkernels/scanKernels.cu
   CUDAkernels/timestep.cu
   CUDAkernels/depthSort.cu
   CUDAkernels/dev_direct_gravity.cu

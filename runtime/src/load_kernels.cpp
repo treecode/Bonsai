@@ -1,23 +1,7 @@
 #include "octree.h"
 #include "devFunctionDefinitions.h"
 
-  extern "C" void thrustSort(my_dev::dev_mem<uint4> &srcKeys,
-							 my_dev::dev_mem<uint>  &permutation_buffer,
-							 my_dev::dev_mem<uint>  &temp_buffer,
-							 int N);
-  extern "C" void  cubSort(my_dev::dev_mem<uint4>  &srcKeys,
-						   my_dev::dev_mem<uint>   &outPermutation,
-						   my_dev::dev_mem<char>   &tempBuffer,
-						   my_dev::dev_mem<uint>   &tempB,
-						   my_dev::dev_mem<uint>   &tempC,
-						   my_dev::dev_mem<uint>   &tempD,
-									   	   	  int  N) ;
 
-  extern "C" void thrustDataReorderU4 (const int N, my_dev::dev_mem<uint> &permutation, my_dev::dev_mem<uint4> &dIn, my_dev::dev_mem<uint4> &dOut);
-  extern "C" void thrustDataReorderF4 (const int N, my_dev::dev_mem<uint> &permutation, my_dev::dev_mem<float4> &dIn, my_dev::dev_mem<float4> &dOut);
-  extern "C" void thrustDataReorderF2 (const int N, my_dev::dev_mem<uint> &permutation, my_dev::dev_mem<float2> &dIn, my_dev::dev_mem<float2> &dOut);
-  extern "C" void thrustDataReorderULL(const int N, my_dev::dev_mem<uint> &permutation, my_dev::dev_mem<ullong> &dIn, my_dev::dev_mem<ullong> &dOut);
-  extern "C" void thrustDataReorderF1 (const int N, my_dev::dev_mem<uint> &permutation, my_dev::dev_mem<float> &dIn, my_dev::dev_mem<float> &dOut);
 
 void octree::set_context( bool disable_timing) {
   
@@ -106,20 +90,6 @@ void octree::load_kernels() {
   
   splitMove.load_source("./scanKernels.ptx", pathName.c_str());
   splitMove.create("split_move", (const void*)split_move);
-  
-  
-#else
-  compactCount.load_source("scanKernels.cl", "OpenCLKernels");
-  compactCount.create("compact_count");
-  
-  exScanBlock.load_source("scanKernels.cl", "OpenCLKernels");
-  exScanBlock.create("exclusive_scan_block");
-  
-  compactMove.load_source("scanKernels.cl", "OpenCLKernels");
-  compactMove.create("compact_move");
-  
-  splitMove.load_source("scanKernels.cl", "OpenCLKernels");
-  splitMove.create("split_move");
 #endif
 
 
@@ -163,23 +133,8 @@ void octree::load_kernels() {
   build_level_list.create("build_level_list", (const void*)&gpu_build_level_list);
   boundaryReduction.create("boundaryReduction", (const void*)&gpu_boundaryReduction);
   boundaryReductionGroups.create("boundaryReductionGroups", (const void*)&gpu_boundaryReductionGroups);
-//  build_body2group_list.create("build_body2group_list", (const void*)&gpu_build_body2group_list);
   store_groups.create("store_group_list", (const void*)&store_group_list);
   segmentedCoarseGroupBoundary.create("segmentedCoarseGroupBoundary", (const void*)&gpu_segmentedCoarseGroupBoundary);
-
-
-#else
-  build_key_list.load_source("build_tree.cl", "");
-  build_valid_list.load_source("build_tree.cl", "");
-  build_nodes.load_source("build_tree.cl", "");
-  link_tree.load_source("build_tree.cl", "");
-  
-  /* create kernels */
-
-  build_key_list.create("cl_build_key_list");
-  build_valid_list.create("cl_build_valid_list");
-  build_nodes.create("cl_build_nodes");
-  link_tree.create("cl_link_tree");
 #endif
 
   // load tree-props kernels
@@ -211,18 +166,6 @@ void octree::load_kernels() {
   setPHGroupData.create("setPHGroupData", (const void*)&gpu_setPHGroupData);
   setPHGroupDataGetKey.create("setPHGroupDataGetKey", (const void*)&gpu_setPHGroupDataGetKey);
   setPHGroupDataGetKey2.create("setPHGroupDataGetKey2", (const void*)&gpu_setPHGroupDataGetKey2);
-
-  
-#else
-  propsNonLeaf.load_source("compProps.cl", "");
-  propsLeaf.load_source("compProps.cl", "");
-  propsScaling.load_source("compProps.cl", ""); 
-  
-  /* create kernels */
-
-  propsNonLeaf.create("compute_non_leaf");
-  propsLeaf.create("compute_leaf");
-  propsScaling.create("compute_scaling");  
 #endif
 
   /* Tree iteration */
@@ -287,14 +230,6 @@ void octree::load_kernels() {
 #if 0  /* egaburov, doesn't compile with this */
   determineLET.create("dev_determineLET", (const void*)&dev_determineLET);
 #endif
-
-#else
-  getTNext.load_source("", "");
-  
-  /* create kernels */
-
-  getTNext.create("");
-  
 #endif
 
   //Parallel kernels
@@ -342,10 +277,6 @@ void octree::load_kernels() {
   extractOutOfDomainParticlesAdvancedSFC2.create("extractOutOfDomainParticlesAdvancedSFC2", (const void*)&gpu_extractOutOfDomainParticlesAdvancedSFC2);
   insertNewParticlesSFC.create("insertNewParticlesSFC", (const void*)&gpu_insertNewParticlesSFC);
   domainCheckSFCAndAssign.create("domainCheckSFCAndAssign", (const void*)&gpu_domainCheckSFCAndAssign);
-
-#else
-
-
 #endif
   
 #ifdef USE_DUST
@@ -545,72 +476,5 @@ void octree::gpuSplit(my_dev::context &devContext,
 
 
 
-//Pass the buffers on to the thrust::gather functions
-template<typename T>
-void octree::dataReorder(const int N, my_dev::dev_mem<uint> &permutation,
-                         my_dev::dev_mem<T>  &dIn, my_dev::dev_mem<T>  &dOut)
-{
-  fprintf(stderr,"Define a reorder function for this type, %s:%d", __FILE__, __LINE__); assert(0);
-}
-
-template<>
-void octree::dataReorder<uint4>(const int N, my_dev::dev_mem<uint> &permutation,
-                                my_dev::dev_mem<uint4>  &dIn, my_dev::dev_mem<uint4>  &dOut) {
-  thrustDataReorderU4(N, permutation, dIn, dOut);
-}
-template<>
-void octree::dataReorder<float4>(const int N, my_dev::dev_mem<uint> &permutation,
-                                my_dev::dev_mem<float4>  &dIn, my_dev::dev_mem<float4>  &dOut) {
-  thrustDataReorderF4(N, permutation, dIn, dOut);
-}
-
-template<>
-void octree::dataReorder<float2>(const int N, my_dev::dev_mem<uint> &permutation,
-                                my_dev::dev_mem<float2>  &dIn, my_dev::dev_mem<float2>  &dOut) {
-  thrustDataReorderF2(N, permutation, dIn, dOut);
-}
-template<>
-void octree::dataReorder<float>(const int N, my_dev::dev_mem<uint> &permutation,
-                                my_dev::dev_mem<float>  &dIn, my_dev::dev_mem<float>  &dOut) {
-  thrustDataReorderF1(N, permutation, dIn, dOut);
-}
-
-template<>
-void octree::dataReorder<ullong>(const int N, my_dev::dev_mem<uint> &permutation,
-                                my_dev::dev_mem<ullong>  &dIn, my_dev::dev_mem<ullong>  &dOut) {
-  thrustDataReorderULL(N, permutation, dIn, dOut);
-}
-
-
-/*
-Sort an array of int4, the idea is that the key is somehow moved into x/y/z and the
-value is put in w... 
-Sorts values based on the last item so order becomes something like:
-z y x
-2 2 1
-2 1 2
-2 3 3
-2 5 3
-
-*/
-
-
-//Input keys, output a permutation that presents the new order
-//TODO check order of srcKeys
-void octree::gpuSort(my_dev::dev_mem<uint4> &srcKeys,
-					  my_dev::dev_mem<uint>   &permutation, //For 32bit values
-					  my_dev::dev_mem<uint>   &tempB,       //For 32bit values
-					  my_dev::dev_mem<uint>   &tempC,       //For 32bit keys
-					  my_dev::dev_mem<uint>   &tempD,       //For 32bit keys
-					  my_dev::dev_mem<char>   &tempE,       //For sorting space
-					  int N)
-{
-#define USE_CUB
-	#ifdef USE_CUB
-	  cubSort(srcKeys, permutation, tempE, tempB, tempC, tempD, N);
-	#else
-	  thrustSort(srcKeys,permutation, tempB, N);
-	#endif
-}
 
 

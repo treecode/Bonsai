@@ -622,7 +622,12 @@ public:
 
    template <typename T>
    void dataReorder(const int N, my_dev::dev_mem<uint> &permutation,
-                            my_dev::dev_mem<T>  &dIn, my_dev::dev_mem<T>  &dOut);
+                    my_dev::dev_mem<T>  &dIn, my_dev::dev_mem<T>  &scratch,
+                    bool overwrite = true);
+
+   template <typename T>
+   void dataReorder2(const int N, my_dev::dev_mem<uint> &permutation,
+                     my_dev::dev_mem<T>  &dIn, my_dev::dev_mem<T>  &dOut);
 
 
     void desort_bodies(tree_structure &tree);

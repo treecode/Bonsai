@@ -1,12 +1,6 @@
 #include "bonsai.h"
-#include "scanKernels.cu"
 #include "../profiling/bonsai_timing.h"
 PROF_MODULE(sortKernels);
-
-#include "node_specs.h"
-
-//Helper functions
-//Reorders data 
 
 #include <thrust/device_ptr.h>
 #include <thrust/copy.h>
@@ -68,7 +62,6 @@ struct ExtractBits: public thrust::unary_function<uint4, uint>
                            my_dev::dev_mem<uint>   &tempD,
                                                int N)
 	{
-    fprintf(stderr,"Sorting with CUB\n");
 		cub::DoubleBuffer<uint> dValues(outPermutation.raw_p(), tempB.raw_p());
 		cub::DoubleBuffer<uint> dKeys  (tempC.raw_p(), tempD.raw_p());
 
@@ -102,7 +95,7 @@ struct ExtractBits: public thrust::unary_function<uint4, uint>
 
 	//Thrust does it's own memory allocation, hence fewer parameters. This increases the
 	//risk of the GPU running out of memory.
-	// TODO add our own allocator pollicy.
+	// TODO add our own allocator policy.
 	extern "C" void thrustSort(my_dev::dev_mem<uint4> &srcKeys,
                              my_dev::dev_mem<uint>  &permutation_buffer,
                              my_dev::dev_mem<uint>  &temp_buffer,
