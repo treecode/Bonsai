@@ -43,6 +43,9 @@ class WOGSocketManager
 
  private:
 
+  /// Remove particles continuously
+  void remove_particles(octree *tree);
+
   /// Execute a client request
   void execute_json(octree *tree, GalaxyStore const& galaxyStore, std::string buffer);
 

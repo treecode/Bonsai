@@ -884,6 +884,9 @@ public:
   // WarOfGalaxies: remove particles of a user
   void removeGalaxy(int user_id, int number_of_particles);
 
+  // WarOfGalaxies: remove particles continuously and return the number
+  int removeParticles();
+
   //Library interface functions  
   void  setEps(float eps);
   float getEps();

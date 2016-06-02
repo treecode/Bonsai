@@ -535,6 +535,67 @@ void octree::removeGalaxy(int user_id, int number_of_particles)
   resetEnergy();
 }
 
+int octree::removeParticles()
+{
+  // Get particle data back to the host so we can add our new data
+  this->localTree.bodies_pos.d2h();
+  this->localTree.bodies_vel.d2h();
+  this->localTree.bodies_ids.d2h();
+  this->localTree.bodies_acc0.d2h();
+  this->localTree.bodies_time.d2h();
+  this->localTree.bodies_Ppos.d2h();
+  this->localTree.bodies_Pvel.d2h();
+
+  vector<real4> new_pos;
+  vector<real4> new_vel;
+  vector<int> new_ids;
+  int old_nb_particles = this->localTree.n;
+  int new_nb_particles = 0;
+
+  int count = 0;
+  for (int i(0); i != old_nb_particles; ++i)
+  {
+	if ((i+1) % 100 == 0) {
+      ++count;
+      continue;
+	}
+    new_pos.push_back(this->localTree.bodies_pos[i]);
+    new_vel.push_back(this->localTree.bodies_vel[i]);
+    new_ids.push_back(this->localTree.bodies_ids[i]);
+    ++new_nb_particles;
+  }
+
+  // Set new size of the buffers
+  this->localTree.setN(new_nb_particles);
+
+  // Resize preserves original data
+  this->reallocateParticleMemory(this->localTree);
+
+  // Copy back to host storage
+  memcpy(&this->localTree.bodies_pos[0], &new_pos[0], sizeof(real4) * new_nb_particles);
+  memcpy(&this->localTree.bodies_vel[0], &new_vel[0], sizeof(real4) * new_nb_particles);
+  memcpy(&this->localTree.bodies_ids[0], &new_ids[0], sizeof(int) * new_nb_particles);
+
+  float2 curTime = this->localTree.bodies_time[0];
+  for(int i=0; i < this->localTree.n; i++)
+    this->localTree.bodies_time[i] = curTime;
+  this->localTree.bodies_acc1.zeroMem();
+
+  this->localTree.bodies_pos.h2d();
+  this->localTree.bodies_acc0.h2d();
+  this->localTree.bodies_vel.h2d();
+  this->localTree.bodies_time.h2d();
+  this->localTree.bodies_ids.h2d();
+
+  // Fill the predicted arrays
+  this->localTree.bodies_Ppos.copy(this->localTree.bodies_pos, localTree.n);
+  this->localTree.bodies_Pvel.copy(this->localTree.bodies_pos, localTree.n);
+
+  resetEnergy();
+
+  return count;
+}
+
 // returns true if this iteration is the last (t_current >= t_end), false otherwise
 bool octree::iterate_once(IterationData &idata) {
     double t1 = 0;

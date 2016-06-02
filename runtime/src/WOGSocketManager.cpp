@@ -58,6 +58,10 @@ WOGSocketManager::~WOGSocketManager()
 
 void WOGSocketManager::execute(octree *tree, GalaxyStore const& galaxyStore)
 {
+  // Remove particles
+  //remove_particles(tree);
+
+  // Check for user request
   char buffer[buffer_size];
   int n = recv(client_socket, buffer, buffer_size, 0);
   if (n <= 0) return;
@@ -75,6 +79,11 @@ void WOGSocketManager::execute(octree *tree, GalaxyStore const& galaxyStore)
 
     if (send(client_socket, send_data_string.c_str(), send_data_string.size(), 0) == -1) perror("send");
   }
+}
+
+void WOGSocketManager::remove_particles(octree *tree)
+{
+  tree->removeParticles();
 }
 
 void WOGSocketManager::execute_json(octree *tree, GalaxyStore const& galaxyStore, std::string buffer)
@@ -105,7 +114,7 @@ void WOGSocketManager::execute_json(octree *tree, GalaxyStore const& galaxyStore
     double camera_distance = 500.0;
     double fovy = 60.0;
     double screen_high = 2 * camera_distance * tan(fovy * M_PI / 360.0);
-    double screen_width = 2 * camera_distance * tan(fovy * M_PI / 360.0);
+    double screen_width = screen_high * m_windowDims.x / m_windowDims.y;
 
     real4 position;
     position.x = vector_position.size() > 0 ?  vector_position[0] * screen_width : 0.0;
@@ -117,9 +126,9 @@ void WOGSocketManager::execute_json(octree *tree, GalaxyStore const& galaxyStore
     position.y += screen_width * 0.5;
 
     real4 velocity;
-    velocity.x = vector_velocity.size() > 0 ? vector_velocity[0] * 100 : 0.0;
-    velocity.y = vector_velocity.size() > 1 ? vector_velocity[1] * 100 : 0.0;
-    velocity.z = vector_velocity.size() > 2 ? vector_velocity[2] * 100 : 0.0;
+    velocity.x = vector_velocity.size() > 0 ?  vector_velocity[0] * 100 : 0.0;
+    velocity.y = vector_velocity.size() > 1 ? -vector_velocity[1] * 100 : 0.0;
+    velocity.z = vector_velocity.size() > 2 ?  vector_velocity[2] * 100 : 0.0;
 
     #ifdef DEBUG_PRINT
       std::cout << "user_id: " << user_id << std::endl;
@@ -157,7 +166,7 @@ void WOGSocketManager::execute_json(octree *tree, GalaxyStore const& galaxyStore
     tree->removeGalaxy(user_id, user_particles[user_id - 1]);
     user_particles[user_id - 1] = 0;
 
-	send_data["response"] = "All particles of user" + std::to_string(user_id) + " were removed.";
+	send_data["response"] = "All particles of user " + std::to_string(user_id) + " were removed.";
   }
   else if (task == "report")
   {
