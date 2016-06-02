@@ -12,7 +12,8 @@ using jsoncons::json;
 
 #define DEBUG_PRINT
 
-WOGSocketManager::WOGSocketManager(int port, int window_width, int window_height, real fovy, real farZ, real camera_distance)
+WOGSocketManager::WOGSocketManager(int port, int window_width, int window_height, real fovy,
+  real farZ, real camera_distance, real deletion_radius_factor)
  : user_particles{{0, 0, 0, 0}},
    window_width(window_width),
    window_height(window_height),
@@ -21,6 +22,7 @@ WOGSocketManager::WOGSocketManager(int port, int window_width, int window_height
    camera_distance(camera_distance),
    simulation_plane_width(0.0),
    simulation_plane_height(0.0),
+   deletion_radius_factor(deletion_radius_factor),
    deletion_radius_square(0.0)
 {
   reshape(window_width, window_height);
@@ -89,6 +91,22 @@ void WOGSocketManager::execute(octree *tree, GalaxyStore const& galaxyStore)
 
     if (send(client_socket, send_data_string.c_str(), send_data_string.size(), 0) == -1) perror("send");
   }
+}
+
+void WOGSocketManager::reshape(int width, int height)
+{
+  window_width = width;
+  window_height = height;
+  real aspect_ratio = window_width / window_height;
+
+  simulation_plane_height = 2 * camera_distance * tan(fovy * M_PI / 360.0);
+  simulation_plane_width = simulation_plane_height * aspect_ratio;
+
+  real4 rear_corner;
+  rear_corner.y = camera_distance * tan(fovy * M_PI / 360.0);
+  rear_corner.x = rear_corner.y * aspect_ratio;
+  rear_corner.z = farZ - camera_distance;
+  deletion_radius_square = rear_corner.x * rear_corner.x + rear_corner.y * rear_corner.y + rear_corner.z * rear_corner.z;
 }
 
 void WOGSocketManager::remove_particles(octree *tree)
@@ -184,20 +202,4 @@ void WOGSocketManager::execute_json(octree *tree, GalaxyStore const& galaxyStore
   std::string send_data_string = oss.str();
 
   if (send(client_socket, send_data_string.c_str(), send_data_string.size(), 0) == -1) perror("send");
-}
-
-void WOGSocketManager::reshape(int width, int height)
-{
-  window_width = width;
-  window_height = height;
-  real aspect_ratio = window_width / window_height;
-
-  simulation_plane_height = 2 * camera_distance * tan(fovy * M_PI / 360.0);
-  simulation_plane_width = simulation_plane_height * aspect_ratio;
-
-  real4 rear_corner;
-  rear_corner.y = camera_distance * tan(fovy * M_PI / 360.0);
-  rear_corner.x = rear_corner.y * aspect_ratio;
-  rear_corner.z = farZ - camera_distance;
-  deletion_radius_square = rear_corner.x * rear_corner.x + rear_corner.y * rear_corner.y + rear_corner.z * rear_corner.z;
 }

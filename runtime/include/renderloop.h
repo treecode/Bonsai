@@ -11,6 +11,6 @@ void initGL(int argc, char** argv, const char *fullScreenMode, bool &stereo);
 void initAppRenderer(int argc, char** argv, octree *tree, 
                      octree::IterationData &idata, bool showFPS, bool stereo,
                      GalaxyStore const& galaxyStore, int wogPort,
-                     real wogCameraDistance);
+                     real wogCameraDistance, real wogDeletionRadiusFactor);
 
 #endif // _RENDERLOOP_H_

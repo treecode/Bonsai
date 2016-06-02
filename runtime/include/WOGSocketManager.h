@@ -33,13 +33,17 @@ class WOGSocketManager
  public:
 
   /// Constructor opening sockets and reading input galaxies
-  WOGSocketManager(int port, int window_width, int window_height, real fovy, real farZ, real camera_distance);
+  WOGSocketManager(int port, int window_width, int window_height, real fovy,
+		           real farZ, real camera_distance, real deletion_radius_factor);
 
   /// Constructor closing the sockets
   ~WOGSocketManager();
 
   /// Execute a client request
   void execute(octree *tree, GalaxyStore const& galaxyStore);
+
+  /// Must be called by glutReshapeFunc
+  void reshape(int width, int height);
 
  private:
 
@@ -48,9 +52,6 @@ class WOGSocketManager
 
   /// Execute a client request
   void execute_json(octree *tree, GalaxyStore const& galaxyStore, std::string buffer);
-
-  /// Must be called by glutReshapeFunc
-  void reshape(int width, int height);
 
   int server_socket;
 
@@ -84,6 +85,9 @@ class WOGSocketManager
   /// Dimension of the window
   real simulation_plane_width;
   real simulation_plane_height;
+
+  /// Scaling factor for deletion sphere.
+  real deletion_radius_factor;
 
   /// Squared radius of deletion sphere. Particles leaving this sphere will be removed.
   real deletion_radius_square;

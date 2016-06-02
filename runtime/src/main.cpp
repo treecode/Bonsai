@@ -619,6 +619,7 @@ int main(int argc, char** argv)
   std::string war_of_galaxies_path;
   int wogPort = 50007;
   real wogCameraDistance = 500.0;
+  real wogDeletionRadiusFactor = 1.0;
 
 	/************** beg - command line arguments ********/
 #if 1
@@ -673,6 +674,8 @@ int main(int argc, char** argv)
         ADDUSAGE("     --diskmode             use diskmode to read same input file all MPI taks and randomly shuffle its positions");
         ADDUSAGE("     --war-of-galaxies #    input path for WarOfGalaxies");
         ADDUSAGE("     --port #               Port for WarOfGalaxies");
+        ADDUSAGE("     --camera-distance #    OpenGL camera distance for WarOfGalaxies");
+        ADDUSAGE("     --del-radius-factor #  Scaling factor of deletion sphere for WarOfGalaxies");
 		ADDUSAGE(" ");
 
 
@@ -717,6 +720,8 @@ int main(int argc, char** argv)
 #endif
 	opt.setOption("war-of-galaxies");
 	opt.setOption("port");
+	opt.setOption("camera-distance");
+	opt.setOption("del-radius-factor");
 
     opt.processCommandArgs( argc, argv );
 
@@ -765,7 +770,9 @@ int main(int argc, char** argv)
     if ((optarg = opt.getValue("reducebodies"))) reduce_bodies_factor = atoi  (optarg);
     if ((optarg = opt.getValue("reducedust")))	 reduce_dust_factor = atoi  (optarg);
     if ((optarg = opt.getValue("war-of-galaxies"))) war_of_galaxies_path = string(optarg);
-    if ((optarg = opt.getValue("port")))         wogPort = atoi(optarg);
+    if ((optarg = opt.getValue("port"))) wogPort = atoi(optarg);
+    if ((optarg = opt.getValue("camera-distance"))) wogCameraDistance = atof(optarg);
+    if ((optarg = opt.getValue("del-radius-factor"))) wogDeletionRadiusFactor = atof(optarg);
 #if USE_OPENGL
     if ((optarg = opt.getValue("fullscreen")))	 fullScreenMode     = string(optarg);
     if ((optarg = opt.getValue("Tglow")))	 TstartGlow  = (float)atof(optarg);
@@ -1282,7 +1289,8 @@ int main(int argc, char** argv)
   octree::IterationData idata;
   GalaxyStore galaxyStore;
   if (!war_of_galaxies_path.empty()) galaxyStore.init(war_of_galaxies_path, tree);
-  initAppRenderer(argc, argv, tree, idata, displayFPS, stereo, galaxyStore, wogPort, wogCameraDistance);
+  initAppRenderer(argc, argv, tree, idata, displayFPS, stereo, galaxyStore,
+    wogPort, wogCameraDistance, wogDeletionRadiusFactor);
   LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
 #else
   tree->mpiSync();
