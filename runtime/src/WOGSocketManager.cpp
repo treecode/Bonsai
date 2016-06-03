@@ -193,10 +193,12 @@ void WOGSocketManager::execute_json(octree *tree, GalaxyStore const& galaxyStore
   }
   else if (task == "report")
   {
-	send_data["user_0"] = user_particles[0];
-	send_data["user_1"] = user_particles[1];
-	send_data["user_2"] = user_particles[2];
-	send_data["user_3"] = user_particles[3];
+    // Simulation time in MYears, for factor see renderloop.cpp, search for MYears
+	send_data["simulation time"] = tree->getTime() * 9.78;
+	send_data["user 0"] = user_particles[0];
+	send_data["user 1"] = user_particles[1];
+	send_data["user 2"] = user_particles[2];
+	send_data["user 3"] = user_particles[3];
   }
   else
   {
