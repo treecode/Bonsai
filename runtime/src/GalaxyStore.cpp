@@ -29,7 +29,7 @@ void GalaxyStore::init(std::string const& path, octree *tree)
 
 		read_tipsy_file_parallel(galaxy.pos, galaxy.vel, galaxy.ids,
 			0.0, filename.c_str(), 0, 1, Total2, NFirst, NSecond, NThird, tree,
-			galaxy.pos_dust, galaxy.vel_dust, galaxy.ids_dust, 50, 1, false);
+			galaxy.pos_dust, galaxy.vel_dust, galaxy.ids_dust, 1, 1, false);
 
 		real4 cm = galaxy.getCenterOfMass();
 		std::cout << "Center of mass = " << cm.x << " " << cm.y << " " << cm.z << std::endl;

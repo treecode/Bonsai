@@ -97,10 +97,16 @@ void WOGSocketManager::reshape(int width, int height)
 {
   window_width = width;
   window_height = height;
-  real aspect_ratio = window_width / window_height;
+  real aspect_ratio = static_cast<real>(window_width) / window_height;
 
   simulation_plane_height = 2 * camera_distance * tan(fovy * M_PI / 360.0);
   simulation_plane_width = simulation_plane_height * aspect_ratio;
+
+  std::cout << "window_width = " << window_width << std::endl;
+  std::cout << "window_height = " << window_height << std::endl;
+  std::cout << "aspect_ratio = " << aspect_ratio << std::endl;
+  std::cout << "simulation_plane_height = " << simulation_plane_height << std::endl;
+  std::cout << "simulation_plane_width = " << simulation_plane_width << std::endl;
 
   real4 rear_corner;
   rear_corner.y = camera_distance * tan(fovy * M_PI / 360.0);

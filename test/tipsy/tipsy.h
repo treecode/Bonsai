@@ -10,6 +10,10 @@ struct head {
      : time(time), nbodies(nbodies), ndim(ndim), nsph(nsph), ndark(ndark), nstar(nstar)
     {}
 
+    head(head const& other)
+     : time(other.time), nbodies(other.nbodies), ndim(other.ndim), nsph(other.nsph), ndark(other.ndark), nstar(other.nstar)
+    {}
+
     double time;
     int nbodies;
     int ndim;
