@@ -531,7 +531,7 @@ void octree::removeGalaxy(int user_id)
   resetEnergy();
 }
 
-int octree::removeParticles()
+void octree::removeParticles(real deletion_radius_square, std::vector<int> &user_particles)
 {
   // Get particle data back to the host so we can add our new data
   this->localTree.bodies_pos.d2h();
@@ -548,11 +548,13 @@ int octree::removeParticles()
   int old_nb_particles = this->localTree.n;
   int new_nb_particles = 0;
 
-  int count = 0;
   for (int i(0); i != old_nb_particles; ++i)
   {
-	if ((i+1) % 100 == 0) {
-      ++count;
+    real4 position = this->localTree.bodies_pos[i];
+	if (position.x * position.x + position.y * position.y + position.z * position.z > deletion_radius_square
+	    and this->localTree.bodies_ids[i] % 10 != 9)
+	{
+	  --user_particles[this->localTree.bodies_ids[i] % 10];
       continue;
 	}
     new_pos.push_back(this->localTree.bodies_pos[i]);
@@ -588,8 +590,6 @@ int octree::removeParticles()
   this->localTree.bodies_Pvel.copy(this->localTree.bodies_pos, localTree.n);
 
   resetEnergy();
-
-  return count;
 }
 
 // returns true if this iteration is the last (t_current >= t_end), false otherwise
@@ -927,7 +927,7 @@ bool octree::iterate_once(IterationData &idata) {
       }
     }
 
-#ifdef NOT_WAR_OF_GALAXIES
+#ifndef WAR_OF_GALAXIES
     if (iter >= iterEnd) return true;
 
     if(t_current >= tEnd)

@@ -71,7 +71,7 @@ WOGSocketManager::~WOGSocketManager()
 void WOGSocketManager::execute(octree *tree, GalaxyStore const& galaxyStore)
 {
   // Remove particles
-  //remove_particles(tree);
+  remove_particles(tree);
 
   // Check for user request
   char buffer[buffer_size];
@@ -113,11 +113,16 @@ void WOGSocketManager::reshape(int width, int height)
   rear_corner.x = rear_corner.y * aspect_ratio;
   rear_corner.z = farZ - camera_distance;
   deletion_radius_square = rear_corner.x * rear_corner.x + rear_corner.y * rear_corner.y + rear_corner.z * rear_corner.z;
+  deletion_radius_square *= deletion_radius_factor * deletion_radius_factor;
+  #ifdef DEBUG_PRINT
+    std::cout << "deletion_radius_factor = " << deletion_radius_factor << std::endl;
+    std::cout << "deletion_radius = " << std::sqrt(deletion_radius_square) << std::endl;
+  #endif
 }
 
 void WOGSocketManager::remove_particles(octree *tree)
 {
-  tree->removeParticles();
+  tree->removeParticles(deletion_radius_square, user_particles);
 }
 
 void WOGSocketManager::execute_json(octree *tree, GalaxyStore const& galaxyStore, std::string buffer)

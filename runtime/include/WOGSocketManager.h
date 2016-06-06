@@ -45,6 +45,9 @@ class WOGSocketManager
   /// Must be called by glutReshapeFunc
   void reshape(int width, int height);
 
+  /// Number of users
+  static const int number_of_users = 4;
+
  private:
 
   /// Remove particles continuously
@@ -60,14 +63,11 @@ class WOGSocketManager
   /// Buffer size for socket data transmission
   static const int buffer_size = 1024;
 
-  /// Number of users
-  static const int number_of_users = 4;
-
   /// Maximal number of particles of a user
   static const int max_number_of_particles_of_user = 100000;
 
   /// Number of particles of user
-  std::array<int, number_of_users> user_particles;
+  std::vector<int> user_particles;
 
   /// Dimension of the window
   int window_width;

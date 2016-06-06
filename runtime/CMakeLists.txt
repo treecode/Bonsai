@@ -58,6 +58,11 @@ option(CUDA_KEEP_INTERMEDIATE_FILES
   OFF
   )
 
+option(WAR_OF_GALAXIES
+  "On to enable WarOfGalaxies"
+  OFF
+  )
+
 FIND_PACKAGE(CUDA REQUIRED)
 
 if (USE_MPI)
@@ -256,6 +261,10 @@ if (USE_OPENGL)
 	endif (WIN32)
 
 endif (USE_OPENGL)
+
+if (WAR_OF_GALAXIES)
+  add_definitions(-DWAR_OF_GALAXIES)
+endif (WAR_OF_GALAXIES)
 
 #The SSE support for the local tree walks
 if(WIN32)

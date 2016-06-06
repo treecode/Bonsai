@@ -884,8 +884,8 @@ public:
   // WarOfGalaxies: remove particles of a user
   void removeGalaxy(int user_id);
 
-  // WarOfGalaxies: remove particles continuously and return the number
-  int removeParticles();
+  // WarOfGalaxies: remove particles out of sphere continuously
+  void removeParticles(real deletion_radius_square, std::vector<int> &user_particles);
 
   //Library interface functions  
   void  setEps(float eps);
