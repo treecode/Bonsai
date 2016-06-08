@@ -306,8 +306,8 @@ void glPrintf(float x, float y, const char* format, ...)
 class BonsaiDemo
 {
 public:
-  BonsaiDemo(octree *tree, octree::IterationData &idata, GalaxyStore const& galaxyStore,
-    int wogPort, real wogCameraDistance, real wogDeletionRadiusFactor)
+  BonsaiDemo(octree *tree, octree::IterationData &idata,
+    std::string const& wogPath, int wogPort, real wogCameraDistance, real wogDeletionRadiusFactor)
     : m_tree(tree), m_idata(idata), iterationsRemaining(true),
       //m_renderer(tree->localTree.n + tree->localTree.n_dust),
       m_renderer(tree->localTree.n + tree->localTree.n_dust, MAX_PARTICLES),
@@ -344,8 +344,7 @@ public:
       m_cameraRollHome(0.0f),
       m_cameraRoll(0.0f),
       m_enableStats(true),
-      m_galaxyStore(galaxyStore),
-      m_wogSocketManager(wogPort, 1024, 768, m_fov, m_farZ, wogCameraDistance, wogDeletionRadiusFactor)
+      m_wogSocketManager(wogPath, wogPort, 1024, 768, m_fov, m_farZ, wogCameraDistance, wogDeletionRadiusFactor)
   {
     m_windowDims = make_int2(1024, 768);
     m_cameraTrans = make_float3(0, -2, -100);
@@ -1483,7 +1482,7 @@ public:
   ParamListGL *m_colorParams;
   ParamListGL *m_params;    // current
 
-  GalaxyStore const& m_galaxyStore;
+  /// Managing class for WarOfGalaxies
   WOGSocketManager m_wogSocketManager;
 
   // saved cameras
@@ -1813,7 +1812,7 @@ void special(int key, int x, int y)
 
 void idle(void)
 {
-  theDemo->m_wogSocketManager.execute(theDemo->m_tree, theDemo->m_galaxyStore);
+  theDemo->m_wogSocketManager.execute(theDemo->m_tree);
   glutPostRedisplay();
 }
 
@@ -1904,12 +1903,12 @@ void initGL(int argc, char** argv, const char *fullScreenMode, bool &stereo)
 }
 
 void initAppRenderer(int argc, char** argv, octree *tree, octree::IterationData &idata,
-		             bool showFPS, bool stereo, GalaxyStore const& galaxyStore, int wogPort,
+		             bool showFPS, bool stereo, std::string const& wogPath, int wogPort,
 		             real wogCameraDistance, real wogDeletionRadiusFactor)
 {
   displayFps = showFPS;
   //initGL(argc, argv);
-  theDemo = new BonsaiDemo(tree, idata, galaxyStore, wogPort, wogCameraDistance, wogDeletionRadiusFactor);
+  theDemo = new BonsaiDemo(tree, idata, wogPath, wogPort, wogCameraDistance, wogDeletionRadiusFactor);
   if (stereo)
     theDemo->toggleStereo(); //SV assuming stereo is set to disable by default.
   glutMainLoop();

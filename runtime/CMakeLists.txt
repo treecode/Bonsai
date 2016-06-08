@@ -104,7 +104,6 @@ set (CCFILES
   src/log.cpp
   src/hostConstruction.cpp
   src/Galaxy.cpp
-  src/GalaxyStore.cpp
   src/FileIO.cpp
   src/WOGSocketManager.cpp
 )

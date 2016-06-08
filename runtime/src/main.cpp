@@ -52,7 +52,6 @@ double drand48()
 #include "renderloop.h"
 #include "plummer.h"
 #include "disk_shuffle.h"
-#include "GalaxyStore.h"
 #include "FileIO.h"
 #ifdef GALACTICS
 #include "galactics.h"
@@ -616,7 +615,7 @@ int main(int argc, char** argv)
   int nMilkyWay = -1;
   int nMWfork   =  4;
 
-  std::string war_of_galaxies_path;
+  std::string wogPath;
   int wogPort = 50007;
   real wogCameraDistance = 500.0;
   real wogDeletionRadiusFactor = 1.0;
@@ -769,7 +768,7 @@ int main(int argc, char** argv)
     if ((optarg = opt.getValue("rebuild")))      rebuild_tree_rate  = atoi  (optarg);
     if ((optarg = opt.getValue("reducebodies"))) reduce_bodies_factor = atoi  (optarg);
     if ((optarg = opt.getValue("reducedust")))	 reduce_dust_factor = atoi  (optarg);
-    if ((optarg = opt.getValue("war-of-galaxies"))) war_of_galaxies_path = string(optarg);
+    if ((optarg = opt.getValue("war-of-galaxies"))) wogPath = string(optarg);
     if ((optarg = opt.getValue("port"))) wogPort = atoi(optarg);
     if ((optarg = opt.getValue("camera-distance"))) wogCameraDistance = atof(optarg);
     if ((optarg = opt.getValue("del-radius-factor"))) wogDeletionRadiusFactor = atof(optarg);
@@ -1287,10 +1286,8 @@ int main(int argc, char** argv)
   //Start the integration
 #ifdef USE_OPENGL
   octree::IterationData idata;
-  GalaxyStore galaxyStore;
-  if (!war_of_galaxies_path.empty()) galaxyStore.init(war_of_galaxies_path, tree);
-  initAppRenderer(argc, argv, tree, idata, displayFPS, stereo, galaxyStore,
-    wogPort, wogCameraDistance, wogDeletionRadiusFactor);
+  initAppRenderer(argc, argv, tree, idata, displayFPS, stereo,
+	wogPath, wogPort, wogCameraDistance, wogDeletionRadiusFactor);
   LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
 #else
   tree->mpiSync();

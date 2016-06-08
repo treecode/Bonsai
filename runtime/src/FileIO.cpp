@@ -60,7 +60,7 @@ void read_tipsy_file_parallel(std::vector<real4> &bodyPositions, std::vector<rea
   NSecond       = h.nstar;
   NThird        = h.nsph;
 
-  tree->set_t_current((float) h.time);
+  if (tree) tree->set_t_current((float) h.time);
 
   //Rough divide
   uint perProc = (NTotal / procs) /reduce_bodies_factor;
@@ -165,7 +165,7 @@ void read_tipsy_file_parallel(std::vector<real4> &bodyPositions, std::vector<rea
     {
       if(bodyPositions.size() > perProc && procCntr != procs)
       {
-        tree->ICSend(procCntr,  &bodyPositions[0], &bodyVelocities[0],  &bodiesIDs[0], (int)bodyPositions.size());
+    	if (tree) tree->ICSend(procCntr,  &bodyPositions[0], &bodyVelocities[0],  &bodiesIDs[0], (int)bodyPositions.size());
         procCntr++;
 
         bodyPositions.clear();

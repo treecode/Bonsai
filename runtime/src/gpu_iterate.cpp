@@ -928,6 +928,7 @@ bool octree::iterate_once(IterationData &idata) {
     }
 
 #ifndef WAR_OF_GALAXIES
+    std::cout << "hey" << std::endl;
     if (iter >= iterEnd) return true;
 
     if(t_current >= tEnd)

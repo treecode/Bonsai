@@ -8,8 +8,9 @@
 #ifndef WOGSOCKETMANAGER_H_
 #define WOGSOCKETMANAGER_H_
 
+#include "Galaxy.h"
 #include "octree.h"
-#include "GalaxyStore.h"
+#include "jsoncons/json.hpp"
 #include <array>
 #include <arpa/inet.h>
 #include <fcntl.h>
@@ -33,38 +34,41 @@ class WOGSocketManager
  public:
 
   /// Constructor opening sockets and reading input galaxies
-  WOGSocketManager(int port, int window_width, int window_height, real fovy,
-		           real farZ, real camera_distance, real deletion_radius_factor);
+  WOGSocketManager(std::string const& path, int port, int window_width, int window_height, real fovy,
+	real farZ, real camera_distance, real deletion_radius_factor);
 
   /// Constructor closing the sockets
   ~WOGSocketManager();
 
   /// Execute a client request
-  void execute(octree *tree, GalaxyStore const& galaxyStore);
+  void execute(octree *tree);
 
   /// Must be called by glutReshapeFunc
   void reshape(int width, int height);
 
-  /// Number of users
-  static const int number_of_users = 4;
-
  private:
+
+  /// Read all galaxy types
+  void read_galaxies(std::string const& path);
 
   /// Remove particles continuously
   void remove_particles(octree *tree);
 
   /// Execute a client request
-  void execute_json(octree *tree, GalaxyStore const& galaxyStore, std::string buffer);
+  jsoncons::json execute_json(octree *tree, std::string buffer);
 
   int server_socket;
 
   int client_socket;
 
+  /// Number of users
+  static constexpr auto number_of_users = 4;
+
   /// Buffer size for socket data transmission
-  static const int buffer_size = 1024;
+  static constexpr auto buffer_size = 1024;
 
   /// Maximal number of particles of a user
-  static const int max_number_of_particles_of_user = 100000;
+  static constexpr auto max_number_of_particles_of_user = 100000;
 
   /// Number of particles of user
   std::vector<int> user_particles;
@@ -91,6 +95,9 @@ class WOGSocketManager
 
   /// Squared radius of deletion sphere. Particles leaving this sphere will be removed.
   real deletion_radius_square;
+
+  /// Galaxy types which can be released
+  std::vector<Galaxy> galaxies;
 
 };
 

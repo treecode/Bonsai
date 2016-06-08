@@ -5,14 +5,14 @@
  *      Author: Bernd Doser <bernd.doser@h-its.org>
  */
 
+#include "FileIO.h"
 #include "WOGSocketManager.h"
-#include "jsoncons/json.hpp"
 
 using jsoncons::json;
 
 #define DEBUG_PRINT
 
-WOGSocketManager::WOGSocketManager(int port, int window_width, int window_height, real fovy,
+WOGSocketManager::WOGSocketManager(std::string const& path, int port, int window_width, int window_height, real fovy,
   real farZ, real camera_distance, real deletion_radius_factor)
  : user_particles{{0, 0, 0, 0}},
    window_width(window_width),
@@ -25,6 +25,7 @@ WOGSocketManager::WOGSocketManager(int port, int window_width, int window_height
    deletion_radius_factor(deletion_radius_factor),
    deletion_radius_square(0.0)
 {
+  read_galaxies(path);
   reshape(window_width, window_height);
 
   server_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -68,7 +69,42 @@ WOGSocketManager::~WOGSocketManager()
   close(server_socket);
 }
 
-void WOGSocketManager::execute(octree *tree, GalaxyStore const& galaxyStore)
+void WOGSocketManager::read_galaxies(std::string const& path)
+{
+	for (int i = 0;; ++i)
+	{
+		std::string filename = path + "/galaxy_type_" + std::to_string(i) + ".tipsy";
+		if (access(filename.c_str(), F_OK) == -1) break;
+		std::cout << "Read file " << filename << " into GalaxyStore." << std::endl;
+
+		Galaxy galaxy;
+		int Total2 = 0;
+		int NFirst = 0;
+		int NSecond = 0;
+		int NThird = 0;
+
+		read_tipsy_file_parallel(galaxy.pos, galaxy.vel, galaxy.ids,
+			0.0, filename.c_str(), 0, 1, Total2, NFirst, NSecond, NThird, nullptr,
+			galaxy.pos_dust, galaxy.vel_dust, galaxy.ids_dust, 1, 1, false);
+
+		real4 cm = galaxy.getCenterOfMass();
+		std::cout << "Center of mass = " << cm.x << " " << cm.y << " " << cm.z << std::endl;
+		real4 tv = galaxy.getTotalVelocity();
+		std::cout << "Total_velocity = " << tv.x << " " << tv.y << " " << tv.z << std::endl;
+
+		galaxy.centering();
+		galaxy.steady();
+
+		cm = galaxy.getCenterOfMass();
+		std::cout << "Center of mass = " << cm.x << " " << cm.y << " " << cm.z << std::endl;
+		tv = galaxy.getTotalVelocity();
+		std::cout << "Total_velocity = " << tv.x << " " << tv.y << " " << tv.z << std::endl;
+
+		galaxies.push_back(galaxy);
+	}
+}
+
+void WOGSocketManager::execute(octree *tree)
 {
   // Remove particles
   remove_particles(tree);
@@ -79,18 +115,24 @@ void WOGSocketManager::execute(octree *tree, GalaxyStore const& galaxyStore)
   if (n <= 0) return;
   buffer[n] = '\0';
 
+  json json_response;
+
   try {
-    execute_json(tree, galaxyStore, buffer);
+	json_response = execute_json(tree, buffer);
+  } catch (std::exception const& e) {
+	std::cerr << "Error: " << e.what() << std::endl;
+	json_response["response"] = std::string("Error: ") + e.what();
+
   } catch ( ... ) {
-    json send_data;
-	send_data["response"] = "Can't interpret last request";
-
-    std::ostringstream oss;
-    oss << send_data;
-    std::string send_data_string = oss.str();
-
-    if (send(client_socket, send_data_string.c_str(), send_data_string.size(), 0) == -1) perror("send");
+	std::cerr << "Error: Unknown failure" << std::endl;
+    json_response["response"] = "Error: Unknown failure";
   }
+
+  std::ostringstream oss;
+  oss << json_response;
+  std::string json_response_string = oss.str();
+
+  if (send(client_socket, json_response_string.c_str(), json_response_string.size(), 0) == -1) perror("send");
 }
 
 void WOGSocketManager::reshape(int width, int height)
@@ -125,44 +167,70 @@ void WOGSocketManager::remove_particles(octree *tree)
   tree->removeParticles(deletion_radius_square, user_particles);
 }
 
-void WOGSocketManager::execute_json(octree *tree, GalaxyStore const& galaxyStore, std::string buffer)
+json WOGSocketManager::execute_json(octree *tree, std::string json_request_string)
 {
+  json json_response;
+
   #ifdef DEBUG_PRINT
-    std::cout << "The string is: " << buffer << std::endl;
+    std::cout << "The JSON request is: " << json_request_string << std::endl;
   #endif
 
-  std::istringstream iss(buffer);
-  json recv_data;
-  iss >> recv_data;
+  std::istringstream iss(json_request_string);
+  json json_request;
+  iss >> json_request;
 
-  std::string task = recv_data["task"].as<std::string>();
+  std::string task = json_request["task"].as<std::string>();
 
   #ifdef DEBUG_PRINT
     std::cout << "task: " << task << std::endl;
   #endif
 
-  json send_data;
-
   if (task == "release")
   {
-    int user_id = recv_data["user_id"].as<int>();
-    int galaxy_id = recv_data["galaxy_id"].as<int>();
-    std::vector<double> vector_position = recv_data["position"].as<std::vector<double>>();
-    std::vector<double> vector_velocity = recv_data["velocity"].as<std::vector<double>>();
+    int user_id = json_request["user_id"].as<int>();
+    if (user_id < 0 or user_id >= number_of_users) throw std::runtime_error("Invalid user_id");
 
-    real4 position;
-    position.x = vector_position.size() > 0 ? vector_position[0] * simulation_plane_width : 0.0;
-    position.y = vector_position.size() > 1 ? vector_position[1] * simulation_plane_height : 0.0;
-    position.z = vector_position.size() > 2 ? vector_position[2] : 0.0;
+    int galaxy_id = json_request["galaxy_id"].as<int>();
+    if (galaxy_id < 0 or galaxy_id >= galaxies.size()) throw std::runtime_error("Invalid galaxy_id");
+
+    std::vector<double> vector_position = json_request["position"].as<std::vector<double>>();
+    if (vector_position.size() > 3) throw std::runtime_error("Invalid dimension of position vector");
+
+    std::vector<double> vector_velocity = json_request["velocity"].as<std::vector<double>>();
+    if (vector_velocity.size() > 3) throw std::runtime_error("Invalid dimension of velocity vector");
+
+    real4 position = make_real4(0.0, 0.0, 0.0, 0.0);
+
+    if (vector_position.size() > 2) {
+      if (vector_position[2] < -1.0 or vector_position[2] > 1.0) throw std::runtime_error("position.z out of range");
+      if (vector_position[2] < 0.0)
+        position.z = vector_position[2] * camera_distance;
+      else
+        position.z = vector_position[2] * (farZ - camera_distance);
+    } else if (vector_position.size() > 1) {
+      if (vector_position[1] < 0.0 or vector_position[1] > 1.0) throw std::runtime_error("position.y out of range");
+      position.y = vector_position[1] * simulation_plane_height;
+    } if (vector_position.size() > 0) {
+      if (vector_position[0] < 0.0 or vector_position[0] > 1.0) throw std::runtime_error("position.x out of range");
+      position.x = vector_position[0] * simulation_plane_width;
+    }
 
     // Shift center to lower left corner
     position.x -= simulation_plane_width * 0.5;
     position.y -= simulation_plane_height * 0.5;
 
-    real4 velocity;
-    velocity.x = vector_velocity.size() > 0 ? vector_velocity[0] * window_width / simulation_plane_width : 0.0;
-    velocity.y = vector_velocity.size() > 1 ? vector_velocity[1] * window_height / simulation_plane_height : 0.0;
-    velocity.z = vector_velocity.size() > 2 ? vector_velocity[2] : 0.0;
+    real4 velocity = make_real4(0.0, 0.0, 0.0, 0.0);
+
+    if (vector_velocity.size() > 2) {
+      if (vector_velocity[2] < -1.0 or vector_velocity[2] > 1.0) throw std::runtime_error("velocity.z out of range");
+      velocity.z = vector_velocity[2] * window_height / simulation_plane_height;
+    } else if (vector_velocity.size() > 1) {
+      if (vector_velocity[1] < 0.0 or vector_velocity[1] > 1.0) throw std::runtime_error("velocity.y out of range");
+      velocity.y = vector_velocity[1] * window_height / simulation_plane_height;
+    } else if (vector_velocity.size() > 0) {
+      if (vector_velocity[0] < 0.0 or vector_velocity[0] > 1.0) throw std::runtime_error("velocity.x out of range");
+      velocity.x = vector_velocity[0] * window_width / simulation_plane_width;
+    }
 
     #ifdef DEBUG_PRINT
       std::cout << "user_id: " << user_id << std::endl;
@@ -171,7 +239,7 @@ void WOGSocketManager::execute_json(octree *tree, GalaxyStore const& galaxyStore
       std::cout << "velocity: " << velocity.x << " " << velocity.y << " " << velocity.z << std::endl;
     #endif
 
-	Galaxy galaxy = galaxyStore.getGalaxy(galaxy_id);
+	Galaxy galaxy = galaxies[galaxy_id];
 	galaxy.translate(position);
     galaxy.accelerate(velocity);
 
@@ -181,11 +249,12 @@ void WOGSocketManager::execute_json(octree *tree, GalaxyStore const& galaxyStore
     tree->releaseGalaxy(galaxy);
 	user_particles[user_id] += galaxy.pos.size();
 
-	send_data["response"] = "Galaxy with " + std::to_string(galaxy.pos.size()) + " particles of user " + std::to_string(user_id) + " was released.";
+	json_response["response"] = "Galaxy with " + std::to_string(galaxy.pos.size()) + " particles of user " + std::to_string(user_id) + " was released.";
   }
   else if (task == "remove")
   {
-    int user_id = recv_data["user_id"].as<int>();
+    int user_id = json_request["user_id"].as<int>();
+    if (user_id < 0 or user_id >= number_of_users) throw std::runtime_error("Invalid user_id");
 
     #ifdef DEBUG_PRINT
       std::cout << "user_id: " << user_id << std::endl;
@@ -194,25 +263,21 @@ void WOGSocketManager::execute_json(octree *tree, GalaxyStore const& galaxyStore
     tree->removeGalaxy(user_id);
     user_particles[user_id] = 0;
 
-	send_data["response"] = "All particles of user " + std::to_string(user_id) + " were removed.";
+	json_response["response"] = "All particles of user " + std::to_string(user_id) + " were removed.";
   }
   else if (task == "report")
   {
     // Simulation time in MYears, for factor see renderloop.cpp, search for MYears
-	send_data["simulation time"] = tree->getTime() * 9.78;
-	send_data["user 0"] = user_particles[0];
-	send_data["user 1"] = user_particles[1];
-	send_data["user 2"] = user_particles[2];
-	send_data["user 3"] = user_particles[3];
+	json_response["simulation time"] = tree->getTime() * 9.78;
+	json_response["user 0"] = user_particles[0];
+	json_response["user 1"] = user_particles[1];
+	json_response["user 2"] = user_particles[2];
+	json_response["user 3"] = user_particles[3];
   }
   else
   {
-    throw std::runtime_error("Unkown task: " + task);
+    throw std::runtime_error("Unknown task: " + task);
   }
 
-  std::ostringstream oss;
-  oss << send_data;
-  std::string send_data_string = oss.str();
-
-  if (send(client_socket, send_data_string.c_str(), send_data_string.size(), 0) == -1) perror("send");
+  return json_response;
 }
