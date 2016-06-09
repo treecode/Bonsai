@@ -343,7 +343,11 @@ public:
       m_displayBodiesSec(true),
       m_cameraRollHome(0.0f),
       m_cameraRoll(0.0f),
+#ifdef WAR_OF_GALAXIES
+      m_enableStats(false),
+#else
       m_enableStats(true),
+#endif
       m_wogSocketManager(wogPath, wogPort, 1024, 768, m_fov, m_farZ, wogCameraDistance, wogDeletionRadiusFactor)
   {
     m_windowDims = make_int2(1024, 768);
