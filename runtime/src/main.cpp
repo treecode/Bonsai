@@ -105,6 +105,60 @@ extern void displayTimers()
 #include <cuda_gl_interop.h>
 #endif
 
+class FlagMustBeSet {};
+class FlagMustNotBeSet {};
+class ValueMustBeSet {};
+class ValueMustNotBeSet {};
+
+template <class T>
+struct Checker;
+
+template <>
+struct Checker<FlagMustBeSet>
+{
+	void operator()(AnyOption const& opt, std::vector<std::string> arguments) const {
+		for (auto const& arg : arguments)
+		    // Error in AnyOption: getter function not const
+		    if (!const_cast<AnyOption&>(opt).getFlag(arg.c_str())) throw std::runtime_error(arg + " must be set");
+	}
+};
+
+template <>
+struct Checker<FlagMustNotBeSet>
+{
+	void operator()(AnyOption const& opt, std::vector<std::string> arguments) const {
+		for (auto const& arg : arguments)
+		    // Error in AnyOption: getter function not const
+		    if (const_cast<AnyOption&>(opt).getFlag(arg.c_str())) throw std::runtime_error(arg + " must not be set");
+	}
+};
+
+template <>
+struct Checker<ValueMustBeSet>
+{
+	void operator()(AnyOption const& opt, std::vector<std::string> arguments) const {
+		for (auto const& arg : arguments)
+		    // Error in AnyOption: getter function not const
+		    if (const_cast<AnyOption&>(opt).getValue(arg.c_str()) == NULL) throw std::runtime_error(arg + " must be set");
+	}
+};
+
+template <>
+struct Checker<ValueMustNotBeSet>
+{
+	void operator()(AnyOption const& opt, std::vector<std::string> arguments) const {
+		for (auto const& arg : arguments)
+		    // Error in AnyOption: getter function not const
+		    if (const_cast<AnyOption&>(opt).getValue(arg.c_str()) != NULL) throw std::runtime_error(arg + " must not be set");
+	}
+};
+
+template <class T>
+void check_arguments(AnyOption const& opt, std::vector<std::string> arguments)
+{
+  return Checker<T>()(opt, arguments);
+}
+
 void read_dumbp_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyVelocities,  vector<int> &bodiesIDs,  float eps2,
                      string fileName, int rank, int procs, int &NTotal2, int &NFirst, int &NSecond, int &NThird, octree *tree, int reduce_bodies_factor)  
 {
@@ -736,59 +790,66 @@ int main(int argc, char** argv)
       exit(0);
     }
 
-    if (opt.getFlag("direct")) direct = true;
-    if (opt.getFlag("restart")) restartSim = true;
+    if (opt.getFlag("direct"))     direct = true;
+    if (opt.getFlag("restart"))    restartSim = true;
     if (opt.getFlag("displayfps")) displayFPS = true;
-    if (opt.getFlag("diskmode")) diskmode = true;
-    if(opt.getFlag("stereo"))   stereo = true;
-
+    if (opt.getFlag("diskmode"))   diskmode = true;
+    if (opt.getFlag("stereo"))     stereo = true;
 #if ENABLE_LOG
     if (opt.getFlag("log"))           ENABLE_RUNTIME_LOG = true;
     if (opt.getFlag("prepend-rank"))  PREPEND_RANK       = true;
 #endif    
     char *optarg = NULL;
-    if ((optarg = opt.getValue("infile")))       fileName           = string(optarg);
-    if ((optarg = opt.getValue("plummer")))      nPlummer           = atoi(optarg);
-    if ((optarg = opt.getValue("milkyway")))     nMilkyWay          = atoi(optarg);
-    if ((optarg = opt.getValue("mwfork")))       nMWfork            = atoi(optarg);
-    if ((optarg = opt.getValue("sphere")))       nSphere            = atoi(optarg);
-    if ((optarg = opt.getValue("logfile")))      logFileName        = string(optarg);
-    if ((optarg = opt.getValue("dev")))          devID              = atoi  (optarg);
+    if ((optarg = opt.getValue("infile")))            fileName                = string(optarg);
+    if ((optarg = opt.getValue("plummer")))           nPlummer                = atoi(optarg);
+    if ((optarg = opt.getValue("milkyway")))          nMilkyWay               = atoi(optarg);
+    if ((optarg = opt.getValue("mwfork")))            nMWfork                 = atoi(optarg);
+    if ((optarg = opt.getValue("sphere")))            nSphere                 = atoi(optarg);
+    if ((optarg = opt.getValue("logfile")))           logFileName             = string(optarg);
+    if ((optarg = opt.getValue("dev")))               devID                   = atoi(optarg);
     renderDevID = devID;
-    if ((optarg = opt.getValue("renderdev")))    renderDevID        = atoi  (optarg);
-    if ((optarg = opt.getValue("dt")))           timeStep           = (float) atof  (optarg);
-    if ((optarg = opt.getValue("tend")))         tEnd               = (float) atof  (optarg);
-    if ((optarg = opt.getValue("iend")))         iterEnd            = atoi  (optarg);
-    if ((optarg = opt.getValue("eps")))          eps                = (float) atof  (optarg);
-    if ((optarg = opt.getValue("theta")))        theta              = (float) atof  (optarg);
-    if ((optarg = opt.getValue("snapname")))     snapshotFile       = string(optarg);
-    if ((optarg = opt.getValue("snapiter")))     snapshotIter       = (float) atof  (optarg);
-    if ((optarg = opt.getValue("rmdist")))       remoDistance       = (float) atof  (optarg);
-    if ((optarg = opt.getValue("valueadd")))     snapShotAdd        = atoi  (optarg);
-    if ((optarg = opt.getValue("rebuild")))      rebuild_tree_rate  = atoi  (optarg);
-    if ((optarg = opt.getValue("reducebodies"))) reduce_bodies_factor = atoi  (optarg);
-    if ((optarg = opt.getValue("reducedust")))	 reduce_dust_factor = atoi  (optarg);
-    if ((optarg = opt.getValue("war-of-galaxies"))) wogPath = string(optarg);
-    if ((optarg = opt.getValue("port"))) wogPort = atoi(optarg);
-    if ((optarg = opt.getValue("camera-distance"))) wogCameraDistance = atof(optarg);
+    if ((optarg = opt.getValue("renderdev")))         renderDevID             = atoi(optarg);
+    if ((optarg = opt.getValue("dt")))                timeStep                = (float)atof(optarg);
+    if ((optarg = opt.getValue("tend")))              tEnd                    = (float)atof(optarg);
+    if ((optarg = opt.getValue("iend")))              iterEnd                 = atoi(optarg);
+    if ((optarg = opt.getValue("eps")))               eps                     = (float)atof(optarg);
+    if ((optarg = opt.getValue("theta")))             theta                   = (float)atof(optarg);
+    if ((optarg = opt.getValue("snapname")))          snapshotFile            = string(optarg);
+    if ((optarg = opt.getValue("snapiter")))          snapshotIter            = (float)atof(optarg);
+    if ((optarg = opt.getValue("rmdist")))            remoDistance            = (float)atof(optarg);
+    if ((optarg = opt.getValue("valueadd")))          snapShotAdd             = atoi(optarg);
+    if ((optarg = opt.getValue("rebuild")))           rebuild_tree_rate       = atoi(optarg);
+    if ((optarg = opt.getValue("reducebodies")))      reduce_bodies_factor    = atoi(optarg);
+    if ((optarg = opt.getValue("reducedust")))	      reduce_dust_factor      = atoi(optarg);
+    if ((optarg = opt.getValue("war-of-galaxies")))   wogPath                 = string(optarg);
+    if ((optarg = opt.getValue("port")))              wogPort                 = atoi(optarg);
+    if ((optarg = opt.getValue("camera-distance")))   wogCameraDistance       = atof(optarg);
     if ((optarg = opt.getValue("del-radius-factor"))) wogDeletionRadiusFactor = atof(optarg);
 #if USE_OPENGL
-    if ((optarg = opt.getValue("fullscreen")))	 fullScreenMode     = string(optarg);
-    if ((optarg = opt.getValue("Tglow")))	 TstartGlow  = (float)atof(optarg);
-    if ((optarg = opt.getValue("dTglow")))	 dTstartGlow  = (float)atof(optarg);
+    if ((optarg = opt.getValue("fullscreen")))	      fullScreenMode          = string(optarg);
+    if ((optarg = opt.getValue("Tglow")))	          TstartGlow              = (float)atof(optarg);
+    if ((optarg = opt.getValue("dTglow")))	          dTstartGlow             = (float)atof(optarg);
     dTstartGlow = std::max(dTstartGlow, 1.0f);
 #endif
+
     if (fileName.empty() && nPlummer == -1 && nSphere == -1 && nMilkyWay == -1)
     {
       opt.printUsage();
       exit(0);
     }
 
+    /// WarOfGalaxies: Deactivate unneeded flags if WarOfGalaxies path will be used
+    if (!wogPath.empty()) {
+      check_arguments<FlagMustNotBeSet>(opt, {{"direct", "restart", "displayfps", "diskmode", "stereo", "prepend-rank"}});
+      check_arguments<ValueMustBeSet>(opt, {{"infile"}});
+      check_arguments<ValueMustNotBeSet>(opt, {{"plummer", "milkyway", "mwfork", "sphere", "dt", "tend", "iend",
+        "snapname", "snapiter", "valueadd", "rebuild", "reducebodies", "reducedust"}});
+    }
+
 #undef ADDUSAGE
   }
 #endif
   /************** end - command line arguments ********/
-
 
   int NTotal, NFirst, NSecond, NThird;
   NTotal = NFirst = NSecond = NThird = 0;

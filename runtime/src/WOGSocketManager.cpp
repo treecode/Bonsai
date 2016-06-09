@@ -201,18 +201,20 @@ json WOGSocketManager::execute_json(octree *tree, std::string json_request_strin
 
     real4 position = make_real4(0.0, 0.0, 0.0, 0.0);
 
+    if (vector_position.size() > 0) {
+      if (vector_position[0] < 0.0 or vector_position[0] > 1.0) throw std::runtime_error("position.x out of range");
+      position.x = vector_position[0] * simulation_plane_width;
+    }
+    if (vector_position.size() > 1) {
+      if (vector_position[1] < 0.0 or vector_position[1] > 1.0) throw std::runtime_error("position.y out of range");
+      position.y = vector_position[1] * simulation_plane_height;
+    }
     if (vector_position.size() > 2) {
       if (vector_position[2] < -1.0 or vector_position[2] > 1.0) throw std::runtime_error("position.z out of range");
       if (vector_position[2] < 0.0)
         position.z = vector_position[2] * camera_distance;
       else
         position.z = vector_position[2] * (farZ - camera_distance);
-    } else if (vector_position.size() > 1) {
-      if (vector_position[1] < 0.0 or vector_position[1] > 1.0) throw std::runtime_error("position.y out of range");
-      position.y = vector_position[1] * simulation_plane_height;
-    } if (vector_position.size() > 0) {
-      if (vector_position[0] < 0.0 or vector_position[0] > 1.0) throw std::runtime_error("position.x out of range");
-      position.x = vector_position[0] * simulation_plane_width;
     }
 
     // Shift center to lower left corner
@@ -221,15 +223,14 @@ json WOGSocketManager::execute_json(octree *tree, std::string json_request_strin
 
     real4 velocity = make_real4(0.0, 0.0, 0.0, 0.0);
 
-    if (vector_velocity.size() > 2) {
-      if (vector_velocity[2] < -1.0 or vector_velocity[2] > 1.0) throw std::runtime_error("velocity.z out of range");
-      velocity.z = vector_velocity[2] * window_height / simulation_plane_height;
-    } else if (vector_velocity.size() > 1) {
-      if (vector_velocity[1] < 0.0 or vector_velocity[1] > 1.0) throw std::runtime_error("velocity.y out of range");
-      velocity.y = vector_velocity[1] * window_height / simulation_plane_height;
-    } else if (vector_velocity.size() > 0) {
-      if (vector_velocity[0] < 0.0 or vector_velocity[0] > 1.0) throw std::runtime_error("velocity.x out of range");
+    if (vector_velocity.size() > 0) {
       velocity.x = vector_velocity[0] * window_width / simulation_plane_width;
+    }
+    if (vector_velocity.size() > 1) {
+      velocity.y = vector_velocity[1] * window_height / simulation_plane_height;
+    }
+    if (vector_velocity.size() > 2) {
+      velocity.z = vector_velocity[2] * window_height / simulation_plane_height;
     }
 
     #ifdef DEBUG_PRINT
