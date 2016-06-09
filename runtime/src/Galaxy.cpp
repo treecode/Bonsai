@@ -10,12 +10,7 @@
 real4 Galaxy::getCenterOfMass() const
 {
   real mass;
-  real4 result;
-  result.x = 0.0;
-  result.y = 0.0;
-  result.z = 0.0;
-  result.w = 0.0;
-
+  real4 result = make_real4(0.0, 0.0, 0.0, 0.0);
   for (auto const& p : pos)
   {
   	mass = p.w;
@@ -33,12 +28,7 @@ real4 Galaxy::getCenterOfMass() const
 
 real4 Galaxy::getTotalVelocity() const
 {
-  real4 result;
-  result.x = 0.0;
-  result.y = 0.0;
-  result.z = 0.0;
-  result.w = 0.0;
-
+  real4 result = make_real4(0.0, 0.0, 0.0, 0.0);
   for (auto const& v : vel)
   {
     result.x += v.x;

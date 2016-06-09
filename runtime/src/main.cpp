@@ -105,59 +105,21 @@ extern void displayTimers()
 #include <cuda_gl_interop.h>
 #endif
 
-class FlagMustBeSet {};
-class FlagMustNotBeSet {};
-class ValueMustBeSet {};
-class ValueMustNotBeSet {};
-
-template <class T>
-struct Checker;
-
-template <>
-struct Checker<FlagMustBeSet>
+#ifdef WAR_OF_GALAXIES
+void throw_if_flag_is_used(AnyOption const& opt, std::vector<std::string> arguments)
 {
-	void operator()(AnyOption const& opt, std::vector<std::string> arguments) const {
-		for (auto const& arg : arguments)
-		    // Error in AnyOption: getter function not const
-		    if (!const_cast<AnyOption&>(opt).getFlag(arg.c_str())) throw std::runtime_error(arg + " must be set");
-	}
-};
-
-template <>
-struct Checker<FlagMustNotBeSet>
-{
-	void operator()(AnyOption const& opt, std::vector<std::string> arguments) const {
-		for (auto const& arg : arguments)
-		    // Error in AnyOption: getter function not const
-		    if (const_cast<AnyOption&>(opt).getFlag(arg.c_str())) throw std::runtime_error(arg + " must not be set");
-	}
-};
-
-template <>
-struct Checker<ValueMustBeSet>
-{
-	void operator()(AnyOption const& opt, std::vector<std::string> arguments) const {
-		for (auto const& arg : arguments)
-		    // Error in AnyOption: getter function not const
-		    if (const_cast<AnyOption&>(opt).getValue(arg.c_str()) == NULL) throw std::runtime_error(arg + " must be set");
-	}
-};
-
-template <>
-struct Checker<ValueMustNotBeSet>
-{
-	void operator()(AnyOption const& opt, std::vector<std::string> arguments) const {
-		for (auto const& arg : arguments)
-		    // Error in AnyOption: getter function not const
-		    if (const_cast<AnyOption&>(opt).getValue(arg.c_str()) != NULL) throw std::runtime_error(arg + " must not be set");
-	}
-};
-
-template <class T>
-void check_arguments(AnyOption const& opt, std::vector<std::string> arguments)
-{
-  return Checker<T>()(opt, arguments);
+  for (auto const& arg : arguments)
+    // Error in AnyOption: getter function not const
+    if (const_cast<AnyOption&>(opt).getFlag(arg.c_str())) throw std::runtime_error(arg + " is not valid in war-of-galaxy mode.");
 }
+
+void throw_if_option_is_used(AnyOption const& opt, std::vector<std::string> arguments)
+{
+  for (auto const& arg : arguments)
+    // Error in AnyOption: getter function not const
+    if (const_cast<AnyOption&>(opt).getValue(arg.c_str()) != nullptr) throw std::runtime_error(arg + " is not valid in war-of-galaxy mode.");
+}
+#endif
 
 void read_dumbp_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyVelocities,  vector<int> &bodiesIDs,  float eps2,
                      string fileName, int rank, int procs, int &NTotal2, int &NFirst, int &NSecond, int &NThird, octree *tree, int reduce_bodies_factor)  
@@ -840,10 +802,9 @@ int main(int argc, char** argv)
 
     /// WarOfGalaxies: Deactivate unneeded flags if WarOfGalaxies path will be used
     if (!wogPath.empty()) {
-      check_arguments<FlagMustNotBeSet>(opt, {{"direct", "restart", "displayfps", "diskmode", "stereo", "prepend-rank"}});
-      check_arguments<ValueMustBeSet>(opt, {{"infile"}});
-      check_arguments<ValueMustNotBeSet>(opt, {{"plummer", "milkyway", "mwfork", "sphere", "dt", "tend", "iend",
-        "snapname", "snapiter", "valueadd", "rebuild", "reducebodies", "reducedust"}});
+      throw_if_flag_is_used(opt, {{"direct", "restart", "displayfps", "diskmode", "stereo", "prepend-rank"}});
+      throw_if_option_is_used(opt, {{"plummer", "milkyway", "mwfork", "sphere", "dt", "tend", "iend",
+        "snapname", "snapiter", "rmdist", "valueadd", "rebuild", "reducebodies", "reducedust"}});
     }
 
 #undef ADDUSAGE
@@ -1049,6 +1010,59 @@ int main(int argc, char** argv)
       read_tipsy_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, 
           procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
           dustPositions, dustVelocities, dustIDs, reduce_bodies_factor, reduce_dust_factor, false);
+
+#ifdef WAR_OF_GALAXIES
+      std::cout << "WarOfGalaxies: Input file is used as dummy particles." << std::endl;
+      for (auto & id : bodyIDs) id = id - id % 10 + 9;
+
+      // get center of mass
+      real mass;
+      real4 center_of_mass = make_real4(0.0, 0.0, 0.0, 0.0);
+
+      for (auto const& p : bodyPositions)
+      {
+      	mass = p.w;
+      	center_of_mass.x += mass * p.x;
+      	center_of_mass.y += mass * p.y;
+      	center_of_mass.z += mass * p.z;
+      	center_of_mass.w += mass;
+      }
+
+      center_of_mass.x /= center_of_mass.w;
+      center_of_mass.y /= center_of_mass.w;
+      center_of_mass.z /= center_of_mass.w;
+
+      // get total velocity
+      real4 total_velocity = make_real4(0.0, 0.0, 0.0, 0.0);
+
+      for (auto const& v : bodyVelocities)
+      {
+        total_velocity.x += v.x;
+        total_velocity.y += v.y;
+        total_velocity.z += v.z;
+      }
+
+      total_velocity.x /= bodyVelocities.size();
+      total_velocity.y /= bodyVelocities.size();
+      total_velocity.z /= bodyVelocities.size();
+
+      // shift center of mass to position (0,0,10000)
+      for (auto &p : bodyPositions)
+      {
+        p.x -= center_of_mass.x;
+        p.y -= center_of_mass.y;
+        p.z -= center_of_mass.z + 10000;
+      }
+
+      // steady
+      for (auto &v : bodyVelocities)
+      {
+        v.x -= total_velocity.x;
+        v.y -= total_velocity.y;
+        v.z -= total_velocity.z;
+      }
+
+#endif
 
       //      read_generate_cube(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, 
       //                               procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
