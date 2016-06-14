@@ -24,33 +24,12 @@ extern "C" void  (gpu_boundaryReductionGroups)(const int n_groups, real4      *p
 extern "C" void  cl_build_key_list(uint4  *body_key, real4  *body_pos, int   n_bodies, real4  corner);
 extern "C" void  cl_build_valid_list(int n_bodies, int level, uint4  *body_key, uint *valid_list, const uint *workToDo);
 extern "C" void  cl_build_nodes(uint level, uint  *compact_list_len, uint  *level_offset, uint  *last_level, uint2 *level_list, uint  *compact_list, uint4 *bodies_key, uint4 *node_key, uint  *n_children, uint2 *node_bodies);
-extern "C" void  dataReorderCombined(const int N, uint4 *keyAndPerm, real4 *source1, real4* destination1, real4 *source2, real4* destination2,real4 *source3, real4* destination3);
-extern "C" void  dataReorderCombined4(const int N, uint4 *keyAndPerm, real4 *source1,  real4* destination1, unsigned long long *source2, unsigned long long* destination2, int *oldOrder);
-//extern "C" void  dataReorderF2(const int N, uint4 *keyAndPerm, float2 *source1, float2 *destination1, int *source2, int *destination2);
-
-extern "C" void (gpu_dataReorderF1)(const int N, uint4 *keyAndPerm, float *source1, float *destination1);
-extern "C" void  (sort_count)(volatile uint2 *valid, int *counts, const int N, setupParams sParam, int bitIdx);
-extern "C" void  (sort_move_stage_key_value)(uint2 *valid, int *output, uint2 *srcValues, uint *valuesOut, int *counts, const int N, setupParams sParam, int bitIdx);      
-extern "C" void  (extractInt_kernel)(uint4 *keys,  uint *simpleKeys, uint *sequence, const int N, int keyIdx);
-extern "C" void  (reOrderKeysValues_kernel)(uint4 *keysSrc, uint4 *keysDest, uint *permutation, const int N);
-
-extern "C" void  (gpu_extractKeyAndPerm)(uint4 *newKeys, uint4 *keys, uint *permutation, const int N);
-extern "C" void  (gpu_convertKey64to96)(uint4 *keys,  uint4 *newKeys, const int N);
-//extern "C" void  (dataReorderCombined4)(const int N, uint4 *keyAndPerm, real4 *source1,  real4* destination1, int *source2,    int*   destination2, int *oldOrder);
-extern "C" void  (gpu_dataReorderF2)(const int N, uint4 *keyAndPerm, float2 *source1, float2 *destination1, unsigned long long    *source2, unsigned long long *destination2);
-extern "C" void  (gpu_dataReorderI1)(const int n_particles, int *source, int *destination, uint  *permutation);
-extern "C" void  (gpu_dataReorderCombined)(const int N, uint4 *keyAndPerm, real4 *source1, real4* destination1, real4 *source2, real4* destination2, real4 *source3, real4* destination3);
 
     
-
 extern "C" void  (split_move)( uint2 *valid, uint *output, uint *counts,  const int N, setupParams2 sParam);
 extern "C" void  (compact_move)( uint2 *values, uint *output,  uint *counts,  const int N,setupParams2 sParam,const uint *workToDo);
 extern "C" void  (compact_count)(volatile uint2 *values,uint *counts, const int N, setupParams2 sParam,const uint *workToDo);
 extern "C" void  (exclusive_scan_block)(int *ptr, const int N, int *count);
-extern "C" void  (correct_dust_particles)(const int n_bodies, float dt_cb, uint   *active_list, real4 *vel, real4 *acc0, real4 *acc1);
-extern "C" void  (predict_dust_particles)(const int n_bodies, float tc, float tp, real4 *pos, real4 *vel, real4 *acc, uint  *body2grouplist, uint  *valid_list);
-extern "C" void  (store_dust_groups)(int n_groups, uint  *validList, uint  *body2group_list, uint2 *group_list, uint  *activeDustGroups);
-extern "C" void  (define_dust_groups)(int n_particles, real4  *dust_pos, uint  *validList);
 extern "C" void  (store_group_list)(int    n_particles, int n_groups, uint  *validList, uint  *body2group_list, uint2 *group_list);
 extern "C" void  (build_group_list2)(const int n_particles, uint *validList, const uint2 startLevelBeginEnd, uint2 *node_bodies, int *node_level_list, int treeDepth);
 extern "C" void  (gpu_build_level_list)(const int n_nodes, const int n_leafs, uint *leafsIdxs, uint2 *node_bodies,  uint* valid_list);
@@ -78,43 +57,13 @@ extern "C" void  (gpu_setPHGroupDataGetKey2)(const int n_groups, real4 *bodies_p
 
 
 extern "C" void  (compute_dt)(const int n_bodies, float    tc, float    eta, int      dt_limit, float    eps2, float2   *time, real4    *vel, int      *ngb, real4    *bodies_pos, real4    *bodies_acc, uint     *active_list, float    timeStep);
-
 extern "C" void  (dev_direct_gravity)(float4 *accel, float4 *i_positions, float4 *j_positions, int numBodies_i, int numBodies_j, float eps2);
 
-
-extern "C" void  (doDomainCheck)(int    n_bodies, double4  xlow, double4  xhigh, real4  *body_pos, int    *validList);
-extern "C" void  (gpu_domainCheckSFC)(int    n_bodies, uint4  lowBoundary, uint4  highBoundary, uint4  *body_key, int    *validList);                                           
-extern "C" void  (gpu_extractSampleParticles)(int    n_bodies, int    sample_freq, real4  *body_pos, real4  *samplePosition);
-extern "C" void  (extractOutOfDomainParticlesR4)(int n_extract, int *extractList, real4 *source, real4 *destination);
-//extern "C" void  (extractOutOfDomainParticlesAdvanced)(int n_extract,int *extractList, real4 *Ppos,real4 *Pvel,real4 *pos,real4 *vel,real4 *acc0,real4 *acc1,float2 *time,int   *body_id,bodyStruct *destination);
-extern "C" void  (gpu_internalMove)(int n_extract, int       n_bodies,double4  xlow, double4  xhigh, int       *extractList, int       *indexList, real4     *Ppos, real4     *Pvel, real4     *pos, real4     *vel, real4     *acc0, real4     *acc1, float2    *time, int       *body_id);
-
-//extern "C" void  (gpu_insertNewParticles)(int       n_extract, int       n_insert, int       n_oldbodies, int       offset, real4     *Ppos, real4     *Pvel, real4     *pos, real4     *vel, real4     *acc0, real4     *acc1, float2    *time, int       *body_id, bodyStruct *source);
-
-extern "C" void  (gpu_internalMoveSFC) (int       n_extract, int       n_bodies, uint4  lowBoundary, uint4  highBoundary, int       *extractList, int       *indexList, real4     *Ppos, real4     *Pvel, real4     *pos, real4     *vel, real4     *acc0, real4     *acc1, float2    *time,   unsigned long long        *body_id, uint4     *body_key);
+//Parallel.cu kernels
 extern "C" void  (gpu_internalMoveSFC2) (int       n_extract, int       n_bodies, uint4  lowBoundary, uint4  highBoundary, int2       *extractList, int       *indexList, real4     *Ppos, real4     *Pvel, real4     *pos, real4     *vel, real4     *acc0, real4     *acc1, float2    *time, unsigned long long        *body_id, uint4     *body_key);
-
-//extern "C" void  (gpu_extractOutOfDomainParticlesAdvancedSFC)(int offset, int n_extract, int *extractList, real4 *Ppos, real4 *Pvel, real4 *pos, real4 *vel, real4 *acc0, real4 *acc1, float2 *time, int   *body_id, uint4 *body_key, bodyStruct *destination);
 extern "C" void  (gpu_extractOutOfDomainParticlesAdvancedSFC2)(int offset, int n_extract, uint2 *extractList, real4 *Ppos, real4 *Pvel, real4 *pos, real4 *vel, real4 *acc0, real4 *acc1, float2 *time, unsigned long long *body_id, uint4 *body_key, bodyStruct *destination);
-
 extern "C" void  (gpu_insertNewParticlesSFC)(int       n_extract, int       n_insert, int       n_oldbodies, int       offset, real4     *Ppos, real4     *Pvel, real4     *pos, real4     *vel, real4     *acc0, real4     *acc1, float2    *time, unsigned long long        *body_id, uint4     *body_key, bodyStruct *source);
-extern "C" void  (gpu_extractSampleParticlesSFC)(int    n_bodies, int    sample_freq, uint4  *body_pos, uint4  *samplePosition);
-
-
-
-extern "C" void  (gpu_build_parallel_grps)( uint   compact_list_len, uint   offset, uint  *compact_list, uint4 *bodies_key, uint4 *parGrpBlockKey, uint2 *parGrpBlockInfo, uint  *startBoundary);
-
-extern "C" void  (gpu_segmentedSummaryBasic) (const int n_groups, uint     *validGroups, uint     *atomicValues, uint2    *hashGroupInfo, uint4    *hashGroupKey, uint4    *hashGroupResult, uint4    *sourceData);
-
 extern "C" void  (gpu_domainCheckSFCAndAssign)(int    n_bodies, int    nProcs, uint4  lowBoundary, uint4  highBoundary, uint4  *boundaryList,  uint4  *body_key, uint    *validList,  uint   *idList, int procId);
 
-
-
-#ifdef USE_DUST
-  extern "C" void (gpu_define_dust_groups)(int    n_particles,real4  *dust_pos,uint  *validList);
-  extern "C" void (gpu_store_dust_groups)(int    n_groups,uint  *validList,uint  *body2group_list,uint2 *group_list,uint  *activeDustGroups);
-  extern "C" void (predict_dust_particles)(const int n_bodies,float tc,float tp,real4 *pos,real4 *vel,real4 *acc,uint  *body2grouplist,uint  *valid_list);
-  extern "C" void  (correct_dust_particles)(const int n_bodies,float dt_cb,uint   *active_list,real4 *vel,real4 *acc0,real4 *acc1);
-#endif
 
 #endif

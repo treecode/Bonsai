@@ -1022,6 +1022,7 @@ KERNEL_DECLARE(gpu_segmentedCoarseGroupBoundary)(
 
 
 #if 0
+#if 0
 //Function to mark the particles that are already assigned to a hash
 KERNEL_DECLARE(build_parallel_grps)(
                              uint   compact_list_len,
@@ -1167,7 +1168,9 @@ KERNEL_DECLARE(gpu_build_parallel_grps)(
 
 } //end cl_build_parallel_reduce
 #endif
+#endif
 
+#if 0
 //static __device__ uint retirementCountSegmentedSummaryBasic = 0;
 //This is a simple place holder, example function
 //depending on the data to be summarized
@@ -1272,7 +1275,7 @@ KERNEL_DECLARE(gpu_segmentedSummaryBasic) (
 
   } //End while
 }//end segmentedSummary
-
+#endif
 
 
 

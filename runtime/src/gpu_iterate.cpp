@@ -1,24 +1,9 @@
 #undef NDEBUG
 #include "octree.h"
 #include  "postProcessModules.h"
-#include "SharedMemory.h"
-#include "BonsaiSharedData.h"
 
 #include <iostream>
 #include <algorithm>
-#include <iomanip>
-
-
-using ShmQHeader = SharedMemoryServer<BonsaiSharedQuickHeader>;
-using ShmQData   = SharedMemoryServer<BonsaiSharedQuickData>;
-using ShmSHeader = SharedMemoryServer<BonsaiSharedSnapHeader>;
-using ShmSData   = SharedMemoryServer<BonsaiSharedSnapData>;
-
-static ShmQHeader *shmQHeader = NULL;
-static ShmQData   *shmQData   = NULL;
-static ShmSHeader *shmSHeader = NULL;
-static ShmSData   *shmSData   = NULL;
-
 
 using namespace std;
 
@@ -31,23 +16,8 @@ cudaEvent_t startRemoteGrav;
 cudaEvent_t endLocalGrav;
 cudaEvent_t endRemoteGrav;
 
+float runningLETTimeSum, lastTotal, lastLocal;
 
-//extern std::vector<real4>   ioThreadPos;
-//extern std::vector<real4>   ioThreadVel;
-//extern std::vector<ullong>  ioThreadIDs;
-//extern volatile sharedIOThreadStruct ioThreadProps;
-
-float runningLETTimeSum;
-
-float lastTotal;
-float lastLocal;
-
-inline float host_int_as_float(int val)
-{
-  union{int i; float f;} itof; //__int_as_float
-  itof.i           = val;
-  return itof.f;
-}
 
 void octree::makeLET()
 {
@@ -73,164 +43,9 @@ void octree::makeLET()
   LOGF(stderr,"MakeLET Preparing data-copy: %lg  sendGroups: %lg Total: %lg \n",
                t10-t00, t20-t10, t40-t00);
 
-
-#if 0
-  union{float f; int i;} u; //__float_as_int
-
-  //The next piece of code, makes extracts from our tree-structure. This is done for the "copyTreeUpToLevel"
-  //top levels. These small trees can then be send to other processors, that are far away. This should be
-  //more efficient then making a tree for each of them.
-
-  //Multiple copies are made depending on which level the tree has to go to.
-  //This to reduce data size that is being send around.
-
-  double t30        = get_time();
-  int startLevel    = this->localTree.startLevelMin;
-  uint2 node_begend;
-
-  int copyTreeUpToLevel = startLevel+2;
-  if(copyTreeUpToLevel >= this->localTree.n_levels) //In some cases we have not so many levels that we can do the above
-    copyTreeUpToLevel = startLevel;
-
-  //Compute worst case memory requirement
-  int buffSize2 = 0;
-  int bufferUpToThisLevel = 0;
-  for(int level=0; level <= copyTreeUpToLevel; level++)
-  {
-
-    node_begend.x      = this->localTree.level_list[level].x;
-    node_begend.y      = this->localTree.level_list[level].y;
-    int nNodes = (node_begend.y-node_begend.x);
-    int nParticles = 0;
-    if(level >= this->localTree.startLevelMin)
-    {
-      nParticles = NLEAF*nNodes;
-    }
-    bufferUpToThisLevel   += 5*nNodes+nParticles+1;
-
-    //Total buffer size this level would be all previous levels plus this one
-    buffSize2 += bufferUpToThisLevel;
-  }
-
-  std::vector<real4> particleBuffer; particleBuffer.reserve(2048);
-  std::vector<real4> nodeBuffer;     nodeBuffer.reserve(2048);
-  std::vector<real4> topLevelsBuffer;
-  topLevelsBuffer.reserve(buffSize2);
-  memset(&topLevelsBuffer[0], 0, sizeof(real4)*buffSize2); //makes Valgrind happier
-
-  int nextLevelOffsset = 0;
-
-  std::vector<uint2> treeSizeAndOffset(copyTreeUpToLevel+1);
-
-  for(int i=0; i <=copyTreeUpToLevel; i++)
-  {
-    particleBuffer.clear();
-    nodeBuffer.clear();
-
-    int nParticles = 0;
-    int nNodes     = this->localTree.level_list[i].y;
-    for(int level=0; level <= i; level++)
-    {
-      node_begend.x      = this->localTree.level_list[level].x;
-      node_begend.y      = this->localTree.level_list[level].y;
-
-      //Check for leafs/particles, count them
-      for(int j=node_begend.x; j < node_begend.y; j++)
-      {
-        nodeBuffer.push_back(localTree.boxSizeInfo[j]);
-
-        u.f         = localTree.boxSizeInfo[j].w;
-        int nchild  = (((u.i & INVBMASK) >> LEAFBIT)+1);
-        int child   =   u.i & BODYMASK;
-
-        //Mark it as a non-splitable if this is the deepest level
-        if(level == i)
-        {
-          u.i                               = 0xFFFFFFFF;
-          nodeBuffer[nodeBuffer.size()-1].w = u.f;
-        }
-
-        if(this->localTree.boxCenterInfo[j].w <= 0) //Check if it is a leaf
-        {
-          //Only include the particles if this is not the last level, OR if there is only 1 child if
-          //there is only one child the leaf is _always_ opened for accuracy reasons. See compute_scaling
-          if(level < copyTreeUpToLevel)
-          {
-            u.i         = (nParticles | ((nchild-1) << LEAFBIT));
-            nParticles += nchild;
-            for(int z=child; z<child+nchild; z++)
-            {
-              particleBuffer.push_back(localTree.bodies_Ppos[z]);
-            }
-
-            //Modify the offset to point to the correct particle
-            nodeBuffer[nodeBuffer.size()-1].w = u.f;
-          }
-          else
-          {
-            if(nchild == 1) //nchild == 1 means it will be split, so we have to always include it
-            {
-              u.i         = (nParticles | (nchild-1) << LEAFBIT);
-              nParticles += nchild;
-              particleBuffer.push_back(localTree.bodies_Ppos[child]);
-              nodeBuffer[nodeBuffer.size()-1].w = u.f; //Modify the offset, (also means its splitable)
-            }//if nchild == 1
-          } // if(level < copyTreeUpToLevel)
-        } //if(this->localTree.boxCenterInfo[j].w < 0)
-      }//for node_begend
-    }//for level
-    //    LOGF(stderr,"Total particles: %d and nodes %d (%d) \n", nParticles,nNodes, nodeBuffer.size());
-
-    real4 *buffer = &topLevelsBuffer[nextLevelOffsset];
-
-    //Copy particles, centers, sizes and multi-pole information
-    memcpy(&buffer[1+0         +(0*nNodes)], &particleBuffer[0],          sizeof(real4)*particleBuffer.size());
-    memcpy(&buffer[1+nParticles+(0*nNodes)], &nodeBuffer[0],              sizeof(real4)*nodeBuffer.size());
-    memcpy(&buffer[1+nParticles+(1*nNodes)], &localTree.boxCenterInfo[0], sizeof(real4)*nodeBuffer.size());
-    memcpy(&buffer[1+nParticles+(2*nNodes)], &localTree.multipole[0],     sizeof(real4)*nodeBuffer.size()*3);
-    //Store the properties of this tree
-    node_begend.x = this->localTree.level_list[i].x;
-    node_begend.y = this->localTree.level_list[i].y;
-    buffer[0].x   = host_int_as_float(nParticles);    //Number of particles in the LET
-    buffer[0].y   = host_int_as_float(nNodes);        //Number of nodes     in the LET
-    buffer[0].z   = host_int_as_float(node_begend.x); //First node on the level that indicates the start of the tree walk
-    buffer[0].w   = host_int_as_float(node_begend.y); //last node on the level that indicates the start of the tree walk
-
-    treeSizeAndOffset[i] = make_uint2((nParticles+(5*nNodes)+1), nextLevelOffsset);
-    nextLevelOffsset    += (nParticles+(5*nNodes)+1);
-  }
-
-#if 0
-  for(int j=0; j <= this->localTree.startLevelMin; j++ )
-  {
-    string nodeFileName = "fullTreeStructure.txt";
-    char fileName[256];
-    sprintf(fileName, "fullTreeStructure-%d-%d.txt", mpiGetRank(), j);
-    ofstream nodeFile;
-    //nodeFile.open(nodeFileName.c_str());
-    nodeFile.open(fileName);
-
-    nodeFile << "NODES" << endl;
-
-    for(int i=this->localTree.level_list[j].x; i < this->localTree.level_list[j].y; i++)
-    {
-        nodeFile <<  this->localTree.boxCenterInfo[i].x << "\t" << this->localTree.boxCenterInfo[i].y << "\t" << this->localTree.boxCenterInfo[i].z;
-        nodeFile << "\t" << localTree.boxSizeInfo[i].x << "\t" << localTree.boxSizeInfo[i].y << "\t" << localTree.boxSizeInfo[i].z << "\n";
-    }
-    nodeFile.close();
-  }
-#endif
-
-  double t40 = get_time();
-  LOGF(stderr,"MakeLET Preparing data-copy: %lg  sendGroups: %lg Copy: %lg TreeCpy: %lg Total: %lg \n",
-               t10-t00, t20-t10, t30-t20, t40-t30, t40-t00);
-
-#else
- //End tree-extract
   std::vector<real4> topLevelsBuffer;
   std::vector<uint2> treeSizeAndOffset;
   int copyTreeUpToLevel = 0;
-#endif
   //Start LET kernels
   essential_tree_exchangeV2(localTree,
                             remoteTree,
@@ -241,345 +56,7 @@ void octree::makeLET()
   letRunning = false;
 }
 
-template<typename T>
-static void lHandShake(SharedMemoryBase<T> &header)
-{
-  header.acquireLock();
-  header[0].handshake = false;
-  header.releaseLock();
 
-  while (!header[0].handshake)
-    usleep(10000);
-  
-  header.acquireLock();
-  header[0].handshake = false;
-  header.releaseLock();
-}
-
-void octree::terminateIO() const
-{
-  {
-    auto &header = *shmQHeader;
-    header.acquireLock();
-    header[0].tCurrent = -1;
-    header[0].done_writing = false;
-    header.releaseLock();
-  }
-  {
-    auto &header = *shmSHeader;
-    header.acquireLock();
-    header[0].tCurrent = -1;
-    header[0].done_writing = false;
-    header.releaseLock();
-  }
-}
-
-static IDType lGetIDType(const long long id)
-{
-  IDType ID;
-  ID.setID(id);
-  ID.setType(3);     /* Everything is Dust until told otherwise */
-  if(id >= DISKID  && id < BULGEID)       
-  {
-    ID.setType(2);  /* Disk */
-    ID.setID(id - DISKID);
-  }
-  else if(id >= BULGEID && id < DARKMATTERID)  
-  {
-    ID.setType(1);  /* Bulge */
-    ID.setID(id - BULGEID);
-  }
-  else if (id >= DARKMATTERID)
-  {
-    ID.setType(0);  /* DM */
-    ID.setID(id - DARKMATTERID);
-  }
-  return ID;
-};
-
-void octree::dumpDataMPI()
-{
-  static MPI_Datatype MPI_Header = 0;
-  static MPI_Datatype MPI_Data   = 0;
-  if (!MPI_Header)
-  {
-    int ss = sizeof(BonsaiSharedHeader) / sizeof(char);
-    assert(0 == sizeof(BonsaiSharedHeader) % sizeof(char));
-    MPI_Type_contiguous(ss, MPI_BYTE, &MPI_Header);
-    MPI_Type_commit(&MPI_Header);
-  }
-  if (!MPI_Data)
-  {
-    int ss = sizeof(BonsaiSharedData) / sizeof(char);
-    assert(0 == sizeof(BonsaiSharedData) % sizeof(char));
-    MPI_Type_contiguous(ss, MPI_BYTE, &MPI_Data);
-    MPI_Type_commit(&MPI_Data);
-  }
-
-  BonsaiSharedHeader header;
-  std::vector<BonsaiSharedData> data;
-
-  if (t_current >= nextQuickDump && quickDump > 0)
-  {
-    localTree.bodies_pos.d2h();
-    localTree.bodies_vel.d2h();
-    localTree.bodies_ids.d2h();
-    localTree.bodies_h.d2h();
-    localTree.bodies_dens.d2h();
-
-    nextQuickDump += quickDump;
-    nextQuickDump = std::max(nextQuickDump, t_current);
-
-    if (procId == 0)
-      fprintf(stderr, "-- quickdumpMPI: nextQuickDump= %g  quickRatio= %g\n",
-          nextQuickDump, quickRatio);
-
-    const std::string fileNameBase = snapshotFile + "_quickMPI";
-    const float ratio = quickRatio;
-    assert(!quickSync);
-  
-    char fn[1024];
-    sprintf(fn,
-        "%s_%010.4f.bonsai", 
-        fileNameBase.c_str(), 
-        t_current);
-
-    const size_t nSnap = localTree.n;
-    const size_t dn = static_cast<size_t>(1.0/ratio);
-    assert(dn >= 1);
-    size_t nQuick = 0;
-    for (size_t i = 0; i < nSnap; i += dn)
-      nQuick++;
-
-
-    header.tCurrent = t_current;
-    header.nBodies  = nQuick;
-    for (int i = 0; i < 1024; i++)
-    {
-      header.fileName[i] = fn[i];
-      if (fn[i] == 0)
-        break;
-    }
-
-    data.resize(nQuick);
-#pragma omp parallel for schedule(static)
-    for (size_t i = 0; i < nSnap; i += dn)
-    {
-      auto &p = data[i/dn];
-      p.x    = localTree.bodies_pos[i].x;
-      p.y    = localTree.bodies_pos[i].y;
-      p.z    = localTree.bodies_pos[i].z;
-      p.mass = localTree.bodies_pos[i].w;
-      p.vx   = localTree.bodies_vel[i].x;
-      p.vy   = localTree.bodies_vel[i].y;
-      p.vz   = localTree.bodies_vel[i].z;
-      p.vw   = localTree.bodies_vel[i].w;
-      p.rho  = localTree.bodies_dens[i].x;
-      p.h    = localTree.bodies_h[i];
-      p.ID   = lGetIDType(localTree.bodies_ids[i]);
-    }
-
-    static int worldRank = -1;
-
-    static MPI_Request  req[2];
-    static MPI_Status status[2];
-
-    int ready2send = 1;
-    if (worldRank != -1)
-    {
-      int ready2sendHeader;
-      int ready2sendData;
-      MPI_Test(&req[0], &ready2sendHeader, &status[0]);
-      MPI_Test(&req[1], &ready2sendData,   &status[1]);
-      ready2send = ready2sendHeader && ready2sendData;
-    }
-    else
-    {
-      MPI_Comm_rank(MPI_COMM_WORLD, &worldRank);  
-    }
-    assert(worldRank%2 == 0);
-
-    const int destRank = worldRank + 1;
-
-    int ready2sendGlobal;
-    MPI_Allreduce(&ready2send, &ready2sendGlobal, 1, MPI_INT, MPI_MIN, mpiCommWorld);
-
-    if (ready2sendGlobal)
-    {
-      static BonsaiSharedHeader header2send;
-      static std::vector<BonsaiSharedData> data2send;
-
-      header2send = std::move(header);
-      data2send   = std::move(data);
-
-      static int sendCount = 0;
-      const int tagBase = 42;
-      MPI_Isend(&header2send,                 1, MPI_Header, destRank, tagBase+2*sendCount+0, MPI_COMM_WORLD, &req[0]);
-      MPI_Isend(&data2send[0], data2send.size(), MPI_Data,   destRank, tagBase+2*sendCount+1, MPI_COMM_WORLD, &req[1]);
-      sendCount++;
-      sendCount = sendCount % 4 ;  /* permit only 4 buffer */
-    }
-    
-  }
-}
-
-template<typename THeader, typename TData>
-void octree::dumpDataCommon(
-    SharedMemoryBase<THeader> &header, SharedMemoryBase<TData> &data,
-    const std::string &fileNameBase,
-    const float ratio,
-    const bool sync)
-{
-  /********/
-
-  if (sync)
-    while (!header[0].done_writing);
-  else
-  {
-    static bool first = true;
-    if (first)
-    {
-      first = false;
-      header[0].done_writing = true;
-    }
-    int ready = header[0].done_writing;
-    int readyGlobal;
-    MPI_Allreduce(&ready, &readyGlobal, 1, MPI_INT, MPI_MIN, mpiCommWorld);
-    if (!readyGlobal)
-      return;
-  }
-    
-  /* write header */
-
-  char fn[1024];
-  sprintf(fn,
-      "%s_%010.4f.bonsai", 
-      fileNameBase.c_str(), 
-      t_current);
-    
-  const size_t nSnap = localTree.n;
-  const size_t dn = static_cast<size_t>(1.0/ratio);
-  assert(dn >= 1);
-  size_t nQuick = 0;
-  for (size_t i = 0; i < nSnap; i += dn)
-    nQuick++;
-
-  header.acquireLock();
-  header[0].tCurrent = t_current;
-  header[0].nBodies  = nQuick;
-  for (int i = 0; i < 1024; i++)
-  {
-    header[0].fileName[i] = fn[i];
-    if (fn[i] == 0)
-      break;
-  }
-
-  data.acquireLock();
-  if (!data.resize(nQuick))
-  {
-    std::cerr << "rank= " << procId << ": failed to resize. ";
-    std::cerr << "Request " << nQuick << " but capacity is  " << data.capacity() << "." << std::endl;
-    MPI_Finalize();
-    ::exit(0);
-  }
-#pragma omp parallel for schedule(static)
-  for (size_t i = 0; i < nSnap; i += dn)
-  {
-    auto &p = data[i/dn];
-    p.x    = localTree.bodies_pos[i].x;
-    p.y    = localTree.bodies_pos[i].y;
-    p.z    = localTree.bodies_pos[i].z;
-    p.mass = localTree.bodies_pos[i].w;
-    p.vx   = localTree.bodies_vel[i].x;
-    p.vy   = localTree.bodies_vel[i].y;
-    p.vz   = localTree.bodies_vel[i].z;
-    p.vw   = localTree.bodies_vel[i].w;
-    p.rho  = localTree.bodies_dens[i].x;
-    p.h    = localTree.bodies_h[i];
-    p.ID   = lGetIDType(localTree.bodies_ids[i]);
-  }
-  data.releaseLock();
-
-  header[0].done_writing = false;
-  header.releaseLock();
-}
-
-
-void octree::dumpData()
-{
-  if (shmQHeader == NULL)
-  {
-    const size_t capacity  = min(4*localTree.n, 24*1024*1024);
-
-    shmQHeader = new ShmQHeader(ShmQHeader::type::sharedFile(procId), 1);
-    shmQData   = new ShmQData  (ShmQData  ::type::sharedFile(procId), capacity);
-
-    shmSHeader = new ShmSHeader(ShmSHeader::type::sharedFile(procId), 1);
-    shmSData   = new ShmSData  (ShmSData  ::type::sharedFile(procId), capacity);
-  }
-  
-  if ((t_current >= nextQuickDump && quickDump    > 0) || 
-      (t_current >= nextSnapTime  && snapshotIter > 0))
-  {
-    localTree.bodies_pos.d2h();
-    localTree.bodies_vel.d2h();
-    localTree.bodies_ids.d2h();
-    localTree.bodies_h.d2h();
-    localTree.bodies_dens.d2h();
-  }
-
-
-  if (t_current >= nextQuickDump && quickDump > 0)
-  {
-
-    static bool handShakeQ = false;
-    if (!handShakeQ && quickDump > 0 && quickSync)
-    {
-      auto &header = *shmQHeader;
-      header[0].tCurrent = t_current;
-      header[0].done_writing = true;
-      lHandShake(header);
-      handShakeQ = true;
-    }
-
-    nextQuickDump += quickDump;
-    nextQuickDump = std::max(nextQuickDump, t_current);
-    if (procId == 0)
-      fprintf(stderr, "-- quickdump: nextQuickDump= %g  quickRatio= %g\n",
-          nextQuickDump, quickRatio);
-
-
-    dumpDataCommon(
-        *shmQHeader, *shmQData, 
-        snapshotFile + "_quick",
-        quickRatio,
-        quickSync);
-  }
-
-  if (t_current >= nextSnapTime && snapshotIter > 0)
-  {
-    static bool handShakeS = false;
-    if (!handShakeS && snapshotIter > 0)
-    {
-      auto &header = *shmSHeader;
-      header[0].tCurrent = t_current;
-      header[0].done_writing = true;
-      lHandShake(header);
-      handShakeS = true;
-    }
-
-    nextSnapTime += snapshotIter;
-    nextSnapTime = std::max(nextSnapTime, t_current);
-    if (procId == 0)
-      fprintf(stderr, "-- snapdump: nextSnapDump= %g  %d\n", nextSnapTime, localTree.n);
-
-    dumpDataCommon(
-        *shmSHeader, *shmSData,
-        snapshotFile,
-        1.0,  /* fraction of particles to store */
-        true  /* force sync between IO and simulator */);
-  }
-}
 
 // returns true if this iteration is the last (t_current >= t_end), false otherwise
 bool octree::iterate_once(IterationData &idata) {
@@ -590,17 +67,17 @@ bool octree::iterate_once(IterationData &idata) {
     if(iter < 32)
     {
       idata.totalGPUGravTimeLocal = 0;
-      idata.totalGPUGravTimeLET = 0;
-      idata.totalLETCommTime = 0;
-      idata.totalBuildTime = 0;
-      idata.totalDomTime = 0;
-      idata.lastWaitTime = 0;
-      idata.startTime = get_time();
-      idata.totalGravTime = 0;
-      idata.totalDomUp = 0;
-      idata.totalDomEx = 0;
-      idata.totalDomWait = 0;
-      idata.totalPredCor = 0;
+      idata.totalGPUGravTimeLET   = 0;
+      idata.totalLETCommTime      = 0;
+      idata.totalBuildTime        = 0;
+      idata.totalDomTime          = 0;
+      idata.lastWaitTime          = 0;
+      idata.startTime             = get_time();
+      idata.totalGravTime         = 0;
+      idata.totalDomUp            = 0;
+      idata.totalDomEx            = 0;
+      idata.totalDomWait          = 0;
+      idata.totalPredCor          = 0;
     }
 
 
@@ -646,24 +123,11 @@ bool octree::iterate_once(IterationData &idata) {
       }
     }
 
-
-
-    #ifdef USE_DUST
-      //Predict, sort and set properties
-      predictDustStep(this->localTree);          
-    #endif
-
     if (useDirectGravity)
     {
       devContext.startTiming(gravStream->s());
       direct_gravity(this->localTree);
       devContext.stopTiming("Direct_gravity", 4);
-
-      #ifdef USE_DUST
-            devContext.startTiming(gravStream->s());
-            direct_dust(this->localTree);
-            devContext.stopTiming("Direct_dust", 4, gravStream->s());
-      #endif
     }
     else
     {
@@ -704,15 +168,6 @@ bool octree::iterate_once(IterationData &idata) {
 
         idata.lastBuildTime   = get_time() - t1;
         idata.totalBuildTime += idata.lastBuildTime;  
-
-
-        #ifdef USE_DUST
-                //Sort and set properties
-                sort_dust(this->localTree);
-                make_dust_groups(this->localTree);
-                setDustGroupProperties(this->localTree);
-        #endif
-
       }
       else
       {
@@ -722,15 +177,10 @@ bool octree::iterate_once(IterationData &idata) {
           devContext.stopTiming("setActiveGrpsFunc", 10, execStream->s());      
           idata.Nact_since_last_tree_rebuild = 0;
         #endif        
-        //Dont rebuild only update the current boxes
+        //Don't rebuild only update the current boxes
         devContext.startTiming(execStream->s());
         this->compute_properties(this->localTree);
         devContext.stopTiming("Compute-properties", 3, execStream->s());
-
-        #ifdef USE_DUST
-                setDustGroupProperties(this->localTree);
-        #endif
-
       }//end rebuild tree
 
       //Approximate gravity
@@ -741,17 +191,10 @@ bool octree::iterate_once(IterationData &idata) {
 
       runningLETTimeSum = 0;
 
-      if(nProcs > 1)
-        makeLET();
-
-      #ifdef USE_DUST
-            devContext.startTiming(gravStream->s());
-            approximate_dust(this->localTree);
-            devContext.stopTiming("Approximation_dust", 4, gravStream->s());
-      #endif
+      if(nProcs > 1) makeLET();
     }//else if useDirectGravity
 
-    gravStream->sync();
+    gravStream->sync(); //Syncs the gravity stream, including any gravity computations due to LET actions
 
     idata.lastGravTime      = get_time() - t1;
     idata.totalGravTime    += idata.lastGravTime;
@@ -786,12 +229,11 @@ bool octree::iterate_once(IterationData &idata) {
     if(nProcs > 1)  CU_SAFE_CALL(cudaEventElapsedTime(&msLET,startRemoteGrav, endRemoteGrav));
 
     msLET += runningLETTimeSum;
-    LOGF(stderr, "APPTIME [%d]: Iter: %d\t%g \tn: %d EventTime: %f  and %f\tSum: %f\n", 
-		procId, iter, idata.lastGravTime, this->localTree.n, ms, msLET, ms+msLET);
 
     char buff[512];
     sprintf(buff,  "APPTIME [%d]: Iter: %d\t%g \tn: %d EventTime: %f  and %f\tSum: %f\n",
         procId, iter, idata.lastGravTime, this->localTree.n, ms, msLET, ms+msLET);
+    LOGF(stderr,"%s", buff);
     devContext.writeLogEvent(buff);
 #else
     ms    = 1;
@@ -810,10 +252,6 @@ bool octree::iterate_once(IterationData &idata) {
 //    lastLocal = 1;//JB1 REMOVE TODO NOTE
 //    lastTotal = 1;//JB1 REMOVE TODO NOTE
 
-//    lastTotal = ms + 300./msLET;
-//    lastTotal = ms + msLET;
-//    lastTotal =  get_time() - t1;
-
     //Corrector
     tTempTime = get_time();
     devContext.startTiming(execStream->s());
@@ -822,10 +260,6 @@ bool octree::iterate_once(IterationData &idata) {
     idata.totalPredCor += get_time() - tTempTime;
 
 
-    #ifdef USE_DUST
-      //Correct
-      correctDustStep(this->localTree);  
-    #endif     
     
     if(nProcs > 1)
     {
@@ -833,8 +267,6 @@ bool octree::iterate_once(IterationData &idata) {
       //Wait on all processes and time how long the waiting took
       t1 = get_time();
       devContext.startTiming(execStream->s());
-      //mpiSync();
-
       //Gather info about the load-balance, used to decide if we need to refine the domains
       MPI_Allreduce(&lastTotal, &maxExecTimePrevStep, 1, MPI_FLOAT, MPI_MAX, mpiCommWorld);
       MPI_Allreduce(&lastTotal, &avgExecTimePrevStep, 1, MPI_FLOAT, MPI_SUM, mpiCommWorld);
@@ -903,57 +335,22 @@ bool octree::iterate_once(IterationData &idata) {
 
         while(!ioSharedData.writingFinished)
         {
-          fprintf(stderr,"WAITING \n");
+          fprintf(stderr,"Waiting till previous snapshot has been written\n");
           usleep(100); //Wait till previous snapshot is written
         }
 
         ioSharedData.t_current  = t_current;
-        const int nToWrite      = localTree.n_dust + localTree.n;
 
+        //TODO JB, why do we do malloc here?
         assert(ioSharedData.nBodies == 0);
-        ioSharedData.malloc(nToWrite);
+        ioSharedData.malloc(localTree.n);
 
-        #ifdef USE_DUST
-          //We move the dust data into the position data (on the device :) )
-          localTree.bodies_pos.copy_devonly(localTree.dust_pos, localTree.n_dust, localTree.n);
-          localTree.bodies_vel.copy_devonly(localTree.dust_vel, localTree.n_dust, localTree.n);
-          localTree.bodies_ids.copy_devonly(localTree.dust_ids, localTree.n_dust, localTree.n);
-        #endif
 
-        localTree.bodies_pos.d2h(nToWrite, ioSharedData.Pos);
-        localTree.bodies_vel.d2h(nToWrite, ioSharedData.Vel);
-        localTree.bodies_ids.d2h(nToWrite, ioSharedData.IDs);
+        localTree.bodies_pos.d2h(localTree.n, ioSharedData.Pos);
+        localTree.bodies_vel.d2h(localTree.n, ioSharedData.Vel);
+        localTree.bodies_ids.d2h(localTree.n, ioSharedData.IDs);
         ioSharedData.writingFinished = false;
         if(nProcs <= 16) while (!ioSharedData.writingFinished);
-
-#if 0
-        string fileName; fileName.resize(256);
-        sprintf(&fileName[0], "%s_%010.4f", snapshotFile.c_str(), time + snapShotAdd);
-        
-        #ifdef USE_DUST
-          //We move the dust data into the position data (on the device :) )
-          localTree.bodies_pos.copy_devonly(localTree.dust_pos, localTree.n_dust, localTree.n);
-          localTree.bodies_vel.copy_devonly(localTree.dust_vel, localTree.n_dust, localTree.n);
-          localTree.bodies_ids.copy_devonly(localTree.dust_ids, localTree.n_dust, localTree.n);
-        #endif         
-
-        localTree.bodies_pos.d2h();
-        localTree.bodies_vel.d2h();
-        localTree.bodies_ids.d2h();
-
-        if(nProcs <= 16)
-        {
-          write_dumbp_snapshot_parallel(&localTree.bodies_pos[0], &localTree.bodies_vel[0],
-              &localTree.bodies_ids[0], localTree.n + localTree.n_dust, fileName.c_str(), t_current) ;
-        }
-        else
-        {
-          sprintf(&fileName[0], "%s_%010.4f-%d", snapshotFile.c_str(), time + snapShotAdd, procId);
-          write_snapshot_per_process(&localTree.bodies_pos[0], &localTree.bodies_vel[0],
-                                     &localTree.bodies_ids[0], localTree.n + localTree.n_dust,
-                                     fileName.c_str(), t_current) ;
-        }
-#endif
       }
     }
 
@@ -965,9 +362,7 @@ bool octree::iterate_once(IterationData &idata) {
       compute_energies(this->localTree);
       double totalTime = get_time() - idata.startTime;
       LOG("Finished: %f > %f \tLoop alone took: %f\n", t_current, tEnd, totalTime);
-     
       my_dev::base_mem::printMemUsage();
-
       return true;
     }
     iter++; 
@@ -975,32 +370,15 @@ bool octree::iterate_once(IterationData &idata) {
     return false;
 }
 
-void debugPrintProgress(int procId, int p, const MPI_Comm &mpiCommWorld)
-{
-#ifdef USE_MPI
-  MPI_Barrier(mpiCommWorld);
-  if (procId == 0)
-  {
-    fprintf(stderr, " === %d === \n", p);
-  }
-  MPI_Barrier(mpiCommWorld);
-#endif
-}
-
+//TODO JB clean this up such that it really only does setup
+//and move all compute related and dump related items to
+//iterate once
 void octree::iterate_setup(IterationData &idata) {
-  real4 r_min, r_max;
   
-  if(execStream == NULL)
-    execStream = new my_dev::dev_stream(0);
-
-  if(gravStream == NULL)
-    gravStream = new my_dev::dev_stream(0);
-
-  if(copyStream == NULL)
-    copyStream = new my_dev::dev_stream(0);
-  
-  if(LETDataToHostStream == NULL)
-    LETDataToHostStream = new my_dev::dev_stream(0);
+  if(execStream == NULL)          execStream          = new my_dev::dev_stream(0);
+  if(gravStream == NULL)          gravStream          = new my_dev::dev_stream(0);
+  if(copyStream == NULL)          copyStream          = new my_dev::dev_stream(0);
+  if(LETDataToHostStream == NULL) LETDataToHostStream = new my_dev::dev_stream(0);
 
 
   CU_SAFE_CALL(cudaEventCreate(&startLocalGrav));
@@ -1020,11 +398,9 @@ void octree::iterate_setup(IterationData &idata) {
      
   double t1;
   sort_bodies(localTree, true, true);
-  //Initial prediction/acceleration to setup the system
-  //Will be at time 0
+  //Initial prediction/acceleration to setup the system, will be at time 0
   //predict the particles
   predict(this->localTree);
-  debugPrintProgress(procId,200,mpiCommWorld);
   double notUsed = 0;
 
   //Setup of the particle distribution, initially it should be equal
@@ -1053,10 +429,6 @@ void octree::iterate_setup(IterationData &idata) {
     }
   }
 
-//  if(nProcs > 1)
-//    parallelDataSummary(localTree, 30, 30, notUsed, notUsed); //1 for all process, equal part distribution
-//
-
   //Start construction of the tree
   sort_bodies(localTree, true);
 
@@ -1065,6 +437,7 @@ void octree::iterate_setup(IterationData &idata) {
   compute_properties(localTree);
   //END TEST
 
+  real4 r_min, r_max;
   this->getBoundaries(localTree, r_min, r_max);
   //Build the tree using the predicted positions  
   //Compute the (new) node properties
@@ -1085,25 +458,6 @@ void octree::iterate_setup(IterationData &idata) {
   devContext.stopTiming("Approximation", 4, gravStream->s());
   LOGF(stderr, "APP Time during first step: %g \n", get_time() - t1);
   
-  #ifdef USE_DUST
-      //Sort the dust
-      sort_dust(localTree);
-      //make the dust groups
-      make_dust_groups(localTree);
-      //Predict
-      predictDustStep(this->localTree);
-      
-      //Set the group properties of dust
-      setDustGroupProperties(this->localTree);
-      
-      devContext.startTiming(gravStream->s());
-      approximate_dust(this->localTree);
-      devContext.stopTiming("Approximatin_dust", 4, gravStream->s());
-      //Correct
-      correctDustStep(this->localTree);  
-  #endif
-  
-  
 
   if(nProcs > 1)  makeLET();
 
@@ -1121,91 +475,29 @@ void octree::iterate_setup(IterationData &idata) {
 
   if (useMPIIO)
   {
-    nextSnapTime  = t_current;
-    nextQuickDump = t_current;
-    if (mpiRenderMode)
-      dumpDataMPI();
-    else
-      dumpData();
+    nextSnapTime  = nextQuickDump = t_current;
+    if (mpiRenderMode)  dumpDataMPI();
+    else                dumpData();
   }
   else if(snapshotIter > 0)
   {
-    nextSnapTime = t_current;
-    if((t_current >= nextSnapTime))
+    nextSnapTime += t_current+snapshotIter;
+
+    while(!ioSharedData.writingFinished)
     {
-      nextSnapTime += snapshotIter;
-
-      while(!ioSharedData.writingFinished)
-      {
-        usleep(100); //Wait till previous snapshot is written
-      }
-
-      ioSharedData.t_current = t_current;
-      const int nToWrite      = localTree.n_dust + localTree.n;
-
-      ioSharedData.malloc(nToWrite);
-
-      #ifdef USE_DUST
-        //We move the dust data into the position data (on the device :) )
-        localTree.bodies_pos.copy_devonly(localTree.dust_pos, localTree.n_dust, localTree.n);
-        localTree.bodies_vel.copy_devonly(localTree.dust_vel, localTree.n_dust, localTree.n);
-        localTree.bodies_ids.copy_devonly(localTree.dust_ids, localTree.n_dust, localTree.n);
-      #endif
-
-      localTree.bodies_pos.d2h(nToWrite, ioSharedData.Pos);
-      localTree.bodies_vel.d2h(nToWrite, ioSharedData.Vel);
-      localTree.bodies_ids.d2h(nToWrite, ioSharedData.IDs);
-      ioSharedData.writingFinished = false;
-      if(nProcs <= 16) while (!ioSharedData.writingFinished);
-      while (!ioSharedData.writingFinished);
+      usleep(100); //Wait till previous snapshot is written
     }
+
+    ioSharedData.t_current = t_current;
+    ioSharedData.malloc(localTree.n);
+
+    localTree.bodies_pos.d2h(localTree.n, ioSharedData.Pos);
+    localTree.bodies_vel.d2h(localTree.n, ioSharedData.Vel);
+    localTree.bodies_ids.d2h(localTree.n, ioSharedData.IDs);
+    ioSharedData.writingFinished = false;
+    if(nProcs <= 16) while (!ioSharedData.writingFinished);
+    while (!ioSharedData.writingFinished);
   }
-
-#if 0
-  //Print time 0 snapshot
-  if(snapshotIter > 0 )
-  {
-      float time = t_current;
-      
-      //We always snapshot the state at the current time, so we have the start
-      //of the simulation included in our snapshots. This also allows us to
-      //adjust the nextSnapTime to the correct starting point now that we can start
-      //at time != 0
-      //if((time >= nextSnapTime))
-      nextSnapTime = time;
-      if(1)
-      {
-        nextSnapTime += snapshotIter;       
-        
-        string fileName; fileName.resize(256);
-        sprintf(&fileName[0], "%s_%010.4f", snapshotFile.c_str(), time + snapShotAdd);
-        
-        #ifdef USE_DUST
-          //We move the dust data into the position data (on the device :) )
-          localTree.bodies_pos.copy_devonly(localTree.dust_pos, localTree.n_dust, localTree.n);
-          localTree.bodies_vel.copy_devonly(localTree.dust_vel, localTree.n_dust, localTree.n);
-          localTree.bodies_ids.copy_devonly(localTree.dust_ids, localTree.n_dust, localTree.n);
-        #endif         
-
-        localTree.bodies_pos.d2h();
-        localTree.bodies_vel.d2h();
-        localTree.bodies_ids.d2h();
-
-        if(nProcs <= 16)
-        {
-          write_dumbp_snapshot_parallel(&localTree.bodies_pos[0], &localTree.bodies_vel[0],
-              &localTree.bodies_ids[0], localTree.n + localTree.n_dust, fileName.c_str(), t_current) ;
-        }
-        else
-        {
-          sprintf(&fileName[0], "%s_%010.4f-%d", snapshotFile.c_str(), time + snapShotAdd, procId);
-          write_snapshot_per_process(&localTree.bodies_pos[0], &localTree.bodies_vel[0],
-                                     &localTree.bodies_ids[0], localTree.n + localTree.n_dust,
-                                     fileName.c_str(), t_current) ;
-        }
-      }//if 1
-  }//if snapShotIter > 0
-#endif
 
   if(statisticsIter > 0)
   {
@@ -1243,34 +535,6 @@ void octree::iterate_setup(IterationData &idata) {
 }
 
 void octree::iterate_teardown(IterationData &idata) {
-  double totalTime = get_time() - idata.startTime;
-  if (procId == 0)
-  {
-	  LOGF(stderr,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\tdomWait: %g\ttPredCor: %g\n",
-			  procId, totalTime, idata.totalGravTime,
-			  (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
-			  idata.totalLETCommTime,
-			  idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
-			  idata.totalDomUp, idata.totalDomEx, idata.totalDomWait, idata.totalPredCor);
-	  LOGF(stdout,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\tdomWait: %g\ttPredCor: %g\n",
-			  procId, totalTime, idata.totalGravTime,
-			  (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
-			  idata.totalLETCommTime,
-			  idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
-			  idata.totalDomUp, idata.totalDomEx, idata.totalDomWait, idata.totalPredCor);
-  }	
-  
-  char buff[16384];
-  sprintf(buff,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\tdomWait: %g\ttPredCor: %g\n",
-                  procId, totalTime, idata.totalGravTime,
-                  (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
-                  idata.totalLETCommTime,
-                  idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
-                  idata.totalDomUp, idata.totalDomEx, idata.totalDomWait, idata.totalPredCor);
-  devContext.writeLogEvent(buff);
-
-  this->writeLogToFile();
-
   if(execStream != NULL)
   {
     delete execStream;
@@ -1299,46 +563,32 @@ void octree::iterate() {
   IterationData idata;
   iterate_setup(idata);
 
-  for(int i=0; i < 10000000; i++) //Large number, limit
+  while(true)
   {
-    if (true == iterate_once(idata))
-    {
-      break;    
-    }
+    bool stopRun = iterate_once(idata);
+
     double totalTime = get_time() - idata.startTime;
+
+    static char textBuff[16384];
+    sprintf(textBuff,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\tdomWait: %g\ttPredCor: %g\n",
+                      procId, totalTime, idata.totalGravTime,
+                      (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
+                      idata.totalLETCommTime,
+                      idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
+                      idata.totalDomUp, idata.totalDomEx, idata.totalDomWait, idata.totalPredCor);
+
     if (procId == 0)
     {
-      LOGF(stderr,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\tdomWait: %g\ttPredCor: %g\n",
-          procId, totalTime, idata.totalGravTime,
-          (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
-          idata.totalLETCommTime,
-          idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
-          idata.totalDomUp, idata.totalDomEx, idata.totalDomWait, idata.totalPredCor);
-      LOGF(stdout,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\tdomWait: %g\ttPredCor: %g\n",
-          procId, totalTime, idata.totalGravTime,
-          (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
-          idata.totalLETCommTime,
-          idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
-          idata.totalDomUp, idata.totalDomEx, idata.totalDomWait, idata.totalPredCor);
+      LOGF(stderr,"%s", textBuff);
+      LOGF(stdout,"%s", textBuff);
     }
-    char buff[16384];
-    sprintf(buff,"TIME [%02d] TOTAL: %g\t Grav: %g (GPUgrav %g , LET Com: %g)\tBuild: %g\tDomain: %g\t Wait: %g\tdomUp: %g\tdomEx: %g\tdomWait: %g\ttPredCor: %g\n",
-                    procId, totalTime, idata.totalGravTime,
-                    (idata.totalGPUGravTimeLocal+idata.totalGPUGravTimeLET) / 1000,
-                    idata.totalLETCommTime,
-                    idata.totalBuildTime, idata.totalDomTime, idata.lastWaitTime,
-                    idata.totalDomUp, idata.totalDomEx, idata.totalDomWait, idata.totalPredCor);
-    devContext.writeLogEvent(buff);
+    devContext.writeLogEvent(textBuff);
+    this->writeLogToFile();     //Write the logdata to file
 
-
-    //Write the logdata to file
-    this->writeLogToFile();
-
-
-  } //end for i
+    if(stopRun) break;
+  } //end while
   
   iterate_teardown(idata);
-  
 } //end iterate
 
 
@@ -1486,15 +736,13 @@ void octree::approximate_gravity(tree_structure &tree)
   approxGrav.set_arg<cl_mem>(14, tree.boxCenterInfo.p());
   approxGrav.set_arg<cl_mem>(15, tree.groupCenterInfo.p());
   approxGrav.set_arg<cl_mem>(16, tree.bodies_Pvel.p());
-  approxGrav.set_arg<cl_mem>(17, tree.generalBuffer1.p()); //Instead of using Local memory
-  approxGrav.set_arg<cl_mem>(18, tree.bodies_h.p());    //Per particle search radius
-  approxGrav.set_arg<cl_mem>(19, tree.bodies_dens.p()); //Per particle density (x) and nnb (y)
-  
-  
-  approxGrav.set_arg<real4>(20, tree.boxSizeInfo, 4, "texNodeSize");
+  approxGrav.set_arg<cl_mem>(17, tree.generalBuffer1.p());  //The buffer to store the tree walks
+  approxGrav.set_arg<cl_mem>(18, tree.bodies_h.p());        //Per particle search radius
+  approxGrav.set_arg<cl_mem>(19, tree.bodies_dens.p());     //Per particle density (x) and nnb (y)
+  approxGrav.set_arg<real4>(20, tree.boxSizeInfo,   4, "texNodeSize");
   approxGrav.set_arg<real4>(21, tree.boxCenterInfo, 4, "texNodeCenter");
-  approxGrav.set_arg<real4>(22, tree.multipole, 4, "texMultipole");
-  approxGrav.set_arg<real4>(23, tree.bodies_Ppos, 4, "texBody");
+  approxGrav.set_arg<real4>(22, tree.multipole,     4, "texMultipole");
+  approxGrav.set_arg<real4>(23, tree.bodies_Ppos,   4, "texBody");
     
   approxGrav.setWork(-1, NTHREAD, nBlocksForTreeWalk);
 
@@ -1539,100 +787,7 @@ if(firstIter0 == true || iter == 40){
 
 
 
-#if 0
-  //Do the LET Count action on the GPU :-)
-
-  double t00 = get_time();
-  int box = ((procId+1) % nProcs);
-
-  fprintf(stderr, "I am proc: %d  Going to check against box: %d \n", procId, box);
-
-  my_dev::dev_mem<real4>  coarseGroupBoxCenterGPU(devContext, this->globalCoarseGrpCount[box]);
-  my_dev::dev_mem<real4>  coarseGroupBoxSizeGPU(devContext, this->globalCoarseGrpCount[box]);
-
-  my_dev::dev_mem<uint2>  markedNodes(devContext, tree.n_nodes);
-  markedNodes.zeroMem();
-  tree.activePartlist.zeroMem();
-
-  int writeIdx = 0;
-  for(int i=this->globalCoarseGrpOffsets[box] ; i < this->globalCoarseGrpOffsets[box] + this->globalCoarseGrpCount[box]; i++)
-  {
-    coarseGroupBoxCenterGPU[writeIdx] = make_float4(coarseGroupBoxCenter[i].x,  coarseGroupBoxCenter[i].y,
-        coarseGroupBoxCenter[i].z, coarseGroupBoxCenter[i].w);
-
-    coarseGroupBoxSizeGPU[writeIdx]   = make_float4(coarseGroupBoxSize[i].x,  coarseGroupBoxSize[i].y,
-        coarseGroupBoxSize[i].z, coarseGroupBoxSize[i].w);
-    writeIdx++;
-  }
-  int grps = this->globalCoarseGrpCount[box];
-
-  double4 boxCenter = {     0.5*(currentRLow[box].x  + currentRHigh[box].x),
-                            0.5*(currentRLow[box].y  + currentRHigh[box].y),
-                            0.5*(currentRLow[box].z  + currentRHigh[box].z), 0};
-  double4 boxSize   = {fabs(0.5*(currentRHigh[box].x - currentRLow[box].x)),
-                       fabs(0.5*(currentRHigh[box].y - currentRLow[box].y)),
-                       fabs(0.5*(currentRHigh[box].z - currentRLow[box].z)), 0};
-  fprintf(stderr, "Big box: %f %f %f || %f %f %f \n",
-      boxCenter.x, boxCenter.y, boxCenter.z, boxSize.x, boxSize.y, boxSize.z);
-
-
-//  coarseGroupBoxCenterGPU[0] = make_float4(boxCenter.x,  boxCenter.y, boxCenter.z, boxCenter.w);
-//  coarseGroupBoxSizeGPU[0] = make_float4(boxSize.x,  boxSize.y, boxSize.z, boxSize.w);
-//  grps = 1;
-
-  coarseGroupBoxSizeGPU.h2d();
-  coarseGroupBoxCenterGPU.h2d();
-
-
-
-
-  tree.interactions.zeroMemGPUAsync(gravStream->s());
-
-  //Set the kernel parameters, many!
-   determineLET.set_arg<int>(0,     &grps);
-   determineLET.set_arg<int>(1,    &tree.n);
-   determineLET.set_arg<uint2>(2,  &node_begend);
-   determineLET.set_arg<cl_mem>(3, tree.active_group_list.p());
-   determineLET.set_arg<cl_mem>(4, tree.multipole.p());
-   determineLET.set_arg<cl_mem>(5, tree.activePartlist.p());
-   determineLET.set_arg<cl_mem>(6, tree.boxSizeInfo.p());
-   determineLET.set_arg<cl_mem>(7, coarseGroupBoxSizeGPU.p());
-   determineLET.set_arg<cl_mem>(8, tree.boxCenterInfo.p());
-   determineLET.set_arg<cl_mem>(9, coarseGroupBoxCenterGPU.p());
-   determineLET.set_arg<cl_mem>(10,  tree.generalBuffer1.p()); //Instead of using Local memory
-   determineLET.set_arg<cl_mem>(11,  markedNodes.p());
-
-
-   determineLET.set_arg<real4>(12, tree.boxSizeInfo, 4, "texNodeSize");
-   determineLET.set_arg<real4>(13, tree.boxCenterInfo, 4, "texNodeCenter");
-   determineLET.set_arg<real4>(14, tree.multipole, 4, "texMultipole");
-   determineLET.set_arg<real4>(15, tree.bodies_Ppos, 4, "texBody");
-
-
-   double t0 = get_time();
-   determineLET.setWork(-1, NTHREAD, nBlocksForTreeWalk);
-   determineLET.execute(gravStream->s());  //First half
-   gravStream->sync();
-
-
-   LOGF(stderr, "Test run klaar!! coarse groups: %d source: %d\t Took: %f Setup: %f\n",
-       this->globalCoarseGrpCount[box],box, get_time()-t0, t0-t00);
-
-  markedNodes.d2h();
-  int useNodes = 0, useParticles=0;
-  for(int i=0; i < tree.n_nodes; i++)
-  {
-    if(markedNodes[i].x > 0)
-    {
-      useNodes++;
-      useParticles += markedNodes[i].y;
-  }
-  }
-  LOGF(stderr, "Number of nodes to use: %d Particles: %d\n", useNodes, useParticles);
-
-#endif
-
-  //Print interaction statistics  egaburov
+  //Print interaction statistics
   #if 0
   
   tree.body2group_list.d2h();
@@ -1662,10 +817,6 @@ if(firstIter0 == true || iter == 40){
 //              i, tree.interactions[i].y, tree.interactions[i].x,
 //              tree.body2group_list[i]);
     }
-  
-    //cerr << "Interaction at iter: " << iter << "\tdirect: " << directSum << "\tappr: " << apprSum << "\t";
-    //cerr << "avg dir: " << directSum / tree.n << "\tavg appr: " << apprSum / tree.n << endl;
-
     cout << "Interaction at (rank= " << mpiGetRank() << " ) iter: " << iter << "\tdirect: " << directSum << "\tappr: " << apprSum << "\t";
     cout << "avg dir: " << directSum / tree.n << "\tavg appr: " << apprSum / tree.n << "\tMaxdir: " << maxDir << "\tmaxAppr: " << maxAppr <<  endl;
     cout << "sigma dir: " << sqrt((directSum2  - directSum)/ tree.n) << "\tsigma appr: " << std::sqrt((apprSum2 - apprSum) / tree.n)  <<  endl;    
@@ -1755,29 +906,25 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
 
   approxGravLET.set_arg<cl_mem>(15, tree.groupCenterInfo.p());  
   
-//   void *bdyVelLoc = remoteTree.fullRemoteTree.a(1*(remoteP));
-//   approxGravLET.set_arg<cl_mem>(16, &bdyVelLoc);  //<- Remote bodies velocity
-  
+
   approxGravLET.set_arg<cl_mem>(16, tree.bodies_Pvel.p()); //<- Predicted local body velocity
-  approxGravLET.set_arg<cl_mem>(17, tree.generalBuffer1.p()); //<- Predicted local body velocity
+  approxGravLET.set_arg<cl_mem>(17, tree.generalBuffer1.p()); //<- Predicted local body velocity, TODO figure out what this is
   approxGravLET.set_arg<cl_mem>(18, tree.bodies_h.p());    //Per particle search radius
   approxGravLET.set_arg<cl_mem>(19, tree.bodies_dens.p()); //Per particle density (x) and nnb (y)
   
   approxGravLET.set_arg<real4>(20, remoteTree.fullRemoteTree, 4, "texNodeSize",
                                1*(remoteP), remoteN );
   approxGravLET.set_arg<real4>(21, remoteTree.fullRemoteTree, 4, "texNodeCenter",
-                               1*(remoteP) + (remoteN + nodeTexOffset),
-                               remoteN);
+                               1*(remoteP) + (remoteN + nodeTexOffset), remoteN);
   approxGravLET.set_arg<real4>(22, remoteTree.fullRemoteTree, 4, "texMultipole",
-                               1*(remoteP) + 2*(remoteN + nodeTexOffset),
-                               3*remoteN);
+                               1*(remoteP) + 2*(remoteN + nodeTexOffset), 3*remoteN);
   approxGravLET.set_arg<real4>(23, remoteTree.fullRemoteTree, 4, "texBody", 0, remoteP);  
 
   approxGravLET.setWork(-1, NTHREAD, nBlocksForTreeWalk);
     
   if(letRunning)
   {
-    //dont want to overwrite the data of previous LET tree
+    //don't want to overwrite the data of previous LET tree
     gravStream->sync();
 
     //Add the time to the time sum for the let
@@ -1793,21 +940,6 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
   approxGravLET.execute(gravStream->s());
   CU_SAFE_CALL(cudaEventRecord(endRemoteGrav, gravStream->s()));
   letRunning = true;
-
-
-#if 0
-  real4 *temp2 = &remoteTree.fullRemoteTree[1*(remoteP)];
-  real4 *part = &remoteTree.fullRemoteTree[0];
-  real4 *temp = &remoteTree.fullRemoteTree[1*(remoteP) + remoteN + nodeTexOffset];
-
-  if(procId == 1)
-  for(int i=0; i < 35; i++)
-  {
-    LOGF(stderr,"%d Size: %f %f %f  %f ||", i, temp2[i].x,temp2[i].y,temp2[i].z,temp2[i].w);
-    LOGF(stderr," Cent: %f %f %f %f  \n", temp[i].x,temp[i].y,temp[i].z,temp[i].w);
-//    LOGF(stderr,"%d\t%f %f %f \t %f \n", i, part[i].x,part[i].y,part[i].z,part[i].w);
-  }
-#endif
 
 
  //Print interaction statistics
@@ -1873,27 +1005,6 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
       LOG("Active particles: %d \n", tree.n_active_particles);
     #endif
   }    
-    
-
-//   if(doActiveParticles)
-//   {
-//     //Reduce the number of valid particles
-//     getNActive.set_arg<int>(0,    &tree.n);
-//     getNActive.set_arg<cl_mem>(1, tree.activePartlist.p());
-//     getNActive.set_arg<cl_mem>(2, this->nactive.p());
-//     getNActive.set_arg<int>(3, NULL, 128); //Dynamic shared memory , equal to number of threads
-//     getNActive.setWork(-1, 128, NBLOCK_REDUCE);
-//     //CU_SAFE_CALL(clFinish(0));
-//     getNActive.execute(execStream->s());
-//     
-//     //Reduce the last parts on the host
-//     this->nactive.d2h();
-//     tree.n_active_particles = this->nactive[0];
-//     for (int i = 1; i < NBLOCK_REDUCE ; i++)
-//         tree.n_active_particles += this->nactive[i];
-// 
-//     LOG("LET Active particles: %d (Process: %d ) \n",tree.n_active_particles, mpiGetRank());
-//   }
 }
 //end approximate
 
@@ -1904,10 +1015,8 @@ void octree::correct(tree_structure &tree)
   my_dev::dev_mem<float2>  float2Buffer(devContext);
   my_dev::dev_mem<real4>   real4Buffer1(devContext);
 
-  int memOffset = float2Buffer.cmalloc_copy(tree.generalBuffer1, 
-                                             tree.n, 0);
-      memOffset = real4Buffer1.cmalloc_copy(tree.generalBuffer1, 
-                                             tree.n, memOffset);  
+  int memOffset = float2Buffer.cmalloc_copy(tree.generalBuffer1, tree.n, 0);
+      memOffset = real4Buffer1.cmalloc_copy(tree.generalBuffer1, tree.n, memOffset);
   
  
   correctParticles.set_arg<int   >(0, &tree.n);
@@ -1936,22 +1045,10 @@ void octree::correct(tree_structure &tree)
   correctParticles.setWork(tree.n, 128);
   correctParticles.execute(execStream->s());
  
-/* specialParticles.d2h();
-fprintf(stderr, "Sun: %f %f %f %f \n", specialParticles[0].x, 
-  specialParticles[0].y, specialParticles[0].z, specialParticles[0].w); 
-  
-fprintf(stderr, "m31: %f %f %f %f \n", specialParticles[1].x, 
-  specialParticles[1].y, specialParticles[1].z, specialParticles[1].w);  */
-
-
-  //tree.bodies_acc0.copy(real4Buffer1, tree.n);
-  //tree.bodies_time.copy(float2Buffer, float2Buffer.get_size());
+  //Copy the reshuffled items back to their original buffers
   tree.bodies_acc0.copy_devonly(real4Buffer1, tree.n);
   tree.bodies_time.copy_devonly(float2Buffer, float2Buffer.get_size());
 
-
-
-  
 
   #ifdef DO_BLOCK_TIMESTEP
     computeDt.set_arg<int>(0,    &tree.n);
@@ -1970,107 +1067,8 @@ fprintf(stderr, "m31: %f %f %f %f \n", specialParticles[1].x,
     computeDt.setWork(tree.n, 128);
     computeDt.execute(execStream->s());
   #endif
-
 }
 
-
-void octree::checkRemovalDistance(tree_structure &tree)                                                                                                     
-{                                                                                                                                                           
-  //Download all particle properties to the host                                                                                                            
-                                                                                                                                                            
-  tree.bodies_pos.d2h();    //The particles positions                                                                                                       
-  tree.bodies_key.d2h();    //The particles keys                                                                                                            
-  tree.bodies_vel.d2h();    //Velocities                                                                                                                    
-  tree.bodies_acc0.d2h();    //Acceleration                                                                                                                 
-  tree.bodies_acc1.d2h();    //Acceleration                                                                                                                 
-  tree.bodies_time.d2h();  //The timestep details (.x=tb, .y=te                                                                                             
-  tree.bodies_ids.d2h();                                                                                                                                    
-                                                                                                                                                            
-  bool modified = false;                                                                                                                                    
-                                                                                                                                                            
-  tree.multipole.d2h();                                                                                                                                     
-  real4 com = tree.multipole[0];                                                                                                                            
-                                                                                                                                                            
-  int storeIdx = 0;               
-  
-  int NTotalT = 0, NFirstT = 0, NSecondT = 0, NThirdT = 0;
-                                                                                                                                                            
-  for(int i=0; i < tree.n ; i++)                                                                                                                            
-  {                                                                                                                                                         
-    real4 posi = tree.bodies_pos[i];                                                                                                                        
-                                                                                                                                                            
-    real4 r;                                                                                                                                                
-    r.x = (posi.x-com.x); r.y = (posi.y-com.y);r.z = (posi.z-com.z);                                                                                        
-    float dist = (r.x*r.x) + (r.y*r.y) + (r.z*r.z);                                                                                                         
-    dist = sqrt(dist);                                                                                                                                      
-                                                                                                                                                            
-    tree.bodies_pos[storeIdx] = tree.bodies_pos[i];                                                                                                         
-    tree.bodies_key[storeIdx] = tree.bodies_key[i];                                                                                                         
-    tree.bodies_vel[storeIdx] = tree.bodies_vel[i];                                                                                                         
-    tree.bodies_acc0[storeIdx] = tree.bodies_acc0[i];                                                                                                       
-    tree.bodies_acc1[storeIdx] = tree.bodies_acc1[i];                                                                                                       
-    tree.bodies_time[storeIdx] = tree.bodies_time[i];                                                                                                       
-    tree.bodies_ids[storeIdx] = tree.bodies_ids[i];                
-
-    if(dist > removeDistance)                                                                                                                               
-    {                                                                                                                                                       
-        //Remove this particle                                                                                                                              
-        cerr << "Removing particle: " << i << " distance is: " << dist;                                                                                     
-        cerr << "\tPOSM: " << posi.x << " " << posi.y << " " << posi.z << " " << posi.w;                                                                    
-        cerr << "\tCOM: " << com.x << " " << com.y << " " << com.z << " " << com.w << endl;                                                                 
-                                                                                                                                                            
-        //Add this particles potential energy to the sum                                                                                                    
-//         removedPot += hostbodies[i].w*0.5*hostacc0[i].w;                                                                                                 
-        modified =  true;                                                                                                                                   
-    }                                                                                                                                                       
-    else                                                                                                                                                    
-    {                                                                                                                                                       
-      storeIdx++; //Increase the store position           
-
-      NTotalT++;
-      NFirstT = 0, NSecondT = 0, NThirdT = 0;    
-      
-      //Specific for Jeroens files
-      if(tree.bodies_ids[i] >= 0 && tree.bodies_ids[i] < 100000000) NThirdT++;
-      if(tree.bodies_ids[i] >= 100000000 && tree.bodies_ids[i] < 200000000) NSecondT++;
-      if(tree.bodies_ids[i] >= 200000000 && tree.bodies_ids[i] < 300000000) NFirstT++;      
-    }                                                                                                                                                       
-  } //end for loop           
-
-
-  NTotal  = NTotalT;
-  NFirst  = NFirstT;
-  NSecond = NSecondT;
-  NThird  = NThirdT;
-
-                                                                                                                                                            
-  if(modified)                                                                                                                                              
-  {                                                                                                                                                         
-    tree.setN(storeIdx);                                                                                                                                    
-                                                                                                                                                            
-    //Now copy them back!!! Duhhhhh                                                                                                                         
-    tree.bodies_pos.h2d();    //The particles positions                                                                                                     
-    tree.bodies_key.h2d();    //The particles keys                                                                                                          
-    tree.bodies_vel.h2d();    //Velocities                                                                                                                  
-    tree.bodies_acc0.h2d();    //Acceleration                                                                                                               
-    tree.bodies_acc1.h2d();    //Acceleration                                                                                                               
-    tree.bodies_time.h2d();  //The timestep details (.x=tb, .y=te                                                                                           
-    tree.bodies_ids.h2d();                                                                                                                                  
-                                                                                                                                                            
-    //Compute the energy!                                                                                                                                   
-    store_energy_flag = true;                                                                                                                               
-    compute_energies(tree);                                                                                                                                
-  }//end if modified                                                                                                                                        
-  else                                                                                                                                                      
-  {                                                                                                                                                         
-        cerr << "Nothing removed! :-) \n";                                                                                                                  
-  }                   
-  
-  //TODO sync the number of particles with process 0 for correct header file
-  
-  
-}                                                                                                                                                           
-     
 
 
  //Double precision
@@ -2079,26 +1077,22 @@ double octree::compute_energies(tree_structure &tree)
   Ekin = 0.0; Epot = 0.0;
 
   #if 0
-  double hEkin = 0.0;
-  double hEpot = 0.0;
+    double hEkin = 0.0;
+    double hEpot = 0.0;
 
-  tree.bodies_pos.d2h();
-  tree.bodies_vel.d2h();
-  tree.bodies_acc0.d2h();
-  for (int i = 0; i < tree.n; i++) {
-    float4 vel = tree.bodies_vel[i];
-    hEkin += tree.bodies_pos[i].w*0.5*(vel.x*vel.x +
-                               vel.y*vel.y +
-                               vel.z*vel.z);
-    hEpot += tree.bodies_pos[i].w*0.5*tree.bodies_acc0[i].w;
-    
-//    fprintf(stderr, "%d\t Vel: %f %f %f Mass: %f Pot: %f \n",
-//            i,vel.x, vel.y, vel.z,tree.bodies_pos[i].w, tree.bodies_acc0[i].w);
-
-  }
-  MPI_Barrier(mpiCommWorld);
-  double hEtot = hEpot + hEkin;
-  LOG("Energy (on host): Etot = %.10lg Ekin = %.10lg Epot = %.10lg \n", hEtot, hEkin, hEpot);
+    tree.bodies_pos.d2h();
+    tree.bodies_vel.d2h();
+    tree.bodies_acc0.d2h();
+    for (int i = 0; i < tree.n; i++) {
+      float4 vel = tree.bodies_vel[i];
+      hEkin += tree.bodies_pos[i].w*0.5*(vel.x*vel.x +
+                                 vel.y*vel.y +
+                                 vel.z*vel.z);
+      hEpot += tree.bodies_pos[i].w*0.5*tree.bodies_acc0[i].w;
+    }
+    MPI_Barrier(mpiCommWorld);
+    double hEtot = hEpot + hEkin;
+    LOG("Energy (on host): Etot = %.10lg Ekin = %.10lg Epot = %.10lg \n", hEtot, hEkin, hEpot);
   #endif
 
   //float2 energy : x is kinetic energy, y is potential energy
@@ -2145,7 +1139,7 @@ double octree::compute_energies(tree_structure &tree)
   }
 
   
-  double de = (Etot - Etot0)/Etot0;
+  double de  = (Etot - Etot0)/Etot0;
   double dde = (Etot - Etot1)/Etot1;
 
   if(tree.n_active_particles == tree.n)
@@ -2175,3 +1169,102 @@ double octree::compute_energies(tree_structure &tree)
 
   return de;
 }
+
+
+#if 0
+//TODO JB remove this function
+void octree::checkRemovalDistance(tree_structure &tree)
+{
+  //Download all particle properties to the host
+
+  tree.bodies_pos.d2h();    //The particles positions
+  tree.bodies_key.d2h();    //The particles keys
+  tree.bodies_vel.d2h();    //Velocities
+  tree.bodies_acc0.d2h();    //Acceleration
+  tree.bodies_acc1.d2h();    //Acceleration
+  tree.bodies_time.d2h();  //The timestep details (.x=tb, .y=te
+  tree.bodies_ids.d2h();
+
+  bool modified = false;
+
+  tree.multipole.d2h();
+  real4 com = tree.multipole[0];
+
+  int storeIdx = 0;
+
+  int NTotalT = 0, NFirstT = 0, NSecondT = 0, NThirdT = 0;
+
+  for(int i=0; i < tree.n ; i++)
+  {
+    real4 posi = tree.bodies_pos[i];
+
+    real4 r;
+    r.x = (posi.x-com.x); r.y = (posi.y-com.y);r.z = (posi.z-com.z);
+    float dist = (r.x*r.x) + (r.y*r.y) + (r.z*r.z);
+    dist = sqrt(dist);
+
+    tree.bodies_pos[storeIdx] = tree.bodies_pos[i];
+    tree.bodies_key[storeIdx] = tree.bodies_key[i];
+    tree.bodies_vel[storeIdx] = tree.bodies_vel[i];
+    tree.bodies_acc0[storeIdx] = tree.bodies_acc0[i];
+    tree.bodies_acc1[storeIdx] = tree.bodies_acc1[i];
+    tree.bodies_time[storeIdx] = tree.bodies_time[i];
+    tree.bodies_ids[storeIdx] = tree.bodies_ids[i];
+
+    if(dist > removeDistance)
+    {
+        //Remove this particle
+        cerr << "Removing particle: " << i << " distance is: " << dist;
+        cerr << "\tPOSM: " << posi.x << " " << posi.y << " " << posi.z << " " << posi.w;
+        cerr << "\tCOM: " << com.x << " " << com.y << " " << com.z << " " << com.w << endl;
+
+        //Add this particles potential energy to the sum
+//         removedPot += hostbodies[i].w*0.5*hostacc0[i].w;
+        modified =  true;
+    }
+    else
+    {
+      storeIdx++; //Increase the store position
+
+      NTotalT++;
+      NFirstT = 0, NSecondT = 0, NThirdT = 0;
+
+      //Specific for Jeroens files
+      if(tree.bodies_ids[i] >= 0 && tree.bodies_ids[i] < 100000000) NThirdT++;
+      if(tree.bodies_ids[i] >= 100000000 && tree.bodies_ids[i] < 200000000) NSecondT++;
+      if(tree.bodies_ids[i] >= 200000000 && tree.bodies_ids[i] < 300000000) NFirstT++;
+    }
+  } //end for loop
+
+
+  NTotal  = NTotalT;
+  NFirst  = NFirstT;
+  NSecond = NSecondT;
+  NThird  = NThirdT;
+
+
+  if(modified)
+  {
+    tree.setN(storeIdx);
+
+    //Now copy them back
+    tree.bodies_pos.h2d();    //The particles positions
+    tree.bodies_key.h2d();    //The particles keys
+    tree.bodies_vel.h2d();    //Velocities
+    tree.bodies_acc0.h2d();    //Acceleration
+    tree.bodies_acc1.h2d();    //Acceleration
+    tree.bodies_time.h2d();  //The timestep details (.x=tb, .y=te
+    tree.bodies_ids.h2d();
+
+    //Compute the energy!
+    store_energy_flag = true;
+    compute_energies(tree);
+  }//end if modified
+  else
+  {
+        cerr << "Nothing removed! :-) \n";
+  }
+
+  //TODO sync the number of particles with process 0 for correct header file
+}
+#endif

@@ -9,9 +9,8 @@ void octree::allocateParticleMemory(tree_structure &tree)
   int n_bodies = tree.n;
 
 
-
-  if(nProcs > 1)                //10% extra space, only in parallel when
-    n_bodies = (int)(n_bodies*MULTI_GPU_MEM_INCREASE);    //number of particles can fluctuate
+  //MULTI_GPU_MEM_INCREASE% extra space, only in parallel when
+  if(nProcs > 1) n_bodies = (int)(n_bodies*MULTI_GPU_MEM_INCREASE);    //number of particles can fluctuate
 
   //Particle properties
   tree.bodies_pos.cmalloc(n_bodies+1, true);   //+1 to set end pos, host mapped? TODO not needed right since we use Ppos
@@ -57,20 +56,15 @@ void octree::allocateParticleMemory(tree_structure &tree)
 #endif
 
 
-  int tempSize   = max(n_bodies, 4096);   //Use minium of 4096 to prevent offsets mess up with small N
-  tempSize       = 3*tempSize *4 + 4096;  //Add 4096 to give some space for memory allignment
-  tempSize = max(tempSize, treeWalkStackSize);
+  int tempSize   = max(n_bodies, 4096);   //Use minimum of 4096 to prevent offsets mess up with small N
+  tempSize       = 3*tempSize *4 + 4096;  //Add 4096 to give some space for memory alignment
+  tempSize       = max(tempSize, treeWalkStackSize);
 
   //General buffer is used at multiple locations and reused in different functions
-  // MJH for some reason this is crashing if pinned, when running on Fermi)
- // if (this->getDevContext()->getComputeCapability() < 300)
- //   tree.generalBuffer1.cmalloc(tempSize, false);
- // else
-  //TODO JB look into the above
-    tree.generalBuffer1.cmalloc(tempSize, true);
+  tree.generalBuffer1.cmalloc(tempSize, true);
 
 
-  //Tree properties, tree size is not known at forehand so
+  //Tree properties, tree size is not known at fore hand so
   //allocate worst possible outcome
   int tempmem = n_bodies ; //Some default size in case tree.n is small
   if(tree.n < 1024)
@@ -106,15 +100,10 @@ void octree::allocateParticleMemory(tree_structure &tree)
 
   if(mpiGetNProcs() > 1)
   {
-//    int remoteSize = (n_bodies*0.1) +  (n_bodies*0.1); //TODO some more realistic number
     int remoteSize = (int)(n_bodies*0.5); //TODO some more realistic number
-
-    if(remoteSize < 1024)
-      remoteSize = 2048;
-
+    if(remoteSize < 1024 ) remoteSize = 2048;
 
     this->remoteTree.fullRemoteTree.cmalloc(remoteSize, true);
-
     tree.parallelBoundaries.cmalloc(mpiGetNProcs()+1, true);
   }
 
@@ -123,7 +112,7 @@ void octree::allocateParticleMemory(tree_structure &tree)
 
 void octree::reallocateParticleMemory(tree_structure &tree)
 {
-  //Realloc the memory to hold the particles data
+  //Reallocate the memory to hold the particles data
   //and the arrays that have the same size as there are
   //particles. Eg valid arrays used in tree construction
   int n_bodies = tree.n;
@@ -166,20 +155,15 @@ void octree::reallocateParticleMemory(tree_structure &tree)
   //Tree properties, tree size is not known at forehand so
   //allocate worst possible outcome
   int tempmem = n_bodies ; //Some default size in case tree.n is small
-  if(tree.n < 1024)
-    tempmem = 2048;
+  if(n_bodies < 1024)  tempmem = 2048;
   tree.n_children.cresize(tempmem, reduce);
   tree.node_bodies.cresize(tempmem, reduce);
 
 
   //Don't forget to resize the generalBuffer....
-#if 0
-  int treeWalkStackSize = (2*LMEM_STACK_SIZE*NTHREAD*nBlocksForTreeWalk) + 4096;
-#else
   int treeWalkStackSize = (2*(LMEM_STACK_SIZE*NTHREAD + LMEM_EXTRA_SIZE)*nBlocksForTreeWalk) + 4096;
-#endif
 
-  int tempSize   = max(n_bodies, 4096);   //Use minium of 4096 to prevent offsets mess up with small N
+  int tempSize   = max(n_bodies, 4096);   //Use minimum of 4096 to prevent offsets mess up with small N
   tempSize       = 3*tempSize *4 + 4096;  //Add 4096 to give some space for memory alignment
   tempSize       = max(tempSize, treeWalkStackSize);
 
@@ -213,7 +197,7 @@ void octree::allocateTreePropMemory(tree_structure &tree)
   }
   else
   {
-    //TODO only host alloc if nProcs > 1
+    //First call to this function
     n_nodes = (int)(n_nodes * 1.1f);
     tree.multipole.cmalloc(3*n_nodes, true); //host allocated
 
@@ -248,9 +232,7 @@ void octree::build (tree_structure &tree) {
       memBufOffset = compactList.cmalloc_copy(tree.generalBuffer1, tree.n*2, memBufOffset);
   int memBufOffsetValidList = memBufOffset;
 
-  int tempmem = tree.n; //Some default size in case tree.n is small
-  if(tree.n < 1024)
-    tempmem = 2048;
+  int tempmem = std::max(2048, tree.n); //Some default size in case tree.n is small
 
   memBufOffset = node_key.cmalloc_copy   (tree.generalBuffer1, tempmem,  memBufOffset);
   memBufOffset = levelOffset.cmalloc_copy(tree.generalBuffer1, 256,      memBufOffset);
@@ -261,9 +243,9 @@ void octree::build (tree_structure &tree) {
   //[levelOffset--256], [maxLevel--256], [free--at-least: 12-8*tree.n-256]]
 
   //Set the default values to zero
-  validList.zeroMemGPUAsync(execStream->s());
+  validList.  zeroMemGPUAsync(execStream->s());
   levelOffset.zeroMemGPUAsync(execStream->s());
-  maxLevel.zeroMemGPUAsync(execStream->s());
+  maxLevel.   zeroMemGPUAsync(execStream->s());
   //maxLevel.zeroMem is required to let the tree-construction work properly.
   //It assumes maxLevel is zero for determining the start-level / min-level value.
 
@@ -340,7 +322,6 @@ void octree::build (tree_structure &tree) {
     build_nodes.execute(execStream->s());
   } //end for level
 
-
   // reset counts to 1 so next compact proceeds...
   this->resetCompact();
 #endif
@@ -356,8 +337,7 @@ void octree::build (tree_structure &tree) {
   levelOffset.d2h(1);
   offset = levelOffset[0];
 
-  int n_nodes  = offset;
-  tree.n_nodes = n_nodes;
+  tree.n_nodes = offset;
 
 
   /***** Link the tree ******/
@@ -372,7 +352,7 @@ void octree::build (tree_structure &tree) {
     exit(0);
   }
 
-  link_tree.setWork(n_nodes, 128);
+  link_tree.setWork(tree.n_nodes , 128);
   link_tree.printWorkSize("Link_tree: ");
 
   tree.n_levels = level-1;
@@ -382,7 +362,7 @@ void octree::build (tree_structure &tree) {
   for(int i=0; i < level; i++)
   {
     LOG("%d\t%d\t%d\n", i, tree.level_list[i].x, tree.level_list[i].y);
-    //Figure out which level is used as min_level
+    //Determine which level is to used as min_level
     if(((tree.level_list[i].y - tree.level_list[i].x) > START_LEVEL_MIN_NODES) && (tree.startLevelMin == 0))
     {
       tree.startLevelMin = i;
@@ -441,18 +421,17 @@ void octree::build (tree_structure &tree) {
 
   define_groups.set_arg<int>    (0, &tree.n);
   define_groups.set_arg<cl_mem> (1, validList.p());
-  //define_groups.set_arg<uint2>  (2, &tree.level_list[tree.startLevelMin]);
-  define_groups.set_arg<uint2>  (2, &tree.level_list[tree.startLevelMin+1]); //Bit deeper for extra cuts
+  define_groups.set_arg<uint2>  (2, &tree.level_list[tree.startLevelMin+1]); //Bit deeper then the minimum for extra cuts
   define_groups.set_arg<cl_mem> (3, tree.node_bodies.p());
   define_groups.set_arg<cl_mem> (4, tree.node_level_list.p());
   define_groups.set_arg<int>    (5, &level);
   define_groups.setWork(tree.n, 128);
   define_groups.execute(execStream->s());
 
-  //Have to copy the node_level_list back to host since we need it in compute properties
+  //Ccopy the node_level_list back to host since we need it in compute properties
   LOG("Finished level list \n");
   tree.node_level_list.d2h();
-  for(int i=0; i < (level); i++)
+  for(int i=0; i < level; i++)
   {
     LOG("node_level_list: %d \t%d\n", i, tree.node_level_list[i]);
   }
@@ -519,7 +498,7 @@ void octree::parallelDataSummary(tree_structure &tree,
 
   real4 r_min = {+1e10, +1e10, +1e10, +1e10};
   real4 r_max = {-1e10, -1e10, -1e10, -1e10};
-  getBoundaries(tree, r_min, r_max); //Used for predicted position keys further down
+  this->getBoundaries(tree, r_min, r_max); //Used for predicted position keys further down
 
   if(updateBoundaries)
   {
@@ -571,14 +550,11 @@ void octree::parallelDataSummary(tree_structure &tree,
     sprintf(buff5,"EXCHANGEA-%d: tUpdateBoundaries: %lg\n", procId,  domComp);
     devContext.writeLogEvent(buff5);
 
+    //Boundaries computed, now echange the particles
     LOGF(stderr, "Computing, exchanging and recompute of domain boundaries took: %f \n",domComp);
     t0 = get_time();
-
-
     gpuRedistributeParticles_SFC(&tree.parallelBoundaries[0]); //Redistribute the particles
-
     domExch = get_time()-t0;
-
 
     LOGF(stderr, "Redistribute domain took: %f\n", get_time()-t0);
 

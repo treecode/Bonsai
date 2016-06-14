@@ -96,6 +96,7 @@ private:
 #endif
 
 
+//Checks the highest bit to see if a particle is in our domain
 struct isInOurDomain
 {
   __host__ __device__
@@ -105,17 +106,7 @@ struct isInOurDomain
   }
 };
 
-//struct isInOurDomain2
-//{
-//  __host__ __device__
-//  bool operator()(const uint &val)
-//  {
-//    return (val >> 31);
-//  }
-//};
-
-// user-defined comparison operator that acts like less<int>,
-// except even numbers are considered to be smaller than odd numbers
+//Compare the x component to determine if it's within our domain
 struct domainCompare
 {
   __host__ __device__
@@ -141,13 +132,30 @@ __host__ __device__ bool operator()(const uint2 &lhs, const uint2 &rhs) const {r
    return ((double) Tvalue.tv_sec +1.e-6*((double) Tvalue.tv_usec));
  }
 
+#if 0
+ thrust_partitionDomains
+  First step, partition?
+  IDs:     [0,1,2,4,5,6,7,3, 8  ,9  ]
+  Domains: [0,1,3,1,1,0,3,0xF,0xF,0xF]
+
+  Second step, sort by exported domain
+   IDs:     [0,6,1,4,5,3,7,3, 8  ,9  ]
+   Domains: [0,0,1,1,1,3,3,0xF,0xF,0xF]
+
+ Third step, reduce the domains
+   Domains/Key  [0,0,1,1,1,3,3]
+   Values       [1,1,1,1,1,1,1]
+   reducebykey  [0,1,3] domain IDs
+                [2,3,2] # particles per domain
+#endif
+
 extern "C" uint2 thrust_partitionDomains( my_dev::dev_mem<uint2> &validList,
                                           my_dev::dev_mem<uint2> &validList2, //Unsorted compacted list
-                                          my_dev::dev_mem<uint> &idList,
+                                          my_dev::dev_mem<uint>  &idList,
                                           my_dev::dev_mem<uint2> &outputKeys,
-                                          my_dev::dev_mem<uint> &outputValues,
+                                          my_dev::dev_mem<uint>  &outputValues,
                                           const int N,
-                                          my_dev::dev_mem<uint> &generalBuffer,
+                                          my_dev::dev_mem<uint>  &generalBuffer,
                                           const int currentOffset)
 {
   thrust::device_ptr<uint2> values      = thrust::device_pointer_cast(validList.raw_p());
@@ -170,33 +178,22 @@ extern "C" uint2 thrust_partitionDomains( my_dev::dev_mem<uint2> &validList,
 
   //Sort the outside our domain particles by their domain index
   //Result: [[ids domain0],[ids domain1], [ids domain2], ...]
-#if 0
-  //Although it is faster it puts particles in the wrong order because we have marked
-  //them with a high bit integer. Also does not work to put domains in right order. So
-  //not use this for now. Can look at it at a later point
-  unsigned long long *tempPtr = (unsigned long long*)validList.raw_p();
-  thrust::device_ptr<unsigned long long> valuesLL      = thrust::device_pointer_cast(tempPtr);
-  thrust::stable_sort(thrust::cuda::par(alloc),
-                      valuesLL,
-                      valuesLL + remoteParticles,
-                      thrust::greater<unsigned long long>());
-#else
   thrust::stable_sort(thrust::cuda::par(alloc),
                       values,
                       values + remoteParticles,
                       domainCompare());
 //  cudaDeviceSynchronize();
-#endif
+
   double t3 = get_time();
   //Reduce the domains. The result is that we get per domain the number of particles
-  //that will send to that process. These are stored into the output buffers
+  //that will be send to that process. These are stored into the output buffers
   thrust::pair<thrust::device_ptr<uint2>,thrust::device_ptr<uint> > new_end;
   new_end = thrust::reduce_by_key(thrust::cuda::par(alloc),
                                   values,                   //inputIterator1
                                   values + remoteParticles, //InputIterator1
-                                  listofones,              //InputIterator2
+                                  listofones,               //InputIterator2
                                   outKeys,                  //OutputIterator1
-                                  outValues,                  //OutputIterator2
+                                  outValues,                //OutputIterator2
                                   domainCompare2(),
                                   binary_op);
 
@@ -228,32 +225,10 @@ extern "C" uint2 thrust_partitionDomains( my_dev::dev_mem<uint2> &validList,
   LOGF(stderr,"Sorting detail: N: %d partition: %lg sort: %lg reduce: %lg \n",remoteParticles, t2-t1,t3-t2,get_time()-t3);
 
   const int nValues = (int)(new_end.first  - outKeys);
- //return the number of remote particles and the number of remote domains
- return make_uint2(remoteParticles, nValues);
-
+  //return the number of remote particles and the number of remote domains
+  return make_uint2(remoteParticles, nValues);
 }
 
-
-
-
-
-
-
-
-
-
-
-static __device__ inline int isinbox(real4 pos, double4 xlow, double4 xhigh)
-{  
-    if((pos.x < xlow.x)||(pos.x > xhigh.x))          
-      return 0;
-    if((pos.y < xlow.y)||(pos.y > xhigh.y))          
-      return 0;
-    if((pos.z < xlow.z)||(pos.z > xhigh.z))          
-      return 0;
-    
-    return 1;
-}
 
 static __device__ inline int cmp_uint4(uint4 a, uint4 b) {
   if      (a.x < b.x) return -1;
@@ -271,104 +246,6 @@ static __device__ inline int cmp_uint4(uint4 a, uint4 b) {
 
 
 
-KERNEL_DECLARE(doDomainCheck)(int    n_bodies,
-                                           double4  xlow,
-                                           double4  xhigh,
-                                           real4  *body_pos,
-                                           int    *validList    //Valid is 1 if particle is outside domain
-){
-  CUXTIMER("doDomainCheck");
-  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
-  uint tid = threadIdx.x;
-  uint id  = bid * blockDim.x + tid;
-  
-  if (id >= n_bodies) return;
-
-  real4 pos = body_pos[id];
-
-  int valid      = isinbox(pos, xlow, xhigh);
-  valid = !valid;
-  validList[id] = id | ((valid) << 31);
-}
-  
-
-//Checks the domain and computes the key list
-//if a particle is outside the domain it gets a special key
-//otherwise the normal key is used
-KERNEL_DECLARE(doDomainCheckAdvanced)(int    n_bodies,
-                                           double4  xlow,
-                                           double4  xhigh,
-                                           real4  *body_pos,
-                                           int    *validList    //Valid is 1 if particle is outside domain
-){
-  CUXTIMER("doDomainCheckAdvanced");
-  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
-  uint tid = threadIdx.x;
-  uint id  = bid * blockDim.x + tid;
-  
-  if (id >= n_bodies) return;
-
-  real4 pos = body_pos[id];
-
-  int valid      = isinbox(pos, xlow, xhigh);
-  valid = !valid;
-  validList[id] = id | ((valid) << 31);
-}
-  
-
-KERNEL_DECLARE(gpu_extractSampleParticles)(int    n_bodies,
-                                                  int    sample_freq,
-                                                  real4  *body_pos,
-                                                  real4  *samplePosition
-){
-  CUXTIMER("extractSampleParticles");
-  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
-  uint tid = threadIdx.x;
-  uint id  = bid * blockDim.x + tid;
-  
-
-  int idx  = id*sample_freq;
-  if  (idx >= n_bodies) return;
-
-  samplePosition[id] =  body_pos[idx];
-}
-
-KERNEL_DECLARE(gpu_extractSampleParticlesSFC)(int     n_bodies,
-                                              int     nSamples,
-                                              float   sample_freq,
-                                              uint4  *body_pos,
-                                              uint4  *samplePosition
-){
-  CUXTIMER("extractSampleParticles");
-  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
-  uint tid = threadIdx.x;
-  uint id  = bid * blockDim.x + tid;
-
-  if(id >= nSamples) return;
-
-  int idx  = (int)(id*sample_freq);
-  if  (idx >= n_bodies) return;
-
-  samplePosition[id] =  body_pos[idx];
-}
-
-//KERNEL_DECLARE(extractOutOfDomainParticlesR4)(int n_extract,
-//                                                       int *extractList,
-//                                                       real4 *source,
-//                                                       real4 *destination)
-//{
-//  CUXTIMER("extractOutOfDomainParticlesR4");
-//  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
-//  uint tid = threadIdx.x;
-//  uint id  = bid * blockDim.x + tid;
-//
-//  if(id >= n_extract) return;
-//
-//  destination[id] = source[extractList[id]];
-//
-//}
-
-
 typedef struct bodyStruct
 {
   real4  acc0;
@@ -376,8 +253,6 @@ typedef struct bodyStruct
   real4  Pvel;
   float2 time;
   unsigned long long id;
-//  float    id;
-//  int    temp;
 
 #ifdef DO_BLOCK_TIMESTEP_EXCHANGE_MPI
   uint4 key;
@@ -387,84 +262,6 @@ typedef struct bodyStruct
 #endif
 } bodyStruct;
 
-
-
-KERNEL_DECLARE(gpu_internalMove)(int       n_extract,
-                                        int       n_bodies,
-                                        double4  xlow,
-                                        double4  xhigh,
-                                        int       *extractList,
-                                        int       *indexList,
-                                        real4     *Ppos,
-                                        real4     *Pvel,
-                                        real4     *pos,
-                                        real4     *vel,
-                                        real4     *acc0,
-                                        real4     *acc1,
-                                        float2    *time,
-                                        int       *body_id)
-{
-  CUXTIMER("internalMove");
-  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
-  uint tid = threadIdx.x;
-  uint id  = bid * blockDim.x + tid;
-
-  if(id >= n_extract) return;
-
-  int srcIdx     = (n_bodies-n_extract) + id;
-  real4 testpos  = Ppos[srcIdx];
-
-  if(isinbox(testpos, xlow, xhigh))
-  {
-    int dstIdx = atomicAdd(indexList, 1);    
-    dstIdx     = extractList[dstIdx];
-
-    //Move!
-    Ppos[dstIdx] = Ppos[srcIdx];
-    Pvel[dstIdx] = Pvel[srcIdx];
-    pos[dstIdx]  = pos[srcIdx];
-    vel[dstIdx]  = vel[srcIdx];
-    acc0[dstIdx] = acc0[srcIdx];
-    acc1[dstIdx] = acc1[srcIdx];
-    time[dstIdx] = time[srcIdx];
-    body_id[dstIdx] = body_id[srcIdx];
-  }//if isinbox
-
-}
-
-
-
-//Check if a particles key is within the min and max boundaries
-KERNEL_DECLARE(gpu_domainCheckSFC)(int    n_bodies,
-                               uint4  lowBoundary,
-                               uint4  highBoundary,
-                               uint4  *body_key,
-                               int    *validList    //Valid is 1 if particle is outside domain
-){
-  CUXTIMER("domainCheckSFC");
-  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
-  uint tid = threadIdx.x;
-  uint id  = bid * blockDim.x + tid;
-
-  if (id >= n_bodies) return;
-
-  uint4 key = body_key[id];
-
-  int bottom = cmp_uint4(key, lowBoundary);
-  int top    = cmp_uint4(key, highBoundary);
-
-  int valid = 0;
-  if(bottom >= 0 && top < 0)
-  {
-    //INside
-  }
-  else
-  {
-    //    outside
-    valid = 1;
-  }
-  validList[id] = id | ((valid) << 31);
-}
 
 
 //Binary search of the key within certain bounds (cij.x, cij.y)
@@ -516,17 +313,15 @@ KERNEL_DECLARE(gpu_domainCheckSFCAndAssign)(int    n_bodies,
   if(bottom >= 0 && top < 0)
   {
     //Inside
-//    valid = 0x0;
   }
   else
   {
-    //    outside
+    //outside
     //Search the box that this particle belongs to. Note we start at idx[1] that
     //way we get the top-end values of the domain
     uint2 cij;
     cij.x = 0; cij.y = nProcs+1;
     int domain = find_domain(key, cij, &boundaryList[1]);
-    //int domain = find_domain(key, cij, &boundaryList[0]);
 
     if(procId == domain) domain = domain + 1;
 
@@ -537,57 +332,6 @@ KERNEL_DECLARE(gpu_domainCheckSFCAndAssign)(int    n_bodies,
   idList[id]    = 1;
 }
 
-#if 0
-//Check if a particles key is within the min and max boundaries
-KERNEL_DECLARE(gpu_domainCheckSFCAndAssign)(int    n_bodies,
-                                            int    nProcs,
-                                            uint4  lowBoundary,
-                                            uint4  highBoundary,
-                                            uint4  *boundaryList, //The full list of boundaries
-                                            uint4  *body_key,
-                                            int    *validList    //Valid is 1 if particle is outside domain
-){
-  CUXTIMER("domainCheckSFCAndAssign");
-  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
-  uint tid = threadIdx.x;
-  uint id  = bid * blockDim.x + tid;
-
-  if (id >= n_bodies) return;
-
-  uint4 key = body_key[id];
-
-  int bottom = cmp_uint4(key, lowBoundary);
-  int top    = cmp_uint4(key, highBoundary);
-
-  int valid = 0;
-  if(bottom >= 0 && top < 0)
-  {
-    //Inside
-    valid = -1;
-  }
-  else
-  {
-    //    outside
-    valid = 1;
-
-//    if(id == 4992)
-    {
-      //Search the box that this particle belongs to
-      uint2 cij;
-      cij.x = 0; cij.y = nProcs+1;
-      int domain = find_domainBox(key, cij, boundaryList);
-
-
-//      printf("XXX Particles: %d outside, namely in domain: %d \n", id, domain);
-      valid = domain;
-    }
-
-
-  }
-  //validList[id] = id | ((valid) << 31);
-  validList[id] = valid;
-}
-#endif
 
 KERNEL_DECLARE(gpu_internalMoveSFC2) (int       n_extract,
                                   int       n_bodies,
@@ -604,7 +348,7 @@ KERNEL_DECLARE(gpu_internalMoveSFC2) (int       n_extract,
                                   float2    *time,
                                   unsigned long long       *body_id,
                                   uint4     *body_key,
-				  float *h)
+                                  float *h)
 {
   CUXTIMER("internalMoveSFC2");
   uint bid = blockIdx.y * gridDim.x + blockIdx.x;
@@ -641,56 +385,7 @@ KERNEL_DECLARE(gpu_internalMoveSFC2) (int       n_extract,
 
 }
 
-KERNEL_DECLARE(gpu_internalMoveSFC) (int       n_extract,
-                                  int       n_bodies,
-                                  uint4  lowBoundary,
-                                  uint4  highBoundary,
-                                  int       *extractList,
-                                  int       *indexList,
-                                  real4     *Ppos,
-                                  real4     *Pvel,
-                                  real4     *pos,
-                                  real4     *vel,
-                                  real4     *acc0,
-                                  real4     *acc1,
-                                  float2    *time,
-                                  unsigned long long        *body_id,
-                                  uint4     *body_key
-				  )
-{
-  CUXTIMER("internalMoveSFC");
-  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
-  uint tid = threadIdx.x;
-  uint id  = bid * blockDim.x + tid;
 
-  if(id >= n_extract) return;
-
-  int srcIdx     = (n_bodies-n_extract) + id;
-
-
-  uint4 key  = body_key[srcIdx];
-  int bottom = cmp_uint4(key, lowBoundary);
-  int top    = cmp_uint4(key, highBoundary);
-
-
-  if((bottom >= 0 && top < 0))
-  {
-    int dstIdx = atomicAdd(indexList, 1);
-    dstIdx     = extractList[dstIdx];
-
-    //Move!
-    Ppos[dstIdx] = Ppos[srcIdx];
-    Pvel[dstIdx] = Pvel[srcIdx];
-    pos[dstIdx]  = pos[srcIdx];
-    vel[dstIdx]  = vel[srcIdx];
-    acc0[dstIdx] = acc0[srcIdx];
-    acc1[dstIdx] = acc1[srcIdx];
-    time[dstIdx] = time[srcIdx];
-    body_key[dstIdx] = body_key[srcIdx];
-    body_id[dstIdx]  = body_id[srcIdx];
-  }//if inside
-
-}
 
 KERNEL_DECLARE(gpu_extractOutOfDomainParticlesAdvancedSFC2)(
                                                        int offset,
@@ -705,7 +400,7 @@ KERNEL_DECLARE(gpu_extractOutOfDomainParticlesAdvancedSFC2)(
                                                        float2 *time,
                                                        unsigned long long    *body_id,
                                                        uint4 *body_key,
-						       float *h,
+                                                       float *h,
                                                        bodyStruct *destination)
 {
   CUXTIMER("extractOutOfDomainParticlesAdvancedSFC2");
@@ -1015,7 +710,7 @@ KERNEL_DECLARE(gpu_insertNewParticlesSFC)(int       n_extract,
                                               float2    *time,
                                               unsigned long long        *body_id,
                                               uint4     *body_key,
-					      float     *h,
+                                              float     *h,
                                               bodyStruct *source)
 {
   CUXTIMER("insertNewParticlesSFC");
@@ -1046,248 +741,156 @@ KERNEL_DECLARE(gpu_insertNewParticlesSFC)(int       n_extract,
 #endif
 }
 
-//KERNEL_DECLARE(gpu_insertNewParticles)(int       n_extract,
-//                                              int       n_insert,
-//                                              int       n_oldbodies,
-//                                              int       offset,
-//                                              real4     *Ppos,
-//                                              real4     *Pvel,
-//                                              real4     *pos,
-//                                              real4     *vel,
-//                                              real4     *acc0,
-//                                              real4     *acc1,
-//                                              float2    *time,
-//                                              int       *body_id,
-//                                              bodyStruct *source)
-//{
-//  CUXTIMER("insertNewParticles");
-//  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
-//  uint tid = threadIdx.x;
-//  uint id  = bid * blockDim.x + tid;
-//
-//  if(id >= n_insert) return;
-//
-//  //The newly added particles are added at the end of the array
-//  int idx = (n_oldbodies-n_extract) + id + offset;
-//
-//  //copy the data from a struct of arrays into a array of structs
-//  Ppos[idx]     = source[id].Ppos;
-//  Pvel[idx]     = source[id].Pvel;
-//  pos[idx]      = source[id].pos;
-//  vel[idx]      = source[id].vel;
-//  acc0[idx]     = source[id].acc0;
-//  acc1[idx]     = source[id].acc1;
-//  time[idx]     = source[id].time;
-//  body_id[idx]  = source[id].id;
-//}
 
-//KERNEL_DECLARE(extractOutOfDomainParticlesAdvanced)(int n_extract,
-//                                                       int *extractList,
-//                                                       real4 *Ppos,
-//                                                       real4 *Pvel,
-//                                                       real4 *pos,
-//                                                       real4 *vel,
-//                                                       real4 *acc0,
-//                                                       real4 *acc1,
-//                                                       float2 *time,
-//                                                       int   *body_id,
-//                                                       bodyStruct *destination)
-//{
-//  CUXTIMER("extractOutOfDomainParticlesAdvanced");
-//  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
-//  uint tid = threadIdx.x;
-//  uint id  = bid * blockDim.x + tid;
-//
-//  if(id >= n_extract) return;
-//
-//  //copy the data from a struct of arrays into a array of structs
-//  destination[id].Ppos = Ppos[extractList[id]];
-//  destination[id].Pvel = Pvel[extractList[id]];
-//
-//  destination[id].acc0  = acc0[extractList[id]];
-//  destination[id].acc1  = acc1[extractList[id]];
-//  destination[id].pos  = pos[extractList[id]];
-//  destination[id].vel  = vel[extractList[id]];
-//  destination[id].time  = time[extractList[id]];
-//  destination[id].id    = body_id[extractList[id]];
-//
-//}
+#if 0
+KERNEL_DECLARE(gpu_internalMoveSFC) (int       n_extract,
+                                  int       n_bodies,
+                                  uint4  lowBoundary,
+                                  uint4  highBoundary,
+                                  int       *extractList,
+                                  int       *indexList,
+                                  real4     *Ppos,
+                                  real4     *Pvel,
+                                  real4     *pos,
+                                  real4     *vel,
+                                  real4     *acc0,
+                                  real4     *acc1,
+                                  float2    *time,
+                                  unsigned long long        *body_id,
+                                  uint4     *body_key
+          )
+{
+  CUXTIMER("internalMoveSFC");
+  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
+  uint tid = threadIdx.x;
+  uint id  = bid * blockDim.x + tid;
+
+  if(id >= n_extract) return;
+
+  int srcIdx     = (n_bodies-n_extract) + id;
 
 
-
-//KERNEL_DECLARE(gpu_extractOutOfDomainParticlesAdvancedSFC)(
-//                                                       int offset,
-//                                                       int n_extract,
-//                                                       int *extractList,
-//                                                       real4 *Ppos,
-//                                                       real4 *Pvel,
-//                                                       real4 *pos,
-//                                                       real4 *vel,
-//                                                       real4 *acc0,
-//                                                       real4 *acc1,
-//                                                       float2 *time,
-//                                                       int   *body_id,
-//                                                       uint4 *body_key,
-//                                                       bodyStruct *destination)
-//{
-//  CUXTIMER("extractOutOfDomainParticlesAdvancedSFC");
-//  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
-//  uint tid = threadIdx.x;
-//  uint id  = bid * blockDim.x + tid;
-//
-//  if(id >= n_extract) return;
-//
-//  //copy the data from a struct of arrays into a array of structs
-//  destination[id].Ppos = Ppos[extractList[offset+id]];
-//  destination[id].Pvel = Pvel[extractList[offset+id]];
-//  destination[id].pos  = pos[extractList[offset+id]];
-//  destination[id].vel  = vel[extractList[offset+id]];
-//  destination[id].acc0  = acc0[extractList[offset+id]];
-//  destination[id].acc1  = acc1[extractList[offset+id]];
-//  destination[id].time  = time[extractList[offset+id]];
-//  destination[id].id    = body_id[extractList[offset+id]];
-//  destination[id].key   = body_key[extractList[offset+id]];
-//}
+  uint4 key  = body_key[srcIdx];
+  int bottom = cmp_uint4(key, lowBoundary);
+  int top    = cmp_uint4(key, highBoundary);
 
 
-// KERNEL_DECLARE(insertNewParticles)(int       n_extract,
-//                                               int       n_insert,
-//                                               int       n_oldbodies,
-//                                               int       *extractList,
-//                                               real4     *Ppos,
-//                                               real4     *Pvel,
-//                                               real4     *pos,
-//                                               real4     *vel,
-//                                               real4     *acc0,
-//                                               real4     *acc1,
-//                                               float2    *time,
-//                                               int       *body_id,
-//                                               bodyStruct *source)
-// {
-//   uint bid = blockIdx.y * gridDim.x + blockIdx.x;
-//   uint tid = threadIdx.x;
-//   uint id  = bid * blockDim.x + tid;
-// 
-//   int idx, srcidx = -1; 
-// /*
-// 
-// //Situaties:
-// - n_insert > n_extract -> particles moeten aan einde worden toegevoegd (meer toevoegen dan weggehaald)
-//     id < n_extract -> idx = extractList[id]  ; uit source[id]
-//     id >= n_extract & id < n_insert  --> idx = n_oldbodies + (id-n_extract); uit source[id]
-//   
-// - n_insert <= n_exract -> particles moeten van het einde naar het begin (meer verwijderd dan toegevoegd)
-//     id < n_extract -> idx = extractList[id] ; uit source[id]
-//     id >= n_extract & id < n_insert -> idx = extractList[id] ; uit dest[n_bodies-(n_extract-n_insert) + (id - n_insert)]
-// 
-//   */
-// 
-//   if(n_insert > n_extract)
-//   {
-//     if(id < n_extract)
-//     {
-//        idx = extractList[id];
-//     }
-//     else if(id >= n_extract && id < n_insert)
-//     {
-//       //Insert particles at the end of the array
-//       idx = n_oldbodies + (id-n_extract);
-//     }
-//     else
-//     {
-//       return;
-//     }
-//   }
-//   else
-//   {
-//     //n_insert <= n_extract
-// 
-//     if(id < n_insert)
-//     {
-//        idx = extractList[id];
-//     }
-//     else if(id >= n_insert && id < n_extract)
-//     {
-//       //Move particles from the back of the array to the empty spots
-//       idx    = extractList[id];
-//       srcidx = extractList[n_oldbodies-(n_extract-n_insert) + (id - n_insert)];
-//     //  srcidx = n_oldbodies-(n_extract-n_insert) + (id - n_insert);
-//     }
-//     else
-//     {
-//       return;
-//     }
-//   }
-// /*
-// Gaat niet goed als n_insert < n_extract
-// omdat we als we gaan moven we ook kans hebben dat we iets moven
-// van het begin naar het eind als daar iets is uitgehaald
-// we zouden dus de laatste verwijderde moeten vinden en zorgen dat er neits achter komt ofzo
-// 
-// 
-// 
-// */
-// 
-// /*
-//   if(id < n_extract)
-//   {
-//     idx = extractList[id];
-//   }
-//   else if(id >= n_extract && id < n_insert)
-//   {
-//     if(n_insert > n_extract)
-//     {
-//       //Insert particles at the end of the array
-//       idx = n_oldbodies + (id-n_extract);
-//     }
-//     else
-//     {
-//       //Move particles from the back of the array to the empty spots
-//       idx    = extractList[id];
-//       srcidx = n_oldbodies-(n_extract-n_insert) + (id - n_insert);
-//     }
-//   }
-//   else
-//   {
-//     //Outside all array ranges
-//     return;
-//   }*/
-// 
-// 
-//   if(srcidx < 0)
-//   {
-//     //copy the data from a struct of arrays into a array of structs
-//     Ppos[idx] = source[id].Ppos;
-//     Pvel[idx] = source[id].Pvel;
-//     pos[idx]  = source[id].pos;
-//     vel[idx]  = source[id].vel;
-//     acc0[idx] = source[id].acc0;
-//     acc1[idx] = source[id].acc1;
-//     time[idx] = source[id].time;
-//     body_id[idx] = source[id].id;
-// 
-// printf("%d  (CMOVE external %d) goes to: %d \n", source[id].id,n_insert, idx);
-// 
-// 
-//   }
-//   else
-//   {
-//     Ppos[idx] = Ppos[srcidx];
-//     Pvel[idx] = Pvel[srcidx];
-//     pos[idx]  = pos[srcidx];
-//     vel[idx]  = vel[srcidx];
-//     acc0[idx] = acc0[srcidx];
-//     acc1[idx] = acc1[srcidx];
-//     time[idx] = time[srcidx];
-//   int temp = body_id[idx];
-//     body_id[idx] = body_id[srcidx];
-// 
-// printf("%d stored at: %d (CMOVE internal %d) goes to: %d  overwr: %d \n", body_id[srcidx],srcidx, n_insert, idx, temp);
-// 
-// 
-//   }//if srcidx < 0
-// 
-// 
-// }
+  if((bottom >= 0 && top < 0))
+  {
+    int dstIdx = atomicAdd(indexList, 1);
+    dstIdx     = extractList[dstIdx];
+
+    //Move!
+    Ppos[dstIdx] = Ppos[srcIdx];
+    Pvel[dstIdx] = Pvel[srcIdx];
+    pos[dstIdx]  = pos[srcIdx];
+    vel[dstIdx]  = vel[srcIdx];
+    acc0[dstIdx] = acc0[srcIdx];
+    acc1[dstIdx] = acc1[srcIdx];
+    time[dstIdx] = time[srcIdx];
+    body_key[dstIdx] = body_key[srcIdx];
+    body_id[dstIdx]  = body_id[srcIdx];
+  }//if inside
+
+}
+#endif
+
+#if 0
+KERNEL_DECLARE(gpu_internalMove)(int       n_extract,
+                                        int       n_bodies,
+                                        double4  xlow,
+                                        double4  xhigh,
+                                        int       *extractList,
+                                        int       *indexList,
+                                        real4     *Ppos,
+                                        real4     *Pvel,
+                                        real4     *pos,
+                                        real4     *vel,
+                                        real4     *acc0,
+                                        real4     *acc1,
+                                        float2    *time,
+                                        int       *body_id)
+{
+  CUXTIMER("internalMove");
+  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
+  uint tid = threadIdx.x;
+  uint id  = bid * blockDim.x + tid;
+
+  if(id >= n_extract) return;
+
+  int srcIdx     = (n_bodies-n_extract) + id;
+  real4 testpos  = Ppos[srcIdx];
+
+  if(isinbox(testpos, xlow, xhigh))
+  {
+    int dstIdx = atomicAdd(indexList, 1);
+    dstIdx     = extractList[dstIdx];
+
+    //Move!
+    Ppos[dstIdx] = Ppos[srcIdx];
+    Pvel[dstIdx] = Pvel[srcIdx];
+    pos[dstIdx]  = pos[srcIdx];
+    vel[dstIdx]  = vel[srcIdx];
+    acc0[dstIdx] = acc0[srcIdx];
+    acc1[dstIdx] = acc1[srcIdx];
+    time[dstIdx] = time[srcIdx];
+    body_id[dstIdx] = body_id[srcIdx];
+  }//if isinbox
+
+}
 
 
+
+//Check if a particles key is within the min and max boundaries
+KERNEL_DECLARE(gpu_domainCheckSFC)(int    n_bodies,
+                               uint4  lowBoundary,
+                               uint4  highBoundary,
+                               uint4  *body_key,
+                               int    *validList    //Valid is 1 if particle is outside domain
+){
+  CUXTIMER("domainCheckSFC");
+  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
+  uint tid = threadIdx.x;
+  uint id  = bid * blockDim.x + tid;
+
+  if (id >= n_bodies) return;
+
+  uint4 key = body_key[id];
+
+  int bottom = cmp_uint4(key, lowBoundary);
+  int top    = cmp_uint4(key, highBoundary);
+
+  int valid = 0;
+  if(bottom >= 0 && top < 0)
+  {
+    //INside
+  }
+  else
+  {
+    //    outside
+    valid = 1;
+  }
+  validList[id] = id | ((valid) << 31);
+}
+#endif
+
+#if 0
+KERNEL_DECLARE(gpu_extractSampleParticlesSFC)(int     n_bodies,
+                                              int     nSamples,
+                                              float   sample_freq,
+                                              uint4  *body_pos,
+                                              uint4  *samplePosition
+){
+  CUXTIMER("extractSampleParticles");
+  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
+  uint tid = threadIdx.x;
+  uint id  = bid * blockDim.x + tid;
+
+  if(id >= nSamples) return;
+
+  int idx  = (int)(id*sample_freq);
+  if  (idx >= n_bodies) return;
+
+  samplePosition[id] =  body_pos[idx];
+}
+#endif

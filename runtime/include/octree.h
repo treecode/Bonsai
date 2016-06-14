@@ -17,7 +17,6 @@
 #define USE_CUDA
 
 #ifdef USE_CUDA
-//   #include "my_cuda.h"
   #include "my_cuda_rt.h"
 #else
   #include "my_ocl.h"
@@ -45,8 +44,6 @@
 
 
 #include "log.h"
-
-#define PRINT_MPI_DEBUG
 
 using namespace std;
 
@@ -93,11 +90,6 @@ typedef unsigned long long ullong; //ulonglong1
 
 
 
-struct morton_struct {
-  uint2 key;
-  int   value;
-};
-
 
 typedef struct setupParams {
   int jobs;                     //Minimal number of jobs for each 'processor'
@@ -106,13 +98,6 @@ typedef struct setupParams {
   int extraOffset;              //Start of the extra elements
 
 } setupParams;
-
-typedef struct nInfoStruct
-{
-  float x;
-  int y,z;
-} nInfoStruct;
-
 
 typedef struct bodyStruct
 {
@@ -138,22 +123,6 @@ typedef struct sampleRadInfo
   double4 rmax;
 }sampleRadInfo;
 
-
-inline int cmp_uint2(const uint2 a, const uint2 b) {
-  if      (a.x < b.x) return -1;
-  else if (a.x > b.x) return +1;
-  else {
-    if       (a.y < b.y) return -1;
-    else  if (a.y > b.y) return +1;
-    return 0;
-  }
-}
-
-struct cmp_uint2_reverse{
-  bool operator()(const uint2 &a, const uint2 &b){
-    return (cmp_uint2(a,b) >= 1);
-  }
-};
 
 inline int cmp_uint4(uint4 a, uint4 b) {
   if      (a.x < b.x) return -1;
@@ -267,42 +236,11 @@ class tree_structure
     real4 corner;                         //Corner of tree-structure
     real  domain_fac;                     //Domain_fac of tree-structure
     
-    //Number of dust particles, moved decleration outside to get it to work
-    //with renderer
-    int n_dust;                           
-    #ifdef USE_DUST
 
-      int n_dust_groups;                    //Number of dust groups
-      //Dust particle arrays
-      my_dev::dev_mem<real4> dust_pos;    //The particles positions
-      my_dev::dev_mem<uint4> dust_key;    //The particles keys
-      my_dev::dev_mem<real4> dust_vel;    //Velocities
-      my_dev::dev_mem<real4> dust_acc0;    //Acceleration
-      my_dev::dev_mem<real4> dust_acc1;    //Acceleration
-      my_dev::dev_mem<ullong>   dust_ids;
-      
-      my_dev::dev_mem<int>   dust2group_list;
-      my_dev::dev_mem<int2>   dust_group_list;
-      my_dev::dev_mem<int>   active_dust_list;
-      my_dev::dev_mem<int>   activeDustGrouplist;      
-      my_dev::dev_mem<int2>  dust_interactions;
-      
-      my_dev::dev_mem<int>   dust_ngb;
-      my_dev::dev_mem<real4> dust_groupSizeInfo;    
-      my_dev::dev_mem<real4> dust_groupCenterInfo;  
-     
-      void setNDust(int particles)
-      {
-        n_dust = particles;
-      }  
-      
-    #endif
-    
-    
     
     
 
-  tree_structure(){ n = 0;}
+  tree_structure(){ n = 0; needToReorder = true;}
 
   tree_structure(my_dev::context &context)
   {
@@ -378,28 +316,6 @@ class tree_structure
     generalBuffer1.setContext(*devContext);
    
     fullRemoteTree.setContext(*devContext);
-    
-    #ifdef USE_DUST
-      //Dust buffers
-      dust_pos.setContext(*devContext);
-      dust_key.setContext(*devContext);
-      dust_vel.setContext(*devContext);
-      dust_acc0.setContext(*devContext);
-      dust_acc1.setContext(*devContext);
-      dust_ids.setContext(*devContext);
-      
-      dust2group_list.setContext(*devContext);
-      dust_group_list.setContext(*devContext);
-      active_dust_list.setContext(*devContext);
-      dust_interactions.setContext(*devContext);
-      activeDustGrouplist.setContext(*devContext);
-      
-      dust_ngb.setContext(*devContext);
-      dust_groupSizeInfo.setContext(*devContext);
-      dust_groupCenterInfo.setContext(*devContext);
-    #endif
-    
-    
   }
 
   my_dev::context getContext()
@@ -506,7 +422,7 @@ protected:
   my_dev::kernel  setPHGroupDataGetKey2;
   my_dev::kernel  setActiveGrps;
 
-  //Iteraction kernels
+  //Iteration kernels
   my_dev::kernel getTNext;
   my_dev::kernel predictParticles;
   my_dev::kernel getNActive;
@@ -521,25 +437,15 @@ protected:
   my_dev::kernel determineLET;
   
   //Parallel kernels
-  my_dev::kernel domainCheck;
-  my_dev::kernel extractSampleParticles;
-  my_dev::kernel internalMove;
-
-  my_dev::kernel build_parallel_grps;
-  my_dev::kernel segmentedSummaryBasic;
-
-  my_dev::kernel domainCheckSFC;
-  my_dev::kernel internalMoveSFC;
   my_dev::kernel internalMoveSFC2;
   my_dev::kernel extractOutOfDomainParticlesAdvancedSFC2;
   my_dev::kernel insertNewParticlesSFC;
-  my_dev::kernel extractSampleParticlesSFC;
   my_dev::kernel domainCheckSFCAndAssign;
 
   ///////////////////////
 
   /////////////////
-  void write_dumbp_snapshot(real4 *bodyPositions, real4 *bodyVelocities, int *ids, int n, string fileName);
+
 
   void   to_binary(int);
   void   to_binary(uint2);
@@ -552,8 +458,14 @@ protected:
 
   uint2  get_imask(uint2);
 
-  int find_key(uint2, vector<uint2>&,         int, int);
-  int find_key(uint2, vector<morton_struct>&, int, int);
+
+  //struct morton_struct {
+  //  uint2 key;
+  //  int   value;
+  //};
+
+//  int find_key(uint2, vector<uint2>&,         int, int);
+//  int find_key(uint2, vector<morton_struct>&, int, int);
 
   ///////////
 
@@ -591,8 +503,6 @@ public:
    tree_structure localTree;
    tree_structure remoteTree;
 
-
-   //jb made these functions public for testing
    void set_context(bool disable_timing = false);
    void set_context(std::ostream &log, bool disable_timing = false);
    void set_context2();
@@ -630,7 +540,7 @@ public:
                      my_dev::dev_mem<T>  &dIn, my_dev::dev_mem<T>  &dOut);
 
 
-    void desort_bodies(tree_structure &tree);
+//    void desort_bodies(tree_structure &tree);
     void sort_bodies(tree_structure &tree, bool doDomainUpdate, bool doFullShuffle = false);
     void getBoundaries(tree_structure &tree, real4 &r_min, real4 &r_max);
     void getBoundariesGroups(tree_structure &tree, real4 &r_min, real4 &r_max);  
@@ -686,21 +596,19 @@ public:
   template<typename THeader, typename TData>
     void dumpDataCommon(
         SharedMemoryBase<THeader> &header, SharedMemoryBase<TData> &data,
-        const std::string &fileNameBase,
-        const float ratio,
-        const bool sync);
+        const std::string &fileNameBase, const float ratio, const bool sync);
   void dumpData();
   void dumpDataMPI();
 
-  //Subfunctions of iterate, should probally be private 
+  //Sub functions of iterate, should probably be private
   void predict(tree_structure &tree);
   void approximate_gravity(tree_structure &tree);
   void direct_gravity(tree_structure &tree);
   void correct(tree_structure &tree);
   double compute_energies(tree_structure &tree);
 
-  int  checkMergingDistance(tree_structure &tree, int iter, double dE);
-  void checkRemovalDistance(tree_structure &tree);
+//  int  checkMergingDistance(tree_structure &tree, int iter, double dE);
+//  void checkRemovalDistance(tree_structure &tree);
 
   //Parallel version functions
   //Approximate for LET
@@ -717,8 +625,6 @@ public:
 
   double4 *currentRLow, *currentRHigh;  //Contains the actual domain distribution, to be used
                                         //during the LET-tree generatino
-
-//  real4 *localGrpTreeCntSize;
 
   real4 *globalGrpTreeCntSize;
 
@@ -739,10 +645,6 @@ public:
   int grpTree_n_nodes;
   int grpTree_n_topNodes;
 
-
-
-  real maxLocalEps;               //Contains the maximum local eps/softening value
-                                  //will be stored in cur_xlow[i].w after exchange
   real4 rMinLocalTree;            //for particles
   real4 rMaxLocalTree;            //for particles
 
@@ -751,8 +653,6 @@ public:
   
   bool letRunning;
   
-
-  unsigned int totalNumberOfSamples;
   sampleRadInfo *curSysState;
 
   //Functions
@@ -763,7 +663,7 @@ public:
   int  mpiGetRank();
   int  mpiGetNProcs();
   void AllSum(double &value);
-  int  SumOnRootRank(int &value);
+  int  SumOnRootRank(int value);
 
   //Main MPI functions
 
@@ -772,31 +672,19 @@ public:
   void mpiSumParticleCount(int numberOfParticles);
 
   void sendCurrentRadiusInfo(real4 &rmin, real4 &rmax);
-  void sendCurrentRadiusAndSampleInfo(real4 &rmin, real4 &rmax, int nsample, int *nSamples);
   
   //Function for Device assisted domain division
   void gpu_collect_sample_particles(int nSample, real4 *sampleParticles);
-  void gpu_updateDomainDistribution(double timeLocal);
-  void gpu_updateDomainOnly();
-  int  gpu_exchange_particles_with_overflow_check(tree_structure &tree,
-                                                  bodyStruct *particlesToSend, 
-                                                  my_dev::dev_mem<uint> &extractList, int nToSend);
+
+
 
   int gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree,
                                                     bodyStruct *particlesToSend,
                                                     int *nparticles, int *nsendDispls, int *nreceive,
                                                     int nToSend);
 
-  void gpuRedistributeParticles();
-
-//  int  exchange_particles_with_overflow_check(tree_structure &localTree);
-  int gpu_exchange_particles_with_overflow_check_SFC(tree_structure &tree,
-                                                  bodyStruct *particlesToSend,
-                                                  my_dev::dev_mem<uint> &extractList, int nToSend);
-
 
    //Local Essential Tree related functions
-
 
   void ICRecv(int procId, vector<real4> &bodyPositions, vector<real4> &bodyVelocities,  vector<ullong> &bodiesIDs);
   void ICSend(int destination, real4 *bodyPositions, real4 *bodyVelocities,  ullong *bodiesIDs, int size);
@@ -829,7 +717,7 @@ public:
   void parallelDataSummary(tree_structure &tree, float lastExecTime, float lastExecTime2, double &domUpdate, double &domExch, bool initalSetup);
 
 
-   void gpuRedistributeParticles_SFC(uint4 *boundaries);
+  void gpuRedistributeParticles_SFC(uint4 *boundaries);
 
   void build_GroupTree(int n_bodies, uint4 *keys, uint2 *nodes, uint4 *node_keys, uint  *node_levels,
                        int &n_levels, int &n_nodes, int &startGrp, int &endGrp);
@@ -868,77 +756,10 @@ public:
       real4         **treeBuffers);
 
 
-#if 0
-  template<class T>
-  int MP_exchange_particle_with_overflow_check(int ibox,
-                                              T *source_buffer,
-                                              vector<T> &recv_buffer,
-                                              int firstloc,
-                                              int nparticles,
-                                              int isource,
-                                              int &nsend,
-                                              unsigned int &recvCount);
-
-  real4* MP_exchange_bhlist(int ibox, int isource,
-                                int bufferSize, real4 *letDataBuffer);
-
-  void gpu_collect_hashes(int nHashes, uint4 *hashes, uint4 *boundaries, float lastExecTime, float lastExecTime2);
-
-  void tree_walking_tree_stack_versionC13(
-     real4 *multipoleS, nInfoStruct* nodeInfoS, //Local Tree
-     real4* grpNodeSizeInfoS, real4* grpNodeCenterInfoS, //remote Tree
-     int start, int end, int startGrp, int endGrp,
-     int &nAcceptedNodes, int &nParticles,
-     uint2 *curLevel, uint2 *nextLevel);
-
-  void stackFill(real4 *LETBuffer, real4 *nodeCenter, real4* nodeSize,
-      real4* bodies, real4 *multipole,
-      nInfoStruct *nodeInfo,
-      int nParticles, int nNodes,
-      int start, int end,
-      uint *curLevelStack, uint* nextLevelStack);
-
-  int stackBasedTopLEvelsCheck(tree_structure &tree, real4 *topLevelTree, int proc, int topLevels,
-                                uint2 *curLevelStack,
-                                uint2 *nextLevelStack,
-                                int &DistanceCheck);
-#endif
-
-  int recursiveBasedTopLEvelsCheckStart(tree_structure &tree,
-                                        real4 *treeBuffer,
-                                        real4 *grpCenter,
-                                        real4 *grpSize,
-                                        int startGrp,
-                                        int endGrp,
-                                        int &DistanceCheck);
   int recursiveTopLevelCheck(uint4 checkNode, real4* treeBoxSizes, real4* treeBoxCenters, real4* treeBoxMoments,
                           real4* grpCenter, real4* grpSize, int &DistanceCheck, int &DistanceCheckPP, int maxLevel);
 
   //End functions for parallel code
-  
-      //Functions related to dust
-  #ifdef USE_DUST 
-    void allocateDustMemory(tree_structure &tree);
-    void sort_dust(tree_structure &tree);
-    void make_dust_groups(tree_structure &tree);
-    void allocateDustGroupBuffers(tree_structure &tree);
-    void predictDustStep(tree_structure &tree);
-    void correctDustStep(tree_structure &tree);
-    void approximate_dust(tree_structure &tree);
-    void direct_dust(tree_structure &tree);
-    void setDustGroupProperties(tree_structure &tree);
-    
-    my_dev::kernel define_dust_groups;
-    my_dev::kernel store_dust_groups;
-    my_dev::kernel predictDust;
-    my_dev::kernel correctDust;
-    my_dev::kernel copyNodeDataToGroupData;
-
-  #endif
-  
-  //
-  //Function for setting up the mergers
-  bool addGalaxy(int galaxyID);
 
 
   //Library interface functions  
@@ -1072,6 +893,8 @@ public:
     }
 
 
+    localTree.n      = 0;
+
     prevDurStep = -1;   //Set it to negative so we know its the first step
 
 //     my_dev::base_mem::printMemUsage();   
@@ -1082,10 +905,6 @@ public:
     logFileWriter = new LOGFILEWRITER(nProcs, 0, 0);
 #endif
 
-
-    //Init at zero so we can check for n_dust later on
-    localTree.n      = 0;
-    localTree.n_dust = 0;
 
 #ifdef WIN32
     // initialize windows timer

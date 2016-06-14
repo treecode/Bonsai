@@ -50,14 +50,11 @@ http://github.com/treecode/Bonsai
 #include "log.h"
 #include "anyoption.h"
 #include "renderloop.h"
-#include "plummer.h"
-#include "disk_shuffle.h"
-#ifdef GALACTICS
-#include "galactics.h"
-#endif
-#include "IDType.h"
-#include "BonsaiIO.h"
+
 #include <array>
+
+#include <FileIO.h>
+#include <ICGenerators.h>
 
 
 #if ENABLE_LOG
@@ -107,565 +104,9 @@ extern void displayTimers()
 #include <cuda_gl_interop.h>
 #endif
 
-static double lReadBonsaiFields(
-    const int rank, const MPI_Comm &comm,
-    const std::vector<BonsaiIO::DataTypeBase*> &data, 
-    BonsaiIO::Core &in, 
-    const int reduce, 
-    const bool restartFlag = true)
-{
-  double dtRead = 0;
-  for (auto &type : data)
-  {
-    double t0 = MPI_Wtime();
-    if (rank == 0)
-      fprintf(stderr, " Reading %s ...\n", type->getName().c_str());
-    if (in.read(*type, restartFlag, reduce))
-    {
-      long long int nLoc = type->getNumElements();
-      long long int nGlb;
-      MPI_Allreduce(&nLoc, &nGlb, 1, MPI_DOUBLE, MPI_SUM, comm);
-      if (rank == 0)
-      {
-        fprintf(stderr, " Read %lld of type %s\n",
-            nGlb, type->getName().c_str());
-        fprintf(stderr, " ---- \n");
-      }
-    } 
-    else 
-    {
-      if (rank == 0)
-      {
-        fprintf(stderr, " %s  is not found, skipping\n", type->getName().c_str());
-        fprintf(stderr, " ---- \n");
-      }
-    }
-      
-    dtRead += MPI_Wtime() - t0;
-  }
 
-  return dtRead;
-}
 
-template<typename T>
-static inline T& lBonsaiSafeCast(BonsaiIO::DataTypeBase* ptrBase)
-{
-  T* ptr = dynamic_cast<T*>(ptrBase);
-  assert(ptr != NULL);
-  return *ptr;
-}
 
-static void lReadBonsaiFile(
-    std::vector<real4 > &bodyPositions,
-    std::vector<real4 > &bodyVelocities,
-    std::vector<ullong> &bodyIDs,
-    int &NFirst, int &NSecond, int &NThird,
-    octree *tree,
-    const std::string &fileName,
-    const int rank, const int nrank, const MPI_Comm &comm,
-    const bool restart = true,
-    const int reduceFactor = 1)
-{
-  if (rank == 0)
-    std::cerr << " >>> Reading Bonsai file format : " << fileName <<  std::endl;
-
-  BonsaiIO::Core *in;
-  try
-  {
-    in = new BonsaiIO::Core(rank, nrank, comm, BonsaiIO::READ, fileName);
-  }
-  catch (const std::exception &e)
-  {
-    if (rank == 0)
-      fprintf(stderr, "Something went wrong: %s \n", e.what());
-    MPI_Finalize();
-    ::exit(0);
-  }
-
-  if (rank == 0)
-    in->getHeader().printFields();
-
-  std::vector<BonsaiIO::DataTypeBase*> data;
-  typedef float float3[3];
-  typedef float float2[2];
-
-  using IDType = BonsaiIO::DataType<IDType>;
-  using Pos    = BonsaiIO::DataType<real4>;
-  using Vel    = BonsaiIO::DataType<float3>;
-  using RhoH   = BonsaiIO::DataType<float2>;
-  data.push_back(new IDType("DM:IDType"));
-  data.push_back(new Pos   ("DM:POS:real4"));
-  data.push_back(new Vel   ("DM:VEL:float[3]"));
-  data.push_back(new IDType("Stars:IDType"));
-  data.push_back(new Pos   ("Stars:POS:real4"));
-  data.push_back(new Vel   ("Stars:VEL:float[3]"));
-
-  const double dtRead = lReadBonsaiFields(rank, comm, data, *in, reduceFactor, restart);
-
-  const auto &DM_IDType = lBonsaiSafeCast<IDType>(data[0]);
-  const auto &DM_Pos    = lBonsaiSafeCast<Pos   >(data[1]);
-  const auto &DM_Vel    = lBonsaiSafeCast<Vel   >(data[2]);
-  const auto &S_IDType  = lBonsaiSafeCast<IDType>(data[3]);
-  const auto &S_Pos     = lBonsaiSafeCast<Pos   >(data[4]);
-  const auto &S_Vel     = lBonsaiSafeCast<Vel   >(data[5]);
-
-  const size_t nDM = DM_IDType.size();
-  assert(nDM == DM_Pos.size());
-  assert(nDM == DM_Vel.size());
-  
-  const size_t nS = S_IDType.size();
-  assert(nS == S_Pos.size());
-  assert(nS == S_Vel.size());
-
-
-  NFirst  = static_cast<std::remove_reference<decltype(NFirst )>::type>(nDM);
-  NSecond = static_cast<std::remove_reference<decltype(NSecond)>::type>(nS);
-  NThird  = 0;
-
-  bodyPositions.resize(nDM+nS);
-  bodyVelocities.resize(nDM+nS);
-  bodyIDs.resize(nDM+nS);
-
-  /* store DM */
-
-  constexpr int ntypecount = 10;
-  std::array<size_t,ntypecount> ntypeloc, ntypeglb;
-  std::fill(ntypeloc.begin(), ntypeloc.end(), 0);
-  for (int i = 0; i < nDM; i++)
-  {
-    ntypeloc[0]++;
-    auto &pos = bodyPositions[i];
-    auto &vel = bodyVelocities[i];
-    auto &ID  = bodyIDs[i];
-    pos = DM_Pos[i];
-    pos.w *= reduceFactor;
-    vel = make_float4(DM_Vel[i][0], DM_Vel[i][1], DM_Vel[i][2],0.0f);
-    ID  = DM_IDType[i].getID() + DARKMATTERID;
-  }
-  
-  for (int i = 0; i < nS; i++)
-  {
-    auto &pos = bodyPositions[nDM+i];
-    auto &vel = bodyVelocities[nDM+i];
-    auto &ID  = bodyIDs[nDM+i];
-    pos = S_Pos[i];
-    pos.w *= reduceFactor;
-    vel = make_float4(S_Vel[i][0], S_Vel[i][1], S_Vel[i][2],0.0f);
-    ID  = S_IDType[i].getID();
-    switch (S_IDType[i].getType())
-    {
-      case 1:  /*  Bulge */
-        ID += BULGEID;
-        break;
-      case 2:  /*  Disk */
-        ID += DISKID;
-        break;
-    }
-    if (S_IDType[i].getType() < ntypecount)
-      ntypeloc[S_IDType[i].getType()]++;
-  }
-
-  MPI_Reduce(&ntypeloc, &ntypeglb, ntypecount, MPI_LONG_LONG, MPI_SUM, 0, comm);
-  if (rank == 0)
-  {
-    size_t nsum = 0;
-    for (int type = 0; type < ntypecount; type++)
-    {
-      nsum += ntypeglb[type];
-      if (ntypeglb[type] > 0)
-        fprintf(stderr, "bonsai-read: ptype= %d:  np= %zu \n",type, ntypeglb[type]);
-    }
-    assert(nsum > 0);
-  }
-
-
-  LOGF(stderr,"Read time from snapshot: %f \n", in->getTime());
-
-  if(static_cast<float>(in->getTime()) > 10e10 ||
-     static_cast<float>(in->getTime()) < -10e10)
-  {
-	tree->set_t_current(0);	  
-  }
-  else
-  {
-  	tree->set_t_current(static_cast<float>(in->getTime()));
-  }
-
-  in->close();
-  const double bw = in->computeBandwidth()/1e6;
-  for (auto d : data)
-    delete d;
-  delete in;
-  if (rank == 0)
-    fprintf(stderr, " :: dtRead= %g  sec readBW= %g MB/s \n", dtRead, bw);
-}
-
-
-void read_tipsy_file_parallel(const MPI_Comm &mpiCommWorld,
-    vector<real4> &bodyPositions, vector<real4> &bodyVelocities,
-                              vector<ullong> &bodiesIDs,  float eps2, string fileName,
-                              int rank, int procs, int &NTotal2, int &NFirst, 
-                              int &NSecond, int &NThird, octree *tree,
-                              vector<real4> &dustPositions, vector<real4> &dustVelocities,
-                              vector<ullong> &dustIDs, int reduce_bodies_factor,
-                              int reduce_dust_factor,
-                              const bool restart)
-{
-  //Process 0 does the file reading and sends the data
-  //to the other processes
-  /* 
-     Read in our custom version of the tipsy file format.
-     Most important change is that we store particle id on the 
-     location where previously the potential was stored.
-  */
-  
-  
-  char fullFileName[256];
-  if(restart)
-    sprintf(fullFileName, "%s%d", fileName.c_str(), rank);
-  else
-    sprintf(fullFileName, "%s", fileName.c_str());
-
-  LOG("Trying to read file: %s \n", fullFileName);
-  
-  
-  
-  ifstream inputFile(fullFileName, ios::in | ios::binary);
-  if(!inputFile.is_open())
-  {
-    LOG("Can't open input file \n");
-    ::exit(0);
-  }
-  
-  dumpV2  h;
-  inputFile.read((char*)&h, sizeof(h));  
-
-  int NTotal;
-  ullong idummy;
-  real4 positions;
-  real4 velocity;
-
-     
-  //Read Tipsy header
-  NTotal        = h.nbodies;
-  NFirst        = h.ndark;
-  NSecond       = h.nstar;
-  NThird        = h.nsph;
-
-  printf("File version: %d \n", h.version);
-
-  int fileFormatVersion = 0;
-
-  if(h.version == 2) fileFormatVersion = 2;
-
-
-
-  tree->set_t_current((float) h.time);
-  
-  //Rough divide
-  uint perProc = (NTotal / procs) /reduce_bodies_factor;
-  if(restart) perProc = NTotal /reduce_bodies_factor; //don't subdivide when using restart
-  bodyPositions.reserve(perProc+10);
-  bodyVelocities.reserve(perProc+10);
-  bodiesIDs.reserve(perProc+10);
-  perProc -= 1;
-
-  //Start reading
-  int particleCount = 0;
-  int procCntr = 1;
-  
-  dark_particleV2 d;
-  star_particleV2 s;
-
-  int globalParticleCount = 0;
-  int bodyCount = 0;
-  int dustCount = 0;
-  
-  constexpr int ntypecount = 10;
-  std::array<size_t,ntypecount> ntypeloc, ntypeglb;
-  std::fill(ntypeloc.begin(), ntypeloc.end(), 0);
-  for(int i=0; i < NTotal; i++)
-  {
-    if(i < NFirst)
-    {
-      inputFile.read((char*)&d, sizeof(d));
-      //velocity.w        = d.eps;
-      velocity.w        = 0;
-      positions.w       = d.mass;
-      positions.x       = d.pos[0];
-      positions.y       = d.pos[1];
-      positions.z       = d.pos[2];
-      velocity.x        = d.vel[0];
-      velocity.y        = d.vel[1];
-      velocity.z        = d.vel[2];
-      idummy            = d.getID();
-
-      //printf("%d\t%f\t%f\t%f\n", i, positions.x, positions.y, positions.z);
-
-      //Force compatibility with older 32bit ID files by mapping the particle IDs
-      if(fileFormatVersion == 0)
-      {
-        idummy    = s.getID_V1() + DARKMATTERID;
-      }
-      //end mapping
-    }
-    else
-    {
-      inputFile.read((char*)&s, sizeof(s));
-      //velocity.w        = s.eps;
-      velocity.w        = 0;
-      positions.w       = s.mass;
-      positions.x       = s.pos[0];
-      positions.y       = s.pos[1];
-      positions.z       = s.pos[2];
-      velocity.x        = s.vel[0];
-      velocity.y        = s.vel[1];
-      velocity.z        = s.vel[2];
-      idummy            = s.getID();
-
-      //Force compatibility with older 32bit ID files by mapping the particle IDs
-      if(fileFormatVersion == 0)
-      {
-        if(s.getID_V1() >= 100000000)
-          idummy    = s.getID_V1() + BULGEID; //Bulge particles
-        else
-          idummy    = s.getID_V1();
-      }
-      //end mapping
-    }
-
-
-    if(positions.z < -10e10)
-    {
-       fprintf(stderr," Removing particle %d because of Z is: %f \n", globalParticleCount, positions.z);
-       continue;
-    }
-
-    const auto id = idummy;
-    if(id >= DISKID  && id < BULGEID)       
-    {
-      ntypeloc[2]++;
-    }
-    else if(id >= BULGEID && id < DARKMATTERID)  
-    {
-      ntypeloc[1]++;
-    }
-    else if (id >= DARKMATTERID)
-    {
-      ntypeloc[0]++;
-    }
-
-    globalParticleCount++;
-   
-    #ifdef USE_DUST
-      if(idummy >= 50000000 && idummy < 100000000)
-      {
-        dustCount++;
-        if( dustCount % reduce_dust_factor == 0 ) 
-          positions.w *= reduce_dust_factor;
-
-        if( dustCount % reduce_dust_factor != 0 )
-          continue;
-        dustPositions.push_back(positions);
-        dustVelocities.push_back(velocity);
-        dustIDs.push_back(idummy);      
-      }
-      else
-      {
-        bodyCount++;
-        if( bodyCount % reduce_bodies_factor == 0 ) 
-		      positions.w *= reduce_bodies_factor;
-
-	      if( bodyCount % reduce_bodies_factor != 0 )
-		      continue;
-        bodyPositions.push_back(positions);
-        bodyVelocities.push_back(velocity);
-        bodiesIDs.push_back(idummy);  
-      }
-
-    
-    #else
-      if( globalParticleCount % reduce_bodies_factor == 0 ) 
-        positions.w *= reduce_bodies_factor;
-
-      if( globalParticleCount % reduce_bodies_factor != 0 )
-        continue;
-      bodyPositions.push_back(positions);
-      bodyVelocities.push_back(velocity);
-      bodiesIDs.push_back(idummy);  
-
-    #endif
-
-    particleCount++;
-
-
-  
-  
-    if(!restart)
-    {
-      if(bodyPositions.size() > perProc && procCntr != procs)
-      {
-        tree->ICSend(procCntr,  &bodyPositions[0], &bodyVelocities[0],  &bodiesIDs[0], (int)bodyPositions.size());
-        procCntr++;
-
-        bodyPositions.clear();
-        bodyVelocities.clear();
-        bodiesIDs.clear();
-      }
-    }
-  }//end while
-  
-  inputFile.close();
-  
-  //Clear the last one since its double
-//   bodyPositions.resize(bodyPositions.size()-1);  
-//   NTotal2 = particleCount-1;
-  NTotal2 = particleCount;
-  LOGF(stderr,"NTotal: %d\tper proc: %d\tFor ourself: %d \tNDust: %d \n",
-               NTotal, perProc, (int)bodiesIDs.size(), (int)dustPositions.size());
-
-  /* this check was added to test whether particle type was failed to identified.
-   * sometimed DM particles are treated as nonDM on 
-   * MW+M31 4.6M particle snapshot 
-   */
-  if (restart)
-  {
-    MPI_Reduce(&ntypeloc, &ntypeglb, 10, MPI_LONG_LONG, MPI_SUM, 0, mpiCommWorld);
-  }
-  else
-  {
-    std::copy(ntypeloc.begin(), ntypeloc.end(), ntypeglb.begin());
-  }
-
-  if (rank == 0)
-  {
-    for (int type = 0; type < ntypecount; type++)
-      if (ntypeglb[type] > 0)
-        fprintf(stderr, "tispy-read: ptype= %d:  np= %zu \n",type, ntypeglb[type]);
-  }
-}
-
-
-
-#ifdef GALACTICS
-  void generateGalacticsModel(const int      procId,
-                              const int      nProcs,
-                              const int      nMilkyWay,
-                              const int      nMWfork,
-                              const bool     scaleMass,
-                              vector<real4>  &bodyPositions,
-                              vector<real4>  &bodyVelocities,
-                              vector<ullong> &bodyIDs)
-  {
-    if (procId == 0) printf("Using MilkyWay model with n= %d per proc, forked %d times \n", nMilkyWay, nMWfork);
-    assert(nMilkyWay > 0);
-    assert(nMWfork > 0);
-
-    //Verify that all required files are available
-    const char* fileList[] = {"cordbh.dat", "dbh.dat", "freqdbh.dat", "mr.dat",
-                              "denspsibulge.dat", "denspsihalo.dat", "component_numbers.txt"};
-    const int nFiles       = sizeof(fileList) / sizeof(fileList[0]);
-
-    for(int i=0; i < nFiles; i++)
-    {
-      ifstream ifile(fileList[i]);
-      if (!ifile) {
-        fprintf(stderr,"Can not find the required input file: %s \n", fileList[i]);
-        ::exit(-1);
-      }
-    }
-
-    //Read in the particle ratios
-    int nHalo, nBulge,nDisk;
-    ifstream ifile("component_numbers.txt");
-    std::string line;
-    std::getline(ifile, line);
-    sscanf(line.c_str(),"%d %d %d\n", &nHalo, &nBulge, &nDisk);
-
-    fprintf(stderr,"Particle numbers from config file: %d %d %d \n", nHalo, nBulge, nDisk);
-    ifile.close();
-
-//    #if 1 /* in this setup all particles will be of equal mass (exact number are galactic-depednant)  */
-//      const float fdisk  = 15.1;
-//      const float fbulge = 5.1;
-//      const float fhalo  = 242.31;
-//    #else  /* here, bulge & mw particles have the same mass, but halo particles is 32x heavier */
-//      const float fdisk  = 15.1;
-//      const float fbulge = 5.1;
-//      const float fhalo  = 7.5;
-//    #endif
-//    const float fsum = fdisk + fhalo + fbulge;
-
-    size_t nMilkyWay2 = nMilkyWay;
-    const double fsum = (float)(nHalo + nBulge + nDisk);
-    int ndisk  = (int)  (nMilkyWay2 * nDisk /fsum);
-    int nbulge = (int)  (nMilkyWay2 * nBulge/fsum);
-    int nhalo  = (int)  (nMilkyWay2 * nHalo /fsum);
-
-    assert(ndisk  > 0);
-    assert(nbulge > 0);
-    assert(nhalo  > 0);
-
-    ndisk = max(1, ndisk);
-    nbulge = max(1, nbulge);
-    nhalo = max(1, nhalo);
-
-
-
-    if (procId == 0)
-      fprintf(stderr,"Requested numbers: ndisk= %d  nbulge= %d  nhalo= %d :: ntotal= %d\n",
-                      ndisk, nbulge, nhalo, ndisk+nbulge+nhalo);
-
-    const Galactics g(procId, nProcs, ndisk, nbulge, nhalo, nMWfork);
-    if (procId == 0)
-     printf("Generated numbers:  ndisk= %d  nbulge= %d  nhalo= %d :: ntotal= %d\n",
-             g.get_ndisk(), g.get_nbulge(), g.get_nhalo(), g.get_ntot());
-
-    const int ntot = g.get_ntot();
-    bodyPositions.resize(ntot);
-    bodyVelocities.resize(ntot);
-    bodyIDs.resize(ntot);
-
-    //Generate unique 64bit IDs, counter starts at individual boundaries
-    //Note that we get 32bit IDs back from the Galactics code
-    unsigned long long diskID  = ((unsigned long long) ndisk *procId) + DISKID;
-    unsigned long long bulgeID = ((unsigned long long) nbulge*procId) + BULGEID;
-    unsigned long long haloID  = ((unsigned long long) nhalo *procId) + DARKMATTERID;
-
-    for (int i= 0; i < ntot; i++)
-    {
-      assert(!std::isnan(g[i].x));
-      assert(!std::isnan(g[i].y));
-      assert(!std::isnan(g[i].z));
-      assert(g[i].mass > 0.0);
-
-      //Generate unique IDS for each particle in the full model
-      if( g[i].id >= 200000000)                             //Dark matter
-        bodyIDs[i] = haloID++;
-      else if( g[i].id >= 100000000 && g[i].id < 200000000) //Bulge
-        bodyIDs[i] = bulgeID++;
-      else                                                  //Disk
-        bodyIDs[i] = diskID++;
-
-      bodyPositions[i].x = g[i].x;
-      bodyPositions[i].y = g[i].y;
-      bodyPositions[i].z = g[i].z;
-      if(scaleMass)
-       bodyPositions[i].w = g[i].mass * 1.0/(double)nProcs;
-      else
-       bodyPositions[i].w = g[i].mass; // * 1.0/(double)nProcs ,scaled later ..
-
-      assert(!std::isnan(g[i].vx));
-      assert(!std::isnan(g[i].vy));
-      assert(!std::isnan(g[i].vz));
-
-      bodyVelocities[i].x = g[i].vx;
-      bodyVelocities[i].y = g[i].vy;
-      bodyVelocities[i].z = g[i].vz;
-      bodyVelocities[i].w = 0.0;
-    }
-  } //generateGalacticsModel
-#endif
 
 
 double get_time_main()
@@ -682,13 +123,6 @@ double get_time_main()
 
 
 volatile IOSharedData_t ioSharedData;
-
-// std::vector<real4>   ioThreadPos;
-// std::vector<real4>   ioThreadVel;
-// std::vector<ullong>  ioThreadIDs;
-//volatile sharedIOThreadStruct ioThreadProps;
-
-
 
 long long my_dev::base_mem::currentMemUsage;
 long long my_dev::base_mem::maxMemUsage;
@@ -1034,7 +468,7 @@ int main(int argc, char** argv, MPI_Comm comm)
   if (mpiRenderMode)
     assert(mpiInitialized);
 
-  //Creat the octree class and set the properties
+  //Create the octree class and set the properties
   octree *tree = new octree(
       mpiCommWorld,
       argv, devID, theta, eps, 
@@ -1196,6 +630,7 @@ int main(int argc, char** argv, MPI_Comm comm)
 
   if (!bonsaiFileName.empty() && useMPIIO)
   {
+    //Read a BonsaiIO file
     const MPI_Comm &comm = mpiCommWorld;
     lReadBonsaiFile(
         bodyPositions, 
@@ -1210,6 +645,7 @@ int main(int argc, char** argv, MPI_Comm comm)
   }
   else if(restartSim)
   {
+    //Restart the simulation from a tipsy file
     //The input snapshot file are many files with each process reading its own particles
     read_tipsy_file_parallel(mpiCommWorld, bodyPositions, bodyVelocities, bodyIDs, eps, fileName,
                              procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
@@ -1218,16 +654,12 @@ int main(int argc, char** argv, MPI_Comm comm)
   }
   else if (nPlummer == -1 && nSphere == -1  && nCube == -1 && !diskmode && nMilkyWay == -1)
   {
+    //Process 0 reads the file and sends chunks to the other processes
     if(procId == 0)
     {
-      #ifdef TIPSYOUTPUT
-            read_tipsy_file_parallel(mpiCommWorld, bodyPositions, bodyVelocities, bodyIDs, eps, fileName,
-                procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
-                dustPositions, dustVelocities, dustIDs, reduce_bodies_factor, reduce_dust_factor, false);
-      #else
-            assert(0); //This file format is removed
-            //read_dumbp_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, procId, nProcs, NTotal, NFirst, NSecond, NThird, tree, reduce_bodies_factor);
-      #endif
+      read_tipsy_file_parallel(mpiCommWorld, bodyPositions, bodyVelocities, bodyIDs, eps, fileName,
+                               procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
+                               dustPositions, dustVelocities, dustIDs, reduce_bodies_factor, reduce_dust_factor, false);
     }
     else
     {
@@ -1246,8 +678,7 @@ int main(int argc, char** argv, MPI_Comm comm)
         {
           tStartModel   = get_time_main();
           generateGalacticsModel(procId, nProcs, nMilkyWay, nMWfork,
-                                 true, bodyPositions, bodyVelocities,
-                                 bodyIDs);
+                                 true, bodyPositions, bodyVelocities, bodyIDs);
           tEndModel   = get_time_main();
         }
         else
@@ -1263,134 +694,26 @@ int main(int argc, char** argv, MPI_Comm comm)
   }
   else if(nPlummer >= 0)
   {
-    if (procId == 0) printf("Using Plummer model with n= %d per process \n", nPlummer);
-    assert(nPlummer > 0);
-    const int seed = 19810614 + procId;
-    const Plummer m(nPlummer, procId, seed);
-    bodyPositions.resize(nPlummer);
-    bodyVelocities.resize(nPlummer);
-    bodyIDs.resize(nPlummer);
-    for (int i= 0; i < nPlummer; i++)
-    {
-      assert(!std::isnan(m.pos[i].x));
-      assert(!std::isnan(m.pos[i].y));
-      assert(!std::isnan(m.pos[i].z));
-      assert(m.mass[i] > 0.0);
-      bodyIDs[i]   = ((unsigned long long) nPlummer)*procId + i;
-
-      bodyPositions[i].x = m.pos[i].x;
-      bodyPositions[i].y = m.pos[i].y;
-      bodyPositions[i].z = m.pos[i].z;
-      bodyPositions[i].w = m.mass[i] * 1.0/nProcs;
-
-      bodyVelocities[i].x = m.vel[i].x;
-      bodyVelocities[i].y = m.vel[i].y;
-      bodyVelocities[i].z = m.vel[i].z;
-      bodyVelocities[i].w = 0;
-    }
+    generatePlummerModel(bodyPositions, bodyVelocities, bodyIDs, procId, nProcs, nPlummer);
   }
   else if (nSphere >= 0)
   {
-    //Sphere
-    if (procId == 0) printf("Using Spherical model with n= %d per process \n", nSphere);
-    assert(nSphere >= 0);
-    bodyPositions.resize(nSphere);
-    bodyVelocities.resize(nSphere);
-    bodyIDs.resize(nSphere);
-
-    srand48(procId+19840501);
-
-    /* generate uniform sphere */
-    int np = 0;
-    while (np < nSphere)
-    {
-      const double x = 2.0*drand48()-1.0;
-      const double y = 2.0*drand48()-1.0;
-      const double z = 2.0*drand48()-1.0;
-      const double r2 = x*x+y*y+z*z;
-      if (r2 < 1)
-      {
-        bodyIDs[np]   = ((unsigned long long) nSphere)*procId + np;
-
-        bodyPositions[np].x = x;
-        bodyPositions[np].y = y;
-        bodyPositions[np].z = z;
-        bodyPositions[np].w = (1.0/nSphere) * 1.0/nProcs;
-
-        bodyVelocities[np].x = 0;
-        bodyVelocities[np].y = 0;
-        bodyVelocities[np].z = 0;
-        bodyVelocities[np].w = 0;
-        np++;
-      }//if
-    }//while
+    generateSphereModel(bodyPositions, bodyVelocities, bodyIDs, procId, nProcs, nSphere);
   }//else
   else if (nCube >= 0)
   {
-    //CUBE
-    if (procId == 0) printf("Using Cube model with n= %d per process \n", nSphere);
-    assert(nCube >= 0);
-    bodyPositions.resize(nCube);
-    bodyVelocities.resize(nCube);
-    bodyIDs.resize(nCube);
-
-    srand48(procId+19840501);
-
-    /* generate uniform sphere */
-    for (int i= 0; i < nCube; i++)
-    {
-      const double x = 2*drand48()-1.0;
-      const double y = 2*drand48()-1.0;
-      const double z = 2*drand48()-1.0;
-
-      bodyIDs[i]   =  ((unsigned long long) nCube)*procId + i;
-
-      bodyPositions[i].x = x;
-      bodyPositions[i].y = y;
-      bodyPositions[i].z = z;
-      bodyPositions[i].w = (1.0/nCube) * 1.0/nCube;
-
-      bodyVelocities[i].x = 0;
-      bodyVelocities[i].y = 0;
-      bodyVelocities[i].z = 0;
-      bodyVelocities[i].w = 0;
-    }//
+    generateCubeModel(bodyPositions, bodyVelocities, bodyIDs, procId, nProcs, nCube);
   }//else
   else if (diskmode)
   {
-    if (procId == 0) printf("Using diskmode with filename %s\n", fileName.c_str());
-    const int seed = procId+19840501;
-    srand48(seed);
-    const DiskShuffle disk(fileName);
-    const int np = disk.get_ntot();
-    bodyPositions.resize(np);
-    bodyVelocities.resize(np);
-    bodyIDs.resize(np);
-    for (int i= 0; i < np; i++)
-    {
-      bodyIDs[i]   =  ((unsigned long long) np)*procId + i;
-
-      bodyPositions[i].x = disk.pos(i).x;
-      bodyPositions[i].y = disk.pos (i).y;
-      bodyPositions[i].z = disk.pos (i).z;
-      bodyPositions[i].w = disk.mass(i) * 1.0/nProcs;
-
-      bodyVelocities[i].x = disk.vel(i).x;
-      bodyVelocities[i].y = disk.vel(i).y;
-      bodyVelocities[i].z = disk.vel(i).z;
-      bodyVelocities[i].w = 0;
-    }
+    generateShuffledDiskModel(bodyPositions, bodyVelocities, bodyIDs, procId, nProcs, fileName);
   }
   else
     assert(0);
 
   tree->mpiSync();
 
-
-#ifdef TIPSYOUTPUT
   LOGF(stderr, " t_current = %g\n", tree->get_t_current());
-#endif
-
 
   //Set the properties of the data set, it only is really used by process 0, which does the 
   //actual file I/O  
@@ -1560,8 +883,7 @@ int main(int argc, char** argv, MPI_Comm comm)
     }
   }
 
-  if (useMPIIO)
-    tree->terminateIO();
+  if (useMPIIO) tree->terminateIO();
 
   LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
 
@@ -1570,7 +892,7 @@ int main(int argc, char** argv, MPI_Comm comm)
   sstemp << "Finished total took: " << tree->get_time()-t0 << std::endl;
   std::string stemp = sstemp.str();
   tree->writeLogData(stemp);
-  tree->writeLogToFile();//Final write incase anything is left in the buffers
+  tree->writeLogToFile();//Final write in case anything is left in the buffers
 
   if(tree->procId == 0)
   {

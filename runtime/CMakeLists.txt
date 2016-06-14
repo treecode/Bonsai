@@ -79,9 +79,9 @@ if (USE_THRUST)
 endif (USE_THRUST)
 include_directories(${CUDA_TOOLKIT_ROOT_DIR}/../../thrust)
 
-if (USE_B40C)
-  add_definitions(-DUSE_B40C)
-endif (USE_B40C)
+if (USE_CUB)
+    add_definitions(-DUSE_CUB)
+endif (USE_CUB)
 
 if (USE_DUST)
   add_definitions(-DUSE_DUST)
@@ -132,13 +132,12 @@ set (HFILES
   include/tipsydefs.h
   include/vector_math.h
   include/depthSort.h
-  include/sort.h
   )
 
 set (CUFILES
   CUDAkernels/build_tree.cu
   CUDAkernels/compute_propertiesD.cu
-  CUDAkernels/particles.cu
+  CUDAkernels/parallel.cu
   CUDAkernels/sortKernels.cu
   CUDAkernels/scanKernels.cu
   CUDAkernels/timestep.cu
@@ -198,7 +197,6 @@ if (WIN32)
   add_definitions(-D_CRT_SECURE_NO_DEPRECATE)
 endif (WIN32)
 
-add_definitions(-DTIPSYOUTPUT)
 
 if (USE_OPENGL) 
   set(CCFILES ${CCFILES} src/renderloop.cpp src/render_particles.cpp)

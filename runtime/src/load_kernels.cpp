@@ -39,7 +39,7 @@ void octree::load_kernels() {
 
   if (!devContext_flag) set_context();
   
-  //If we arive here we have aquired a device, configure parts of the code
+  //If we arrive here we have acquired a device, configure parts of the code
   
   //Get the number of multiprocessors and compute number of 
   //blocks to be used during the tree-walk
@@ -233,74 +233,24 @@ void octree::load_kernels() {
 #endif
 
   //Parallel kernels
-  domainCheck.setContext(devContext);  
-  extractSampleParticles.setContext(devContext);  
-  internalMove.setContext(devContext);  
-  build_parallel_grps.setContext(devContext);
-  segmentedSummaryBasic.setContext(devContext);
-  domainCheckSFC.setContext(devContext);
-  internalMoveSFC.setContext(devContext);
   internalMoveSFC2.setContext(devContext);
   extractOutOfDomainParticlesAdvancedSFC2.setContext(devContext);
   insertNewParticlesSFC.setContext(devContext);
-  extractSampleParticlesSFC.setContext(devContext);
   domainCheckSFCAndAssign.setContext(devContext);
 
 
-
 #ifdef USE_CUDA
-  domainCheck.load_source("./parallel.ptx", pathName.c_str());
-  extractSampleParticles.load_source("./parallel.ptx", pathName.c_str());
-  internalMove.load_source("./parallel.ptx", pathName.c_str());
 
-  
-  build_parallel_grps.load_source("./build_tree.ptx", pathName.c_str());
-  segmentedSummaryBasic.load_source("./build_tree.ptx", pathName.c_str());
-  domainCheckSFC.load_source("./parallel.ptx", pathName.c_str());
-  internalMoveSFC.load_source("./parallel.ptx", pathName.c_str());
   internalMoveSFC2.load_source("./parallel.ptx", pathName.c_str());
   extractOutOfDomainParticlesAdvancedSFC2.load_source("./parallel.ptx", pathName.c_str());
   insertNewParticlesSFC.load_source("./parallel.ptx", pathName.c_str());
-  extractSampleParticlesSFC.load_source("./parallel.ptx", pathName.c_str());
   domainCheckSFCAndAssign.load_source("./parallel.ptx", pathName.c_str());
 
-  domainCheck.create("doDomainCheck", (const void*)&doDomainCheck);
-  extractSampleParticles.create("extractSampleParticles", (const void*)&gpu_extractSampleParticles);
-  internalMove.create("internalMove", (const void*)&gpu_internalMove);
-
-  extractSampleParticlesSFC.create("build_parallel_grps", (const void*)&gpu_extractSampleParticlesSFC);
-  build_parallel_grps.create("build_parallel_grps", (const void*)&gpu_build_parallel_grps);
-  segmentedSummaryBasic.create("segmentedSummaryBasic", (const void*)&gpu_segmentedSummaryBasic);
-  domainCheckSFC.create("domainCheckSFC", (const void*)&gpu_domainCheckSFC);
-  internalMoveSFC.create("internalMoveSFC", (const void*)&gpu_internalMoveSFC);
   internalMoveSFC2.create("internalMoveSFC2", (const void*)&gpu_internalMoveSFC2);
   extractOutOfDomainParticlesAdvancedSFC2.create("extractOutOfDomainParticlesAdvancedSFC2", (const void*)&gpu_extractOutOfDomainParticlesAdvancedSFC2);
   insertNewParticlesSFC.create("insertNewParticlesSFC", (const void*)&gpu_insertNewParticlesSFC);
   domainCheckSFCAndAssign.create("domainCheckSFCAndAssign", (const void*)&gpu_domainCheckSFCAndAssign);
 #endif
-  
-#ifdef USE_DUST
-   define_dust_groups.setContext(devContext);
-   define_dust_groups.load_source("./build_tree.ptx", pathName.c_str());
-   define_dust_groups.create("define_dust_groups",(const void*)&gpu_define_dust_groups);
-   
-   store_dust_groups.setContext(devContext);
-   store_dust_groups.load_source("./build_tree.ptx", pathName.c_str());
-   store_dust_groups.create("store_dust_groups",(const void*)&gpu_store_dust_groups);
-   
-   predictDust.setContext(devContext);
-   predictDust.load_source("./build_tree.ptx", pathName.c_str());
-   predictDust.create("predict_dust_particles",(const void*)&predict_dust_particles);
-   
-   correctDust.setContext(devContext);
-   correctDust.load_source("./build_tree.ptx", pathName.c_str());
-   correctDust.create("correct_dust_particles",(const void*)&correct_dust_particles);
-
-   copyNodeDataToGroupData.setContext(devContext);
-   copyNodeDataToGroupData.load_source("./compute_propertiesD.ptx", pathName.c_str());
-   copyNodeDataToGroupData.create("setPHGroupData", (const void*)&gpu_setPHGroupData);
-   
-#endif  
 
 
 }
@@ -408,7 +358,6 @@ void octree::gpuSplit(my_dev::context &devContext,
                       int N, 
                       int *validCount)  // if validCount NULL leave count on device
 {
-
   //In the next step we associate the GPU memory with the Kernel arguments
   //my_dev::dev_mem<uint> counts(devContext, 512), countx(devContext, 512);
   //Memory that should be alloced outside the function:
