@@ -28,17 +28,22 @@
 
 struct sockaddr_in;
 
-/// Control interconnection via UNIX socket
-class WOGSocketManager
+/**
+ * War of Galaxies (WOG)
+ * - Store galaxy type which can be released
+ * - Control interconnection via UNIX socket
+ * - Add and remove particles to running simulation
+ */
+class WOGManager
 {
  public:
 
   /// Constructor opening sockets and reading input galaxies
-  WOGSocketManager(std::string const& path, int port, int window_width, int window_height, real fovy,
+  WOGManager(std::string const& path, int port, int window_width, int window_height, real fovy,
 	real farZ, real camera_distance, real deletion_radius_factor);
 
   /// Constructor closing the sockets
-  ~WOGSocketManager();
+  ~WOGManager();
 
   /// Execute a client request
   void execute(octree *tree);
@@ -55,7 +60,7 @@ class WOGSocketManager
   void remove_particles(octree *tree);
 
   /// Execute a client request
-  jsoncons::json execute_json(octree *tree, std::string buffer);
+  jsoncons::json execute_json(octree *tree, std::string const& buffer);
 
   int server_socket;
 

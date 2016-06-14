@@ -348,7 +348,7 @@ public:
 #else
       m_enableStats(true),
 #endif
-      m_wogSocketManager(wogPath, wogPort, 1024, 768, m_fov, m_farZ, wogCameraDistance, wogDeletionRadiusFactor)
+      m_wogManager(wogPath, wogPort, 1024, 768, m_fov, m_farZ, wogCameraDistance, wogDeletionRadiusFactor)
   {
     m_windowDims = make_int2(1024, 768);
     m_cameraTrans = make_float3(0, -2, -100);
@@ -1096,7 +1096,7 @@ public:
 	m_renderer.setFOV(m_fov);
 	m_renderer.setWindowSize(m_windowDims.x, m_windowDims.y);
 
-	m_wogSocketManager.reshape(w, h);
+	m_wogManager.reshape(w, h);
 
     fitCamera();
     glMatrixMode(GL_MODELVIEW);
@@ -1487,7 +1487,7 @@ public:
   ParamListGL *m_params;    // current
 
   /// Managing class for WarOfGalaxies
-  WOGSocketManager m_wogSocketManager;
+  WOGManager m_wogManager;
 
   // saved cameras
   struct Camera {
@@ -1816,7 +1816,7 @@ void special(int key, int x, int y)
 
 void idle(void)
 {
-  theDemo->m_wogSocketManager.execute(theDemo->m_tree);
+  theDemo->m_wogManager.execute(theDemo->m_tree);
   glutPostRedisplay();
 }
 

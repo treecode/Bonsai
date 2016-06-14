@@ -455,7 +455,6 @@ static __device__ void compute_energy_doubleD(const int n_bodies,
 
 }
 
-
 //Reduce function to get the energy of the system
 KERNEL_DECLARE(compute_energy_double)(const int n_bodies,
                                             real4 *pos,
@@ -465,6 +464,3 @@ KERNEL_DECLARE(compute_energy_double)(const int n_bodies,
   extern __shared__ double shDDataKin[];
   compute_energy_doubleD(n_bodies, pos, vel, acc, energy, shDDataKin);
 }
-
-
-
