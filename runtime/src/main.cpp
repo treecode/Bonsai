@@ -106,6 +106,7 @@ extern void displayTimers()
 #endif
 
 #ifdef WAR_OF_GALAXIES
+#include <stdexcept>
 void throw_if_flag_is_used(AnyOption const& opt, std::vector<std::string> arguments)
 {
   for (auto const& arg : arguments)
