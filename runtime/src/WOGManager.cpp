@@ -6,7 +6,7 @@
  */
 
 #include "FileIO.h"
-#include "WOGSocketManager.h"
+#include "WOGManager.h"
 
 using jsoncons::json;
 
@@ -32,6 +32,12 @@ WOGManager::WOGManager(std::string const& path, int port, int window_width, int 
   if (server_socket == -1) {
     perror("socket");
     throw std::runtime_error("socket error");
+  }
+
+  int enable = 1;
+  if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0) {
+    perror("setsockopt");
+    throw std::runtime_error("setsockopt(SO_REUSEADDR) failed");
   }
 
   sockaddr_in serverAddr;

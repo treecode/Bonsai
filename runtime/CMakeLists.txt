@@ -105,7 +105,7 @@ set (CCFILES
   src/hostConstruction.cpp
   src/Galaxy.cpp
   src/FileIO.cpp
-  src/WOGSocketManager.cpp
+  src/WOGManager.cpp
 )
 
 set (HFILES
@@ -128,6 +128,7 @@ set (CUFILES
   CUDAkernels/timestep.cu
   CUDAkernels/depthSort.cu
   CUDAkernels/dev_direct_gravity.cu
+  CUDAkernels/war_of_galaxies.cu
 )
 
 if (COMPILE_SM30)

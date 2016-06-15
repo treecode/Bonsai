@@ -30,7 +30,7 @@
 #include "paramgl.h"
 #include "depthSort.h"
 #include "tr.h"
-#include "WOGSocketManager.h"
+#include "WOGManager.h"
 
 float TstartGlow;
 float dTstartGlow;

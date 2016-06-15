@@ -5,6 +5,9 @@
  *      Author: Bernd Doser <bernd.doser@h-its.org>
  */
 
+#ifdef USE_THRUST
+
+#include "bonsai.h"
 #include <thrust/remove.h>
 #include <thrust/device_ptr.h>
 
@@ -20,3 +23,5 @@ extern "C" void remove_particles(const int n_bodies,
 
   //thrust::remove_if();
 }
+
+#endif

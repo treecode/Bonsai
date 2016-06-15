@@ -1,5 +1,6 @@
 #include "octree.h"
-#include  "postProcessModules.h"
+#include "postProcessModules.h"
+#include "thrust_war_of_galaxies.h"
 
 #include <iostream>
 #include <algorithm>
@@ -533,6 +534,13 @@ void octree::removeGalaxy(int user_id)
 
 void octree::removeParticles(real deletion_radius_square, std::vector<int> &user_particles)
 {
+#ifdef USE_THRUST
+
+  remove_particles(this->localTree.n, this->localTree.bodies_pos,
+    this->localTree.bodies_vel, this->localTree.bodies_acc0);
+
+#else
+
   // Get particle data back to the host so we can add our new data
   this->localTree.bodies_pos.d2h();
   this->localTree.bodies_vel.d2h();
@@ -590,6 +598,8 @@ void octree::removeParticles(real deletion_radius_square, std::vector<int> &user
   this->localTree.bodies_Pvel.copy(this->localTree.bodies_pos, localTree.n);
 
   resetEnergy();
+
+#endif
 }
 
 // returns true if this iteration is the last (t_current >= t_end), false otherwise
