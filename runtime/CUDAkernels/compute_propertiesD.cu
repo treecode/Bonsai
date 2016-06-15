@@ -1,4 +1,5 @@
 #include "bonsai.h"
+#undef USE_THRUST
 #include "support_kernels.cu"
 #include <stdio.h>
 
