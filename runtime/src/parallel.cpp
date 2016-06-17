@@ -997,71 +997,6 @@ int octree::SumOnRootRank(int value)
 
 
 
-void octree::computeSampleRateSFC(float lastExecTime, int &nSamples, float &sampleRate)
-{
-#ifdef USE_MPI
-  double t00 = get_time();
-  //Compute the number of particles to sample.
-  //Average the previous and current execution time to make everything smoother
-  //results in much better load-balance
-  static double prevDurStep  = -1;
-  static int    prevSampFreq = -1;
-  prevDurStep                = (prevDurStep <= 0) ? lastExecTime : prevDurStep;
-  double timeLocal           = (lastExecTime + prevDurStep) / 2;
-
-#define LOAD_BALANCE 0
-#define LOAD_BALANCE_MEMORY 0
-
-  double nrate = 0;
-  if(LOAD_BALANCE) //Base load balancing on the computation time
-  {
-    double timeSum   = 0.0;
-
-    //Sum the execution times over all processes
-    MPI_Allreduce( &timeLocal, &timeSum, 1,MPI_DOUBLE, MPI_SUM, mpiCommWorld);
-
-    nrate = timeLocal / timeSum;
-
-    if(LOAD_BALANCE_MEMORY)       //Don't fluctuate particles too much
-    {
-#define SAMPLING_LOWER_LIMIT_FACTOR  (1.9)
-
-      double nrate2 = (double)localTree.n / (double) nTotalFreq_ull;
-      nrate2       /= SAMPLING_LOWER_LIMIT_FACTOR;
-
-      if(nrate < nrate2)
-      {
-        nrate = nrate2;
-      }
-
-      double nrate2_sum = 0.0;
-
-      MPI_Allreduce(&nrate, &nrate2_sum, 1, MPI_DOUBLE, MPI_SUM, mpiCommWorld);
-
-      nrate /= nrate2_sum;
-    }
-  }
-  else
-  {
-    nrate = (double)localTree.n / (double)nTotalFreq_ull; //Equal number of particles
-  }
-
-  int    nsamp  = (int)(nTotalFreq_ull*0.001f/4) + 1;  //Total number of sample particles, global
-  nSamples      = (int)(nsamp*nrate) + 1;
-  sampleRate    = localTree.n / (float)nSamples;
-
-  if (procId == 0)
-  fprintf(stderr, "NSAMP [%d]: sample: %d nrate: %f final sampleRate: %f localTree.n: %d\tprevious: %d timeLocal: %f prevTimeLocal: %f  Took: %lg\n",
-      procId, nSamples, nrate, sampleRate, localTree.n, prevSampFreq,
-      timeLocal, prevDurStep,get_time()-t00);
-  assert(sampleRate > 1);
-
-  prevDurStep  = timeLocal;
-  prevSampFreq = sampleRate;
-
-#endif
-}
-
 void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys2,    int  nSamples2,
     uint4 *globalSamples2, int  *nReceiveCnts2, int *nReceiveDpls2,
     int    totalCount2,   uint4 *parallelBoundaries, float lastExecTime,
@@ -1705,7 +1640,7 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree
   #define NMAXPROC 32768
   static MPI_Status stat[NMAXPROC];
   static MPI_Request req[NMAXPROC*2];
-  assert(nprocs < NMAXPROC);
+  assert(nProcs < NMAXPROC);
 
   //TODO this loop could overflow if scount > INT_MAX (same for rcount)
   int nreq = 0;
@@ -5252,5 +5187,73 @@ int octree::recursiveTopLevelCheck(uint4 checkNode, real4* treeBoxSizes, real4* 
     }//Split
   }
   return res;
+}
+#endif
+
+
+#if 0
+void octree::computeSampleRateSFC(float lastExecTime, int &nSamples, float &sampleRate)
+{
+#ifdef USE_MPI
+  double t00 = get_time();
+  //Compute the number of particles to sample.
+  //Average the previous and current execution time to make everything smoother
+  //results in much better load-balance
+  static double prevDurStep  = -1;
+  static int    prevSampFreq = -1;
+  prevDurStep                = (prevDurStep <= 0) ? lastExecTime : prevDurStep;
+  double timeLocal           = (lastExecTime + prevDurStep) / 2;
+
+#define LOAD_BALANCE 0
+#define LOAD_BALANCE_MEMORY 0
+
+  double nrate = 0;
+  if(LOAD_BALANCE) //Base load balancing on the computation time
+  {
+    double timeSum   = 0.0;
+
+    //Sum the execution times over all processes
+    MPI_Allreduce( &timeLocal, &timeSum, 1,MPI_DOUBLE, MPI_SUM, mpiCommWorld);
+
+    nrate = timeLocal / timeSum;
+
+    if(LOAD_BALANCE_MEMORY)       //Don't fluctuate particles too much
+    {
+#define SAMPLING_LOWER_LIMIT_FACTOR  (1.9)
+
+      double nrate2 = (double)localTree.n / (double) nTotalFreq_ull;
+      nrate2       /= SAMPLING_LOWER_LIMIT_FACTOR;
+
+      if(nrate < nrate2)
+      {
+        nrate = nrate2;
+      }
+
+      double nrate2_sum = 0.0;
+
+      MPI_Allreduce(&nrate, &nrate2_sum, 1, MPI_DOUBLE, MPI_SUM, mpiCommWorld);
+
+      nrate /= nrate2_sum;
+    }
+  }
+  else
+  {
+    nrate = (double)localTree.n / (double)nTotalFreq_ull; //Equal number of particles
+  }
+
+  int    nsamp  = (int)(nTotalFreq_ull*0.001f/4) + 1;  //Total number of sample particles, global
+  nSamples      = (int)(nsamp*nrate) + 1;
+  sampleRate    = localTree.n / (float)nSamples;
+
+  if (procId == 0)
+  fprintf(stderr, "NSAMP [%d]: sample: %d nrate: %f final sampleRate: %f localTree.n: %d\tprevious: %d timeLocal: %f prevTimeLocal: %f  Took: %lg\n",
+      procId, nSamples, nrate, sampleRate, localTree.n, prevSampFreq,
+      timeLocal, prevDurStep,get_time()-t00);
+  assert(sampleRate > 1);
+
+  prevDurStep  = timeLocal;
+  prevSampFreq = sampleRate;
+
+#endif
 }
 #endif

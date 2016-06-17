@@ -444,28 +444,6 @@ protected:
 
   ///////////////////////
 
-  /////////////////
-
-
-  void   to_binary(int);
-  void   to_binary(uint2);
-  uint2  dilate3(int);
-  int    undilate3(uint2);
-
-  uint2  get_key(int3);
-  int3   get_crd(uint2);
-  real4  get_pos(uint2, real, tree_structure&);
-
-  uint2  get_imask(uint2);
-
-
-  //struct morton_struct {
-  //  uint2 key;
-  //  int   value;
-  //};
-
-//  int find_key(uint2, vector<uint2>&,         int, int);
-//  int find_key(uint2, vector<morton_struct>&, int, int);
 
   ///////////
 
@@ -539,8 +517,6 @@ public:
    void dataReorder2(const int N, my_dev::dev_mem<uint> &permutation,
                      my_dev::dev_mem<T>  &dIn, my_dev::dev_mem<T>  &dOut);
 
-
-//    void desort_bodies(tree_structure &tree);
     void sort_bodies(tree_structure &tree, bool doDomainUpdate, bool doFullShuffle = false);
     void getBoundaries(tree_structure &tree, real4 &r_min, real4 &r_max);
     void getBoundariesGroups(tree_structure &tree, real4 &r_min, real4 &r_max);  
@@ -607,9 +583,6 @@ public:
   void correct(tree_structure &tree);
   double compute_energies(tree_structure &tree);
 
-//  int  checkMergingDistance(tree_structure &tree, int iter, double dE);
-//  void checkRemovalDistance(tree_structure &tree);
-
   //Parallel version functions
   //Approximate for LET
   void approximate_gravity_let(tree_structure &tree, tree_structure &remoteTree, 
@@ -668,16 +641,15 @@ public:
   //Main MPI functions
 
   //Functions for domain division
-  void createORB();
   void mpiSumParticleCount(int numberOfParticles);
+
+  void ICRecv(int procId, vector<real4> &bodyPositions, vector<real4> &bodyVelocities,  vector<ullong> &bodiesIDs);
+  void ICSend(int destination, real4 *bodyPositions, real4 *bodyVelocities,  ullong *bodiesIDs, int size);
+
 
   void sendCurrentRadiusInfo(real4 &rmin, real4 &rmax);
   
   //Function for Device assisted domain division
-  void gpu_collect_sample_particles(int nSample, real4 *sampleParticles);
-
-
-
   int gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree,
                                                     bodyStruct *particlesToSend,
                                                     int *nparticles, int *nsendDispls, int *nreceive,
@@ -685,10 +657,6 @@ public:
 
 
    //Local Essential Tree related functions
-
-  void ICRecv(int procId, vector<real4> &bodyPositions, vector<real4> &bodyVelocities,  vector<ullong> &bodiesIDs);
-  void ICSend(int destination, real4 *bodyPositions, real4 *bodyVelocities,  ullong *bodiesIDs, int size);
-
   void build_NewTopLevels(int n_bodies,
                        uint4 *keys,
                        uint2 *nodes,
@@ -727,8 +695,6 @@ public:
 
   void sendCurrentInfoGrpTree();
 
-  void computeSampleRateSFC(float lastExecTime, int &nSamples, float &sampleRate);
-
   void exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSamples,
                                            uint4 *globalSamples, int  *nReceiveCnts, int *nReceiveDpls,
                                            int    totalCount,   uint4 *parallelBoundaries, float lastExectime,
@@ -745,15 +711,15 @@ public:
       int &recvTree, bool &mergeOwntree, int &procTrees, double &tStart);
 
   void checkGPUAndStartLETComputation(tree_structure &tree,
-      tree_structure &remote,
-      int            &topNodeOnTheFlyCount,
-      int            &nReceived,
-      int            &procTrees,
-      double         &tStart,
-      double         &totalLETExTime,
-      bool            mergeOwntree,
-      int            *treeBuffersSource,
-      real4         **treeBuffers);
+                                      tree_structure &remote,
+                                      int            &topNodeOnTheFlyCount,
+                                      int            &nReceived,
+                                      int            &procTrees,
+                                      double         &tStart,
+                                      double         &totalLETExTime,
+                                      bool            mergeOwntree,
+                                      int            *treeBuffersSource,
+                                      real4         **treeBuffers);
 
 
   int recursiveTopLevelCheck(uint4 checkNode, real4* treeBoxSizes, real4* treeBoxCenters, real4* treeBoxMoments,
@@ -787,27 +753,25 @@ public:
     NThird   = NThirdT;
   }
 
-	void set_t_current(const float t)
-	{
-		t_current = t_previous = t;
-	}
-	float get_t_current() const
-	{
-		return t_current;
-	}
+	void set_t_current(const float t) { t_current = t_previous = t; }
+	float get_t_current() const       { return t_current; }
+  void setUseDirectGravity(bool s)  { useDirectGravity = s;    }
+  bool getUseDirectGravity() const  { return useDirectGravity; }
 
   octree(const MPI_Comm &comm,
          char **argv, const int device = 0, const float _theta = 0.75, const float eps = 0.05,
          string snapF = "", float snapI = -1,  
-         const float _quickDump = 0.0,
-         const float _quickRatio = 0.1,
-         const bool  _quickSync = true,
-         const bool  _useMPIIO   = false,
-         const bool  _mpiRenderMode = false,
-         float tempTimeStep = 1.0 / 16.0, float tempTend = 1000,
-         int _iterEnd = (1<<30),
-         int maxDistT = -1, const int _rebuild = 2,
-         bool direct = false)
+         const float _quickDump       = 0.0,
+         const float _quickRatio      = 0.1,
+         const bool  _quickSync       = true,
+         const bool  _useMPIIO        = false,
+         const bool  _mpiRenderMode   = false,
+         float tempTimeStep           = 1.0 / 16.0,
+         float tempTend               = 1000,
+         int _iterEnd                 = (1<<30),
+         int maxDistT                 = -1,
+         const int _rebuild           = 2,
+         bool direct                  = false)
   : mpiCommWorld(comm), rebuild_tree_rate(_rebuild), procId(0), nProcs(1), thisPartLETExTime(0), useDirectGravity(direct),
   quickDump(_quickDump), quickRatio(_quickRatio), quickSync(_quickSync), useMPIIO(_useMPIIO), mpiRenderMode(_mpiRenderMode), nextQuickDump(0.0)
   {
@@ -897,7 +861,6 @@ public:
 
     prevDurStep = -1;   //Set it to negative so we know its the first step
 
-//     my_dev::base_mem::printMemUsage();   
     
 #ifdef USE_MPI
     logFileWriter = new LOGFILEWRITER(nProcs, myComm->MPI_COMM_I, myComm->MPI_COMM_J);
@@ -929,8 +892,6 @@ public:
     if(fullGrpAndLETRequestStatistics) delete[] fullGrpAndLETRequestStatistics;
   };
 
-  void setUseDirectGravity(bool s) { useDirectGravity = s;    }
-  bool getUseDirectGravity() const { return useDirectGravity; }
 };
 
 /************* data exchange containers for async IO ***************/

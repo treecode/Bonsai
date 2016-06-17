@@ -310,7 +310,7 @@ public:
   BonsaiDemo(octree *tree, octree::IterationData &idata) 
     : m_tree(tree), m_idata(idata), iterationsRemaining(true),
 //       m_renderer(tree->localTree.n + tree->localTree.n_dust),
-      m_renderer(tree->localTree.n + tree->localTree.n_dust, MAX_PARTICLES),
+      m_renderer(tree->localTree.n, MAX_PARTICLES),
       //m_displayMode(ParticleRenderer::PARTICLE_SPRITES_COLOR),
 	    m_displayMode(SmokeRenderer::VOLUMETRIC),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.2f),
@@ -357,8 +357,7 @@ public:
 
    
     int arraySize = tree->localTree.n;
-    arraySize    += tree->localTree.n_dust;
- 
+
     //m_particleColors  = new float4[arraySize];
     m_particleColors  = new float4[MAX_PARTICLES];  
     cudaMalloc( &m_particleColorsDev, MAX_PARTICLES * sizeof(float4)); 
@@ -443,7 +442,6 @@ public:
       return;
 
     int bodies = m_tree->localTree.n;
-    int dust = m_tree->localTree.n_dust;
 
     beginDeviceCoords();
     glScalef(0.25f, 0.25f, 1.0f);
@@ -464,7 +462,7 @@ public:
     glPrintf(x, y, "MYears:    %.2f", Myr);
     y -= lineSpacing;
 
-    glPrintf(x, y, "BODIES:    %d", bodies + dust);
+    glPrintf(x, y, "BODIES:    %d", bodies);
     y -= lineSpacing;
 
     if (m_displayBodiesSec) {
@@ -483,8 +481,8 @@ public:
     endWinCoords();
 
     char str[256];
-    sprintf(str, "Bonsai N-Body Tree Code (%d bodies, %d dust): %0.1f fps",
-            bodies, dust, fps);
+    sprintf(str, "Bonsai N-Body Tree Code (%d bodies): %0.1f fps",
+            bodies, fps);
 
     glutSetWindowTitle(str);
   }
@@ -578,10 +576,10 @@ public:
     if (m_renderingEnabled)
     {
       //Check if we need to update the number of particles
-      if((m_tree->localTree.n + m_tree->localTree.n_dust) > m_renderer.getNumberOfParticles())
+      if((m_tree->localTree.n) > m_renderer.getNumberOfParticles())
       {
         //Update the particle count in the renderer
-        m_renderer.setNumberOfParticles(m_tree->localTree.n + m_tree->localTree.n_dust);
+        m_renderer.setNumberOfParticles(m_tree->localTree.n);
         fitCamera(); //Try to get the model back in view
       }
       
@@ -1163,7 +1161,7 @@ public:
 
   void initBodyColors()
   {
-    int n = m_tree->localTree.n + m_tree->localTree.n_dust;   
+    int n = m_tree->localTree.n;
     for(int i=0; i<n; i++) {
       m_particleColors[i] = make_float4(1.0f, 1.0f, 1.0f, 1.0f);
     }
@@ -1171,17 +1169,7 @@ public:
 
   void getBodyData() {
 
-   int n = m_tree->localTree.n + m_tree->localTree.n_dust;   
-   //Above is safe since it is 0 if we dont use dust
-
-    #ifdef USE_DUST
-     //We move the dust data into the position data (on the device :) )
-     m_tree->localTree.bodies_pos.copy_devonly(m_tree->localTree.dust_pos,
-                           m_tree->localTree.n_dust, m_tree->localTree.n); 
-     m_tree->localTree.bodies_ids.copy_devonly(m_tree->localTree.dust_ids,
-                           m_tree->localTree.n_dust, m_tree->localTree.n);
-    #endif    
-
+   int n = m_tree->localTree.n;
 
      //HACK to get max density
      float maxDensity = -1000;
@@ -1309,7 +1297,7 @@ public:
 		m_renderer.setColorsDevice( (float*)m_particleColorsDev );
 #endif
 
-    m_renderer.setNumParticles( m_tree->localTree.n + m_tree->localTree.n_dust);    
+    m_renderer.setNumParticles( m_tree->localTree.n);
     m_renderer.setPositionsDevice((float*) m_tree->localTree.bodies_pos.d());   // use d2d copy
     //m_tree->localTree.bodies_pos.d2h(); m_renderer.setPositions((float *) &m_tree->localTree.bodies_pos[0]);
     

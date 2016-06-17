@@ -118,7 +118,6 @@ set (CCFILES
   src/octree.cpp
   src/parallel.cpp
   src/sort_bodies_gpu.cpp
-  src/dustFunctions.cpp
   src/log.cpp
   src/hostConstruction.cpp
   )
@@ -326,6 +325,7 @@ endif(USE_GALACTICS OR USE_GALACTICS_IFORT)
 target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES} -lrt -pie -rdynamic)
 target_link_libraries(${BINARY_CLR_NAME}  -lrt -pie -rdynamic)
 target_link_libraries(${BINARY_IO_NAME}  -lrt -pie -rdynamic)
+target_link_libraries(bonsai_driver -ldl -lrt -pie -rdynamic)
 
 #copy test data file
 file(COPY ${CMAKE_SOURCE_DIR}/../inputExamples/model3_child_compact.tipsy DESTINATION ${CMAKE_BINARY_DIR})
