@@ -536,8 +536,10 @@ void octree::removeParticles(real deletion_radius_square, std::vector<int> &user
 {
 #ifdef USE_THRUST
 
-  remove_particles(this->localTree.n, this->localTree.bodies_pos,
-    this->localTree.bodies_vel, this->localTree.bodies_acc0);
+  remove_particles(this->localTree, deletion_radius_square, user_particles);
+
+  // Resize preserves original data
+  this->reallocateParticleMemory(this->localTree);
 
 #else
 
@@ -597,9 +599,9 @@ void octree::removeParticles(real deletion_radius_square, std::vector<int> &user
   this->localTree.bodies_Ppos.copy(this->localTree.bodies_pos, localTree.n);
   this->localTree.bodies_Pvel.copy(this->localTree.bodies_pos, localTree.n);
 
-  resetEnergy();
-
 #endif
+
+  resetEnergy();
 }
 
 // returns true if this iteration is the last (t_current >= t_end), false otherwise

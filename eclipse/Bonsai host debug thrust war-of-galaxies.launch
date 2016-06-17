@@ -17,10 +17,10 @@
 <booleanAttribute key="org.eclipse.cdt.launch.DEBUGGER_STOP_AT_MAIN" value="true"/>
 <stringAttribute key="org.eclipse.cdt.launch.DEBUGGER_STOP_AT_MAIN_SYMBOL" value="main"/>
 <stringAttribute key="org.eclipse.cdt.launch.PROGRAM_ARGUMENTS" value="--war-of-galaxies ${env_var:ESO_DATA}/galaxy_types/available&#10;--port 50008&#10;--del-radius-factor 0.3&#10;-i ${env_var:ESO_DATA}/galaxy_types/model3_child_compact_reduce50.tipsy"/>
-<stringAttribute key="org.eclipse.cdt.launch.PROGRAM_NAME" value="build_release_gnu_thrust/bonsai2_slowdust"/>
+<stringAttribute key="org.eclipse.cdt.launch.PROGRAM_NAME" value="build_host_debug_gnu_thrust/bonsai2_slowdust"/>
 <stringAttribute key="org.eclipse.cdt.launch.PROJECT_ATTR" value="Bonsai"/>
 <booleanAttribute key="org.eclipse.cdt.launch.PROJECT_BUILD_CONFIG_AUTO_ATTR" value="true"/>
-<stringAttribute key="org.eclipse.cdt.launch.PROJECT_BUILD_CONFIG_ID_ATTR" value=""/>
+<stringAttribute key="org.eclipse.cdt.launch.PROJECT_BUILD_CONFIG_ID_ATTR" value="com.nvidia.cuda.ide.toolchain.base.1360504251.318148432"/>
 <listAttribute key="org.eclipse.debug.core.MAPPED_RESOURCE_PATHS">
 <listEntry value="/Bonsai"/>
 </listAttribute>
