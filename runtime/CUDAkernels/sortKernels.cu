@@ -23,7 +23,7 @@ struct ExtractBits: public thrust::unary_function<uint4, uint>
   }
 };
 
-#define USE_CUB
+//#define USE_CUB
 
 #ifdef USE_CUB
 	#include <cub/util_allocator.cuh>

@@ -488,9 +488,6 @@ int extractGroupsTreeFullCount2(
   groupSize.clear();
   groupSize.reserve(nNodes);
 
-  groupMulti.clear();
-  groupMulti.reserve(3*nNodes);
-
   groupBody.clear();
   groupBody.reserve(nNodes); //We only select leaves with child==1, so cant ever have more than this
 
@@ -507,9 +504,6 @@ int extractGroupsTreeFullCount2(
   {
     groupCentre.push_back(nodeCentre[cell]);
     groupSize  .push_back(nodeSize[cell]);
-//    groupMulti .push_back(nodeMulti[cell*3+0]);
-//    groupMulti .push_back(nodeMulti[cell*3+1]);
-//    groupMulti .push_back(nodeMulti[cell*3+2]);
   }
 
   for (int cell = cellBeg; cell < cellEnd; cell++)
@@ -522,7 +516,6 @@ int extractGroupsTreeFullCount2(
   int depth = 0;
   while (!levelList.first().empty())
   {
-//    LOGF(stderr, " depth= %d Store offset: %d cursize: %d\n", depth++, childOffset, groupSize.size());
     const int csize = levelList.first().size();
     for (int i = 0; i < csize; i++)
     {
@@ -532,14 +525,12 @@ int extractGroupsTreeFullCount2(
       const float nodeInfo_x = centre.w;
       const uint  nodeInfo_y = host_float_as_int(size.w);
 
-//      LOGF(stderr,"BeforeWorking on %d \tLeaf: %d \t %f [%f %f %f]\n",nodeIdx, nodeInfo_x <= 0.0f, nodeInfo_x, centre.x, centre.y, centre.z);
       const int lchild  =    nodeInfo_y & 0x0FFFFFFF;            //Index to the first child of the node
       const int lnchild = (((nodeInfo_y & 0xF0000000) >> 28)) ;  //The number of children this node has
 
       const bool lleaf = nodeInfo_x <= 0.0f;
       if (!lleaf)
       {
-#if 1
         //We mark this as an end-point
         if (lnchild == 8)
         {
@@ -547,14 +538,9 @@ int extractGroupsTreeFullCount2(
           size1.w = host_int_as_float(0xFFFFFFFF);
           groupCentre.push_back(centre);
           groupSize  .push_back(size1);
-//          groupMulti .push_back(nodeMulti[nodeIdx*3+0]);
-//          groupMulti .push_back(nodeMulti[nodeIdx*3+1]);
-//          groupMulti .push_back(nodeMulti[nodeIdx*3+2]);
         }
         else
-#endif
         {
-//          LOGF(stderr,"ORIChild info: Node: %d stored at: %d  info:  %d %d \n",nodeIdx, groupSize.size(), lchild, lnchild);
           //We pursue this branch, mark the offsets and add the parent
           //to our list and the children to next level process
           float4 size1   = size;
@@ -568,9 +554,6 @@ int extractGroupsTreeFullCount2(
 
           groupCentre.push_back(centre);
           groupSize  .push_back(size1);
-//          groupMulti .push_back(nodeMulti[nodeIdx*3+0]);
-//          groupMulti .push_back(nodeMulti[nodeIdx*3+1]);
-//          groupMulti .push_back(nodeMulti[nodeIdx*3+2]);
 
           if(depth <  maxDepth){
             for (int i = lchild; i < lchild + lnchild; i++)
@@ -590,13 +573,7 @@ int extractGroupsTreeFullCount2(
 
           groupCentre.push_back(centre);
           groupSize  .push_back(size1);
-//          groupMulti .push_back(nodeMulti[nodeIdx*3+0]);
-//          groupMulti .push_back(nodeMulti[nodeIdx*3+1]);
-//          groupMulti .push_back(nodeMulti[nodeIdx*3+2]);
           groupBody  .push_back(nodeBody[lchild]);
-
-//          LOGF(stderr,"Adding a leaf with only 1 child!! Grp cntr: %f %f %f body: %f %f %f\n",
-//              centre.x, centre.y, centre.z, nodeBody[lchild].x, nodeBody[lchild].y, nodeBody[lchild].z);
         }
         else
         { //More than 1 child, mark as END point
@@ -604,15 +581,10 @@ int extractGroupsTreeFullCount2(
           size1.w = host_int_as_float(0xFFFFFFFF);
           groupCentre.push_back(centre);
           groupSize  .push_back(size1);
-
-//          groupMulti .push_back(nodeMulti[nodeIdx*3+0]);
-//          groupMulti .push_back(nodeMulti[nodeIdx*3+1]);
-//          groupMulti .push_back(nodeMulti[nodeIdx*3+2]);
         }
       }
     }
 
-//    LOGF(stderr, "  done depth= %d Store offset: %d cursize: %d\n", depth, childOffset, groupSize.size());
     levelList.swap();
     levelList.second().clear();
     depth++;
@@ -827,6 +799,8 @@ void extractGroupsTreeFull(
 }
 
 //Only counts the items in a full-structure
+//We basically count the nodes that form the external
+//structure of the tree
 int extractGroupsTreeFullCount(
     const real4 *nodeCentre,
     const real4 *nodeSize,
@@ -842,15 +816,15 @@ int extractGroupsTreeFullCount(
   nextLevelVec.reserve(levelCountMax);
   Swap<std::vector<int> > levelList(currLevelVec, nextLevelVec);
 
-  int exportNodeCount = 0;
   int exportBodyCount = 0;
+  int exportNodeCount = cellBeg;
 
-  exportNodeCount = cellBeg;
 
+  //Add the start level to the queue
   for (int cell = cellBeg; cell < cellEnd; cell++)
     levelList.first().push_back(cell);
 
-//  int depth = 0;
+  //Walk through the tree levels
   while (!levelList.first().empty())
   {
     const int csize = levelList.first().size();
@@ -869,7 +843,7 @@ int extractGroupsTreeFullCount(
       exportNodeCount++;
       if (!lleaf)
       {
-        //We mark this as an end-point
+        //We treat this as an end-point if it has 8 children, otherwise continue down the tree
         if (lnchild != 8)
         {
           if(depth <  maxDepth){
@@ -1828,8 +1802,8 @@ void octree::sendCurrentInfoGrpTree()
   //this a per-process tuning
 
   std::vector<int2> globalGroupSizeArray    (nProcs);  //x is fullGroup, y = smallGroup
-  std::vector<int2> globalGroupSizeArrayRecv(nProcs); //x is fullGroup, y = smallGroup
-  globalGroupSizeArray[procId] = make_int2(0,0);      //Nothing to ourselves
+  std::vector<int2> globalGroupSizeArrayRecv(nProcs);  //x is fullGroup, y = smallGroup
+  globalGroupSizeArray[procId] = make_int2(0,0);       //Nothing to ourselves
 
 
   //Count the number of processes that used the boundary tree and compute the average level
@@ -1869,7 +1843,7 @@ void octree::sendCurrentInfoGrpTree()
         for(int i=0; i < nProcs; i++)
           if(fullGrpAndLETRequestStatistics[i].x < 0) fullGrpAndLETRequestStatistics[i].x = 1;
 
-        //Restore workable settings
+        //Restore workable settings, by modifying the start and max depth of the boundaryTree
         if(boundaryTreeSettings.y > 0)
         {
           boundaryTreeSettings.y--;
@@ -1882,7 +1856,7 @@ void octree::sendCurrentInfoGrpTree()
         fprintf(stderr,"Proc: %d COUNTFAIL  %d  iter: %d back to: %d %d \n",
             procId, countFailed, iter, boundaryTreeSettings.x, boundaryTreeSettings.y);
 
-        //Mark as not changeable anymore
+        //Mark as not changeable anymore, we found the 'optimal' settings
         boundaryTreeSettings.z = 0;
       }//if countFailed > maxNLarge
       else
@@ -1904,6 +1878,7 @@ void octree::sendCurrentInfoGrpTree()
     //Start on the root node
     if(iter >= 12 && boundaryTreeSettings.z == 1)
     {
+      //First decrease the depth, how far we go from the start.
       searchDepthUsed =  boundaryTreeSettings.x-1;
       boundaryTreeSettings.x--;
 
@@ -1912,7 +1887,7 @@ void octree::sendCurrentInfoGrpTree()
 
       if(searchDepthUsed == 1)
       {
-        //Start decreasing the start level
+        //Start decreasing the start level as we hit a minimum depth level
         boundaryTreeSettings.y++;
       }
 
@@ -1949,9 +1924,9 @@ void octree::sendCurrentInfoGrpTree()
 //      localTree.level_list[localTree.startLevelMin].x,
 //      localTree.level_list[localTree.startLevelMin].y);
 
-  //Now that we've found the limits of our searches, perform the actual
-  //searches
+  //Now that we've found the limits of our searches, perform the actual searches
 
+  //TODO what do we do here? Count? Why not use same function as below
   nGroupsSmallSet =  extractGroupsTreeFullCount2(
                         groupCentre, groupSize,
                         groupMulti, groupBody,
@@ -1966,6 +1941,7 @@ void octree::sendCurrentInfoGrpTree()
 
   for(int i=0; i < nProcs; i++)
   {
+    //TODO check that we dont overwrite i with a negative nGroupsSmallSet
     if(i == procId) globalGroupSizeArray[i].y = nGroupsSmallSet;
 
     if(fullGrpAndLETRequestStatistics[i].x > 0)
@@ -2006,7 +1982,7 @@ void octree::sendCurrentInfoGrpTree()
     }
   }
 
-  //If we have to send full-groups to everyone, then use the allgaterv
+  //If we have to send full-groups to a large number of processes, then use the allgaterv
   //and do not use ISend/Irecv
   int tempCount = 0;
   for(int i=0; i < nProcs; i++)
@@ -2065,8 +2041,8 @@ void octree::sendCurrentInfoGrpTree()
 
 
   std::vector<int> groupRecvSizesSmall(nProcs, 0);
-  std::vector<int> groupRecvSizesA2A(nProcs, 0);
-  std::vector<int>  displacement(nProcs,0);
+  std::vector<int> groupRecvSizesA2A  (nProcs, 0);
+  std::vector<int> displacement       (nProcs,0);
 
   /* compute displacements for allgatherv for fullGrps */
   int runningOffset  = 0;
@@ -2079,11 +2055,9 @@ void octree::sendCurrentInfoGrpTree()
 
     this->globalGrpTreeCount[i]   = std::max(globalGroupSizeArrayRecv[i].x, globalGroupSizeArrayRecv[i].y);
     this->globalGrpTreeOffsets[i] = runningOffset;
-
-    fullGrpAndLETRequest[i]       = 0;
-
     displacement[i]               = runningOffset*sizeof(real4);
-    runningOffset                += std::max(globalGroupSizeArrayRecv[i].x, globalGroupSizeArrayRecv[i].y);
+    runningOffset                += this->globalGrpTreeCount[i];
+    fullGrpAndLETRequest[i]       = 0;
   }
 
   double t1 = get_time();

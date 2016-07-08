@@ -175,6 +175,7 @@ void octree::reallocateParticleMemory(tree_structure &tree)
 
 void octree::allocateTreePropMemory(tree_structure &tree)
 {
+  devContext.startTiming(execStream->s());
   int n_nodes = tree.n_nodes;
 
   //Allocate memory
@@ -207,10 +208,12 @@ void octree::allocateTreePropMemory(tree_structure &tree)
     tree.boxCenterInfo.cmalloc(n_nodes, true); //host allocated
     tree.groupCenterInfo.cmalloc(tree.n_groups,true);
   }
+  devContext.stopTiming("Memory", 11, execStream->s());
 }
 
 void octree::build (tree_structure &tree) {
 
+  devContext.startTiming(execStream->s());
   int level      = 0;
   int validCount = 0;
   int offset     = 0;
@@ -471,6 +474,7 @@ void octree::build (tree_structure &tree) {
   }
 
   LOG("Tree built complete!\n");
+  devContext.stopTiming("Tree-construction", 2, execStream->s());
 
   /*************************/
 }

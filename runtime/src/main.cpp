@@ -761,8 +761,6 @@ int main(int argc, char** argv, MPI_Comm comm)
     tree->localTree.bodies_Ppos[i] = bodyPositions[i];
     tree->localTree.bodies_Pvel[i] = bodyVelocities[i];
     tree->localTree.bodies_time[i] = make_float2(tree->get_t_current(), tree->get_t_current());
-
-
   }
 
   tree->localTree.bodies_time.h2d();

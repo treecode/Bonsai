@@ -3,7 +3,6 @@
 
 
 void octree::compute_properties(tree_structure &tree) {
-
   /*****************************************************          
     Assign the memory buffers, note that we check the size first
     and if needed we increase the size of the generalBuffer1
@@ -17,6 +16,7 @@ void octree::compute_properties(tree_structure &tree) {
     check if 10*n_nodes < 3*N if so increase buffer size
     
    *****************************************************/
+  devContext.startTiming(execStream->s());
   
   if(10*tree.n_nodes > 3*tree.n)
   {
@@ -223,6 +223,7 @@ if(iter == 20)
 }
 #endif
 
+   devContext.stopTiming("Compute-properties", 3, execStream->s());
 } //compute_propertiesD
 
 

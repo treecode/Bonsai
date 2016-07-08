@@ -302,7 +302,7 @@ void octree::gpuSort(my_dev::dev_mem<uint4> &srcKeys,
                      my_dev::dev_mem<char>  &tempE,       //For sorting space
                      int N)
 {
-#define USE_CUB
+//#define USE_CUB
   #ifdef USE_CUB
     cubSort(srcKeys, permutation, tempE, tempB, tempC, tempD, N);
   #else

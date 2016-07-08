@@ -138,26 +138,15 @@ bool octree::iterate_once(IterationData &idata) {
       rebuild_tree = ((iter % rebuild_tree_rate) == 0);
       if(rebuild_tree)
       {
-        t1 = get_time();
         //Rebuild the tree
+        t1 = get_time();
         this->sort_bodies(this->localTree, needDomainUpdate);
-
-
-        devContext.startTiming(execStream->s());
         this->build(this->localTree);
-        devContext.stopTiming("Tree-construction", 2, execStream->s());
+        LOGF(stderr, " done in %g sec : %g Mptcl/sec\n", get_time()-t1, this->localTree.n/1e6/(get_time()-t1));
 
-        double tTemp = get_time();
-
-        LOGF(stderr, " done in %g sec : %g Mptcl/sec\n", tTemp-t1, this->localTree.n/1e6/(tTemp-t1));
-
-        devContext.startTiming(execStream->s());
         this->allocateTreePropMemory(this->localTree);
-        devContext.stopTiming("Memory", 11, execStream->s());      
-
-        devContext.startTiming(execStream->s());
         this->compute_properties(this->localTree);
-        devContext.stopTiming("Compute-properties", 3, execStream->s());
+
 
         #ifdef DO_BLOCK_TIMESTEP
                 devContext.startTiming(execStream->s());
@@ -178,9 +167,8 @@ bool octree::iterate_once(IterationData &idata) {
           idata.Nact_since_last_tree_rebuild = 0;
         #endif        
         //Don't rebuild only update the current boxes
-        devContext.startTiming(execStream->s());
         this->compute_properties(this->localTree);
-        devContext.stopTiming("Compute-properties", 3, execStream->s());
+
       }//end rebuild tree
 
       //Approximate gravity
@@ -370,9 +358,7 @@ bool octree::iterate_once(IterationData &idata) {
     return false;
 }
 
-//TODO JB clean this up such that it really only does setup
-//and move all compute related and dump related items to
-//iterate once
+
 void octree::iterate_setup(IterationData &idata) {
   
   if(execStream == NULL)          execStream          = new my_dev::dev_stream(0);
@@ -380,40 +366,26 @@ void octree::iterate_setup(IterationData &idata) {
   if(copyStream == NULL)          copyStream          = new my_dev::dev_stream(0);
   if(LETDataToHostStream == NULL) LETDataToHostStream = new my_dev::dev_stream(0);
 
-
   CU_SAFE_CALL(cudaEventCreate(&startLocalGrav));
   CU_SAFE_CALL(cudaEventCreate(&endLocalGrav));
-
   CU_SAFE_CALL(cudaEventCreate(&startRemoteGrav));
   CU_SAFE_CALL(cudaEventCreate(&endRemoteGrav));
 
-  devContext.writeLogEvent("Starting execution \n");
+  devContext.writeLogEvent("Start execution\n");
   
-  //Start construction of the tree
-  sort_bodies(localTree, true, true);
-  build(localTree);
-  allocateTreePropMemory(localTree);
-  compute_properties(localTree);
-  letRunning = false;
-     
-  double t1;
-  sort_bodies(localTree, true, true);
-  //Initial prediction/acceleration to setup the system, will be at time 0
-  //predict the particles
-  predict(this->localTree);
-  double notUsed = 0;
-
-  //Setup of the particle distribution, initially it should be equal
-  if(nProcs > 1)
-  {
-    for(int i=0; i < 5; i++)
+  //Setup of the multi-process particle distribution, initially it should be equal
+  #ifdef USE_MPI
+    if(nProcs > 1)
     {
-      parallelDataSummary(localTree, 30, 30, notUsed, notUsed, true); //1 for all process, equal part distribution
+      //Initial sort to get global boundaries to compute keys
       sort_bodies(localTree, true, true);
+      for(int i=0; i < 5; i++)
+      {
+        double notUsed     = 0;
+        int maxN = 0, minN = 0;
+        parallelDataSummary(localTree, 30, 30, notUsed, notUsed, true); //1 for all process, equal part distribution
 
-      //Check if the min/max are within certain percentage
-      int maxN = 0, minN = 0;
-      #ifdef USE_MPI
+        //Check if the min/max are within certain percentage
         MPI_Allreduce(&localTree.n, &maxN, 1, MPI_INT, MPI_MAX, mpiCommWorld);
         MPI_Allreduce(&localTree.n, &minN, 1, MPI_INT, MPI_MIN, mpiCommWorld);
 
@@ -425,135 +397,32 @@ void octree::iterate_setup(IterationData &idata) {
           LOGF(stderr, "Particle setup iteration: %d Min: %d  Max: %d Diff: %d %%\n", i, minN, maxN, perc);
         }
         if(perc < 10) break; //We're happy if difference is less than 10%
-      #endif
+        sort_bodies(localTree, true, true);
+      }
     }
-  }
-
-  //Start construction of the tree
-  sort_bodies(localTree, true);
-
-  build(localTree);
-  allocateTreePropMemory(localTree);
-  compute_properties(localTree);
-  //END TEST
-
-  real4 r_min, r_max;
-  this->getBoundaries(localTree, r_min, r_max);
-  //Build the tree using the predicted positions  
-  //Compute the (new) node properties
-  compute_properties(this->localTree);
-  
-  #ifdef DO_BLOCK_TIMESTEP
-          devContext.startTiming(execStream->s());
-          setActiveGrpsFunc(this->localTree);
-          devContext.stopTiming("setActiveGrpsFunc", 10, execStream->s());
-          //idata.Nact_since_last_tree_rebuild = 0;
   #endif
 
-  t1 = get_time();
-   
-  //Approximate gravity  
-  devContext.startTiming(gravStream->s());
-  approximate_gravity(this->localTree);
-  devContext.stopTiming("Approximation", 4, gravStream->s());
-  LOGF(stderr, "APP Time during first step: %g \n", get_time() - t1);
-  
-
-  if(nProcs > 1)  makeLET();
-
-  gravStream->sync();  
-
-
-  lastLocal            = get_time() - t1;
-  //  lastLocal = 1;//Setting this to 1 disables load-balance (all processes took equal time '1')
-  lastTotal            = lastLocal;
-  idata.lastGravTime   = lastLocal;
-  idata.totalGravTime += lastLocal;
-
-  correct(this->localTree);
-  compute_energies(this->localTree);
-
-  if (useMPIIO)
-  {
-    nextSnapTime  = nextQuickDump = t_current;
-    if (mpiRenderMode)  dumpDataMPI();
-    else                dumpData();
-  }
-  else if(snapshotIter > 0)
-  {
-    nextSnapTime += t_current+snapshotIter;
-
-    while(!ioSharedData.writingFinished)
-    {
-      usleep(100); //Wait till previous snapshot is written
-    }
-
-    ioSharedData.t_current = t_current;
-    ioSharedData.malloc(localTree.n);
-
-    localTree.bodies_pos.d2h(localTree.n, ioSharedData.Pos);
-    localTree.bodies_vel.d2h(localTree.n, ioSharedData.Vel);
-    localTree.bodies_ids.d2h(localTree.n, ioSharedData.IDs);
-    ioSharedData.writingFinished = false;
-    if(nProcs <= 16) while (!ioSharedData.writingFinished);
-    while (!ioSharedData.writingFinished);
-  }
-
-  if(statisticsIter > 0)
-  {
-    if(1)
-    {
-      nextStatsTime = t_current + statisticsIter;
-      double tDens0 = get_time();
-      localTree.bodies_pos.d2h();
-      localTree.bodies_vel.d2h();
-      localTree.bodies_ids.d2h();
-
-      double tDens1 = get_time();
-      const DENSITY dens(mpiCommWorld,procId, nProcs, localTree.n,
-                         &localTree.bodies_pos[0],
-                         &localTree.bodies_vel[0],
-                         &localTree.bodies_ids[0],
-                         1, 2.33e9, 20, "density", t_current);
-
-      double tDens2 = get_time();
-      if(procId == 0) LOGF(stderr,"Density took: Copy: %lg Create: %lg \n", tDens1-tDens0, tDens2-tDens1);
-
-      double tDisk1 = get_time();
-      const DISKSTATS diskstats(mpiCommWorld,procId, nProcs, localTree.n,
-                         &localTree.bodies_pos[0],
-                         &localTree.bodies_vel[0],
-                         &localTree.bodies_ids[0],
-                         1, 2.33e9, "diskstats", t_current);
-
-      double tDisk2 = get_time();
-      if(procId == 0) LOGF(stderr,"Diskstats took: Create: %lg \n", tDisk2-tDisk1);
-    }
-  }//Statistics dumping
-
+  letRunning      = false;
   idata.startTime = get_time();
 }
 
 void octree::iterate_teardown(IterationData &idata) {
-  if(execStream != NULL)
-  {
+  if(execStream != NULL) {
     delete execStream;
     execStream = NULL;
   }
 
-  if(gravStream != NULL)
-  {
+  if(gravStream != NULL) {
     delete gravStream;
     gravStream = NULL;
   }
 
-  if(copyStream != NULL)
-  {
+  if(copyStream != NULL) {
     delete copyStream;
     copyStream = NULL;
   }
-  if(LETDataToHostStream != NULL)
-  {
+
+  if(LETDataToHostStream != NULL)  {
     delete LETDataToHostStream;
     LETDataToHostStream = NULL;
   }
@@ -596,8 +465,8 @@ void octree::predict(tree_structure &tree)
 {
   //Functions that predicts the particles to the next timestep
 
-//   tend is time per particle
-//   tnext is reduce result
+  //tend is time per particle
+  //tnext is reduce result
 
   //First we get the minimum time, which is the next integration time
   #ifdef DO_BLOCK_TIMESTEP
@@ -610,7 +479,7 @@ void octree::predict(tree_structure &tree)
     getTNext.execute(execStream->s());
 
     //This will not work in block-step! Only shared- time step
-     //in block step we need syncs and global communication
+    //in block step we need syncs and global communication
     if(tree.n == 0)
     {
       t_previous =  t_current;
@@ -627,7 +496,7 @@ void octree::predict(tree_structure &tree)
           t_current = std::min(t_current, tnext[i]);
       }
     }
-    tree.activeGrpList.zeroMem();      //Reset the active grps
+//    tree.activeGrpList.zeroMem();      //Reset the active grps
   #else
     static int temp = 0;
     t_previous =  t_current;
@@ -649,22 +518,21 @@ void octree::predict(tree_structure &tree)
   predictParticles.set_arg<cl_mem>(6, tree.bodies_time.p());
   predictParticles.set_arg<cl_mem>(7, tree.bodies_Ppos.p());
   predictParticles.set_arg<cl_mem>(8, tree.bodies_Pvel.p());  
-
   predictParticles.setWork(tree.n, 128);
   predictParticles.execute(execStream->s());
   
 
   #ifdef DO_BLOCK_TIMESTEP
     //Compact the valid list to get a list of valid groups
-    gpuCompact(devContext, tree.activeGrpList, tree.active_group_list,
-              tree.n_groups, &tree.n_active_groups);
+//    gpuCompact(devContext, tree.activeGrpList, tree.active_group_list,
+//              tree.n_groups, &tree.n_active_groups);
   #else
-    tree.n_active_groups = tree.n_groups;
+//    tree.n_active_groups = tree.n_groups;
   #endif
 
 
-  LOG("t_previous: %lg t_current: %lg dt: %lg Active groups: %d \n",
-         t_previous, t_current, t_current-t_previous, tree.n_active_groups);
+//  LOG("t_previous: %lg t_current: %lg dt: %lg Active groups: %d \n",
+//         t_previous, t_current, t_current-t_previous, tree.n_active_groups);
   
 } //End predict
 

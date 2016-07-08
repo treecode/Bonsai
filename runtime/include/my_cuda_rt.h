@@ -799,8 +799,10 @@ namespace my_dev {
       assert(context_flag);
       assert(hDeviceMem_flag);
             
-      memset(host_ptr, 0, size*sizeof(T));   
-      CU_SAFE_CALL(cudaMemset((void*)hDeviceMem, 0, size*sizeof(T)));     
+      if(size > 0) {
+        memset(host_ptr, 0, size*sizeof(T));
+        CU_SAFE_CALL(cudaMemset((void*)hDeviceMem, 0, size*sizeof(T)));
+      }
     }
 
     void zeroMemGPUAsync(cudaStream_t stream)
