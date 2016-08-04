@@ -124,7 +124,7 @@ bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank
         fprintf(stderr, "writing to %s \n", fn);
         for (int type = 0; type < ntypecount; type++)
           if (ntypeglb[type] > 0)
-            fprintf(stderr, "bonsai_io:: ptype= %d:  np= %zu \n",type, ntypeglb[type]);
+            fprintf(stderr, " BonsaiIO:: ptype= %d:  np= %zu \n",type, ntypeglb[type]);
       }
 
       typedef float float4[4];
@@ -213,7 +213,7 @@ bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank
 
 }
 
-int main(int argc, char * argv[], MPI_Comm commWorld)
+int main(int argc, char * argv[], MPI_Comm commWorld, int shrMemPID)
 {
   
   MPI_Comm comm = MPI_COMM_WORLD;
@@ -229,9 +229,12 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
 #else
     MPI_Init(&argc, &argv);
 #endif
+    shrMemPID = 0;
   }
   else
+  {
     comm = commWorld;
+  }
     
   int rank, nrank;
   MPI_Comm_size(comm, &nrank);
@@ -270,21 +273,20 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     if (opt.getFlag("quick")) snapDump = false;
   }
 
-
   const std::string mode(snapDump  ? "SNAPSHOT" : "QUICKDUMP");
   if (rank == 0)
     fprintf(stderr, "BonsaIO :: %s mode. Use '-h' for help. \n", mode.c_str());
 
   if (snapDump)
   {
-    ShmSHeader shmSHeader(ShmSHeader::type::sharedFile(rank));
-    ShmSData   shmSData  (ShmSData  ::type::sharedFile(rank));
+    ShmSHeader shmSHeader(ShmSHeader::type::sharedFile(rank, shrMemPID));
+    ShmSData   shmSData  (ShmSData  ::type::sharedFile(rank, shrMemPID));
     writeLoop(shmSHeader, shmSData, rank, nrank, comm);
   }
   else
   {
-    ShmQHeader shmQHeader(ShmQHeader::type::sharedFile(rank));
-    ShmQData   shmQData  (ShmQData  ::type::sharedFile(rank));
+    ShmQHeader shmQHeader(ShmQHeader::type::sharedFile(rank, shrMemPID));
+    ShmQData   shmQData  (ShmQData  ::type::sharedFile(rank, shrMemPID));
     writeLoop(shmQHeader, shmQData, rank, nrank, comm);
   }
 

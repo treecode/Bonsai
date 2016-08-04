@@ -341,11 +341,11 @@ void octree::dumpData()
   {
     const size_t capacity  = min(4*localTree.n, 24*1024*1024);
 
-    shmQHeader = new ShmQHeader(ShmQHeader::type::sharedFile(procId), 1);
-    shmQData   = new ShmQData  (ShmQData  ::type::sharedFile(procId), capacity);
+    shmQHeader = new ShmQHeader(ShmQHeader::type::sharedFile(procId,sharedPID), 1);
+    shmQData   = new ShmQData  (ShmQData  ::type::sharedFile(procId,sharedPID), capacity);
 
-    shmSHeader = new ShmSHeader(ShmSHeader::type::sharedFile(procId), 1);
-    shmSData   = new ShmSData  (ShmSData  ::type::sharedFile(procId), capacity);
+    shmSHeader = new ShmSHeader(ShmSHeader::type::sharedFile(procId,sharedPID), 1);
+    shmSData   = new ShmSData  (ShmSData  ::type::sharedFile(procId,sharedPID), capacity);
   }
 
   if ((t_current >= nextQuickDump && quickDump    > 0) ||

@@ -590,6 +590,7 @@ public:
 
   //Parallel version functions
   int procId, nProcs;   //Process ID in the mpi stack, number of processors in the commm world
+  int sharedPID;        //Shared process ID to be used with the shared memory buffers
   unsigned long long  nTotalFreq_ull;       //Total Number of particles over all processes
 
 
@@ -771,9 +772,11 @@ public:
          int _iterEnd                 = (1<<30),
          int maxDistT                 = -1,
          const int _rebuild           = 2,
-         bool direct                  = false)
+         bool direct                  = false,
+         const int shrdpid            = 0)
   : mpiCommWorld(comm), rebuild_tree_rate(_rebuild), procId(0), nProcs(1), thisPartLETExTime(0), useDirectGravity(direct),
-  quickDump(_quickDump), quickRatio(_quickRatio), quickSync(_quickSync), useMPIIO(_useMPIIO), mpiRenderMode(_mpiRenderMode), nextQuickDump(0.0)
+  quickDump(_quickDump), quickRatio(_quickRatio), quickSync(_quickSync), useMPIIO(_useMPIIO),
+  mpiRenderMode(_mpiRenderMode), nextQuickDump(0.0), sharedPID(shrdpid)
   {
     devContext_flag = false;
     iter            = 0;

@@ -7,6 +7,9 @@
 #include <sstream>
 #include <cassert>
 #include <functional>
+#include <unistd.h>
+
+
 
 class DynamicLoader
 {
@@ -78,7 +81,7 @@ int main(int argc, char *argv[])
   MPI_Init(&argc, &argv);
 #endif
 
-  int rank, nrank;
+  int rank, nrank, pid;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &nrank);
 
@@ -93,6 +96,9 @@ int main(int argc, char *argv[])
         std::cerr << arg << " ";
       std::cerr << std::endl;
     }
+
+    //Retrieve the process ID of the current process
+    pid =  getpid();
   }
 
   const int nprograms = programs.size();
@@ -104,6 +110,16 @@ int main(int argc, char *argv[])
     ::exit(0);
   }
 
+  //For the SharedMemory it is important that a unique name is used.
+  //This works within a single launch instance by using the ranks. However, when we use
+  //multiple instances on a single node then this will result in naming clashes.
+  //To prevent that use the PID of process 0 as an extra unique identifier and pass this to
+  //all the processes within this launch instance
+  MPI_Bcast(&pid, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+  fprintf(stderr,"received pid: %d\t%d \n", rank,pid);
+
+
   const int color = rank%nprograms;
   const int key   = rank/nprograms;
 
@@ -114,13 +130,13 @@ int main(int argc, char *argv[])
   const std::string &libName = arguments[0];
 
   const DynamicLoader dll(libName);
-  const auto program = dll.load<void(int,char**,MPI_Comm)>("main");
+  const auto program = dll.load<void(int,char**,MPI_Comm,int)>("main");
 
   std::vector<char*> argVec;
   for (const auto &arg : arguments)
     argVec.push_back((char*)arg.c_str());
   argVec.push_back(NULL);
-  program(static_cast<int>(argVec.size()-1), &argVec[0], comm);
+  program(static_cast<int>(argVec.size()-1), &argVec[0], comm, pid);
 
   if (rank == 0)
     fprintf(stderr, " %s finalizing .. \n", argv[0]);

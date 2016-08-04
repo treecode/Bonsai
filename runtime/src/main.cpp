@@ -14,6 +14,16 @@ http://github.com/treecode/Bonsai
 
 */
 
+/*
+ *
+ * TODO
+ * Close BonsaiIO on destruction to properly close open File handles
+ * Change the bonsai_driver shared memory name per launch
+ *
+ *
+ */
+
+
 #ifdef WIN32
   #define WIN32_LEAN_AND_MEAN
   #define NOMINMAX
@@ -127,7 +137,7 @@ volatile IOSharedData_t ioSharedData;
 long long my_dev::base_mem::currentMemUsage;
 long long my_dev::base_mem::maxMemUsage;
 
-int main(int argc, char** argv, MPI_Comm comm)
+int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 {
   my_dev::base_mem::currentMemUsage = 0;
   my_dev::base_mem::maxMemUsage     = 0;
@@ -461,9 +471,13 @@ int main(int argc, char** argv, MPI_Comm comm)
 #else
     MPI_Init(&argc, &argv);
 #endif
+    shrMemPID = 0;
   }
   else
+  {
+    //MPI environment initialized by the driver program
     mpiCommWorld = comm;
+  }
 
   if (mpiRenderMode)
     assert(mpiInitialized);
@@ -476,7 +490,8 @@ int main(int argc, char** argv, MPI_Comm comm)
       quickDump, quickRatio, quickSync,
       useMPIIO,mpiRenderMode,
       timeStep,
-      tEnd, iterEnd, (int)remoDistance, rebuild_tree_rate, direct);
+      tEnd, iterEnd, (int)remoDistance,
+      rebuild_tree_rate, direct, shrMemPID);
 
   double tStartup = tree->get_time();
 
