@@ -18,8 +18,8 @@ http://github.com/treecode/Bonsai
  *
  * TODO
  * Close BonsaiIO on destruction to properly close open File handles
- * Change the bonsai_driver shared memory name per launch
- *
+ * Fix the block time stepping
+ * Add block time-stepping to the multi-GPU code
  *
  */
 
@@ -130,8 +130,6 @@ double get_time_main()
 
 
 //Buffers and flags used for the IO thread
-
-
 volatile IOSharedData_t ioSharedData;
 
 long long my_dev::base_mem::currentMemUsage;
@@ -406,7 +404,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     #ifdef GALACTICS
         tStartModel = get_time_main();
         //Use 32768*7 for nProcs to create independent seeds for all processes we use
-        //do not scale untill we know the number of processors
+        //do not scale until we know the number of processors
         generateGalacticsModel(procId, 32768*7, nMilkyWay, nMWfork,
                                false, bodyPositions, bodyVelocities,
                                bodyIDs);
@@ -785,29 +783,6 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   tree->localTree.bodies_Pvel.h2d();
   tree->localTree.bodies_ids.h2d();
 
-  //If required set the dust particles
-  #ifdef USE_DUST
-    if( (int)dustPositions.size() > 0)
-    {
-      LOGF(stderr, "Allocating dust properties for %d dust particles \n",
-          (int)dustPositions.size());
-      tree->localTree.setNDust((int)dustPositions.size());
-      tree->allocateDustMemory(tree->localTree);
-
-      //Load dust data onto the device
-      for(uint i=0; i < dustPositions.size(); i++)
-      {
-        tree->localTree.dust_pos[i] = dustPositions[i];
-        tree->localTree.dust_vel[i] = dustVelocities[i];
-        tree->localTree.dust_ids[i] = dustIDs[i];
-      }
-
-      tree->localTree.dust_pos.h2d();
-      tree->localTree.dust_vel.h2d();
-      tree->localTree.dust_ids.h2d();
-    }
-  #endif //ifdef USE_DUST
-
 
   #ifdef USE_MPI
     //Sum all the particles to get total number of particles in the system
@@ -928,8 +903,8 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   displayTimers();
 
 #ifdef USE_MPI
-  if (!mpiInitialized)
-    MPI_Finalize();
+  //Finalize MPI if we Initalized it ourselves, otherwise the driver will do it.
+  if (!mpiInitialized) MPI_Finalize();
 #endif
   return 0;
 }

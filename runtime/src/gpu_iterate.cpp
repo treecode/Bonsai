@@ -7,7 +7,7 @@
 
 using namespace std;
 
-static double de_max = 0;
+static double de_max  = 0;
 static double dde_max = 0;  
 
 
@@ -377,12 +377,11 @@ void octree::iterate_setup(IterationData &idata) {
   #ifdef USE_MPI
     if(nProcs > 1)
     {
-      //Initial sort to get global boundaries to compute keys
-      sort_bodies(localTree, true, true);
       for(int i=0; i < 5; i++)
       {
         double notUsed     = 0;
         int maxN = 0, minN = 0;
+        sort_bodies(localTree, true, true); //Initial sort to get global boundaries to compute keys
         parallelDataSummary(localTree, 30, 30, notUsed, notUsed, true); //1 for all process, equal part distribution
 
         //Check if the min/max are within certain percentage
@@ -397,7 +396,6 @@ void octree::iterate_setup(IterationData &idata) {
           LOGF(stderr, "Particle setup iteration: %d Min: %d  Max: %d Diff: %d %%\n", i, minN, maxN, perc);
         }
         if(perc < 10) break; //We're happy if difference is less than 10%
-        sort_bodies(localTree, true, true);
       }
     }
   #endif
@@ -539,24 +537,7 @@ void octree::predict(tree_structure &tree)
 
 void octree::setActiveGrpsFunc(tree_structure &tree)
 {
-//  //Set valid list to zero
-//  setActiveGrps.set_arg<int>(0,    &tree.n);
-//  setActiveGrps.set_arg<float>(1,  &t_current);
-//  setActiveGrps.set_arg<cl_mem>(2, tree.bodies_time.p());
-//  setActiveGrps.set_arg<cl_mem>(3, tree.body2group_list.p());
-//  setActiveGrps.set_arg<cl_mem>(4, tree.activeGrpList.p());
-//
-//  setActiveGrps.setWork(tree.n, 128);
-//  setActiveGrps.execute(execStream->s());
-//  this->resetCompact();              //Make sure compact has been reset
-//
-//  //Compact the valid list to get a list of valid groups
-//  gpuCompact(devContext, tree.activeGrpList, tree.active_group_list,
-//             tree.n_groups, &tree.n_active_groups);
-//
-//  this->resetCompact();
-//  LOG("t_previous: %lg t_current: %lg dt: %lg Active groups: %d (Total: %d)\n",
-//         t_previous, t_current, t_current-t_previous, tree.n_active_groups, tree.n_groups);
+  //Moved to compute_properties
 }
 
 void octree::direct_gravity(tree_structure &tree)
@@ -591,12 +572,12 @@ void octree::approximate_gravity(tree_structure &tree)
   approxGrav.set_arg<int>(1,    &tree.n);
   approxGrav.set_arg<float>(2,  &(this->eps2));
   approxGrav.set_arg<uint2>(3,  &node_begend);
-  approxGrav.set_arg<cl_mem>(4, tree.active_group_list.p());
-  approxGrav.set_arg<cl_mem>(5, tree.bodies_Ppos.p());
-  approxGrav.set_arg<cl_mem>(6, tree.multipole.p());
-  approxGrav.set_arg<cl_mem>(7, tree.bodies_acc1.p());
-  approxGrav.set_arg<cl_mem>(8, tree.bodies_Ppos.p());
-  approxGrav.set_arg<cl_mem>(9, tree.ngb.p());
+  approxGrav.set_arg<cl_mem>(4,  tree.active_group_list.p());
+  approxGrav.set_arg<cl_mem>(5,  tree.bodies_Ppos.p());
+  approxGrav.set_arg<cl_mem>(6,  tree.multipole.p());
+  approxGrav.set_arg<cl_mem>(7,  tree.bodies_acc1.p());
+  approxGrav.set_arg<cl_mem>(8,  tree.bodies_Ppos.p());
+  approxGrav.set_arg<cl_mem>(9,  tree.ngb.p());
   approxGrav.set_arg<cl_mem>(10, tree.activePartlist.p());
   approxGrav.set_arg<cl_mem>(11, tree.interactions.p());
   approxGrav.set_arg<cl_mem>(12, tree.boxSizeInfo.p());
@@ -607,10 +588,10 @@ void octree::approximate_gravity(tree_structure &tree)
   approxGrav.set_arg<cl_mem>(17, tree.generalBuffer1.p());  //The buffer to store the tree walks
   approxGrav.set_arg<cl_mem>(18, tree.bodies_h.p());        //Per particle search radius
   approxGrav.set_arg<cl_mem>(19, tree.bodies_dens.p());     //Per particle density (x) and nnb (y)
-  approxGrav.set_arg<real4>(20, tree.boxSizeInfo,   4, "texNodeSize");
-  approxGrav.set_arg<real4>(21, tree.boxCenterInfo, 4, "texNodeCenter");
-  approxGrav.set_arg<real4>(22, tree.multipole,     4, "texMultipole");
-  approxGrav.set_arg<real4>(23, tree.bodies_Ppos,   4, "texBody");
+  approxGrav.set_arg<real4>(20,  tree.boxSizeInfo,   4, "texNodeSize");
+  approxGrav.set_arg<real4>(21,  tree.boxCenterInfo, 4, "texNodeCenter");
+  approxGrav.set_arg<real4>(22,  tree.multipole,     4, "texMultipole");
+  approxGrav.set_arg<real4>(23,  tree.bodies_Ppos,   4, "texBody");
     
   approxGrav.setWork(-1, NTHREAD, nBlocksForTreeWalk);
 
@@ -694,7 +675,7 @@ if(firstIter0 == true || iter == 40){
   
   if(mpiGetNProcs() == 1) //Only do it here if there is only one process
   {
-   //#ifdef DO_BLOCK_TIMESTEP  
+   //#ifdef DO_BLOCK_TIMESTEP
   #if 0 //Demo mode
       //Reduce the number of valid particles    
       getNActive.set_arg<int>(0,    &tree.n);
@@ -880,6 +861,30 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
 
 void octree::correct(tree_structure &tree)
 { 
+  //TODO this might be moved to the gravity call where we have that info anyway?
+  tree.n_active_particles = tree.n;
+  #ifdef DO_BLOCK_TIMESTEP
+    //Reduce the number of valid particles
+    gravStream->sync(); //Sync to make sure that the gravity phase is finished
+    getNActive.set_arg<int>(0,    &tree.n);
+    getNActive.set_arg<cl_mem>(1, tree.activePartlist.p());
+    getNActive.set_arg<cl_mem>(2, this->nactive.p());
+    getNActive.set_arg<int>(3,    NULL, 128); //Dynamic shared memory , equal to number of threads
+    getNActive.setWork(-1, 128,   NBLOCK_REDUCE);
+    getNActive.execute(execStream->s());
+
+    //Reduce the last parts on the host
+    this->nactive.d2h();
+    tree.n_active_particles = this->nactive[0];
+    for (int i = 1; i < NBLOCK_REDUCE ; i++)
+        tree.n_active_particles += this->nactive[i];
+  #endif
+  LOG("Active particles: %d \n", tree.n_active_particles);
+
+
+
+
+
   my_dev::dev_mem<float2>  float2Buffer(devContext);
   my_dev::dev_mem<real4>   real4Buffer1(devContext);
 

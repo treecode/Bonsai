@@ -451,14 +451,13 @@ void octree::build (tree_structure &tree) {
     tree.group_list.cmalloc(tree.n_groups , false);
 
 
-  store_groups.set_arg<int>(0, &tree.n);
-  store_groups.set_arg<int>(1, &tree.n_groups);
+  store_groups.set_arg<int>(0,    &tree.n);
+  store_groups.set_arg<int>(1,    &tree.n_groups);
   store_groups.set_arg<cl_mem>(2, compactList.p());
   store_groups.set_arg<cl_mem>(3, tree.body2group_list.p());
   store_groups.set_arg<cl_mem>(4, tree.group_list.p());
   store_groups.setWork(-1, NCRIT, tree.n_groups);
-  if(tree.n_groups > 0)
-    store_groups.execute(execStream->s());
+  store_groups.execute(execStream->s());
 
 
   //Memory allocation for the valid group lists

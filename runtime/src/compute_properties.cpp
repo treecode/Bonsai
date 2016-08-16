@@ -61,7 +61,7 @@ void octree::compute_properties(tree_structure &tree) {
 
 //  this->resetCompact();
   LOG("t_previous: %lg t_current: %lg dt: %lg Active groups: %d (Total: %d)\n",
-         t_previous, t_current, t_current-t_previous, tree.n_active_groups, tree.n_groups);
+       t_previous, t_current, t_current-t_previous, tree.n_active_groups, tree.n_groups);
 
   double tA = get_time();
 
@@ -135,14 +135,6 @@ void octree::compute_properties(tree_structure &tree) {
     my_dev::dev_stream memCpyStream;
     tree.multipole.d2h(3, false, memCpyStream.s());
   #endif
-
-
-    if(nProcs > 1)
-    {
-      LOGF(stderr, "Starting all compute-properties kernels took; %lg  start: %lg \n", get_time()-tA, get_time()-t0);
-      //Start copying the particle positions to the host, will overlap with compute properties
-      //Moved to build function localTree.bodies_Ppos.d2h(tree.n, false, LETDataToHostStream->s());
-    }
 
   //Keep this sync for now since otherwise we run the risk that memory objects are destroyed
   //while still being in use (like multipoleD).
