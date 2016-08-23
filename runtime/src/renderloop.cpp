@@ -1820,7 +1820,7 @@ void idle(void)
   glutPostRedisplay();
 }
 
-void initGL(int argc, char** argv, const char *fullScreenMode, bool &stereo)
+void initGL(int argc, char** argv, const char *gameMode, bool &stereo, bool fullscreen)
 {  
   // First initialize OpenGL context, so we can properly set the GL for CUDA.
   // This is necessary in order to achieve optimal performance with OpenGL/CUDA interop.
@@ -1833,9 +1833,9 @@ void initGL(int argc, char** argv, const char *fullScreenMode, bool &stereo)
   else
     glutInitDisplayMode(GLUT_RGBA | GLUT_DEPTH | GLUT_DOUBLE);
 
-  if (fullScreenMode[0]) {
-      printf("fullScreenMode: %s\n", fullScreenMode);
-      glutGameModeString(fullScreenMode);
+  if (gameMode[0]) {
+      printf("gameMode: %s\n", gameMode);
+      glutGameModeString(gameMode);
       if (glutGameModeGet(GLUT_GAME_MODE_POSSIBLE)) {
           int win = glutEnterGameMode();
       } else {
@@ -1845,6 +1845,10 @@ void initGL(int argc, char** argv, const char *fullScreenMode, bool &stereo)
   } else {
     glutInitWindowSize(1024, 768);
     glutCreateWindow("Bonsai Tree-code Gravitational N-body Simulation");
+    if (fullscreen) {
+      glutFullScreen();
+      glutDisplayFunc(display);
+    }
   }
 
   //Make sure we got stereo if we asked for it, this must happen after glutCreateWindow

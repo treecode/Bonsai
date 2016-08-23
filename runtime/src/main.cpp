@@ -609,9 +609,9 @@ int main(int argc, char** argv)
   int rebuild_tree_rate = 2;
   int reduce_bodies_factor = 1;
   int reduce_dust_factor = 1;
-  string fullScreenMode = "";
-  bool direct = false;
+  string gameModeString = "";
   bool fullscreen = false;
+  bool direct = false;
   bool displayFPS = false;
   bool diskmode = false;
   bool stereo   = false;
@@ -673,7 +673,8 @@ int main(int argc, char** argv)
 #endif
         ADDUSAGE("     --direct               enable N^2 direct gravitation [" << (direct ? "on" : "off") << "]");
 #ifdef USE_OPENGL
-		ADDUSAGE("     --fullscreen #         set fullscreen mode string");
+		ADDUSAGE("     --fullscreen           set fullscreen");
+		ADDUSAGE("     --gameMode #           set game mode string");
         ADDUSAGE("     --displayfps           enable on-screen FPS display");
 		ADDUSAGE("     --Tglow  #             enable glow @ # Myr [" << TstartGlow << "]");
 		ADDUSAGE("     --dTglow  #            reach full brightness in @ # Myr [" << dTstartGlow << "]");
@@ -728,9 +729,10 @@ int main(int argc, char** argv)
 #endif
     opt.setFlag("direct");
 #ifdef USE_OPENGL
-    opt.setOption( "fullscreen");
-    opt.setOption( "Tglow");
-    opt.setOption( "dTglow");
+    opt.setFlag("fullscreen");
+    opt.setOption("gameMode");
+    opt.setOption("Tglow");
+    opt.setOption("dTglow");
     opt.setFlag("displayfps");
     opt.setFlag("stereo");
 #endif
@@ -762,6 +764,10 @@ int main(int argc, char** argv)
     if (opt.getFlag("log"))           ENABLE_RUNTIME_LOG = true;
     if (opt.getFlag("prepend-rank"))  PREPEND_RANK       = true;
 #endif    
+#if USE_OPENGL
+    if (opt.getFlag("fullscreen"))                    fullscreen              = true;
+#endif
+
     char *optarg = NULL;
     if ((optarg = opt.getValue("infile")))            fileName                = string(optarg);
     if ((optarg = opt.getValue("plummer")))           nPlummer                = atoi(optarg);
@@ -789,7 +795,7 @@ int main(int argc, char** argv)
     if ((optarg = opt.getValue("camera-distance")))   wogCameraDistance       = atof(optarg);
     if ((optarg = opt.getValue("del-radius-factor"))) wogDeletionRadiusFactor = atof(optarg);
 #if USE_OPENGL
-    if ((optarg = opt.getValue("fullscreen")))	      fullScreenMode          = string(optarg);
+    if ((optarg = opt.getValue("gameMode")))	      gameModeString          = string(optarg);
     if ((optarg = opt.getValue("Tglow")))	          TstartGlow              = (float)atof(optarg);
     if ((optarg = opt.getValue("dTglow")))	          dTstartGlow             = (float)atof(optarg);
     dTstartGlow = std::max(dTstartGlow, 1.0f);
@@ -805,7 +811,7 @@ int main(int argc, char** argv)
     if (!wogPath.empty()) {
       throw_if_flag_is_used(opt, {{"direct", "restart", "displayfps", "diskmode", "stereo", "prepend-rank"}});
       throw_if_option_is_used(opt, {{"plummer", "milkyway", "mwfork", "sphere", "dt", "tend", "iend",
-        "snapname", "snapiter", "rmdist", "valueadd", "rebuild", "reducebodies", "reducedust"}});
+        "snapname", "snapiter", "rmdist", "valueadd", "rebuild", "reducebodies", "reducedust", "gameMode"}});
     }
 
 #undef ADDUSAGE
@@ -818,7 +824,7 @@ int main(int argc, char** argv)
 
 #ifdef USE_OPENGL
   // create OpenGL context first, and register for interop
-  initGL(argc, argv, fullScreenMode.c_str(), stereo);
+  initGL(argc, argv, gameModeString.c_str(), stereo, fullscreen);
   cudaGLSetGLDevice(devID);
 #endif
 
