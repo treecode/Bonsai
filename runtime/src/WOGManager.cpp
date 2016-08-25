@@ -14,7 +14,9 @@ using jsoncons::json;
 
 WOGManager::WOGManager(std::string const& path, int port, int window_width, int window_height, real fovy,
   real farZ, real camera_distance, real deletion_radius_factor)
- : user_particles{{0, 0, 0, 0}},
+ : server_socket(-1),
+   client_socket(-1),
+   user_particles{{0, 0, 0, 0}},
    window_width(window_width),
    window_height(window_height),
    fovy(fovy),
@@ -58,15 +60,10 @@ WOGManager::WOGManager(std::string const& path, int port, int window_width, int 
     throw std::runtime_error("listen error");
   }
 
-  sockaddr_in clientAddr;
-  socklen_t sin_size = sizeof(struct sockaddr_in);
-  client_socket = accept(server_socket, (struct sockaddr*)&clientAddr, &sin_size);
-  if (client_socket == -1) {
-    perror("accept");
-    throw std::runtime_error("accept error");
-  }
-
-  fcntl(client_socket, F_SETFL, O_NONBLOCK);
+  // Set server_socket to non-blocking
+  long save_fd = fcntl(server_socket, F_GETFL);
+  save_fd |= O_NONBLOCK;
+  fcntl(server_socket, F_SETFL, save_fd);
 }
 
 WOGManager::~WOGManager()
@@ -114,6 +111,23 @@ void WOGManager::execute(octree *tree)
 {
   // Remove particles
   remove_particles(tree);
+
+  // Check for a client
+  sockaddr_in clientAddr;
+  socklen_t sin_size = sizeof(struct sockaddr_in);
+  int new_client_socket = accept(server_socket, (struct sockaddr*)&clientAddr, &sin_size);
+  if (new_client_socket > 0) {
+	  close(client_socket);
+	  client_socket = new_client_socket;
+  }
+
+  // Return if no client is
+  if (client_socket == -1) return;
+
+  // Set client_socket to non-blocking
+  long save_fd = fcntl(client_socket, F_GETFL);
+  save_fd |= O_NONBLOCK;
+  fcntl(client_socket, F_SETFL, save_fd);
 
   // Check for user request
   char buffer[buffer_size];
