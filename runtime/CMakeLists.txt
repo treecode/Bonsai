@@ -71,6 +71,7 @@ endif (USE_MPI)
 
 if (USE_THRUST)
   add_definitions(-DUSE_THRUST)
+  set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DTHRUST_DEBUG")
 #  include_directories(${CUDA_TOOLKIT_ROOT_DIR}/../../thrust)
 endif (USE_THRUST)
 
