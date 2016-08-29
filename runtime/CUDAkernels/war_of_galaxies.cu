@@ -43,15 +43,22 @@ extern "C" void remove_particles(tree_structure &tree,
   thrust::device_ptr<real4> thrust_vel = thrust::device_pointer_cast(tree.bodies_vel.raw_p());
   thrust::device_ptr<int> thrust_ids = thrust::device_pointer_cast(tree.bodies_ids.raw_p());
 
-  // auto is not working, compiler assume int
-  thrust::zip_iterator<thrust::tuple<thrust::device_ptr<real4>, thrust::device_ptr<real4>, thrust::device_ptr<int> > >
-    new_end = thrust::remove_if(thrust::device, thrust::make_zip_iterator(thrust::make_tuple(thrust_pos, thrust_vel, thrust_ids)),
-    thrust::make_zip_iterator(thrust::make_tuple(thrust_pos + tree.n, thrust_vel + tree.n, thrust_ids + tree.n)),
-    OutOfSphereChecker(deletion_radius_square, user_particles));
+  try {
+    // auto is not working, compiler assume int
+    thrust::zip_iterator<thrust::tuple<thrust::device_ptr<real4>, thrust::device_ptr<real4>, thrust::device_ptr<int> > >
+      new_end = thrust::remove_if(thrust::device, thrust::make_zip_iterator(thrust::make_tuple(thrust_pos, thrust_vel, thrust_ids)),
+      thrust::make_zip_iterator(thrust::make_tuple(thrust_pos + tree.n, thrust_vel + tree.n, thrust_ids + tree.n)),
+      OutOfSphereChecker(deletion_radius_square, user_particles));
 
-  int new_nb_of_particles = thrust::get<0>(new_end.get_iterator_tuple()) - thrust_pos;
-  std::cout << "new_nb_of_particles = " << new_nb_of_particles << std::endl;
-  tree.n = new_nb_of_particles;
+    int new_nb_of_particles = thrust::get<0>(new_end.get_iterator_tuple()) - thrust_pos;
+    std::cout << "new_nb_of_particles = " << new_nb_of_particles << std::endl;
+    tree.n = new_nb_of_particles;
+  }
+  catch(thrust::system_error &e)
+  {
+    std::cerr << "Error accessing vector element: " << e.what() << std::endl;
+    exit(-1);
+  }
 }
 
 #endif

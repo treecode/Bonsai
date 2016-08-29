@@ -121,7 +121,7 @@ void WOGManager::execute(octree *tree)
 	  client_socket = new_client_socket;
   }
 
-  // Return if no client is
+  // Return if no client is connected
   if (client_socket == -1) return;
 
   // Set client_socket to non-blocking
