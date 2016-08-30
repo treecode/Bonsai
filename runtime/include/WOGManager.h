@@ -76,7 +76,7 @@ class WOGManager
   static constexpr auto max_number_of_particles_of_user = 100000;
 
   /// Number of particles of user
-  std::vector<int> user_particles;
+  my_dev::dev_mem<uint> user_particles;
 
   /// Dimension of the window
   int window_width;

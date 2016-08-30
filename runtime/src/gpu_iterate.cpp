@@ -532,7 +532,7 @@ void octree::removeGalaxy(int user_id)
   resetEnergy();
 }
 
-void octree::removeParticles(real deletion_radius_square, std::vector<int> &user_particles)
+void octree::removeParticles(real deletion_radius_square, my_dev::dev_mem<uint> user_particles)
 {
 #ifdef USE_THRUST
 

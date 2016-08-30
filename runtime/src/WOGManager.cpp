@@ -16,7 +16,7 @@ WOGManager::WOGManager(std::string const& path, int port, int window_width, int 
   real farZ, real camera_distance, real deletion_radius_factor)
  : server_socket(-1),
    client_socket(-1),
-   user_particles{{0, 0, 0, 0}},
+   user_particles(4),
    window_width(window_width),
    window_height(window_height),
    fovy(fovy),

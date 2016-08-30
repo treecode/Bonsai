@@ -885,7 +885,7 @@ public:
   void removeGalaxy(int user_id);
 
   // WarOfGalaxies: remove particles out of sphere continuously
-  void removeParticles(real deletion_radius_square, std::vector<int> &user_particles);
+  void removeParticles(real deletion_radius_square, my_dev::dev_mem<uint> user_particles);
 
   //Library interface functions  
   void  setEps(float eps);
