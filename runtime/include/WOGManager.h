@@ -39,14 +39,14 @@ class WOGManager
  public:
 
   /// Constructor opening sockets and reading input galaxies
-  WOGManager(std::string const& path, int port, int window_width, int window_height, real fovy,
+  WOGManager(octree *tree, std::string const& path, int port, int window_width, int window_height, real fovy,
 	real farZ, real camera_distance, real deletion_radius_factor);
 
   /// Constructor closing the sockets
   ~WOGManager();
 
   /// Execute a client request
-  void execute(octree *tree);
+  void execute();
 
   /// Must be called by glutReshapeFunc
   void reshape(int width, int height);
@@ -57,10 +57,12 @@ class WOGManager
   void read_galaxies(std::string const& path);
 
   /// Remove particles continuously
-  void remove_particles(octree *tree);
+  void remove_particles();
 
   /// Execute a client request
-  jsoncons::json execute_json(octree *tree, std::string const& buffer);
+  jsoncons::json execute_json(std::string const& buffer);
+
+  octree *tree;
 
   int server_socket;
 

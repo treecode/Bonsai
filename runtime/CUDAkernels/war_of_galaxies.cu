@@ -41,7 +41,7 @@ struct OutOfSphereChecker
 
 // Remove particles out of sphere
 extern "C" void remove_particles(tree_structure &tree,
-  real deletion_radius_square, my_dev::dev_mem<uint> user_particles)
+  real deletion_radius_square, my_dev::dev_mem<uint> &user_particles)
 {
   thrust::device_ptr<real4> thrust_pos = thrust::device_pointer_cast(tree.bodies_pos.raw_p());
   thrust::device_ptr<real4> thrust_vel = thrust::device_pointer_cast(tree.bodies_vel.raw_p());

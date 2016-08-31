@@ -348,7 +348,7 @@ public:
 #else
       m_enableStats(true),
 #endif
-      m_wogManager(wogPath, wogPort, 1024, 768, m_fov, m_farZ, wogCameraDistance, wogDeletionRadiusFactor)
+      m_wogManager(tree, wogPath, wogPort, 1024, 768, m_fov, m_farZ, wogCameraDistance, wogDeletionRadiusFactor)
   {
     m_windowDims = make_int2(1024, 768);
     m_cameraTrans = make_float3(0, -2, -100);
@@ -1816,7 +1816,7 @@ void special(int key, int x, int y)
 
 void idle(void)
 {
-  theDemo->m_wogManager.execute(theDemo->m_tree);
+  theDemo->m_wogManager.execute();
   glutPostRedisplay();
 }
 

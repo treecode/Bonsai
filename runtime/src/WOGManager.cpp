@@ -12,11 +12,12 @@ using jsoncons::json;
 
 #define DEBUG_PRINT
 
-WOGManager::WOGManager(std::string const& path, int port, int window_width, int window_height, real fovy,
+WOGManager::WOGManager(octree *tree, std::string const& path, int port, int window_width, int window_height, real fovy,
   real farZ, real camera_distance, real deletion_radius_factor)
- : server_socket(-1),
+ : tree(tree),
+   server_socket(-1),
    client_socket(-1),
-   user_particles(4),
+   user_particles(*(tree->getDevContext()), number_of_users, true),
    window_width(window_width),
    window_height(window_height),
    fovy(fovy),
@@ -107,10 +108,10 @@ void WOGManager::read_galaxies(std::string const& path)
   }
 }
 
-void WOGManager::execute(octree *tree)
+void WOGManager::execute()
 {
   // Remove particles
-  remove_particles(tree);
+  remove_particles();
 
   // Check for a client
   sockaddr_in clientAddr;
@@ -138,7 +139,7 @@ void WOGManager::execute(octree *tree)
   json json_response;
 
   try {
-	json_response = execute_json(tree, buffer);
+	json_response = execute_json(buffer);
   } catch (std::exception const& e) {
 	std::cerr << "Error: " << e.what() << std::endl;
 	json_response["response"] = std::string("Error: ") + e.what();
@@ -182,12 +183,12 @@ void WOGManager::reshape(int width, int height)
   #endif
 }
 
-void WOGManager::remove_particles(octree *tree)
+void WOGManager::remove_particles()
 {
   tree->removeParticles(deletion_radius_square, user_particles);
 }
 
-json WOGManager::execute_json(octree *tree, std::string const& json_request_string)
+json WOGManager::execute_json(std::string const& json_request_string)
 {
   json json_response;
 

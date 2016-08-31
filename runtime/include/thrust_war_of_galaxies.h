@@ -12,6 +12,6 @@
 
 /// Remove particles behind visualization sphere
 extern "C" void remove_particles(tree_structure &tree,
-  real deletion_radius_square, my_dev::dev_mem<uint> user_particles);
+  real deletion_radius_square, my_dev::dev_mem<uint> &user_particles);
 
 #endif /* THRUST_WAR_OF_GALAXIES_H_ */
