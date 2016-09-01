@@ -246,24 +246,6 @@ static __device__ inline int cmp_uint4(uint4 a, uint4 b) {
 
 
 
-typedef struct bodyStruct
-{
-  real4  acc0;
-  real4  Ppos;
-  real4  Pvel;
-  float2 time;
-  unsigned long long id;
-
-#ifdef DO_BLOCK_TIMESTEP_EXCHANGE_MPI
-  uint4 key;
-  real4 pos;
-  real4 vel;
-  real4 acc1;
-#endif
-} bodyStruct;
-
-
-
 //Binary search of the key within certain bounds (cij.x, cij.y)
 //Note this is the same as 'find_key'
 static __device__ int find_domain(uint4 key, uint2 cij, uint4 *keys) {
@@ -407,6 +389,8 @@ KERNEL_DECLARE(gpu_extractOutOfDomainParticlesAdvancedSFC2)(
   uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   uint tid = threadIdx.x;
   uint id  = bid * blockDim.x + tid;
+
+
 #if 0
   //slowest
   if(id >= n_extract) return;
@@ -422,7 +406,9 @@ KERNEL_DECLARE(gpu_extractOutOfDomainParticlesAdvancedSFC2)(
   destination[id].id    = body_id[extractList[offset+id].y];
   destination[id].key   = body_key[extractList[offset+id].y];
 
-#elif 1
+#elif 0
+  This one does not work with 96 byte structures
+
   //5x faster than original (above)
   __shared__ bodyStruct shmem[128];
 
@@ -430,19 +416,19 @@ KERNEL_DECLARE(gpu_extractOutOfDomainParticlesAdvancedSFC2)(
 
   if(id < n_extract)
   {
+	shmem[threadIdx.x].pos   = pos[extractList[offset+id].y];
+	shmem[threadIdx.x].vel   = vel[extractList[offset+id].y];
     shmem[threadIdx.x].Ppos  = Ppos[extractList[offset+id].y];
     shmem[threadIdx.x].Pvel  = Pvel[extractList[offset+id].y];
     shmem[threadIdx.x].acc0  = acc0[extractList[offset+id].y];
     shmem[threadIdx.x].time  = time[extractList[offset+id].y];
 
-    shmem[threadIdx.x].id    = body_id[extractList[offset+id].y];
+    shmem[threadIdx.x].id     = body_id[extractList[offset+id].y];
     shmem[threadIdx.x].Pvel.w = h[extractList[offset+id].y];
 
 
 #ifdef DO_BLOCK_TIMESTEP_EXCHANGE_MPI
     shmem[threadIdx.x].key   = body_key[extractList[offset+id].y];
-    shmem[threadIdx.x].pos   = pos[extractList[offset+id].y];
-    shmem[threadIdx.x].vel   = vel[extractList[offset+id].y];
     shmem[threadIdx.x].acc1  = acc1[extractList[offset+id].y];
 #endif
   }
@@ -474,12 +460,122 @@ KERNEL_DECLARE(gpu_extractOutOfDomainParticlesAdvancedSFC2)(
   //Write the remaining items
   if(threadIdx.x < nExtra)
   {
-    output[startOut + threadIdx.x] = shdata4[threadIdx.x  + startOut]; //Write remaining float4 items
+//    output[startOut + threadIdx.x] = shdata4[threadIdx.x  + startOut]; //Write remaining float4 items
   }
 
+#elif 1
+  //5x faster than original (above)
+  __shared__ bodyStruct shmem[128];
 
+  if((bid * blockDim.x) >= n_extract) return;
+
+  if(id < n_extract)
+  {
+	shmem[threadIdx.x].pos   = pos[extractList[offset+id].y];
+	shmem[threadIdx.x].vel   = vel[extractList[offset+id].y];
+    shmem[threadIdx.x].Ppos  = Ppos[extractList[offset+id].y];
+    shmem[threadIdx.x].Pvel  = Pvel[extractList[offset+id].y];
+    shmem[threadIdx.x].acc0  = acc0[extractList[offset+id].y];
+    shmem[threadIdx.x].time  = time[extractList[offset+id].y];
+
+    shmem[threadIdx.x].id     = body_id[extractList[offset+id].y];
+    shmem[threadIdx.x].Pvel.w = h[extractList[offset+id].y];
+
+
+#ifdef DO_BLOCK_TIMESTEP_EXCHANGE_MPI
+    shmem[threadIdx.x].key   = body_key[extractList[offset+id].y];
+    shmem[threadIdx.x].acc1  = acc1[extractList[offset+id].y];
+#endif
+  }
+  __syncthreads();
+
+  int startWrite  = bid * blockDim.x;
+  float4 *shdata4 = (float4*)shmem;
+  float4 *output4 = (float4*)&destination[startWrite];
+
+
+  //We have blockDim.x thread, each thread writes a float4. Compute number of items per thread-block
+  //and number of loops and remaining items
+  const int nExtractThisBlock = min(n_extract-startWrite, (int)blockDim.x);
+  const int nFloatItems   	  = (nExtractThisBlock*sizeof(bodyStruct)) / sizeof(float4);
+  const int nLoops      	  = nFloatItems / blockDim.x;
+
+  int startOut = 0;
+  for(int i=0; i < nLoops; i++)
+  {
+    output4[startOut + threadIdx.x] = shdata4[threadIdx.x  + startOut]; //Write blockDim.x * float4 items
+    startOut += blockDim.x;
+  }
+
+  //Compute number of remaining float sized items (this requires bodyStruct to be a multiple of floats)
+  const int nExtraFloats 	  = ((nExtractThisBlock*sizeof(bodyStruct)) -
+		  	  	  	  	  	    (nLoops*blockDim.x*sizeof(float4))) / sizeof(float);
+
+  startOut = 0;
+  float *shdata = (float*)&shdata4[nLoops*blockDim.x];
+  float *output = (float*)&output4[nLoops*blockDim.x];
+
+  //Write the remaining items
+  for(int i=0; i < nExtraFloats; i+= blockDim.x)
+  {
+	  if(threadIdx.x + i < nExtraFloats)
+	  {
+		  output[i + threadIdx.x] = shdata[threadIdx.x  + startOut];
+	  }
+  }
 
 #endif
+}
+
+KERNEL_DECLARE(gpu_insertNewParticlesSFC)(int       	 n_extract,
+                                          int       	 n_insert,
+										  int       	 n_oldbodies,
+										  int       	 offset,
+										  real4     	*Ppos,
+										  real4     	*Pvel,
+										  real4     	*pos,
+										  real4     	*vel,
+										  real4     	*acc0,
+										  real4     	*acc1,
+										  float2    	*time,
+										  unsigned long long        *body_id,
+										  uint4     	*body_key,
+										  float     	*h,
+										  bodyStruct 	*source)
+{
+  CUXTIMER("insertNewParticlesSFC");
+  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
+  uint tid = threadIdx.x;
+  uint id  = bid * blockDim.x + tid;
+
+  if(id >= n_insert) return;
+
+  //The newly added particles are added at the end of the array
+  int idx = (n_oldbodies-n_extract) + id + offset;
+
+  //copy the data from a struct of arrays into a array of structs
+  pos [idx]     = source[id].pos;
+  vel [idx]     = source[id].vel;
+  Ppos[idx]     = source[id].Ppos;
+  Pvel[idx]     = source[id].Pvel;
+  acc0[idx]     = source[id].acc0;
+  time[idx]     = source[id].time;
+  body_id[idx]  = source[id].id;
+
+  h[idx]        = source[id].Pvel.w;
+
+
+#ifdef DO_BLOCK_TIMESTEP_EXCHANGE_MPI
+  body_key[idx] = source[id].key;
+  acc1[idx]     = source[id].acc1;
+#endif
+}
+
+
+#if 0
+
+
+
 
 #if 0
   Do not use the below kernels without first checking
@@ -695,54 +791,10 @@ KERNEL_DECLARE(gpu_extractOutOfDomainParticlesAdvancedSFC2)(
 #endif
 
 
-}
-
-KERNEL_DECLARE(gpu_insertNewParticlesSFC)(int       n_extract,
-                                              int       n_insert,
-                                              int       n_oldbodies,
-                                              int       offset,
-                                              real4     *Ppos,
-                                              real4     *Pvel,
-                                              real4     *pos,
-                                              real4     *vel,
-                                              real4     *acc0,
-                                              real4     *acc1,
-                                              float2    *time,
-                                              unsigned long long        *body_id,
-                                              uint4     *body_key,
-                                              float     *h,
-                                              bodyStruct *source)
-{
-  CUXTIMER("insertNewParticlesSFC");
-  uint bid = blockIdx.y * gridDim.x + blockIdx.x;
-  uint tid = threadIdx.x;
-  uint id  = bid * blockDim.x + tid;
-
-  if(id >= n_insert) return;
-
-  //The newly added particles are added at the end of the array
-  int idx = (n_oldbodies-n_extract) + id + offset;
-
-  //copy the data from a struct of arrays into a array of structs
-  Ppos[idx]     = source[id].Ppos;
-  Pvel[idx]     = source[id].Pvel;
-  acc0[idx]     = source[id].acc0;
-  time[idx]     = source[id].time;
-  body_id[idx]  = source[id].id;
-	  
-  h[idx]        = source[id].Pvel.w; 
- 
-
-#ifdef DO_BLOCK_TIMESTEP_EXCHANGE_MPI
-  body_key[idx] = source[id].key;
-  acc1[idx]     = source[id].acc1;
-  pos[idx]      = source[id].pos;
-  vel[idx]      = source[id].vel;
-#endif
-}
 
 
-#if 0
+
+
 KERNEL_DECLARE(gpu_internalMoveSFC) (int       n_extract,
                                   int       n_bodies,
                                   uint4  lowBoundary,
