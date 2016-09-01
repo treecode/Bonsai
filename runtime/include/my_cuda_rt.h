@@ -292,12 +292,6 @@ namespace my_dev {
       temp << logFile->rdbuf();
       return temp.str();
     }
-
-    /////////////
-    //Kept for compatability
-    int              get_command_queue() {return 0;}
-    //////////       
-    
   };
   
   
@@ -414,11 +408,10 @@ namespace my_dev {
     T           *hDeviceMem;
     T           *host_ptr;
     void        *DeviceMemPtr;
-    void        *tempDeviceMemPtr;
 
     cudaEvent_t  asyncCopyEvent;
         
-    bool pinned_mem, context_flag, flags;
+    bool pinned_mem, flags;
     bool hDeviceMem_flag;
     bool childMemory; //Indicates that this is a shared buffer that will be freed by a parent
     
@@ -430,18 +423,17 @@ namespace my_dev {
         return;
       }
 
-      
-//       assert(context_flag);
       if (hDeviceMem_flag)
       {
-	assert(size > 0);
-	(cudaFree(hDeviceMem));
-        decreaseMemUsage(size*sizeof(T));
+    	  assert(size > 0);
+    	  (cudaFree(hDeviceMem));
+    	  decreaseMemUsage(size*sizeof(T));
         
-        if(pinned_mem){
-          (cudaFreeHost((void*)host_ptr));}
-        else{
-          free(host_ptr);}
+    	  if(pinned_mem){
+    		  (cudaFreeHost((void*)host_ptr));
+    	  } else {
+    		  free(host_ptr);
+    	  }
           hDeviceMem_flag = false;
       }
     } //cuda_free
@@ -451,57 +443,17 @@ namespace my_dev {
 
     ///////// Constructors
 
-    dev_mem() {
-//       CU_SAFE_CALL(cudaEventCreate(&asyncCopyEvent));
-      eventSet = false;
+    dev_mem(): hDeviceMem(NULL), DeviceMemPtr(NULL), flags(0){
       size              = 0;
       pinned_mem        = false;
       hDeviceMem_flag   = false;
-      context_flag      = false;
       host_ptr          = NULL;
       childMemory       = false;
+
+      CU_SAFE_CALL(cudaEventCreate(&asyncCopyEvent));
+      eventSet = true;
     }
 
-    dev_mem(class context &c) {
-      CU_SAFE_CALL(cudaEventCreate(&asyncCopyEvent));
-      eventSet = true;
-      size              = 0;      
-      pinned_mem        = false;
-      context_flag      = false;
-      hDeviceMem_flag   = false;
-      host_ptr          = NULL;
-      childMemory       = false;
-      setContext(c);
-    }
-    
-    //CUDA has no memory flags like opencl
-    //so just put it to 0 and keep function format same for 
-    //compatability
-    dev_mem(class context &c, int n, bool zero = false,
-	    int flags = 0, bool pinned = false) {
-      CU_SAFE_CALL(cudaEventCreate(&asyncCopyEvent));
-      eventSet = true;
-      context_flag      = false;
-      childMemory       = false;      
-      hDeviceMem_flag   = false;
-      pinned_mem        = pinned;
-      size              = 0;
-      setContext(c);
-      if (zero) this->ccalloc(n, pinned, flags);
-      else      this->cmalloc(n, pinned, flags);
-    }
-    
-//     dev_mem(class context &c, std::vector<T> data,
-// 	    int flags = 0,  bool pinned = false) {
-//       context_flag    = false;
-//       hDeviceMem_flag = false;
-//       childMemory       = false;      
-//       pinned_mem      = pinned;
-//       size            = 0;
-//       setContext(c);
-//       this->cmalloc(data, flags);
-//     }
-    
     void free_mem()
     {
       cuda_free();
@@ -510,25 +462,10 @@ namespace my_dev {
     //////// Destructor
     
     ~dev_mem() {
-      if(eventSet)
-        cudaEventDestroy(asyncCopyEvent);
+      if(eventSet) cudaEventDestroy(asyncCopyEvent);
       cuda_free();
     }
     
-    ///////////
-
-    void setContext(class context &c) {      
-      context_flag     = true;
-      
-      if(eventSet == false)
-      {
-        CU_SAFE_CALL(cudaEventCreate(&asyncCopyEvent));
-        eventSet = true;
-      }
-      
-      //JB: Had to add this to get it to run under Linux ?
-//       CU_SAFE_CALL(cudaEventCreate(&asyncCopyEvent));
-    }
 
 
     ///////////
@@ -559,8 +496,6 @@ namespace my_dev {
     //             of elements in type uint
     int  cmalloc_copy(dev_mem<uint> &sourcemem, const int n, const int offset)
     {
-      assert(context_flag);
-   
       //The properties
       this->pinned_mem  = sourcemem.get_pinned();
       this->flags       = sourcemem.get_flags();
@@ -588,44 +523,8 @@ namespace my_dev {
       return currentOffset + padding;
     }    
     
-#if 0    
-    void cmalloc_copy(bool pinned, bool flags, void *cudaMem, 
-                      void* ParentHost_ptr, int offset, int n,
-                      int allignOffset)
-    {
-      assert(context_flag);
-   
-      this->pinned_mem  = pinned;
-      this->flags       = flags;
-      this->childMemory = true;
-
-      size = n;
-        
-      //Dont forget to add the allignment values      
-      //The following line has a bug, it first casts and then adds offset*sizeof ELEMENTS
-      //host_ptr = (T*)ParentHost_ptr +  allignOffset*sizeof(uint); 
-      //This line correctly increases the memory location with number of bytes before casting
-      host_ptr = (T*) ((char*)ParentHost_ptr +  allignOffset*sizeof(uint));
-
-      
-#if 0 /* egaburov: to fix void* pointer arithmetic warrning .  */
-      //       hDeviceMem   = (T*)(cudaMem + offset*sizeof(uint) + allignOffset*sizeof(uint));
-#else
-      /* jbedorf: fixed so address is correct, casting before adding gives a different
-       * result. So divide by size of object */
-      hDeviceMem   = (T*)cudaMem + ((offset*sizeof(uint) + allignOffset*sizeof(uint)) / sizeof(T));
-      //hDeviceMem   = (T*)cudaMem + offset*sizeof(uint) + allignOffset*sizeof(uint);      
-#endif
-      DeviceMemPtr = (void*)(size_t)(hDeviceMem);
-
-      hDeviceMem_flag = true;      
-    }
-#endif
-
     void cmalloc(int n, bool pinned = false, int flags = 0) 
     {
-      assert(context_flag);
-//       assert(!hDeviceMem_flag);
       this->pinned_mem = pinned;      
       this->flags = (flags == 0) ? false : true;
       if (size > 0) cuda_free();
@@ -644,9 +543,6 @@ namespace my_dev {
     }
 
     void ccalloc(int n, bool pinned = false, int flags = 0) {
-      assert(context_flag);
-//       assert(!hDeviceMem_flag);
-      
       this->pinned_mem = pinned;      
       this->flags = (flags == 0) ? false : true;
       if (size > 0) cuda_free();
@@ -788,7 +684,6 @@ namespace my_dev {
          CU_SAFE_CALL(cudaBindTexture (0, textures[i].texture, tempPtr,
                          &channelDesc, sizeof(T)*textures[i].texSize));
        }
-
      }
    }
 
@@ -796,7 +691,6 @@ namespace my_dev {
     //Set the memory to zero
     void zeroMem()
     {
-      assert(context_flag);
       assert(hDeviceMem_flag);
             
       if(size > 0) {
@@ -807,9 +701,7 @@ namespace my_dev {
 
     void zeroMemGPUAsync(cudaStream_t stream)
     {
-      assert(context_flag);
       assert(hDeviceMem_flag);
-
       CU_SAFE_CALL(cudaMemsetAsync((void*)hDeviceMem, 0, size*sizeof(T), stream));
     }
    
@@ -819,13 +711,11 @@ namespace my_dev {
 
 
     void d2h(bool OCL_BLOCKING = true, cudaStream_t stream = 0)   {      
-
       d2h(size, OCL_BLOCKING, stream);
     }
 
     //D2h that only copies a certain number of items to the host
     void d2h(int number, bool OCL_BLOCKING = true, cudaStream_t stream = 0)   {      
-      assert(context_flag);
       assert(hDeviceMem_flag);
       
       if(number == 0) return;
@@ -838,8 +728,7 @@ namespace my_dev {
       }
       else
       {
-        //Async copy, ONLY works for page-locked memory therefore default parameter
-        //is blocking.
+        //Async copy, ONLY works for page-locked memory therefore default parameter is blocking.
         assert(pinned_mem);
         CU_SAFE_CALL(cudaMemcpyAsync(&host_ptr[0], hDeviceMem, number*sizeof(T),cudaMemcpyDeviceToHost, stream));          
         CU_SAFE_CALL(cudaEventRecord(asyncCopyEvent, stream));
@@ -848,7 +737,6 @@ namespace my_dev {
     
     //Copy to a specified buffer
     void d2h(int number, void* dst, bool OCL_BLOCKING = true, cudaStream_t stream = 0)   {
-      assert(context_flag);
       assert(hDeviceMem_flag);
 
       if(number == 0) return;
@@ -861,8 +749,7 @@ namespace my_dev {
       }
       else
       {
-        //Async copy, ONLY works for page-locked memory therefore default parameter
-        //is blocking.
+        //Async copy, ONLY works for page-locked memory therefore default parameter is blocking.
         assert(pinned_mem);
         CU_SAFE_CALL(cudaMemcpyAsync(&host_ptr[0], hDeviceMem, number*sizeof(T),cudaMemcpyDeviceToHost, stream));
         CU_SAFE_CALL(cudaEventRecord(asyncCopyEvent, stream));
@@ -871,7 +758,6 @@ namespace my_dev {
 
 
     void h2d(bool OCL_BLOCKING  = true, cudaStream_t stream = 0)   {
-      assert(context_flag);
       assert(hDeviceMem_flag);
       assert(size > 0);
       //if (flags & CL_MEM_USE_HOST_PTR == 0) return;
@@ -891,7 +777,6 @@ namespace my_dev {
     
     //D2h that only copies a certain number of items to the host
     void h2d(int number, bool OCL_BLOCKING = true, cudaStream_t stream = 0)   {      
-      assert(context_flag);
       assert(hDeviceMem_flag);
       assert(size > 0);
       
@@ -903,8 +788,7 @@ namespace my_dev {
       }
       else
       {
-        //Async copy, ONLY works for page-locked memory therefore default parameter
-        //is blocking.
+        //Async copy, ONLY works for page-locked memory therefore default parameter is blocking.
         assert(pinned_mem);
         CU_SAFE_CALL(cudaMemcpyAsync(hDeviceMem, host_ptr, number*sizeof(T),cudaMemcpyHostToDevice, stream));             
         CU_SAFE_CALL(cudaEventRecord(asyncCopyEvent, stream));
@@ -922,13 +806,11 @@ namespace my_dev {
     //JB: Modified this so that it copies a device buffer to an other device
     //buffer, and the host buffer to the other host buffer
     void copy(dev_mem &src_buffer, int n, bool OCL_BLOCKING = true)   {
-      assert(context_flag);
       assert(hDeviceMem_flag);
       if (size < n) {
         cuda_free();
         cmalloc(n, flags);
         size = n;
-        LOG("Resize in copy \n");
       }
       
       //Copy on the device
@@ -1110,7 +992,7 @@ namespace my_dev {
     
     void load_source(const char *fileName, string &ptx_source)
     {
-      //Keep for compatability
+      //Keep for compatibility
     }
     
     void load_source(const char *kernel_name, const char *subfolder,
@@ -1120,7 +1002,7 @@ namespace my_dev {
       assert(context_flag);
       assert(!program_flag);
   
-      //In runtime kept for compatability
+      //In runtime kept for compatibility
       
       //In cuda version we assume that the code is already compiled into ptx
       //so that the file loaded/specified is in fact a PTX file
@@ -1133,19 +1015,23 @@ namespace my_dev {
     }
 
     void create(const char *kernel_name, const void *funcPointer) {
-      //In runtime kept for compatability
+      //In runtime kept for compatibility
+      program_flag = true;
       assert(program_flag);
       assert(!kernel_flag);
+      assert(!context_flag);
+      context_flag     = true;
+
+
       sprintf(hKernelName, kernel_name,"");
       
-      LOG("%s \n", kernel_name);
+      LOG("Setting kernel: %s \n", kernel_name);
 
       hKernelPointer = funcPointer;
 
       kernel_flag = true;
-
     }
-    
+
     void computeSharedMemorySize()
     {
       //We need to know size of shared memory before we set the arguments
@@ -1285,23 +1171,19 @@ namespace my_dev {
         if(offset < 0)
         {
           tempPtr =  memobj.d();;
-//           CU_SAFE_CALL(cudaBindTexture (0, texref, tempPtr, 
-//                           &channelDesc,  sizeof(T)*memobj.get_size()));
           memSize = sizeof(T)*memobj.get_size();
         }
         else
         {
-          //Get the offsetted memory location
+          //Get the offset memory location
           //Fail if mem_size is not set!
           assert(mem_size >= 0);
           tempPtr =  memobj.a(offset);
-/*          CU_SAFE_CALL(cudaBindTexture (0, texref, tempPtr, 
-                          &channelDesc,  sizeof(T)*mem_size)); */   
           memSize = sizeof(T)*mem_size;
         }
         
         
-        //Now store it in the calling memory object incase the memory is 
+        //Now store it in the calling memory object in case the memory is
         //realloacted and the texture reference has to be updated        
        
         int idx = memobj.addTexture(texref, offset, mem_size);
@@ -1312,11 +1194,9 @@ namespace my_dev {
         tempArg.texture       = texref;
         tempArg.channelDesc   = channelDesc;
         tempArg.texOffset     = offset;
-//         tempArg.texSize       = mem_size;
         tempArg.texSize       = memSize;
         tempArg.ptr           = tempPtr;
         kernelArguments[arg]  = tempArg;     
-        
       }
       else
       {
@@ -1329,16 +1209,12 @@ namespace my_dev {
         
         if(kernelArguments[arg].texOffset < 0)
         {           
-//           CU_SAFE_CALL(cudaBindTexture (0, texref, memobj.d(), 
-//                           &channelDesc,  sizeof(T)*memobj.get_size())); 
           kernelArguments[arg].texSize  = sizeof(T)*memobj.get_size(); 
           kernelArguments[arg].ptr = memobj.d();
         }
         else
         {   
           void * tempPtr =  memobj.a(offset);
-/*          CU_SAFE_CALL(cudaBindTexture (0, texref, tempPtr, 
-                          &channelDesc,  sizeof(T)*mem_size));  */  
           kernelArguments[arg].texSize  = sizeof(T)*mem_size;         
           kernelArguments[arg].ptr = tempPtr;          
         }       
@@ -1367,7 +1243,7 @@ namespace my_dev {
       else
       {
         //Specified number of blocks and numbers of threads make it a
-        //2D grid if nessecary        
+        //2D grid if necessary
         if(blocks >= 65536)
         {
           nx = (int)sqrt((double)blocks);
@@ -1426,7 +1302,7 @@ namespace my_dev {
       hGlobalWork.resize(3);
       hLocalWork.resize(3);
       gridDim.x = (uint)hGlobalWork[0]; gridDim.y = (uint)hGlobalWork[1]; gridDim.z = 0;
-      blockDim.x = (uint)hLocalWork[0]; blockDim.y = (uint)hLocalWork[1]; blockDim.z = (uint)hLocalWork[2];
+      blockDim.x= (uint) hLocalWork[0]; blockDim.y = (uint)hLocalWork[1]; blockDim.z = (uint)hLocalWork[2];
       
       computeSharedMemorySize();
       CU_SAFE_CALL(cudaConfigureCall(gridDim,

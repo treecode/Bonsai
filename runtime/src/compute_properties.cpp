@@ -24,9 +24,9 @@ void octree::compute_properties(tree_structure &tree) {
     tree.generalBuffer1.cresize(10*tree.n_nodes*4, false);
   }
   
-  my_dev::dev_mem<double4> multipoleD(devContext);      //Double precision buffer to store temp results
-  my_dev::dev_mem<real4>   nodeLowerBounds(devContext); //Lower bounds used for computing box sizes
-  my_dev::dev_mem<real4>   nodeUpperBounds(devContext); //Upper bounds used for computing box sizes
+  my_dev::dev_mem<double4> multipoleD;      //Double precision buffer to store temp results
+  my_dev::dev_mem<real4>   nodeLowerBounds; //Lower bounds used for computing box sizes
+  my_dev::dev_mem<real4>   nodeUpperBounds; //Upper bounds used for computing box sizes
   
   int memBufOffset = multipoleD.cmalloc_copy          (tree.generalBuffer1, 3*tree.n_nodes, 0);
       memBufOffset = nodeLowerBounds.cmalloc_copy(tree.generalBuffer1, tree.n_nodes, memBufOffset);
@@ -44,8 +44,8 @@ void octree::compute_properties(tree_structure &tree) {
   setPHGroupData.set_arg<cl_mem>(5, tree.groupSizeInfo.p());
   setPHGroupData.setWork(-1, NCRIT, tree.n_groups);
   setPHGroupData.execute(copyStream->s());
-  //Set valid list to zero
-  //Reset the active particles
+
+  //Set valid list to zero to reset the active particles
   tree.activeGrpList.zeroMemGPUAsync(execStream->s());
   setActiveGrps.set_arg<int>(0,    &tree.n);
   setActiveGrps.set_arg<float>(1,  &t_current);
@@ -71,7 +71,6 @@ void octree::compute_properties(tree_structure &tree) {
   float sizez = rMaxGlobal.z - rMinGlobal.z;
   float sizeM = max(max(sizex,sizey), sizez);
   float h_min = sizeM / (powf(2.0,tree.n_levels));
-  //fprintf(stderr,"HMIN: %f %f %f %f %f\n", h_min, sizex, sizey, sizez, sizeM);
   //End density
 
 

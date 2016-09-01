@@ -595,6 +595,9 @@ KERNEL_DECLARE(gpu_setPHGroupData)(const int n_groups,
   } //end tid == 0
 }//end copyNode2grp
 
+
+
+#if 0
 //Compute the properties for the groups
 KERNEL_DECLARE(gpu_setPHGroupDataGetKey)(const int n_groups,
                                           const int n_particles,
@@ -752,5 +755,5 @@ KERNEL_DECLARE(gpu_setPHGroupDataGetKey2)(const int n_groups,
 
 }//end copyNode2grp
 
-
+#endif
 

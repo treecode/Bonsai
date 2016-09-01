@@ -121,15 +121,15 @@ KERNEL_DECLARE(get_nactive)(const int n_bodies,
   get_nactiveD(n_bodies, valid, tnact, sdataInt);
 }
 
-KERNEL_DECLARE(predict_particles)(const int n_bodies,
-                                             float tc,
-                                             float tp,
-                                             real4 *pos,
-                                             real4 *vel,
-                                             real4 *acc,
-                                             float2 *time,
-                                             real4 *pPos,
-                                             real4 *pVel){
+KERNEL_DECLARE(predict_particles)(const int 	n_bodies,
+										float 	tc,
+										float 	tp,
+										real4 	*pos,
+										real4 	*vel,
+										real4 	*acc,
+										float2 	*time,
+										real4 	*pPos,
+										real4 	*pVel){
   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   const uint tid = threadIdx.x;
   const uint idx = bid * blockDim.x + tid;
@@ -212,14 +212,8 @@ KERNEL_DECLARE(correct_particles)(const int n_bodies,
                                   /* 11 */   real4 *pVel,
                                   /* 12 */   uint  *unsorted,
                                   /* 13 */   real4 *acc0_new,
-#if 1
-					     float2 *time_new,
-					     int *pIDS,
-					     real4 *specialParticles){
-
-#else
-					     float2 *time_new){
-#endif
+                                  	  	  	 float2 *time_new)
+{
   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
   const int tid =  threadIdx.y * blockDim.x + threadIdx.x;
   const int dim =  blockDim.x * blockDim.y;
@@ -263,29 +257,15 @@ KERNEL_DECLARE(correct_particles)(const int n_bodies,
   v.z += (a1.z - a0.z)*dt_cb;
 
 
-  #if 1
-   int pid = pIDS[idx];
-
-   if(pid == 30000000 - 1)
-     specialParticles[0] = pPos[idx];
-   if (pid == 30000000 - 2)
-     specialParticles[1] = pPos[idx];
-   #endif
-
-
   //Store the corrected velocity, accelaration and the new time step info
   vel     [idx] = v;
   acc0_new[idx] = a1;
   time_new[idx] = time[unsortedIdx];
   unsorted[idx] = idx;  //Have to reset it in case we do not resort the particles
- 
 
-//  body_h[idx] = adjustH(body_h[idx], body_dens[idx].y);
-
+  //Adjust the search radius for the next iteration to get closer to the
+  //requested number of neighbours
   body_h[idx] = adjustH(body_h[idx], body_dens[idx].y);
-  //body_h[idx] = 1.0f/idx; //adjustH(body_h[idx], body_dens[idx].y);
-
-  //   time[idx] = (float2){tc, tc + dt};
 }
 
 
@@ -384,7 +364,6 @@ extern "C"  __global__ void compute_dt(const int n_bodies,
   dt = 1.0f/(1 << 7);
   dt = timeStep;
   time[idx].x = tc;
-  //time[idx].y = tc + dt;
   time[idx].y = tc + dt;
 }
 
@@ -416,20 +395,15 @@ static __device__ void compute_energy_doubleD(const int n_bodies,
   while (i < n_bodies) {
     if (i             < n_bodies)
     {
-      //Ekin
       temp  = vel[i];
       eKin += pos[i].w*0.5*(temp.x*temp.x + temp.y*temp.y + temp.z*temp.z);
-
-      //Epot
       ePot += pos[i].w*0.5*acc[i].w;
     }
 
     if (i + blockSize < n_bodies)
     {
-      temp = vel[i + blockSize];
+      temp  = vel[i + blockSize];
       eKin += pos[i + blockSize].w*0.5*(temp.x*temp.x + temp.y*temp.y + temp.z*temp.z);
-
-      //Epot
       ePot += pos[i + blockSize].w*0.5*acc[i + blockSize].w;
     }
 
@@ -464,10 +438,8 @@ static __device__ void compute_energy_doubleD(const int n_bodies,
       if (blockSize >=   2) {shDDataKin[tid] = eKin = eKin + shDDataKin[tid +  1]; shDDataPot[tid] = ePot = ePot + shDDataPot[tid +  1];  EMUSYNC; }
   }
 
-
   // write result for this block to global mem
   if (tid == 0) energy[blockIdx.x] = make_double2(shDDataKin[0], shDDataPot[0]);
-
 }
 
 

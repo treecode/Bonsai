@@ -754,6 +754,18 @@ bool treewalk(
   if(counters.x == 0xFFFFFFFF && counters.y == 0xFFFFFFFF)
     return false;
 
+#if 1
+  /* CUDA 8RC work around */
+  if(bid < 0) // bid ==0 && laneId < nb_i && && threadIdx.x == 0)
+  {
+	  printf("TEST\n");
+  	//printf("ON DEV [%d %d : %d %d ] ACC: %f %f %f %f INT: %d %d \n",
+  	//		bid, threadIdx.x, nb_i, body_i[0],
+  	//		acc_i[0].x,acc_i[0].y,acc_i[0].z,acc_i[0].w,
+  	//		counters.x, counters.y);
+  }
+#endif
+
   if (laneId < nb_i) 
   {
     const int addr = body_i[0];
@@ -777,10 +789,6 @@ bool treewalk(
     {
       acc_out      [addr] =  acc_i[0];
       body_dens_out[addr] = dens_i[0];
-
-      // eg: moved to correct_particles
-//      body_h[addr] = adjustH(body_h[addr], dens_i[0].y);
-
     }
     //       ngb_out     [addr] = ngb_i;
     ngb_out     [addr] = addr; //JB Fixed this for demo 

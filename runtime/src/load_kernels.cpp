@@ -19,15 +19,11 @@ void octree::set_context(std::ostream &log, bool disable_timing) {
 void octree::set_context2()
 {
   devContext.createQueue(devID);
-  
   devContext_flag = true;
   
-  //Assign the context to the local tree
+  //Assign the context to the local and remote tree structures (required for memory allocations)
   this->localTree.setContext(devContext);
-  
-  //And for the remote tree
   this->remoteTree.setContext(devContext);
-  
 }
 
 void octree::set_logPreamble(std::string text)
@@ -47,14 +43,11 @@ void octree::load_kernels() {
   const int blocksPerSM = getTreeWalkBlocksPerSM(
                           this->getDevContext()->getComputeCapabilityMajor(),
                           this->getDevContext()->getComputeCapabilityMinor());
- 
-  nBlocksForTreeWalk = nMultiProcessors*blocksPerSM;
+  nBlocksForTreeWalk 	= nMultiProcessors*blocksPerSM;
   
 
-  std::string pathName;
-
-
   //AMUSE specific
+  std::string pathName;
   if(this->src_directory != NULL)
   {
     pathName.assign(this->src_directory);
@@ -67,146 +60,56 @@ void octree::load_kernels() {
     pathName.assign(temp.substr(0, idx+1));
   }
   
-
-  // load scan & sort kernels
-
-  compactCount.setContext(devContext);
-  exScanBlock.setContext(devContext);
-  compactMove.setContext(devContext);
-  splitMove.setContext(devContext);
+  //Connect the compute kernels to the actual CUDA functions
 
 
-
-#ifdef USE_CUDA
-  compactCount.load_source("./scanKernels.ptx", pathName.c_str());
-  compactCount.create("compact_count", (const void*)&compact_count);
-  
-
-  exScanBlock.load_source("./scanKernels.ptx", pathName.c_str());
-  exScanBlock.create("exclusive_scan_block", (const void*)&exclusive_scan_block);
-  
-  compactMove.load_source("./scanKernels.ptx", pathName.c_str());
-  compactMove.create("compact_move", (const void*)&compact_move);
-  
-  splitMove.load_source("./scanKernels.ptx", pathName.c_str());
-  splitMove.create("split_move", (const void*)split_move);
-#endif
+  //Scan, compact, split kernels
+  compactCount.create("compact_count"		, (const void*)&compact_count);
+  exScanBlock. create("exclusive_scan_block", (const void*)&exclusive_scan_block);
+  compactMove. create("compact_move"		, (const void*)&compact_move);
+  splitMove.   create("split_move"			, (const void*)split_move);
 
 
-  // load tree-build kernels
-  
-  /* set context */
-  
-  build_key_list.setContext(devContext);
-  build_valid_list.setContext(devContext);
-  build_nodes.setContext(devContext);
-  link_tree.setContext(devContext);
-  define_groups.setContext(devContext);
-  build_level_list.setContext(devContext);
-  boundaryReduction.setContext(devContext);
-  boundaryReductionGroups.setContext(devContext);  
-  build_body2group_list.setContext(devContext);
-  store_groups.setContext(devContext);
-  segmentedCoarseGroupBoundary.setContext(devContext);
-  /* load kernels tree properties */
-  
-#ifdef USE_CUDA
-  build_key_list.load_source("./build_tree.ptx", pathName.c_str());
-  build_valid_list.load_source("./build_tree.ptx", pathName.c_str());
-  build_nodes.load_source("./build_tree.ptx", pathName.c_str());
-  link_tree.load_source("./build_tree.ptx", pathName.c_str());
-  define_groups.load_source("./build_tree.ptx", pathName.c_str());
-  build_level_list.load_source("./build_tree.ptx", pathName.c_str());
-  boundaryReduction.load_source("./build_tree.ptx", pathName.c_str());
-  boundaryReductionGroups.load_source("./build_tree.ptx", pathName.c_str());
-  build_body2group_list.load_source("./build_tree.ptx", pathName.c_str());
-  store_groups.load_source("./build_tree.ptx", pathName.c_str());
-  segmentedCoarseGroupBoundary.load_source("./build_tree.ptx", pathName.c_str());
-  
-  /* create kernels */
-
-  build_key_list.create("cl_build_key_list", (const void*)&cl_build_key_list);
-  build_valid_list.create("cl_build_valid_list", (const void*)&cl_build_valid_list);
-  build_nodes.create("cl_build_nodes", (const void*)&cl_build_nodes);
-  link_tree.create("cl_link_tree", (const void*)&cl_link_tree);
-  define_groups.create("build_group_list2", (const void*)&build_group_list2);
-  build_level_list.create("build_level_list", (const void*)&gpu_build_level_list);
-  boundaryReduction.create("boundaryReduction", (const void*)&gpu_boundaryReduction);
+  //Tree-build kernels
+  build_key_list.		  create("cl_build_key_list", 		(const void*)&cl_build_key_list);
+  build_valid_list.		  create("cl_build_valid_list", 	(const void*)&cl_build_valid_list);
+  build_nodes.			  create("cl_build_nodes", 			(const void*)&cl_build_nodes);
+  link_tree.			  create("cl_link_tree", 			(const void*)&cl_link_tree);
+  define_groups.		  create("build_group_list2", 		(const void*)&build_group_list2);
+  build_level_list.		  create("build_level_list", 		(const void*)&gpu_build_level_list);
+  boundaryReduction.      create("boundaryReduction", 		(const void*)&gpu_boundaryReduction);
   boundaryReductionGroups.create("boundaryReductionGroups", (const void*)&gpu_boundaryReductionGroups);
-  store_groups.create("store_group_list", (const void*)&store_group_list);
-  segmentedCoarseGroupBoundary.create("segmentedCoarseGroupBoundary", (const void*)&gpu_segmentedCoarseGroupBoundary);
-#endif
+  store_groups.			  create("store_group_list", 		(const void*)&store_group_list);
 
   // load tree-props kernels
-  propsNonLeafD.setContext(devContext);
-  propsLeafD.setContext(devContext);
-  propsScalingD.setContext(devContext);
-  
-  setPHGroupData.setContext(devContext);
-  setPHGroupDataGetKey.setContext(devContext);
-  setPHGroupDataGetKey2.setContext(devContext);
- 
-  /* load kernels */
-  
-#ifdef USE_CUDA
+  propsNonLeafD. create("compute_non_leaf", (const void*)&compute_non_leaf);
+  propsLeafD.	 create("compute_leaf",     (const void*)&compute_leaf);
+  propsScalingD. create("compute_scaling",  (const void*)&compute_scaling);
+  setPHGroupData.create("setPHGroupData",   (const void*)&gpu_setPHGroupData);
 
-  propsNonLeafD.load_source("./compute_propertiesD.ptx", pathName.c_str(), "", -1);
-  propsLeafD.load_source("./compute_propertiesD.ptx", pathName.c_str(), "", -1);
-  propsScalingD.load_source("./compute_propertiesD.ptx", pathName.c_str(), "",-1);
-  
-  setPHGroupData.load_source("./compute_propertiesD.ptx", pathName.c_str());
-  setPHGroupDataGetKey.load_source("./compute_propertiesD.ptx", pathName.c_str());
-  setPHGroupDataGetKey2.load_source("./compute_propertiesD.ptx", pathName.c_str());
-  /* create kernels */
-  
-  propsNonLeafD.create("compute_non_leaf", (const void*)&compute_non_leaf);
-  propsLeafD.create("compute_leaf", (const void*)&compute_leaf);
-  propsScalingD.create("compute_scaling", (const void*)&compute_scaling);
+  //Time integration kernels
+  getTNext.		   create("get_Tnext", 			     (const void*)&get_Tnext);
+  predictParticles.create("predict_particles", 	     (const void*)&predict_particles);
+  getNActive.      create("get_nactive", 		     (const void*)&get_nactive);
+  correctParticles.create("correct_particles", 	     (const void*)&correct_particles);
+  computeDt.	   create("compute_dt", 		     (const void*)&compute_dt);
+  setActiveGrps.   create("setActiveGroups", 	     (const void*)&setActiveGroups);
+  computeEnergy.   create("compute_energy_double",   (const void*)&compute_energy_double);
+  approxGrav.	   create("dev_approximate_gravity", (const void*)&dev_approximate_gravity);
 
-  setPHGroupData.create("setPHGroupData", (const void*)&gpu_setPHGroupData);
-  setPHGroupDataGetKey.create("setPHGroupDataGetKey", (const void*)&gpu_setPHGroupDataGetKey);
-  setPHGroupDataGetKey2.create("setPHGroupDataGetKey2", (const void*)&gpu_setPHGroupDataGetKey2);
-#endif
+  //Parallel kernels
+  approxGravLET.						  create("dev_approximate_gravity_let", 			(const void*)&dev_approximate_gravity_let);
+  internalMoveSFC2.						  create("internalMoveSFC2", 						(const void*)&gpu_internalMoveSFC2);
+  extractOutOfDomainParticlesAdvancedSFC2.create("extractOutOfDomainParticlesAdvancedSFC2", (const void*)&gpu_extractOutOfDomainParticlesAdvancedSFC2);
+  insertNewParticlesSFC.				  create("insertNewParticlesSFC", 					(const void*)&gpu_insertNewParticlesSFC);
+  domainCheckSFCAndAssign.				  create("domainCheckSFCAndAssign", 				(const void*)&gpu_domainCheckSFCAndAssign);
 
-  /* Tree iteration */
-  getTNext.setContext(devContext);
-  predictParticles.setContext(devContext);
-  getNActive.setContext(devContext);
-  approxGrav.setContext(devContext);
-  directGrav.setContext(devContext);
-  correctParticles.setContext(devContext);
-  computeDt.setContext(devContext);
-  computeEnergy.setContext(devContext);
-  setActiveGrps.setContext(devContext);
-  distanceCheck.setContext(devContext);  
+  //Other
+  directGrav.create("dev_direct_gravity", (const void*)&dev_direct_gravity);
 
-
-  approxGravLET.setContext(devContext);
-  determineLET.setContext(devContext);
-
-#ifdef USE_CUDA
-  getTNext.load_source("./timestep.ptx", pathName.c_str(), "", -1);
-  predictParticles.load_source("./timestep.ptx", pathName.c_str(), "", -1);
-  getNActive.load_source("./timestep.ptx", pathName.c_str(), "", -1);
-  approxGrav.load_source("./dev_approximate_gravity.ptx", pathName.c_str(), "", 64);
-  directGrav.load_source("./dev_direct_gravity.ptx", pathName.c_str(), "", 64);
-  correctParticles.load_source("./timestep.ptx", pathName.c_str(), "", -1);
-  computeDt.load_source("./timestep.ptx", pathName.c_str(), "", -1);
-  computeEnergy.load_source("./timestep.ptx", pathName.c_str(), "", -1);
-  setActiveGrps.load_source("./timestep.ptx", pathName.c_str(), "", -1);
-  distanceCheck.load_source("./timestep.ptx", pathName.c_str(), "", -1);  
-  
-  approxGravLET.load_source("./dev_approximate_gravity.ptx", pathName.c_str(), "", 64);  
-  determineLET.load_source("./dev_approximate_gravity.ptx", pathName.c_str(), "", 64);
-  /* create kernels */
-
-  getTNext.create("get_Tnext", (const void*)&get_Tnext);
-  predictParticles.create("predict_particles", (const void*)&predict_particles);
-  getNActive.create("get_nactive", (const void*)&get_nactive);
-  approxGrav.create("dev_approximate_gravity", (const void*)&dev_approximate_gravity);
 
 #ifdef KEPLER /* preferL1 equal egaburov */
-  cudaFuncSetCacheConfig((const void*)&dev_approximate_gravity, cudaFuncCachePreferL1);
+  cudaFuncSetCacheConfig((const void*)&dev_approximate_gravity, 	cudaFuncCachePreferL1);
   cudaFuncSetCacheConfig((const void*)&dev_approximate_gravity_let, cudaFuncCachePreferL1);
 #if 0
 #if 1
@@ -216,43 +119,6 @@ void octree::load_kernels() {
 #endif
 #endif
 #endif
-
-
-  directGrav.create("dev_direct_gravity", (const void*)&dev_direct_gravity);
-  correctParticles.create("correct_particles", (const void*)&correct_particles);
-  computeDt.create("compute_dt", (const void*)&compute_dt);
-  setActiveGrps.create("setActiveGroups", (const void*)&setActiveGroups);
-
-  computeEnergy.create("compute_energy_double", (const void*)&compute_energy_double);
-  distanceCheck.create("distanceCheck", (const void*)&distanceCheck);
-  
-  approxGravLET.create("dev_approximate_gravity_let", (const void*)&dev_approximate_gravity_let);
-#if 0  /* egaburov, doesn't compile with this */
-  determineLET.create("dev_determineLET", (const void*)&dev_determineLET);
-#endif
-#endif
-
-  //Parallel kernels
-  internalMoveSFC2.setContext(devContext);
-  extractOutOfDomainParticlesAdvancedSFC2.setContext(devContext);
-  insertNewParticlesSFC.setContext(devContext);
-  domainCheckSFCAndAssign.setContext(devContext);
-
-
-#ifdef USE_CUDA
-
-  internalMoveSFC2.load_source("./parallel.ptx", pathName.c_str());
-  extractOutOfDomainParticlesAdvancedSFC2.load_source("./parallel.ptx", pathName.c_str());
-  insertNewParticlesSFC.load_source("./parallel.ptx", pathName.c_str());
-  domainCheckSFCAndAssign.load_source("./parallel.ptx", pathName.c_str());
-
-  internalMoveSFC2.create("internalMoveSFC2", (const void*)&gpu_internalMoveSFC2);
-  extractOutOfDomainParticlesAdvancedSFC2.create("extractOutOfDomainParticlesAdvancedSFC2", (const void*)&gpu_extractOutOfDomainParticlesAdvancedSFC2);
-  insertNewParticlesSFC.create("insertNewParticlesSFC", (const void*)&gpu_insertNewParticlesSFC);
-  domainCheckSFCAndAssign.create("domainCheckSFCAndAssign", (const void*)&gpu_domainCheckSFCAndAssign);
-#endif
-
-
 }
 
 void octree::resetCompact()

@@ -6,6 +6,7 @@
 #endif
 
 
+
 #ifdef WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -99,22 +100,6 @@ typedef struct setupParams {
 
 } setupParams;
 
-typedef struct bodyStruct
-{
-  real4  acc0;
-  real4  Ppos;
-  real4  Pvel;
-  float2 time;
-  unsigned long long id;
-
-
-#ifdef DO_BLOCK_TIMESTEP_EXCHANGE_MPI
-  uint4 key;
-  real4 pos;
-  real4 vel;
-  real4 acc1;
-#endif
-} bodyStruct;
 
 typedef struct sampleRadInfo
 {
@@ -145,6 +130,78 @@ struct cmp_ph_key{
   }
 };
 
+class particleSet
+{
+public:
+	int n;							 //Number of bodies
+    my_dev::dev_mem<real4>  pos;     //The particles positions
+    my_dev::dev_mem<uint4>  key;     //The particles keys
+    my_dev::dev_mem<real4>  vel;     //Velocities
+    my_dev::dev_mem<real4>  acc0;    //Acceleration
+    my_dev::dev_mem<real4>  acc1;    //Acceleration
+    my_dev::dev_mem<float2> time;    //The timestep details (.x=tb, .y=te
+    my_dev::dev_mem<ullong> ids;
+    my_dev::dev_mem<real4>  Ppos;    //Predicted position
+    my_dev::dev_mem<real4>  Pvel;    //Predicted velocity
+
+    //Density related buffers
+    my_dev::dev_mem<real>  h;       //The particles search radius
+    my_dev::dev_mem<real2> dens;    //The particles density (x) and number of neighbours (y)
+
+    particleSet(){ n = 0;}
+
+    void setN(int particles) { n = particles; }
+
+    void allocate(int n_bodies = -1)
+    {
+    	if(n_bodies <= 0) n_bodies = n;
+		//Particle properties
+		pos.cmalloc(n_bodies+1, true);   //+1 to set end pos, host mapped? TODO not needed right since we use Ppos
+		vel.cmalloc(n_bodies, false);
+		key.cmalloc(n_bodies+1, false);  //+1 to set end key
+		ids.cmalloc(n_bodies+1, false);  //+1 to set end key
+
+		Ppos.cmalloc(n_bodies+1, true);  //Memory to store predicted positions, host mapped
+		Pvel.cmalloc(n_bodies+1, true);  //Memory to store predicted velocities, host mapped
+
+
+		acc0.ccalloc(n_bodies, false);   //ccalloc -> init to 0
+		acc1.ccalloc(n_bodies, false);   //ccalloc -> init to 0
+		time.ccalloc(n_bodies, false);   //ccalloc -> init to 0
+
+		//density
+		h.cmalloc   (n_bodies, true);
+		dens.cmalloc(n_bodies, true);
+
+		//Initialize to -1
+		for(int i=0; i < n_bodies; i++) h[i] = -1;
+		h.h2d();
+    }
+
+    void reallocate(int n_bodies = -1)
+    {
+    	if(n_bodies <= 0) n_bodies = n;
+		//Particle properties
+		pos.cresize(n_bodies+1, true);   //+1 to set end pos, host mapped? TODO not needed right since we use Ppos
+		vel.cresize(n_bodies, false);
+		key.cresize(n_bodies+1, false);  //+1 to set end key
+		ids.cresize(n_bodies+1, false);  //+1 to set end key
+
+		Ppos.cresize(n_bodies+1, true);  //Memory to store predicted positions, host mapped
+		Pvel.cresize(n_bodies+1, true);  //Memory to store predicted velocities, host mapped
+
+
+		acc0.cresize(n_bodies, false);   //ccalloc -> init to 0
+		acc1.cresize(n_bodies, false);   //ccalloc -> init to 0
+		time.cresize(n_bodies, false);   //ccalloc -> init to 0
+
+		//density
+		h.cresize   (n_bodies, true);
+		dens.cresize(n_bodies, true);
+    }
+
+};
+
 //Structure and properties of a tree
 class tree_structure
 {
@@ -161,58 +218,59 @@ class tree_structure
     uint startLevelMin;                   //The level from which we start the tree-walk
                                           //this is decided by the tree-structure creation
 
-    bool needToReorder;			//Set to true if SetN is called so we know we need to change particle order
-    my_dev::dev_mem<real4> bodies_pos;    //The particles positions
-    my_dev::dev_mem<uint4> bodies_key;    //The particles keys
-    my_dev::dev_mem<real4> bodies_vel;    //Velocities
-    my_dev::dev_mem<real4> bodies_acc0;    //Acceleration
-    my_dev::dev_mem<real4> bodies_acc1;    //Acceleration
-    my_dev::dev_mem<float2> bodies_time;  //The timestep details (.x=tb, .y=te
-    my_dev::dev_mem<ullong>   bodies_ids;
-    my_dev::dev_mem<uint>   oriParticleOrder;  //Used in the correct function to speedup reorder
-    
-    //Density related buffers
-    my_dev::dev_mem<real>  bodies_h;       //The particles search radius
-    my_dev::dev_mem<real2> bodies_dens;    //The particles density (x) and nnb (y)
-    
-    my_dev::dev_mem<real4> bodies_Ppos;    //Predicted position
-    my_dev::dev_mem<real4> bodies_Pvel;    //Predicted velocity
-
-    my_dev::dev_mem<uint2> level_list;    //List containing the start and end positions of each level
-
-    my_dev::dev_mem<uint>  n_children;
-    my_dev::dev_mem<uint2> node_bodies;
-    my_dev::dev_mem<uint>  leafNodeIdx;    //First n_leaf items represent indices of leafs
-                                           //remaining (n_nodes-n_leafs) are indices of non-leafs
-//     my_dev::dev_mem<uint>  group_list;     //The id's of nodes that form a group
-    my_dev::dev_mem<uint>  node_level_list; //List containing start and end idxs in (leafNode idx) for each level
-    my_dev::dev_mem<uint>  body2group_list; //Contains per particle to which group it belongs
-
-    my_dev::dev_mem<uint2>  group_list;     //The group to particle relation
-    my_dev::dev_mem<uint>   coarseGroupCompact; //Holds the ids of the groups that define the let boundaries
-
-    //Variables used for properties
-    my_dev::dev_mem<real4>  multipole;      //Array storing the properties for each node (mass, mono, quad pole)
-
     //Variables used for iteration
     int n_active_groups;
     int n_active_particles;
 
-    my_dev::dev_mem<uint>  activeGrpList;       //Non-compacted list of active grps
+    real4 corner;                         //Corner of tree-structure
+    real  domain_fac;                     //Domain_fac of tree-structure
+
+    particleSet	bodies;
+
+    my_dev::dev_mem<real4>  bodies_pos;     //The particles positions
+    my_dev::dev_mem<uint4>  bodies_key;     //The particles keys
+    my_dev::dev_mem<real4>  bodies_vel;     //Velocities
+    my_dev::dev_mem<real4>  bodies_acc0;    //Acceleration
+    my_dev::dev_mem<real4>  bodies_acc1;    //Acceleration
+    my_dev::dev_mem<float2> bodies_time;    //The timestep details (.x=tb, .y=te
+    my_dev::dev_mem<ullong> bodies_ids;
+    my_dev::dev_mem<real4>  bodies_Ppos;    //Predicted position
+    my_dev::dev_mem<real4>  bodies_Pvel;    //Predicted velocity
+    
+    //Density related buffers
+    my_dev::dev_mem<real>  bodies_h;       //The particles search radius
+    my_dev::dev_mem<real2> bodies_dens;    //The particles density (x) and number of neighbours (y)
+
+    my_dev::dev_mem<uint>   oriParticleOrder;  //Used in the correct function to speedup reorder
+
+    
+    my_dev::dev_mem<uint2> level_list;    //List containing the start and end positions of each level
+    my_dev::dev_mem<uint>  n_children;
+    my_dev::dev_mem<uint2> node_bodies;
+    my_dev::dev_mem<uint>  leafNodeIdx;    //First n_leaf items represent indices of leafs
+                                           //remaining (n_nodes-n_leafs) are indices of non-leafs
+
+    my_dev::dev_mem<uint>  node_level_list; //List containing start and end idxs in (leafNode idx) for each level
+    my_dev::dev_mem<uint>  body2group_list; //Contains per particle to which group it belongs
+    my_dev::dev_mem<uint2> group_list;      //The group to particle relation
+
+
+    //Variables used for properties
+    my_dev::dev_mem<real4>  multipole;      	//Array storing the properties for each node (mass, mono, quad pole)
+
+    my_dev::dev_mem<uint>  activeGrpList;       //Non-compacted list of active groups
     my_dev::dev_mem<uint>  active_group_list;   //Compacted list of active groups
     my_dev::dev_mem<uint>  activePartlist;      //List of active particles
-    my_dev::dev_mem<uint>  ngb;                 //List of nearest neighbours
+    my_dev::dev_mem<uint>  ngb;                 //List of nearest neighbors
 
     my_dev::dev_mem<int2>  interactions;        //Counts the number of interactions, mainly for debugging and performance
 
-    //BH Opening criteria
+    //Properties of the tree-node boxes
     my_dev::dev_mem<float4> boxSizeInfo;
     my_dev::dev_mem<float4> groupSizeInfo;
-
     my_dev::dev_mem<float4> boxCenterInfo;
     my_dev::dev_mem<float4> groupCenterInfo;
 
-    my_dev::dev_mem<uint4> parallelHashes;
     my_dev::dev_mem<uint4> parallelBoundaries;
 
     //Combined buffers:
@@ -230,93 +288,22 @@ class tree_structure
 
 
     my_dev::dev_mem<float4> fullRemoteTree;
-
-    uint4 remoteTreeStruct;
-
-    real4 corner;                         //Corner of tree-structure
-    real  domain_fac;                     //Domain_fac of tree-structure
-    
+    uint4 remoteTreeStruct;				  //Properties of the remote tree-structure (particles, nodes, offsets)
 
     
-    
 
-  tree_structure(){ n = 0; needToReorder = true;}
+  tree_structure(){ n = 0;}
 
-  tree_structure(my_dev::context &context)
-  {
+  tree_structure(my_dev::context &context) {
     n = 0;
     devContext = &context;
-    setMemoryContexts();
-    needToReorder = true;
   }
-  void setContext(my_dev::context &context)
-  {
+  void setContext(my_dev::context &context) {
     devContext = &context;
-    setMemoryContexts();
-    needToReorder = true;
   }
 
-  void setN(int particles)
-  {
-    n = particles;
-    needToReorder = true;
-  }
+  void setN(int particles) { n = particles; }
 
-
-  void setMemoryContexts()
-  {
-    bodies_pos.setContext(*devContext);
-    bodies_key.setContext(*devContext);
-
-    n_children.setContext(*devContext);
-    node_bodies.setContext(*devContext);
-    leafNodeIdx.setContext(*devContext);
-
-    node_level_list.setContext(*devContext);
-    multipole.setContext(*devContext);
-
-
-    body2group_list.setContext(*devContext);
-
-    bodies_vel.setContext(*devContext);
-    bodies_acc0.setContext(*devContext);
-    bodies_acc1.setContext(*devContext);
-    bodies_time.setContext(*devContext);
-    bodies_ids.setContext(*devContext);
-
-    bodies_Ppos.setContext(*devContext);
-    bodies_Pvel.setContext(*devContext);
-
-    //Density
-    bodies_h.setContext(*devContext);
-    bodies_dens.setContext(*devContext);
-
-
-    oriParticleOrder.setContext(*devContext);
-    activeGrpList.setContext(*devContext);
-    active_group_list.setContext(*devContext);
-    level_list.setContext(*devContext);
-    activePartlist.setContext(*devContext);
-    ngb.setContext(*devContext);
-    interactions.setContext(*devContext);
-
-    group_list.setContext(*devContext);
-    coarseGroupCompact.setContext(*devContext);
-
-    //BH Opening
-    boxSizeInfo.setContext(*devContext);
-    groupSizeInfo.setContext(*devContext);
-    boxCenterInfo.setContext(*devContext);
-    groupCenterInfo.setContext(*devContext);
-
-    parallelHashes.setContext(*devContext);
-    parallelBoundaries.setContext(*devContext);
-
-    //General buffers
-    generalBuffer1.setContext(*devContext);
-   
-    fullRemoteTree.setContext(*devContext);
-  }
 
   my_dev::context getContext()
   {
@@ -330,8 +317,6 @@ class octree {
 protected:
   const MPI_Comm &mpiCommWorld;
   int devID;
-  int rebuild_tree_rate;
-
   
   char *execPath;
   char *src_directory;
@@ -350,8 +335,9 @@ protected:
   float         nextSnapTime;
   float         nextQuickDump;
 
-  float        statisticsIter;
-  float        nextStatsTime;
+  float         statisticsIter;
+  float         nextStatsTime;
+  int 			rebuild_tree_rate;
 
   int   NTotal, NFirst, NSecond, NThird;
   
@@ -368,7 +354,7 @@ protected:
 
   bool  useDirectGravity;
 
-  //Sim stats
+  //Simulation statistics
   double Ekin, Ekin0, Ekin1;
   double Epot, Epot0, Epot1;
   double Etot, Etot0, Etot1;
@@ -379,13 +365,8 @@ protected:
   LOGFILEWRITER *logFileWriter;
 
 
-  // accurate Win32 timing
-#ifdef WIN32
-  LARGE_INTEGER sysTimerFreq;
-  LARGE_INTEGER sysTimerAtStart;
-#endif
 
-  // OpenCL context
+  // Device context
   my_dev::context devContext;
   bool devContext_flag;
   
@@ -396,7 +377,7 @@ protected:
   my_dev::dev_stream *LETDataToHostStream;
   
 
-  // scan & sort algorithm
+  // scan & split kernels
   my_dev::kernel  compactCount, exScanBlock, compactMove, splitMove;
 
   // tree construction kernels
@@ -411,31 +392,26 @@ protected:
   my_dev::kernel  boundaryReduction;
   my_dev::kernel  boundaryReductionGroups;
   my_dev::kernel  build_body2group_list;
-  my_dev::kernel  segmentedCoarseGroupBoundary;
 
 
   // tree properties kernels
   my_dev::kernel  propsNonLeafD, propsLeafD, propsScalingD;
-
   my_dev::kernel  setPHGroupData;
-  my_dev::kernel  setPHGroupDataGetKey;
-  my_dev::kernel  setPHGroupDataGetKey2;
   my_dev::kernel  setActiveGrps;
 
-  //Iteration kernels
+  //Time integration kernels
   my_dev::kernel getTNext;
   my_dev::kernel predictParticles;
   my_dev::kernel getNActive;
   my_dev::kernel approxGrav;
-  my_dev::kernel directGrav;
+  my_dev::kernel approxGravLET;
   my_dev::kernel correctParticles;
   my_dev::kernel computeDt;
   my_dev::kernel computeEnergy;
 
-  my_dev::kernel distanceCheck;
-  my_dev::kernel approxGravLET;
-  my_dev::kernel determineLET;
-  
+  //Other
+  my_dev::kernel directGrav;
+
   //Parallel kernels
   my_dev::kernel internalMoveSFC2;
   my_dev::kernel extractOutOfDomainParticlesAdvancedSFC2;
@@ -444,6 +420,11 @@ protected:
 
   ///////////////////////
 
+  // accurate Win32 timing
+#ifdef WIN32
+  LARGE_INTEGER sysTimerFreq;
+  LARGE_INTEGER sysTimerAtStart;
+#endif
 
   ///////////
 
@@ -466,16 +447,14 @@ public:
    void set_src_directory(string src_dir);
 
    //Memory used in the whole system, not depending on a certain number of particles
-   my_dev::dev_mem<float> tnext;
-   my_dev::dev_mem<uint>  nactive;
+   my_dev::dev_mem<float> 	tnext;
+   my_dev::dev_mem<uint>  	nactive;
    //General memory buffers
    my_dev::dev_mem<float3>  devMemRMIN;
    my_dev::dev_mem<float3>  devMemRMAX;
 
    my_dev::dev_mem<uint> devMemCounts;
    my_dev::dev_mem<uint> devMemCountsx;
-
-   my_dev::dev_mem<real4> specialParticles;//Buffer to store postions of selected particles
 
 
    tree_structure localTree;

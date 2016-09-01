@@ -167,10 +167,10 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate, bool doFullS
   LOG("size: %f MAXLEVELS: %d \n", size, MAXLEVELS);
 
   //Call the GPUSort function, and give it the to be sorted arrays and scratch space
-  my_dev::dev_mem<uint4>  srcValues(devContext);
+  my_dev::dev_mem<uint4>  srcValues;
 
-  my_dev::dev_mem<uint> tempB(devContext), tempC(devContext),  tempD(devContext);
-  my_dev::dev_mem<char> tempE(devContext);
+  my_dev::dev_mem<uint> tempB, tempC,  tempD;
+  my_dev::dev_mem<char> tempE;
   //The generalBuffer1 has size uint*4*N*3 = uint*12*N
   int genBufOffset2 = 0;
 
@@ -228,9 +228,9 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate, bool doFullS
 
   if(!doFullShuffle)
   {
-    my_dev::dev_mem<real4>  real4Buffer1(devContext);
-    my_dev::dev_mem<ullong> ullBuffer(devContext);
-    my_dev::dev_mem<float>  realBuffer(devContext);
+    my_dev::dev_mem<real4>  real4Buffer1;
+    my_dev::dev_mem<ullong> ullBuffer;
+    my_dev::dev_mem<float>  realBuffer;
 
     real4Buffer1.cmalloc_copy(tree.generalBuffer1, tree.n, 0);
     ullBuffer.   cmalloc_copy(tree.generalBuffer1, tree.n, 0);
@@ -246,10 +246,10 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate, bool doFullS
   {
     //Call the reorder data functions
     //generalBuffer is always at least 3xfloat4*N
-    my_dev::dev_mem<real4>    real4Buffer1(devContext);
-    my_dev::dev_mem<float2>   float2Buffer(devContext);
-    my_dev::dev_mem<ullong>   ullBuffer(devContext);
-    my_dev::dev_mem<float>    realBuffer(devContext);
+    my_dev::dev_mem<real4>    real4Buffer1;
+    my_dev::dev_mem<float2>   float2Buffer;
+    my_dev::dev_mem<ullong>   ullBuffer;
+    my_dev::dev_mem<float>    realBuffer;
     real4Buffer1.cmalloc_copy(tree.generalBuffer1, tree.n, 0);
     float2Buffer.cmalloc_copy(tree.generalBuffer1, tree.n, 0);
     ullBuffer.   cmalloc_copy(tree.generalBuffer1, tree.n, 0);

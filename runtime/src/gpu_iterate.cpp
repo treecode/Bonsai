@@ -58,6 +58,51 @@ void octree::makeLET()
 
 
 
+void octree::iterate_setup(IterationData &idata) {
+
+  if(execStream == NULL)          execStream          = new my_dev::dev_stream(0);
+  if(gravStream == NULL)          gravStream          = new my_dev::dev_stream(0);
+  if(copyStream == NULL)          copyStream          = new my_dev::dev_stream(0);
+  if(LETDataToHostStream == NULL) LETDataToHostStream = new my_dev::dev_stream(0);
+
+  CU_SAFE_CALL(cudaEventCreate(&startLocalGrav));
+  CU_SAFE_CALL(cudaEventCreate(&endLocalGrav));
+  CU_SAFE_CALL(cudaEventCreate(&startRemoteGrav));
+  CU_SAFE_CALL(cudaEventCreate(&endRemoteGrav));
+
+  devContext.writeLogEvent("Start execution\n");
+
+  //Setup of the multi-process particle distribution, initially it should be equal
+  #ifdef USE_MPI
+    if(nProcs > 1)
+    {
+      for(int i=0; i < 5; i++)
+      {
+        double notUsed     = 0;
+        int maxN = 0, minN = 0;
+        sort_bodies(localTree, true, true); //Initial sort to get global boundaries to compute keys
+        parallelDataSummary(localTree, 30, 30, notUsed, notUsed, true); //1 for all process, equal part distribution
+
+        //Check if the min/max are within certain percentage
+        MPI_Allreduce(&localTree.n, &maxN, 1, MPI_INT, MPI_MAX, mpiCommWorld);
+        MPI_Allreduce(&localTree.n, &minN, 1, MPI_INT, MPI_MIN, mpiCommWorld);
+
+        //Compute difference in percent
+        int perc = (int)(100*(maxN-minN)/(double)minN);
+
+        if(procId == 0)
+        {
+          LOGF(stderr, "Particle setup iteration: %d Min: %d  Max: %d Diff: %d %%\n", i, minN, maxN, perc);
+        }
+        if(perc < 10) break; //We're happy if difference is less than 10%
+      }
+    }
+  #endif
+
+  letRunning      = false;
+  idata.startTime = get_time();
+}
+
 // returns true if this iteration is the last (t_current >= t_end), false otherwise
 bool octree::iterate_once(IterationData &idata) {
     double t1 = 0;
@@ -237,9 +282,6 @@ bool octree::iterate_once(IterationData &idata) {
     lastLocal = ms;
     lastTotal = ms + msLET;    
 
-//    lastLocal = 1;//JB1 REMOVE TODO NOTE
-//    lastTotal = 1;//JB1 REMOVE TODO NOTE
-
     //Corrector
     tTempTime = get_time();
     devContext.startTiming(execStream->s());
@@ -359,50 +401,6 @@ bool octree::iterate_once(IterationData &idata) {
 }
 
 
-void octree::iterate_setup(IterationData &idata) {
-  
-  if(execStream == NULL)          execStream          = new my_dev::dev_stream(0);
-  if(gravStream == NULL)          gravStream          = new my_dev::dev_stream(0);
-  if(copyStream == NULL)          copyStream          = new my_dev::dev_stream(0);
-  if(LETDataToHostStream == NULL) LETDataToHostStream = new my_dev::dev_stream(0);
-
-  CU_SAFE_CALL(cudaEventCreate(&startLocalGrav));
-  CU_SAFE_CALL(cudaEventCreate(&endLocalGrav));
-  CU_SAFE_CALL(cudaEventCreate(&startRemoteGrav));
-  CU_SAFE_CALL(cudaEventCreate(&endRemoteGrav));
-
-  devContext.writeLogEvent("Start execution\n");
-  
-  //Setup of the multi-process particle distribution, initially it should be equal
-  #ifdef USE_MPI
-    if(nProcs > 1)
-    {
-      for(int i=0; i < 5; i++)
-      {
-        double notUsed     = 0;
-        int maxN = 0, minN = 0;
-        sort_bodies(localTree, true, true); //Initial sort to get global boundaries to compute keys
-        parallelDataSummary(localTree, 30, 30, notUsed, notUsed, true); //1 for all process, equal part distribution
-
-        //Check if the min/max are within certain percentage
-        MPI_Allreduce(&localTree.n, &maxN, 1, MPI_INT, MPI_MAX, mpiCommWorld);
-        MPI_Allreduce(&localTree.n, &minN, 1, MPI_INT, MPI_MIN, mpiCommWorld);
-
-        //Compute difference in percent
-        int perc = (int)(100*(maxN-minN)/(double)minN);
-
-        if(procId == 0)
-        {
-          LOGF(stderr, "Particle setup iteration: %d Min: %d  Max: %d Diff: %d %%\n", i, minN, maxN, perc);
-        }
-        if(perc < 10) break; //We're happy if difference is less than 10%
-      }
-    }
-  #endif
-
-  letRunning      = false;
-  idata.startTime = get_time();
-}
 
 void octree::iterate_teardown(IterationData &idata) {
   if(execStream != NULL) {
@@ -480,7 +478,7 @@ void octree::predict(tree_structure &tree)
     //in block step we need syncs and global communication
     if(tree.n == 0)
     {
-      t_previous =  t_current;
+      t_previous  =  t_current;
       t_current  += timeStep;
     }
     else
@@ -494,14 +492,11 @@ void octree::predict(tree_structure &tree)
           t_current = std::min(t_current, tnext[i]);
       }
     }
-//    tree.activeGrpList.zeroMem();      //Reset the active grps
   #else
     static int temp = 0;
     t_previous =  t_current;
-    if(temp > 0)
-      t_current  += timeStep;
-    else
-       temp = 1;
+    if(temp > 0) t_current  += timeStep;
+    else	      temp 		 = 1;
   #endif
 
 
@@ -518,19 +513,7 @@ void octree::predict(tree_structure &tree)
   predictParticles.set_arg<cl_mem>(8, tree.bodies_Pvel.p());  
   predictParticles.setWork(tree.n, 128);
   predictParticles.execute(execStream->s());
-  
 
-  #ifdef DO_BLOCK_TIMESTEP
-    //Compact the valid list to get a list of valid groups
-//    gpuCompact(devContext, tree.activeGrpList, tree.active_group_list,
-//              tree.n_groups, &tree.n_active_groups);
-  #else
-//    tree.n_active_groups = tree.n_groups;
-  #endif
-
-
-//  LOG("t_previous: %lg t_current: %lg dt: %lg Active groups: %d \n",
-//         t_previous, t_current, t_current-t_previous, tree.n_active_groups);
   
 } //End predict
 
@@ -594,6 +577,7 @@ void octree::approximate_gravity(tree_structure &tree)
   approxGrav.set_arg<real4>(23,  tree.bodies_Ppos,   4, "texBody");
     
   approxGrav.setWork(-1, NTHREAD, nBlocksForTreeWalk);
+//  approxGrav.setWork(-1, 32, 1);
 
   cudaEventRecord(startLocalGrav, gravStream->s());
   approxGrav.execute(gravStream->s());  //First half
@@ -885,8 +869,8 @@ void octree::correct(tree_structure &tree)
 
 
 
-  my_dev::dev_mem<float2>  float2Buffer(devContext);
-  my_dev::dev_mem<real4>   real4Buffer1(devContext);
+  my_dev::dev_mem<float2>  float2Buffer;
+  my_dev::dev_mem<real4>   real4Buffer1;
 
   int memOffset = float2Buffer.cmalloc_copy(tree.generalBuffer1, tree.n, 0);
       memOffset = real4Buffer1.cmalloc_copy(tree.generalBuffer1, tree.n, memOffset);
@@ -907,14 +891,6 @@ void octree::correct(tree_structure &tree)
   correctParticles.set_arg<cl_mem>(12, tree.oriParticleOrder.p());
   correctParticles.set_arg<cl_mem>(13, real4Buffer1.p());
   correctParticles.set_arg<cl_mem>(14, float2Buffer.p());
-
-#if 1
-  //Buffers required for storing the position of selected particles
-  correctParticles.set_arg<cl_mem>(15, tree.bodies_ids.p());
-  correctParticles.set_arg<cl_mem>(16, specialParticles.p());
-
-#endif
-
   correctParticles.setWork(tree.n, 128);
   correctParticles.execute(execStream->s());
  
@@ -962,6 +938,13 @@ double octree::compute_energies(tree_structure &tree)
                                  vel.y*vel.y +
                                  vel.z*vel.z);
       hEpot += tree.bodies_pos[i].w*0.5*tree.bodies_acc0[i].w;
+      //if(i < 128)
+      {
+    	  LOGF(stderr,"%d\tAcc: %f %f %f %f\tPx: %f\tVx: %f\tkin: %f\tpot: %f\n", i,
+    			  tree.bodies_acc0[i].x, tree.bodies_acc0[i].y, tree.bodies_acc0[i].z,
+    			  tree.bodies_acc0[i].w, tree.bodies_pos[i].x, tree.bodies_vel[i].x,
+    			  hEkin, hEpot);
+      }
     }
     MPI_Barrier(mpiCommWorld);
     double hEtot = hEpot + hEkin;
@@ -970,7 +953,7 @@ double octree::compute_energies(tree_structure &tree)
 
   //float2 energy : x is kinetic energy, y is potential energy
   int blockSize = NBLOCK_REDUCE ;
-  my_dev::dev_mem<double2>  energy(devContext);
+  my_dev::dev_mem<double2>  energy;
   energy.cmalloc_copy(tree.generalBuffer1, blockSize, 0);
   
 

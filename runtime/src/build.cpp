@@ -75,28 +75,13 @@ void octree::allocateParticleMemory(tree_structure &tree)
 
   //General memory buffers
 
-  //Set the context for the memory
-  this->tnext.setContext(devContext);
-  this->tnext.ccalloc(NBLOCK_REDUCE,false);
-
-  this->nactive.setContext(devContext);
-  this->nactive.ccalloc(NBLOCK_REDUCE,false);
-
-  this->devMemRMIN.setContext(devContext);
-  this->devMemRMIN.cmalloc(NBLOCK_BOUNDARY, false);
-
-  this->devMemRMAX.setContext(devContext);
-  this->devMemRMAX.cmalloc(NBLOCK_BOUNDARY, false);
-
-  this->devMemCounts.setContext(devContext);
-  this->devMemCounts.cmalloc(NBLOCK_PREFIX, false);
-
-  this->devMemCountsx.setContext(devContext);
+  //Allocate shared buffers
+  this->tnext.		  ccalloc(NBLOCK_REDUCE,false);
+  this->nactive.	  ccalloc(NBLOCK_REDUCE,false);
+  this->devMemRMIN.   cmalloc(NBLOCK_BOUNDARY, false);
+  this->devMemRMAX.	  cmalloc(NBLOCK_BOUNDARY, false);
+  this->devMemCounts. cmalloc(NBLOCK_PREFIX, false);
   this->devMemCountsx.cmalloc(NBLOCK_PREFIX, true);
-
-  this->specialParticles.setContext(devContext);
-  this->specialParticles.cmalloc(16, true);
-
 
   if(mpiGetNProcs() > 1)
   {
@@ -140,7 +125,7 @@ void octree::reallocateParticleMemory(tree_structure &tree)
   tree.bodies_time.cresize(n_bodies, reduce);    //ccalloc -> init to 0
   
   //Density
-  const int oldHsize = tree.bodies_h.get_size();
+//  const int oldHsize = tree.bodies_h.get_size();
   tree.bodies_h.cresize(n_bodies, reduce);
   tree.bodies_dens.cresize(n_bodies, reduce);
   
@@ -223,11 +208,11 @@ void octree::build (tree_structure &tree) {
   /******** create memory buffers **********/
 
 
-  my_dev::dev_mem<uint>   validList(devContext);
-  my_dev::dev_mem<uint>   compactList(devContext);
-  my_dev::dev_mem<uint>   levelOffset(devContext);
-  my_dev::dev_mem<uint>   maxLevel(devContext);
-  my_dev::dev_mem<uint4>  node_key(devContext);
+  my_dev::dev_mem<uint>   validList;
+  my_dev::dev_mem<uint>   compactList;
+  my_dev::dev_mem<uint>   levelOffset;
+  my_dev::dev_mem<uint>   maxLevel;
+  my_dev::dev_mem<uint4>  node_key;
 
 
 

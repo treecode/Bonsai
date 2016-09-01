@@ -1333,10 +1333,10 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
   static std::vector<uint>  nParticlesPerDomain(nProcs);
   static std::vector<uint2> domainId           (nProcs);
 
-  my_dev::dev_mem<uint2>  validList2(devContext);
-  my_dev::dev_mem<uint2>  validList3(devContext);
-  my_dev::dev_mem<uint4>  boundariesGPU(devContext);
-  my_dev::dev_mem<uint>   idList    (devContext);
+  my_dev::dev_mem<uint2>  validList2;
+  my_dev::dev_mem<uint2>  validList3;
+  my_dev::dev_mem<uint4>  boundariesGPU;
+  my_dev::dev_mem<uint>   idList;
   int tempOffset1 = validList2.   cmalloc_copy(localTree.generalBuffer1, localTree.n, 0);
       tempOffset1 = validList3.   cmalloc_copy(localTree.generalBuffer1, localTree.n, tempOffset1);
   int tempOffset  = idList.       cmalloc_copy(localTree.generalBuffer1, localTree.n, tempOffset1);
@@ -1363,8 +1363,8 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
   execStream->sync();
 
   //After this we don't need boundariesGPU anymore so can overwrite that memory space
-  my_dev::dev_mem<uint>   outputValues(devContext);
-  my_dev::dev_mem<uint2>  outputKeys  (devContext);
+  my_dev::dev_mem<uint>   outputValues;
+  my_dev::dev_mem<uint2>  outputKeys;
   tempOffset = outputValues.cmalloc_copy(localTree.generalBuffer1, nProcs, tempOffset );
   tempOffset = outputKeys  .cmalloc_copy(localTree.generalBuffer1, nProcs, tempOffset );
 
@@ -1432,7 +1432,7 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
         }
 
 
-        my_dev::dev_mem<bodyStruct>  bodyBuffer(devContext);
+        my_dev::dev_mem<bodyStruct>  bodyBuffer;
         int memOffset1 = bodyBuffer.cmalloc_copy(localTree.generalBuffer1, stepSize, tempOffset1);
 
         double tx  = get_time();
@@ -1484,6 +1484,7 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
           }//if items > 0
         }//end for
 
+
         tExtract = get_time();
 
         LOGF(stderr,"Exported particles from device. In one go: %d  Took: %lg Size: %ld  MB/s: %lg \n",
@@ -1499,7 +1500,7 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
         //this can be done in parallel with exchange operation to hide some time
 
         //One integer for counting
-        my_dev::dev_mem<uint>  atomicBuff(devContext);
+        my_dev::dev_mem<uint>  atomicBuff;
         memOffset1 = atomicBuff.cmalloc_copy(localTree.generalBuffer1,1, tempOffset1);
         atomicBuff.zeroMem();
 
@@ -1691,7 +1692,7 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree
   int spaceInIntSize    = 3*(memSize)*4;
   int stepSize          = spaceInIntSize / (sizeof(bodyStruct) / sizeof(int));
 
-  my_dev::dev_mem<bodyStruct>  bodyBuffer(devContext);
+  my_dev::dev_mem<bodyStruct>  bodyBuffer;
 
   int memOffset1 = bodyBuffer.cmalloc_copy(localTree.generalBuffer1, stepSize, 0);
 
@@ -1710,6 +1711,16 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree
           bodyBuffer[cpIdx] = recv_buffer3[insertOffset+cpIdx]; //TODO can't we just copy directly from recv_buffer3?
 
       bodyBuffer.h2d(items);
+
+//      for(int z=0; z<items; z++)
+//      {
+//    	  LOGF(stderr,"RECV: %d\t%f %f %f %f\t%f %f %f %f\n",
+//      		i,
+//      		bodyBuffer[z].Ppos.x,bodyBuffer[z].Ppos.y,bodyBuffer[z].Ppos.z,bodyBuffer[z].Ppos.w,
+//      		bodyBuffer[z].Pvel.x,bodyBuffer[z].Pvel.y,bodyBuffer[z].Pvel.z,bodyBuffer[z].Pvel.w);
+//
+//      }
+
 
       //Start the kernel that puts everything in place
       insertNewParticlesSFC.set_arg<int>(0,    &nToSend);
@@ -1747,6 +1758,18 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree
   devContext.writeLogEvent(buff5);
 
 #endif
+
+//  localTree.bodies_Ppos.d2h();
+//  localTree.bodies_pos.d2h();
+
+//  for(int i=0; i < tree.n; i++)
+//  {
+//	  LOGF(stderr,"CURRENT: %d %f %f  \t %f %f\n",
+//			  i,
+//			  localTree.bodies_pos[i].x, localTree.bodies_pos[i].y,
+//			  localTree.bodies_Ppos[i].x, localTree.bodies_Ppos[i].y);
+//  }
+
 
   return 0;
 }
