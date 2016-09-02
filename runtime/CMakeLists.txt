@@ -66,9 +66,11 @@ option(CUDA_KEEP_INTERMEDIATE_FILES
 FIND_PACKAGE(CUDA REQUIRED)
 
 add_definitions(-std=c++11)
+set(EXTRA_MPI_LINK_FLAGS)
 if (USE_MPI)
   add_definitions(-DUSE_MPI)
   add_definitions(-fPIE -Wno-main)
+  set(EXTRA_MPI_LINK_FLAGS   -pie -rdynamic)
 if (USE_MPIMT)
   add_definitions(-D_MPIMT)
 endif (USE_MPIMT)
@@ -300,16 +302,19 @@ cuda_add_executable(${BINARY_NAME}
   ${PROFFILES}
   OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING} ${KEEP} -Xcompiler="-fPIE"
   )
-add_executable(${BINARY_CLR_NAME}
-  ${CLR_CCFILES}
-  )
-add_executable(${BINARY_IO_NAME}
-  ${IO_CCFILES}
-  )
 
-add_executable(bonsai_driver
-  src/driver.cpp
-  )
+if (USE_MPI)  
+    add_executable(${BINARY_CLR_NAME}
+      ${CLR_CCFILES}
+      )
+    add_executable(${BINARY_IO_NAME}
+      ${IO_CCFILES}
+      )
+
+    add_executable(bonsai_driver
+      src/driver.cpp
+      )
+endif(USE_MPI)
 
 if (USE_GALACTICS OR USE_GALACTICS_IFORT)
   add_definitions("-DGALACTICS")
@@ -322,10 +327,13 @@ else(USE_GALACTICS OR USE_GALACTICS_IFORT)
   target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES})
 endif(USE_GALACTICS OR USE_GALACTICS_IFORT)
 
-target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES} -lrt -pie -rdynamic)
-target_link_libraries(${BINARY_CLR_NAME}  -lrt -pie -rdynamic)
-target_link_libraries(${BINARY_IO_NAME}  -lrt -pie -rdynamic)
-target_link_libraries(bonsai_driver -ldl -lrt -pie -rdynamic)
+#target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES} -lrt -pie -rdynamic)
+target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES} -lrt ${EXTRA_MPI_LINK_FLAGS})
+if (USE_MPI)
+    target_link_libraries(${BINARY_CLR_NAME}  -lrt ${EXTRA_MPI_LINK_FLAGS})
+    target_link_libraries(${BINARY_IO_NAME}   -lrt ${EXTRA_MPI_LINK_FLAGS})
+    target_link_libraries(bonsai_driver -ldl  -lrt ${EXTRA_MPI_LINK_FLAGS})
+endif(USE_MPI)
 
 #copy test data file
 file(COPY ${CMAKE_SOURCE_DIR}/../inputExamples/model3_child_compact.tipsy DESTINATION ${CMAKE_BINARY_DIR})

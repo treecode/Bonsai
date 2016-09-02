@@ -32,7 +32,8 @@
         extern void prependrankLOGF(const char *fmt, ...);
         #define LOGF(file, ...) {if (ENABLE_RUNTIME_LOG) if(PREPEND_RANK)  prependrankLOGF(__VA_ARGS__); else fprintf(file, __VA_ARGS__);}
   #else
-        #define LOGF(file, fmt, ...) {if (ENABLE_RUNTIME_LOG) fprintf(file, fmt,__VA_ARGS__);}
+        //##__VA_ARGS__ is for GCC only, if using something else use __VA_ARGS__ and try to fix the locations where VA_ARGS is empty
+        #define LOGF(file, fmt, ...) {if (ENABLE_RUNTIME_LOG) fprintf(file, fmt,##__VA_ARGS__);} 
   #endif
 
 

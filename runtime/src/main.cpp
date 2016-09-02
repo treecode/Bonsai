@@ -217,9 +217,9 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 
 #define ADDUSAGE(line) {{std::stringstream oss; oss << line; opt.addUsage(oss.str());}}
 
-		ADDUSAGE(" ");
-		ADDUSAGE("Usage");
-		ADDUSAGE(" ");
+
+ 		ADDUSAGE("Bonsai command line usage:");
+ 		ADDUSAGE("                  ");
 		ADDUSAGE(" -h  --help             Prints this help ");
 		ADDUSAGE(" -i  --infile #         Input snapshot filename in Tipsy format");
 		ADDUSAGE(" -f  --bonsaifile #     Input snapshot filename in Bonsai format [muse be used with --usempiio]");
@@ -301,9 +301,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     opt.setOption( "rmdist");
     opt.setOption( "valueadd");
     opt.setOption( "reducebodies");
-#ifdef USE_DUST
-    opt.setOption( "reducedust");
-#endif /* USE_DUST */
+
 #if ENABLE_LOG
     opt.setFlag("log");
     opt.setFlag("prepend-rank");
@@ -323,6 +321,8 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     if( ! opt.hasOptions() ||  opt.getFlag( "help" ) || opt.getFlag( 'h' ) )
     {
       /* print usage if no options or requested help */
+      
+
       opt.printUsage();
       ::exit(0);
     }
@@ -458,6 +458,8 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   }
 
   int mpiInitialized = 0;
+  
+#ifdef USE_MPI  
   MPI_Initialized(&mpiInitialized);
   MPI_Comm mpiCommWorld = MPI_COMM_WORLD;
   if (!mpiInitialized)
@@ -476,9 +478,11 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     //MPI environment initialized by the driver program
     mpiCommWorld = comm;
   }
+#else
+    MPI_Comm mpiCommWorld = 0;
+#endif
 
-  if (mpiRenderMode)
-    assert(mpiInitialized);
+  if (mpiRenderMode) assert(mpiInitialized); //The external renderer requires a working MPI environment
 
   //Create the octree class and set the properties
   octree *tree = new octree(
@@ -643,6 +647,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 
   if (!bonsaiFileName.empty() && useMPIIO)
   {
+#ifdef USE_MPI        
     //Read a BonsaiIO file
     const MPI_Comm &comm = mpiCommWorld;
     lReadBonsaiFile(
@@ -655,6 +660,9 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
         procId, nProcs, comm,
         restartSim,
         reduce_bodies_factor);
+#else
+    fprintf(stderr,"Usage of these options requires to code to be built with MPI support!\n"); exit(0);
+#endif      
   }
   else if(restartSim)
   {

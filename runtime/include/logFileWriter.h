@@ -8,7 +8,8 @@
 #ifdef USE_MPI
   #include <mpi.h>
 #else
-  #define MPI_Comm int
+//  #define MPI_Comm int
+    typedef int MPI_Comm;
 #endif
 
 struct LOGFILEWRITER

@@ -352,10 +352,10 @@ bool octree::iterate_once(IterationData &idata) {
 
     if (useMPIIO)
     {
-      if (mpiRenderMode)
-        dumpDataMPI();
-      else
-        dumpData();
+#ifdef USE_MPI
+      if (mpiRenderMode) dumpDataMPI(); //To renderer process
+      else               dumpData();    //To disk
+#endif      
     }
     else if (snapshotIter > 0)
     {

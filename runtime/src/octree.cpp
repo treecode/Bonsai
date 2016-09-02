@@ -121,6 +121,7 @@ void octree::terminateIO() const
 }
 
 
+#ifdef USE_MPI
 /*
  *
  * Send the particle data over MPI to another process.
@@ -246,6 +247,8 @@ void octree::dumpDataMPI()
     }
   }//if (t_current >= nextQuickDump && quickDump > 0)
 }
+
+
 
 
 /*
@@ -401,7 +404,7 @@ void octree::dumpData()
   }
 }
 
-
+#endif
 
 void octree::write_snapshot_per_process(real4 *bodyPositions, real4 *bodyVelocities, ullong* bodyIds,
                                         int n, string fileName, float time)
