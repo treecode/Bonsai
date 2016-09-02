@@ -511,7 +511,6 @@ KERNEL_DECLARE(gpu_extractOutOfDomainParticlesAdvancedSFC2)(
   const int nExtraFloats 	  = ((nExtractThisBlock*sizeof(bodyStruct)) -
 		  	  	  	  	  	    (nLoops*blockDim.x*sizeof(float4))) / sizeof(float);
 
-  startOut = 0;
   float *shdata = (float*)&shdata4[nLoops*blockDim.x];
   float *output = (float*)&output4[nLoops*blockDim.x];
 
@@ -520,7 +519,7 @@ KERNEL_DECLARE(gpu_extractOutOfDomainParticlesAdvancedSFC2)(
   {
 	  if(threadIdx.x + i < nExtraFloats)
 	  {
-		  output[i + threadIdx.x] = shdata[threadIdx.x  + startOut];
+		  output[i + threadIdx.x] = shdata[threadIdx.x  + i];
 	  }
   }
 
