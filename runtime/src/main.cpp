@@ -664,28 +664,12 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     fprintf(stderr,"Usage of these options requires to code to be built with MPI support!\n"); exit(0);
 #endif      
   }
-  else if(restartSim)
+  else if ((nPlummer == -1 && nSphere == -1  && nCube == -1 && !diskmode && nMilkyWay == -1) || restartSim)
   {
-    //Restart the simulation from a tipsy file
-    //The input snapshot file are many files with each process reading its own particles
-    read_tipsy_file_parallel(mpiCommWorld, bodyPositions, bodyVelocities, bodyIDs, eps, fileName,
-                             procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
-                             dustPositions, dustVelocities, dustIDs,
-                             reduce_bodies_factor, reduce_dust_factor, true);
-  }
-  else if (nPlummer == -1 && nSphere == -1  && nCube == -1 && !diskmode && nMilkyWay == -1)
-  {
-    //Process 0 reads the file and sends chunks to the other processes
-    if(procId == 0)
-    {
-      read_tipsy_file_parallel(mpiCommWorld, bodyPositions, bodyVelocities, bodyIDs, eps, fileName,
-                               procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
-                               dustPositions, dustVelocities, dustIDs, reduce_bodies_factor, reduce_dust_factor, false);
-    }
-    else
-    {
-      tree->ICRecv(0, bodyPositions, bodyVelocities,  bodyIDs);
-    }
+    float sTime = 0;
+    tree->fileIO->readFile(mpiCommWorld, bodyPositions, bodyVelocities, bodyIDs, fileName,
+                           procId, nProcs, sTime, reduce_bodies_factor, restartSim);
+    tree->set_t_current((float) sTime);
     #if USE_MPI
         float tCurrent = tree->get_t_current();
         MPI_Bcast(&tCurrent, 1, MPI_FLOAT, 0,mpiCommWorld);
@@ -851,22 +835,21 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
           const int n           = ioSharedData.nBodies;
           const float t_current = ioSharedData.t_current;
 
+          bool distributed = true;
           string fileName; fileName.resize(256);
-          sprintf(&fileName[0], "%s_%010.4f", snapshotFile.c_str(), t_current);
+          sprintf(&fileName[0], "%s_%010.4f-%d", snapshotFile.c_str(), t_current, procId);
+
 
           if(nProcs <= 16)
           {
-            tree->write_dumbp_snapshot_parallel(ioSharedData.Pos, ioSharedData.Vel,
-                ioSharedData.IDs, n, fileName.c_str(), t_current) ;
+              distributed = false;
+              sprintf(&fileName[0], "%s_%010.4f", snapshotFile.c_str(), t_current);
+          }
 
-          }
-          else
-          {
-            sprintf(&fileName[0], "%s_%010.4f-%d", snapshotFile.c_str(), t_current, procId);
-            tree->write_snapshot_per_process(ioSharedData.Pos, ioSharedData.Vel,
-                ioSharedData.IDs, n,
-                fileName.c_str(), t_current) ;
-          }
+          tree->fileIO->writeFile(ioSharedData.Pos, ioSharedData.Vel,
+                                  ioSharedData.IDs, n, fileName.c_str(), t_current,
+                                  procId, nProcs, mpiCommWorld, distributed) ;
+
           ioSharedData.free();
           assert(ioSharedData.writingFinished == false);
           ioSharedData.writingFinished = true;

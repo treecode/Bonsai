@@ -122,6 +122,7 @@ set (CCFILES
   src/sort_bodies_gpu.cpp
   src/log.cpp
   src/hostConstruction.cpp
+  src/tipsyIO.cpp
   )
 
 set (HFILES

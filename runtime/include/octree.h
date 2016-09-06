@@ -33,6 +33,7 @@
 #include <sys/types.h>
 #include "logFileWriter.h"
 #include "SharedMemory.h"
+#include "tipsyIO.h"
 
 #ifdef USE_MPI
   #include "MPIComm.h"
@@ -429,6 +430,10 @@ protected:
   ///////////
 
 public:
+
+   tipsyIO *fileIO;
+
+
    double get_time();
    
    void resetEnergy() {store_energy_flag = true;}
@@ -851,6 +856,9 @@ public:
 #endif
 
 
+    fileIO = new tipsyIO();
+
+
 #ifdef WIN32
     // initialize windows timer
     QueryPerformanceFrequency(&sysTimerFreq);
@@ -865,6 +873,7 @@ public:
     delete[] curSysState;
 
     delete logFileWriter;
+    delete fileIO;
 
     if(globalGrpTreeCntSize) delete[] globalGrpTreeCntSize;
     if(globalGrpTreeCount) delete[] globalGrpTreeCount;
