@@ -185,7 +185,7 @@ void WOGManager::reshape(int width, int height)
 
 void WOGManager::remove_particles()
 {
-  tree->removeParticles(deletion_radius_square, user_particles);
+  tree->removeParticles(deletion_radius_square, user_particles, number_of_users);
 }
 
 json WOGManager::execute_json(std::string const& json_request_string)

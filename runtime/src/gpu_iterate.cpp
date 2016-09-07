@@ -532,12 +532,12 @@ void octree::removeGalaxy(int user_id)
   resetEnergy();
 }
 
-void octree::removeParticles(real deletion_radius_square, my_dev::dev_mem<uint> &user_particles)
+void octree::removeParticles(real deletion_radius_square, my_dev::dev_mem<uint> &user_particles, int number_of_users)
 {
 #ifdef USE_THRUST
 
   user_particles.h2d();
-  remove_particles(this->localTree, deletion_radius_square, user_particles);
+  remove_particles(this->localTree, deletion_radius_square, user_particles, number_of_users);
   user_particles.d2h();
 
   // Resize preserves original data

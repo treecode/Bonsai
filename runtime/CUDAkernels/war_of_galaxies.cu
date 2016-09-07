@@ -17,31 +17,40 @@
 /// Functor return true if position is out of sphere
 struct OutOfSphereChecker
 {
-  OutOfSphereChecker(real deletion_radius_square, thrust::device_ptr<uint> user_particles)
-   : deletion_radius_square(deletion_radius_square), user_particles(user_particles)
+  OutOfSphereChecker(real deletion_radius_square)
+   : deletion_radius_square(deletion_radius_square)
   {}
 
   __device__
   bool operator()(thrust::tuple<real4, real4, int> const& t) const
   {
     real4 position = thrust::get<0>(t);
-    int user_id = thrust::get<2>(t) % 10;
-    if (position.x * position.x + position.y * position.y + position.z * position.z > deletion_radius_square and user_id != 9)
-    {
-      atomicDec(user_particles.get() + user_id, UINT_MAX);
-      return true;
-    }
-    return false;
+    return position.x * position.x + position.y * position.y + position.z * position.z > deletion_radius_square
+      and thrust::get<2>(t) % 10 != 9;
   }
 
   real deletion_radius_square;
+};
 
-  thrust::device_ptr<uint> user_particles;
+/// Functor return true if modules is equal
+struct EqualToModulus10
+{
+  EqualToModulus10(int user_id)
+   : user_id(user_id)
+  {}
+
+  __device__
+  bool operator()(int i) const
+  {
+    return i % 10 == user_id;
+  }
+
+  int user_id;
 };
 
 // Remove particles out of sphere
 extern "C" void remove_particles(tree_structure &tree,
-  real deletion_radius_square, my_dev::dev_mem<uint> &user_particles)
+  real deletion_radius_square, my_dev::dev_mem<uint> &user_particles, int number_of_users)
 {
   thrust::device_ptr<real4> thrust_pos = thrust::device_pointer_cast(tree.bodies_pos.raw_p());
   thrust::device_ptr<real4> thrust_vel = thrust::device_pointer_cast(tree.bodies_vel.raw_p());
@@ -55,11 +64,15 @@ extern "C" void remove_particles(tree_structure &tree,
         thrust::device,
         thrust::make_zip_iterator(thrust::make_tuple(thrust_pos, thrust_vel, thrust_ids)),
         thrust::make_zip_iterator(thrust::make_tuple(thrust_pos + tree.n, thrust_vel + tree.n, thrust_ids + tree.n)),
-        OutOfSphereChecker(deletion_radius_square, thrust_user_particles)
+        OutOfSphereChecker(deletion_radius_square)
       );
 
     // Set new number of particles
     tree.n = thrust::get<0>(new_end.get_iterator_tuple()) - thrust_pos;
+
+    // Update user particles
+    for (int i(0); i != number_of_users; ++i)
+      thrust_user_particles[i] = thrust::count_if(thrust_ids, thrust_ids + tree.n, EqualToModulus10(i));
   }
   catch(thrust::system_error &e)
   {
