@@ -271,7 +271,8 @@ json WOGManager::execute_json(std::string const& json_request_string)
     tree->releaseGalaxy(galaxy);
 	user_particles[user_id] += galaxy.pos.size();
 
-	json_response["response"] = "Galaxy with " + std::to_string(galaxy.pos.size()) + " particles of user " + std::to_string(user_id) + " was released.";
+	std::cout << "Galaxy with " + std::to_string(galaxy.pos.size()) + " particles of user " + std::to_string(user_id) + " was released.";
+	json_response["response"] = task;
   }
   else if (task == "remove")
   {
@@ -285,21 +286,27 @@ json WOGManager::execute_json(std::string const& json_request_string)
     tree->removeGalaxy(user_id);
     user_particles[user_id] = 0;
 
-	json_response["response"] = "All particles of user " + std::to_string(user_id) + " were removed.";
+	std::cout << "All particles of user " + std::to_string(user_id) + " were removed.";
+	json_response["response"] = task;
   }
   else if (task == "report")
   {
-    // Simulation time in MYears, for factor see renderloop.cpp, search for MYears
-	json_response["simulation time"] = tree->getTime() * 9.78;
-	json_response["user 0"] = user_particles[0];
-	json_response["user 1"] = user_particles[1];
-	json_response["user 2"] = user_particles[2];
-	json_response["user 3"] = user_particles[3];
+	std::cout << "Reporting current status.";
+	json_response["response"] = task;
   }
   else
   {
     throw std::runtime_error("Unknown task: " + task);
   }
+
+  // Always return the status information
+  // Simulation time in MYears, for factor see renderloop.cpp, search for MYears
+  json_response["simulation_time"] = tree->getTime() * 9.78;
+  json up = json::make_array<1>(4,0);
+  for (int ind = 0; ind < 4; ind++) 
+    up[ind] = user_particles[ind];
+  json_response["user_particles"] = up;
+  std::cout << "user_particles: " << up;
 
   return json_response;
 }
