@@ -302,8 +302,8 @@ json WOGManager::execute_json(std::string const& json_request_string)
   // Always return the status information
   // Simulation time in MYears, for factor see renderloop.cpp, search for MYears
   json_response["simulation_time"] = tree->getTime() * 9.78;
-  json up = json::make_array<1>(4,0);
-  for (int ind = 0; ind < 4; ind++) 
+  json up = json::make_array<1>(number_of_users,0);
+  for (int ind = 0; ind < number_of_users; ind++) 
     up[ind] = user_particles[ind];
   json_response["user_particles"] = up;
   std::cout << "user_particles: " << up;
