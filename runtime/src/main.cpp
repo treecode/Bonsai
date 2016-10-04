@@ -144,9 +144,6 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   vector<real4>   bodyVelocities;
   vector<ullong>  bodyIDs;
 
-  vector<real4>   dustPositions;
-  vector<real4>   dustVelocities;
-  vector<ullong>  dustIDs;
  
   float eps      = 0.05f;
   float theta    = 0.75f;
@@ -236,13 +233,13 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 		ADDUSAGE("     --snapiter #       snapshot iteration (N-body time) [" << snapshotIter << "]");
 		ADDUSAGE("     --quickdump  #     how ofter to dump quick output (N-body time) [" << quickDump << "]");
 		ADDUSAGE("     --quickratio #     which fraction of data to dump (fraction) [" << quickRatio << "]");
-    ADDUSAGE("     --noquicksync      disable syncing for quick dumping ");
-    ADDUSAGE("     --usempiio         use MPI-IO [disabled]");
+        ADDUSAGE("     --noquicksync      disable syncing for quick dumping ");
+        ADDUSAGE("     --usempiio         use MPI-IO [disabled]");
 		ADDUSAGE("     --rmdist #         Particle removal distance (-1 to disable) [" << remoDistance << "]");
 		ADDUSAGE(" -r  --rebuild #        rebuild tree every # steps [" << rebuild_tree_rate << "]");
 		ADDUSAGE("     --reducebodies #   cut down bodies dataset by # factor ");
 #ifdef USE_DUST
-    ADDUSAGE("     --reducedust #     cut down dust dataset by # factor ");
+        ADDUSAGE("     --reducedust #     cut down dust dataset by # factor ");
 #endif
 #if ENABLE_LOG
     ADDUSAGE("     --log              enable logging ");
@@ -321,18 +318,16 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     if( ! opt.hasOptions() ||  opt.getFlag( "help" ) || opt.getFlag( 'h' ) )
     {
       /* print usage if no options or requested help */
-      
-
       opt.printUsage();
       ::exit(0);
     }
 
-    if (opt.getFlag("direct")) direct = true;
-    if (opt.getFlag("restart")) restartSim = true;
-    if (opt.getFlag("displayfps")) displayFPS = true;
-    if (opt.getFlag("diskmode")) diskmode = true;
-    if (opt.getFlag("mpirendermode")) mpiRenderMode = true;
-    if(opt.getFlag("stereo"))   stereo = true;
+    if (opt.getFlag("direct"))          direct        = true;
+    if (opt.getFlag("restart"))         restartSim    = true;
+    if (opt.getFlag("displayfps"))      displayFPS    = true;
+    if (opt.getFlag("diskmode"))        diskmode      = true;
+    if (opt.getFlag("mpirendermode"))   mpiRenderMode = true;
+    if(opt.getFlag("stereo"))           stereo        = true;
 
 #if ENABLE_LOG
     if (opt.getFlag("log"))           ENABLE_RUNTIME_LOG = true;
@@ -425,23 +420,21 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   /* End overrule */
 
 
-  int NTotal, NFirst, NSecond, NThird;
-  NTotal = NFirst = NSecond = NThird = 0;
-
 #ifdef USE_OPENGL
   // create OpenGL context first, and register for interop
   initGL(argc, argv, fullScreenMode.c_str(), stereo);
-  cudaGLSetGLDevice(devID);
+  cudaGLSetGLDevice(devID); //TODO should this not be renderDev?
 #endif
 
   initTimers();
 
-  int pid = -1;
 #ifdef WIN32
-  pid = _getpid();
+  int pid = _getpid();
 #else
-  pid = (int)getpid();
+  int pid = (int)getpid();
 #endif
+
+#if 0
   //Used for profiler, note this has to be done before initing to
   //octree otherwise it has no effect...Therefore use pid instead of mpi procId
   char *gpu_prof_log;
@@ -449,70 +442,109 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   if(gpu_prof_log){
     char tmp[50];
     sprintf(tmp,"process_%d_%s",pid,gpu_prof_log);
-#ifdef WIN32
-    //        SetEnvironmentVariable("CUDA_PROFILE_LOG", tmp);
-#else
-    //        setenv("CUDA_PROFILE_LOG",tmp,1);
-    LOGF(stderr, "TESTING log on proc: %d val: %s \n", pid, tmp);
-#endif
+    #ifdef WIN32
+                SetEnvironmentVariable("CUDA_PROFILE_LOG", tmp);
+    #else
+                setenv("CUDA_PROFILE_LOG",tmp,1);
+        LOGF(stderr, "TESTING log on proc: %d val: %s \n", pid, tmp);
+    #endif
   }
+#endif
 
-  int mpiInitialized = 0;
+  int mpiInitialized =  0;
+  int procId         = -1;
+  int nProcs         = -1;
   
 #ifdef USE_MPI  
-  MPI_Initialized(&mpiInitialized);
-  MPI_Comm mpiCommWorld = MPI_COMM_WORLD;
-  if (!mpiInitialized)
-  {
-#ifdef _MPIMT
-    int provided;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
-    assert(MPI_THREAD_MULTIPLE == provided);
-#else
-    MPI_Init(&argc, &argv);
-#endif
-    shrMemPID = 0;
-  }
-  else
-  {
-    //MPI environment initialized by the driver program
-    mpiCommWorld = comm;
-  }
+      MPI_Initialized(&mpiInitialized);
+      MPI_Comm mpiCommWorld = MPI_COMM_WORLD;
+      if (!mpiInitialized)
+      {
+        #ifdef _MPIMT
+            int provided;
+            MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
+            assert(MPI_THREAD_MULTIPLE == provided);
+        #else
+            MPI_Init(&argc, &argv);
+        #endif
+        shrMemPID = 0;
+      }
+      else
+      {
+        //MPI environment initialized by the driver program
+        mpiCommWorld = comm;
+      }
+
+      MPI_Comm_size(mpiCommWorld, &nProcs);
+      MPI_Comm_rank(mpiCommWorld, &procId);
 #else
     MPI_Comm mpiCommWorld = 0;
+    procId                = 0;
+    nProcs                = 1;
+#endif
+#if ENABLE_LOG
+  PREPEND_RANK_PROCID = procId;
+  PREPEND_RANK_NPROCS = nProcs;
 #endif
 
-  if (mpiRenderMode) assert(mpiInitialized); //The external renderer requires a working MPI environment
+    if (mpiRenderMode) assert(mpiInitialized); //The external renderer requires a working MPI environment
 
-  //Create the octree class and set the properties
-  octree *tree = new octree(
-      mpiCommWorld,
-      argv, devID, theta, eps, 
-      snapshotFile, snapshotIter,  
-      quickDump, quickRatio, quickSync,
-      useMPIIO,mpiRenderMode,
-      timeStep,
-      tEnd, iterEnd, (int)remoDistance,
-      rebuild_tree_rate, direct, shrMemPID);
+
+    if(nProcs > 1)
+    {
+      logFileName.append("-");
+      char buff[16];
+      sprintf(buff,"%d-%d", nProcs, procId);
+      logFileName.append(buff);
+    }
+
+    //Use a string stream buffer, only write data at the end of the run
+    std::stringstream logStream;
+    ostream &logFile = logStream;
+
+    my_dev::context cudaContext;
+
+    if(nProcs > 1) devID = procId % getNumberOfCUDADevices();
+
+    cudaContext.create(logFile, false); //Do logging to file and enable timing (false = enabled)
+    cudaContext.createQueue(devID);
+
+    char logPretext[64];
+    sprintf(logPretext, "PROC-%05d ", procId);
+    cudaContext.setLogPreamble(logPretext);
+
+
+
+
+    //Create the octree class and set the properties
+    octree *tree = new octree(  mpiCommWorld,
+                                &cudaContext,
+                                argv, devID, theta, eps,
+                                snapshotFile, snapshotIter,
+                                quickDump, quickRatio, quickSync,
+                                useMPIIO,mpiRenderMode,
+                                timeStep,
+                                tEnd, iterEnd,
+                                rebuild_tree_rate, direct, shrMemPID);
+
+
+
 
   double tStartup = tree->get_time();
 
-  //Get parallel processing information  
-  int procId = tree->mpiGetRank();
-  int nProcs = tree->mpiGetNProcs();
 
   if (procId == 0)
   {
     //Note can't use LOGF here since MPI isn't initialized yet
     cerr << "[INIT]\tUsed settings: \n";
-    cerr << "[INIT]\tInput  filename " << fileName << endl;
-    cerr << "[INIT]\tBonsai filename " << bonsaiFileName << endl;
-    cerr << "[INIT]\tLog filename " << logFileName << endl;
-    cerr << "[INIT]\tTheta: \t\t"             << theta        << "\t\teps: \t\t"          << eps << endl;
-    cerr << "[INIT]\tTimestep: \t"          << timeStep     << "\t\ttEnd: \t\t"         << tEnd << endl;
-    cerr << "[INIT]\titerEnd: \t" << iterEnd << endl;
-    cerr << "[INIT]\tUse MPI-IO: \t" << (useMPIIO ? "YES" : "NO") << endl;
-    cerr << "[INIT]\tsnapshotFile: \t"      << snapshotFile << "\tsnapshotIter: \t" << snapshotIter << endl;
+    cerr << "[INIT]\tInput  filename "      << fileName                                                      << endl;
+    cerr << "[INIT]\tBonsai filename "      << bonsaiFileName                                                << endl;
+    cerr << "[INIT]\tLog filename "         << logFileName                                                   << endl;
+    cerr << "[INIT]\tTheta: \t\t"           << theta                << "\t\teps: \t\t"      << eps           << endl;
+    cerr << "[INIT]\tTimestep: \t"          << timeStep             << "\t\ttEnd: \t\t"     << tEnd          << endl;
+    cerr << "[INIT]\titerEnd: \t"           << iterEnd                                                       << endl;
+    cerr << "[INIT]\tUse MPI-IO: \t"        << (useMPIIO ? "YES" : "NO")                                     << endl;
+    cerr << "[INIT]\tsnapshotFile: \t"      << snapshotFile          << "\tsnapshotIter: \t" << snapshotIter << endl;
     if (useMPIIO)
     {
       cerr << "[INIT]\t  quickDump: \t"      << quickDump << "\t\tquickRatio: \t" << quickRatio << endl;
@@ -522,10 +554,8 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     cerr << "[INIT]\tRebuild tree every " << rebuild_tree_rate << " timestep\n";
 
 
-    if( reduce_bodies_factor > 1 )
-      cerr << "[INIT]\tReduce number of non-dust bodies by " << reduce_bodies_factor << " \n";
-    if( reduce_dust_factor > 1 )
-      cerr << "[INIT]\tReduce number of dust bodies by " << reduce_dust_factor << " \n";
+    if( reduce_bodies_factor > 1 ) cerr << "[INIT]\tReduce number of non-dust bodies by " << reduce_bodies_factor << " \n";
+    if( reduce_dust_factor   > 1 ) cerr << "[INIT]\tReduce number of dust bodies by " << reduce_dust_factor << " \n";
 
 #if ENABLE_LOG
     if (ENABLE_RUNTIME_LOG)
@@ -615,33 +645,6 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 #endif
 
 
-  #if ENABLE_LOG
-    #ifdef USE_MPI
-      PREPEND_RANK_PROCID = procId;
-      PREPEND_RANK_NPROCS = nProcs;
-    #endif
-  #endif
-
-
-  if(nProcs > 1)
-  {
-    logFileName.append("-");
-
-    char buff[16];
-    sprintf(buff,"%d-%d", nProcs, procId);
-    logFileName.append(buff);
-  }
-
-  //ofstream logFile(logFileName.c_str());
-  //Use a string stream buffer, only write at end of the run
-  std::stringstream logStream;
-  ostream &logFile = logStream;
-
-  tree->set_context(logFile, false); //Do logging to file and enable timing (false = enabled)
-  
-  char logPretext[64];
-  sprintf(logPretext, "PROC-%05d ", procId);
-  tree->set_logPreamble(logPretext);
 
   double tStartup2 = tree->get_time();  
 
@@ -650,16 +653,17 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 #ifdef USE_MPI        
     //Read a BonsaiIO file
     const MPI_Comm &comm = mpiCommWorld;
-    lReadBonsaiFile(
+    float tCurrent = 0;
+    tree->lReadBonsaiFile(
         bodyPositions, 
         bodyVelocities,
         bodyIDs,
-        NFirst,NSecond,NThird,
-        tree,
+        tCurrent,
         bonsaiFileName,
         procId, nProcs, comm,
         restartSim,
         reduce_bodies_factor);
+    tree->set_t_current(tCurrent);
 #else
     fprintf(stderr,"Usage of these options requires to code to be built with MPI support!\n"); exit(0);
 #endif      
@@ -718,38 +722,19 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 
   tree->mpiSync();
 
-  LOGF(stderr, " t_current = %g\n", tree->get_t_current());
-
-  //Set the properties of the data set, it only is really used by process 0, which does the 
-  //actual file I/O  
-  tree->setDataSetProperties(NTotal, NFirst, NSecond, NThird);
-
-  if(procId == 0)  
-    fprintf(stderr, "Dataset particle information: Ntotal: %d\tNFirst: %d\tNSecond: %d\tNThird: %d \n",
-        NTotal, NFirst, NSecond, NThird);
-
-
   //Sanity check
-  double mass = 0, totalMass;
-  for(unsigned int i=0; i < bodyPositions.size(); i++)
-  {
-    mass += bodyPositions[i].w;
-  }
+  double mass = 0;
+  for(unsigned int i=0; i < bodyPositions.size(); i++) { mass += bodyPositions[i].w; }
+  double totalMass = tree->SumOnRootRank(mass);
 
-  tree->load_kernels();
+  tree->mpiSumParticleCount((int)bodyPositions.size());
 
-#ifdef USE_MPI
-  MPI_Reduce(&mass,&totalMass,1, MPI_DOUBLE, MPI_SUM,0, mpiCommWorld);
-#else
-  totalMass = mass;
-#endif
-
-  if(procId == 0)   LOGF(stderr, "Combined Mass: %f \tNTotal: %d \n", totalMass, NTotal);
-
-
+  LOGF(stderr, "t_current = %g nLocal %d massLocal: %f Combined Mass: %f nGlobal: %llu \n",
+                tree->get_t_current(), (int)bodyPositions.size(),
+                mass, totalMass, tree->nTotalFreq_ull);
   fprintf(stderr,"Proc: %d Bootup times: Tree/MPI: %lg Threads/log: %lg IC-model: %lg \n",
-                procId, tStartup-tStartupStart, tStartup2-tStartup, tEndModel - tStartModel);
-
+                 procId, tStartup-tStartupStart, tStartup2-tStartup, tEndModel - tStartModel);
+  tree->load_kernels();
 
   double t0 = tree->get_time();
 
@@ -759,12 +744,11 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   //Load data onto the device
   for(uint i=0; i < bodyPositions.size(); i++)
   {
-    tree->localTree.bodies_pos[i] = bodyPositions[i];
-    tree->localTree.bodies_vel[i] = bodyVelocities[i];
-    tree->localTree.bodies_ids[i] = bodyIDs[i];
-
+    tree->localTree.bodies_pos[i]  = bodyPositions[i];
     tree->localTree.bodies_Ppos[i] = bodyPositions[i];
+    tree->localTree.bodies_vel[i]  = bodyVelocities[i];
     tree->localTree.bodies_Pvel[i] = bodyVelocities[i];
+    tree->localTree.bodies_ids[i]  = bodyIDs[i];
     tree->localTree.bodies_time[i] = make_float2(tree->get_t_current(), tree->get_t_current());
   }
 
@@ -777,11 +761,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 
 
   #ifdef USE_MPI
-    //Sum all the particles to get total number of particles in the system
-    tree->mpiSumParticleCount(tree->localTree.n);
-
-    //Startup the OMP threads
-    omp_set_num_threads(4);
+    omp_set_num_threads(4); //Startup the OMP threads to be used during LET phase
   #endif
 
 
@@ -792,14 +772,16 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
 #else
   tree->mpiSync();
-  if (procId==0) fprintf(stderr, " Starting iterating\n");
+  if (procId==0) fprintf(stderr, " Start iterating\n");
 
 
   bool simulationFinished = false;
   ioSharedData.writingFinished       = true;
 
-  /* w/o MPI-IO use async fwrite, so use 2 threads
-   * otherwise, use 1 threads
+
+  tree->iterate();
+
+  /* w/o MPI-IO use async fwrite, so use 2 threads otherwise, use 1 threads
    */
 #pragma omp parallel num_threads(1+ (!useMPIIO))
   {
@@ -832,7 +814,6 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
       {
         if(ioSharedData.writingFinished == false)
         {
-          const int n           = ioSharedData.nBodies;
           const float t_current = ioSharedData.t_current;
 
           bool distributed = true;
@@ -847,7 +828,8 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
           }
 
           tree->fileIO->writeFile(ioSharedData.Pos, ioSharedData.Vel,
-                                  ioSharedData.IDs, n, fileName.c_str(), t_current,
+                                  ioSharedData.IDs, ioSharedData.nBodies,
+                                  fileName.c_str(), t_current,
                                   procId, nProcs, mpiCommWorld, distributed) ;
 
           ioSharedData.free();
@@ -887,14 +869,13 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 
   delete tree;
   tree = NULL;
-  
 
 #endif
 
   displayTimers();
 
 #ifdef USE_MPI
-  //Finalize MPI if we Initalized it ourselves, otherwise the driver will do it.
+  //Finalize MPI if we initialized it ourselves, otherwise the driver will do it.
   if (!mpiInitialized) MPI_Finalize();
 #endif
   return 0;

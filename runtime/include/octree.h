@@ -34,6 +34,10 @@
 #include "logFileWriter.h"
 #include "SharedMemory.h"
 #include "tipsyIO.h"
+#include "log.h"
+#include "FileIO.h"
+
+
 
 #ifdef USE_MPI
   #include "MPIComm.h"
@@ -43,11 +47,6 @@
 #ifndef WIN32
   #include <unistd.h>
 #endif
-
-
-#include "log.h"
-
-using namespace std;
 
 
 
@@ -131,6 +130,7 @@ struct cmp_ph_key{
   }
 };
 
+
 class particleSet
 {
 public:
@@ -147,7 +147,7 @@ public:
 
     //Density related buffers
     my_dev::dev_mem<real>  h;       //The particles search radius
-    my_dev::dev_mem<real2> dens;    //The particles density (x) and number of neighbours (y)
+    my_dev::dev_mem<real2> dens;    //The particles density (x) and number of neighbors (y)
 
     particleSet(){ n = 0;}
 
@@ -157,8 +157,8 @@ public:
     {
     	if(n_bodies <= 0) n_bodies = n;
 		//Particle properties
-		pos.cmalloc(n_bodies+1, true);   //+1 to set end pos, host mapped? TODO not needed right since we use Ppos
-		vel.cmalloc(n_bodies, false);
+		pos.cmalloc(n_bodies+1, true);   //+1 to set end pos, host mapped? TODO mapped not needed right since we use Ppos?
+		vel.cmalloc(n_bodies,   false);
 		key.cmalloc(n_bodies+1, false);  //+1 to set end key
 		ids.cmalloc(n_bodies+1, false);  //+1 to set end key
 
@@ -170,7 +170,6 @@ public:
 		acc1.ccalloc(n_bodies, false);   //ccalloc -> init to 0
 		time.ccalloc(n_bodies, false);   //ccalloc -> init to 0
 
-		//density
 		h.cmalloc   (n_bodies, true);
 		dens.cmalloc(n_bodies, true);
 
@@ -196,7 +195,6 @@ public:
 		acc1.cresize(n_bodies, false);   //ccalloc -> init to 0
 		time.cresize(n_bodies, false);   //ccalloc -> init to 0
 
-		//density
 		h.cresize   (n_bodies, true);
 		dens.cresize(n_bodies, true);
     }
@@ -206,9 +204,6 @@ public:
 //Structure and properties of a tree
 class tree_structure
 {
-  private:
-    my_dev::context *devContext;        //Pointer so destructor is only called once  
-
   public:
     int n;                                //Number of particles in the tree
     int n_leafs;                          //Number of leafs in the tree
@@ -295,21 +290,9 @@ class tree_structure
 
   tree_structure(){ n = 0;}
 
-  tree_structure(my_dev::context &context) {
-    n = 0;
-    devContext = &context;
-  }
-  void setContext(my_dev::context &context) {
-    devContext = &context;
-  }
 
   void setN(int particles) { n = particles; }
 
-
-  my_dev::context getContext()
-  {
-    return *devContext;
-  }
 };
 
 
@@ -340,9 +323,6 @@ protected:
   float         nextStatsTime;
   int 			rebuild_tree_rate;
 
-  int   NTotal, NFirst, NSecond, NThird;
-  
-  float removeDistance;
 
   float eps2;
   float inv_theta;
@@ -368,8 +348,8 @@ protected:
 
 
   // Device context
-  my_dev::context devContext;
-  bool devContext_flag;
+  my_dev::context *devContext;
+
   
   //Streams
   my_dev::dev_stream *gravStream;
@@ -430,26 +410,8 @@ protected:
   ///////////
 
 public:
+   my_dev::context * getDevContext() { return devContext; };
 
-   tipsyIO *fileIO;
-
-
-   double get_time();
-   
-   void resetEnergy() {store_energy_flag = true;}
-
-   my_dev::context * getDevContext() { return &devContext; };        //Pointer so destructor is only called once  
-
-   void write_dumbp_snapshot_parallel(real4 *bodyPositions, real4 *bodyVelocities, ullong* bodyIds, int n, string fileName, float time) ;
-   void write_dumbp_snapshot_parallel_tipsy(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName,
-                                            int NCombTotal, int NCombFirst, int NCombSecond, int NCombThird, float time);
-
-   void write_dumbp_snapshot_parallel_tipsyV2(real4 *bodyPositions, real4 *bodyVelocities, ullong* bodyIds, int n, string fileName,
-                                               int NCombTotal, int NCombFirst, int NCombSecond, int NCombThird, float time);
-
-   void write_snapshot_per_process(real4 *bodyPositions, real4 *bodyVelocities, ullong* bodyIds, int n, string fileName, float time);
-
-   void set_src_directory(string src_dir);
 
    //Memory used in the whole system, not depending on a certain number of particles
    my_dev::dev_mem<float> 	tnext;
@@ -461,17 +423,17 @@ public:
    my_dev::dev_mem<uint> devMemCounts;
    my_dev::dev_mem<uint> devMemCountsx;
 
-
    tree_structure localTree;
    tree_structure remoteTree;
 
-   void set_context(bool disable_timing = false);
-   void set_context(std::ostream &log, bool disable_timing = false);
-   void set_context2();
-   void set_logPreamble(std::string text);
+   tipsyIO *fileIO;
 
-   void writeLogData(std::string &str){ devContext.writeLogEvent(str.c_str());}
-   void writeLogToFile(){ this->logFileWriter->updateLogData(devContext.getLogData());}
+   double get_time();
+   void resetEnergy() {store_energy_flag = true;}
+   void set_src_directory(string src_dir);
+
+   void writeLogData(std::string &str){ devContext->writeLogEvent(str.c_str());}
+   void writeLogToFile(){ this->logFileWriter->updateLogData(devContext->getLogData());}
 
    int getAllignmentOffset(int n);
    int getTextureAllignmentOffset(int n, int size);
@@ -480,9 +442,9 @@ public:
    void load_kernels();
    void resetCompact();
 
-   void gpuCompact(my_dev::context&, my_dev::dev_mem<uint> &srcValues,
+   void gpuCompact(my_dev::dev_mem<uint> &srcValues,
                    my_dev::dev_mem<uint> &output, int N, int *validCount);
-   void gpuSplit(my_dev::context&, my_dev::dev_mem<uint> &srcValues,
+   void gpuSplit(my_dev::dev_mem<uint> &srcValues,
                  my_dev::dev_mem<uint> &output, int N, int *validCount);
    void gpuSort(my_dev::dev_mem<uint4> &srcKeys,
                 my_dev::dev_mem<uint>   &permutation, //For 32bit values
@@ -495,7 +457,8 @@ public:
    template <typename T>
    void dataReorder(const int N, my_dev::dev_mem<uint> &permutation,
                     my_dev::dev_mem<T>  &dIn, my_dev::dev_mem<T>  &scratch,
-                    bool overwrite = true);
+                    bool overwrite = true,
+                    bool devOnly   = false);
 
    template <typename T>
    void dataReorder2(const int N, my_dev::dev_mem<uint> &permutation,
@@ -552,6 +515,8 @@ public:
   void iterate_setup(IterationData &idata); 
   void iterate_teardown(IterationData &idata); 
   bool iterate_once(IterationData &idata); 
+
+  //Bonsai IO related
   void terminateIO() const;
   template<typename THeader, typename TData>
     void dumpDataCommon(
@@ -559,23 +524,22 @@ public:
         const std::string &fileNameBase, const float ratio, const bool sync);
   void dumpData();
   void dumpDataMPI();
+  void lReadBonsaiFile(std::vector<real4 > &,std::vector<real4 > &, std::vector<ullong> &,
+                      float &tCurrent, const std::string &fileName, const int rank, const int nrank,
+                      const MPI_Comm &comm, const bool restart = true, const int reduceFactor = 1);
 
   //Sub functions of iterate, should probably be private
-  void predict(tree_structure &tree);
-  void approximate_gravity(tree_structure &tree);
-  void direct_gravity(tree_structure &tree);
-  void correct(tree_structure &tree);
+  void   predict(tree_structure &tree);
+  void   approximate_gravity(tree_structure &tree);
+  void   direct_gravity(tree_structure &tree);
+  void   correct(tree_structure &tree);
   double compute_energies(tree_structure &tree);
 
   //Parallel version functions
-  //Approximate for LET
-  void approximate_gravity_let(tree_structure &tree, tree_structure &remoteTree, 
-                               int bufferSize, bool doActivePart);
 
-  //Parallel version functions
-  int procId, nProcs;   //Process ID in the mpi stack, number of processors in the commm world
-  int sharedPID;        //Shared process ID to be used with the shared memory buffers
-  unsigned long long  nTotalFreq_ull;       //Total Number of particles over all processes
+  int procId, nProcs;                   //Process ID in the mpi stack, number of processors in the commm world
+  int sharedPID;                        //Shared process ID to be used with the shared memory buffers
+  unsigned long long  nTotalFreq_ull;   //Total Number of particles over all processes
 
 
   double prevDurStep;   //Duration of gravity time in previous step
@@ -614,14 +578,16 @@ public:
   sampleRadInfo *curSysState;
 
   //Functions
-  void mpiInit(int argc,char *argv[], int &procId, int &nProcs);
+  void mpiSetup();
+
 
   //Utility
-  void mpiSync();
-  int  mpiGetRank();
-  int  mpiGetNProcs();
-  void AllSum(double &value);
-  int  SumOnRootRank(int value);
+  void      mpiSync();
+  int       mpiGetRank();
+  int       mpiGetNProcs();
+  void      AllSum(double &value);
+  int       SumOnRootRank(int value);
+  double    SumOnRootRank(double value);
 
   //Main MPI functions
 
@@ -639,6 +605,9 @@ public:
                                                     bodyStruct *particlesToSend,
                                                     int *nparticles, int *nsendDispls, int *nreceive,
                                                     int nToSend);
+  void approximate_gravity_let(tree_structure &tree, tree_structure &remoteTree,
+                                 int bufferSize, bool doActivePart);
+
 
 
    //Local Essential Tree related functions
@@ -690,10 +659,10 @@ public:
                                  vector<real4> &topLevelTrees,
                                  vector<uint2> &topLevelTreesSizeOffset,
                                  int     nTopLevelTrees);
-  void mergeAndLaunchLETStructures(
-      tree_structure &tree, tree_structure &remote,
-      real4 **treeBuffers,  int* treeBuffersSource, int &topNodeOnTheFlyCount,
-      int &recvTree, bool &mergeOwntree, int &procTrees, double &tStart);
+
+  void mergeAndLaunchLETStructures(tree_structure &tree, tree_structure &remote,
+                                   real4 **treeBuffers,  int* treeBuffersSource, int &topNodeOnTheFlyCount,
+                                   int &recvTree, bool &mergeOwntree, int &procTrees, double &tStart);
 
   void checkGPUAndStartLETComputation(tree_structure &tree,
                                       tree_structure &remote,
@@ -729,21 +698,13 @@ public:
 
   //End library functions
 
-
-  void setDataSetProperties(int NTotalT = -1, int NFirstT = -1, int NSecondT = -1, int NThirdT = -1)
-  {
-    NTotal   = NTotalT;
-    NFirst   = NFirstT;
-    NSecond  = NSecondT;
-    NThird   = NThirdT;
-  }
-
-	void set_t_current(const float t) { t_current = t_previous = t; }
-	float get_t_current() const       { return t_current; }
+  void set_t_current(const float t) { t_current = t_previous = t; }
+  float get_t_current() const       { return t_current; }
   void setUseDirectGravity(bool s)  { useDirectGravity = s;    }
   bool getUseDirectGravity() const  { return useDirectGravity; }
 
   octree(const MPI_Comm &comm,
+         my_dev::context *devContext_,
          char **argv, const int device = 0, const float _theta = 0.75, const float eps = 0.05,
          string snapF = "", float snapI = -1,  
          const float _quickDump       = 0.0,
@@ -754,54 +715,38 @@ public:
          float tempTimeStep           = 1.0 / 16.0,
          float tempTend               = 1000,
          int _iterEnd                 = (1<<30),
-         int maxDistT                 = -1,
          const int _rebuild           = 2,
          bool direct                  = false,
          const int shrdpid            = 0)
-  : mpiCommWorld(comm), rebuild_tree_rate(_rebuild), procId(0), nProcs(1), thisPartLETExTime(0), useDirectGravity(direct),
-  quickDump(_quickDump), quickRatio(_quickRatio), quickSync(_quickSync), useMPIIO(_useMPIIO),
-  mpiRenderMode(_mpiRenderMode), nextQuickDump(0.0), sharedPID(shrdpid)
+  : devContext(devContext_), mpiCommWorld(comm), rebuild_tree_rate(_rebuild), procId(0), nProcs(1),
+    thisPartLETExTime(0), useDirectGravity(direct), quickDump(_quickDump), quickRatio(_quickRatio),
+    quickSync(_quickSync), useMPIIO(_useMPIIO), mpiRenderMode(_mpiRenderMode), nextQuickDump(0.0), sharedPID(shrdpid)
   {
-    devContext_flag = false;
     iter            = 0;
     t_current       = t_previous = 0;
-    
-    src_directory = NULL;
+    src_directory   = NULL;
 
     if(argv != NULL)  execPath = argv[0];
-    //First init mpi
-    int argc = 0;
-    mpiInit(argc, argv, procId, nProcs);
 
-    if(nProcs > 1)
-      devID = procId % getNumberOfCUDADevices();
-    else
-      devID = device;
+    localTree.n = 0;
 
-    char *gpu_prof_log;
-    gpu_prof_log=getenv("CUDA_PROFILE_LOG");
-    if(gpu_prof_log){
-      char tmp[50];
-      sprintf(tmp,"process_%d-%d_%s",procId,nProcs, gpu_prof_log);
-      #ifdef WIN32
-          SetEnvironmentVariable("CUDA_PROFILE_LOG", tmp);
-      #else
-          setenv("CUDA_PROFILE_LOG",tmp,1);
-          LOGF(stderr, "TESTING log on proc: %d val: %s \n", procId, tmp);
-      #endif
-    }
+    devContext = devContext_;
+
+    //Setup the MPI processName and some buffers
+    mpiSetup();
+
 
     statisticsIter = 0; //0=disabled, 1 = Every N-body unit, 2= every 2nd n-body unit, etc..
     nextStatsTime  = 0;
+    nextSnapTime   = 0;
 
-    snapshotIter = snapI;
-    snapshotFile = snapF;
+    snapshotIter      = snapI;
+    snapshotFile      = snapF;
+    store_energy_flag = true;
 
     timeStep = tempTimeStep;
     tEnd     = tempTend;
     iterEnd  = _iterEnd;
-
-    removeDistance = (float)maxDistT;
 
     //Theta, time-stepping
     inv_theta   = 1.0f/_theta;
@@ -809,20 +754,15 @@ public:
     eta         = 0.02f;
     theta       = _theta;
 
-    nextSnapTime = 0;
-    //Calc dt_limit
-    const float dt_max = 1.0f / (1 << 4);
-
+    const float dt_max = 1.0f / (1 << 4); //Calc dt_limit
     dt_limit = int(-log(dt_max)/log(2.0f));
 
-    store_energy_flag = true;
-    
-    execStream = NULL;
-    gravStream = NULL;
-    copyStream = NULL;
+    execStream          = NULL;
+    gravStream          = NULL;
+    copyStream          = NULL;
     LETDataToHostStream = NULL;
     
-    infoGrpTreeBuffer.resize(7*nProcs);
+    infoGrpTreeBuffer. resize(7*nProcs);
     exchangePartBuffer.resize(8*nProcs);
 
     globalGrpTreeCntSize = NULL;
@@ -843,9 +783,6 @@ public:
       fullGrpAndLETRequestStatistics[i] = make_int2(0,0);
     }
 
-
-    localTree.n      = 0;
-
     prevDurStep = -1;   //Set it to negative so we know its the first step
 
     
@@ -864,10 +801,8 @@ public:
     QueryPerformanceFrequency(&sysTimerFreq);
     QueryPerformanceCounter(&sysTimerAtStart);
 #endif
-
   }
-  ~octree() {    
-
+  ~octree() {
     delete[] currentRLow;
     delete[] currentRHigh;
     delete[] curSysState;
@@ -876,48 +811,13 @@ public:
     delete fileIO;
 
     if(globalGrpTreeCntSize) delete[] globalGrpTreeCntSize;
-    if(globalGrpTreeCount) delete[] globalGrpTreeCount;
+    if(globalGrpTreeCount)   delete[] globalGrpTreeCount;
     if(globalGrpTreeOffsets) delete[] globalGrpTreeOffsets;
 
-    if(fullGrpAndLETRequest)    delete[] fullGrpAndLETRequest;
+    if(fullGrpAndLETRequest)           delete[] fullGrpAndLETRequest;
     if(fullGrpAndLETRequestStatistics) delete[] fullGrpAndLETRequestStatistics;
   };
-
 };
-
-/************* data exchange containers for async IO ***************/
-
-struct IOSharedData_t
-{
-  volatile bool writingFinished;
-  volatile float t_current;
-  volatile int   nBodies;
-  unsigned long long * volatile  IDs;
-  real4 * volatile Pos, * volatile Vel;
-  IOSharedData_t() : writingFinished(true), nBodies(0), IDs(NULL), Pos(NULL), Vel(NULL) {}
-  void malloc(const int n) volatile
-  {
-    assert(nBodies == 0);
-    nBodies = n;
-    IDs = (unsigned long long*volatile)::malloc(n*sizeof(unsigned long long));
-    Pos = (real4*volatile)::malloc(n*sizeof(real4));
-    Vel = (real4*volatile)::malloc(n*sizeof(real4));
-  }
-  void free() volatile
-  {
-    assert(nBodies > 0);
-    nBodies = 0;
-    ::free(IDs);
-    ::free(Pos);
-    ::free(Vel);
-  }
-  ~IOSharedData_t()
-  {
-    if (nBodies > 0)
-      free();
-  }
-};
-extern volatile IOSharedData_t ioSharedData;
 
 
 

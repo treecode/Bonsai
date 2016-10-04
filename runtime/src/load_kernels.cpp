@@ -2,44 +2,13 @@
 #include "devFunctionDefinitions.h"
 
 
-
-void octree::set_context( bool disable_timing) {
-  
-  devContext.create(disable_timing);
-  set_context2();
-}
-
-
-void octree::set_context(std::ostream &log, bool disable_timing) {
-  
-  devContext.create(log, disable_timing);
-  set_context2();
-}
-
-void octree::set_context2()
-{
-  devContext.createQueue(devID);
-  devContext_flag = true;
-  
-  //Assign the context to the local and remote tree structures (required for memory allocations)
-  this->localTree.setContext(devContext);
-  this->remoteTree.setContext(devContext);
-}
-
-void octree::set_logPreamble(std::string text)
-{
-  devContext.setLogPreamble(text);
-}
-
 void octree::load_kernels() {
-
-  if (!devContext_flag) set_context();
   
   //If we arrive here we have acquired a device, configure parts of the code
   
   //Get the number of multiprocessors and compute number of 
   //blocks to be used during the tree-walk
-  nMultiProcessors      = devContext.multiProcessorCount;
+  nMultiProcessors      = devContext->multiProcessorCount;
   const int blocksPerSM = getTreeWalkBlocksPerSM(
                           this->getDevContext()->getComputeCapabilityMajor(),
                           this->getDevContext()->getComputeCapabilityMinor());
@@ -133,8 +102,7 @@ void octree::resetCompact()
 //value is valid (1 == valid anything else is UNvalid) returns the 
 //compacted values in the output array and the total 
 //number of valid items is stored in 'count' 
-void octree::gpuCompact(my_dev::context &devContext, 
-                        my_dev::dev_mem<uint> &srcValues,
+void octree::gpuCompact(my_dev::dev_mem<uint> &srcValues,
                         my_dev::dev_mem<uint> &output,                        
                         int N, 
                         int *validCount) // if validCount NULL leave count on device
@@ -145,7 +113,7 @@ void octree::gpuCompact(my_dev::context &devContext,
 //                   output,                        
 //                   N, validCount);
   
-  //Memory that should be alloced outside the function:
+  //Memory that should be allocated outside the function:
   //devMemCounts and devMemCountsx 
 
   // make sure previous reset has finished.
@@ -153,57 +121,32 @@ void octree::gpuCompact(my_dev::context &devContext,
 
   //Kernel configuration parameters
   setupParams sParam;
-  sParam.jobs = (N / 64) / 480  ; //64=32*2 2 items per look, 480 is 120*4, number of procs
+  sParam.jobs                = (N / 64) / 480  ; //64=32*2 2 items per look, 480 is 120*4, number of procs
   sParam.blocksWithExtraJobs = (N / 64) % 480; 
-  sParam.extraElements = N % 64;
-  sParam.extraOffset = N - sParam.extraElements;
-
-  compactCount.set_arg<cl_mem>(0, srcValues.p());
-  compactCount.set_arg<cl_mem>(1, this->devMemCounts.p());
-  compactCount.set_arg<uint>(2, &N);
-  compactCount.set_arg<int>(3, NULL, 128);
-  compactCount.set_arg<setupParams>(4, &sParam);
-  compactCount.set_arg<cl_mem>(5, this->devMemCountsx.p());
+  sParam.extraElements       = N % 64;
+  sParam.extraOffset         = N - sParam.extraElements;
 
   vector<size_t> localWork(2), globalWork(2);
   globalWork[0] = 32*120;   globalWork[1] = 4;
-  localWork [0] = 32;       localWork[1] = 4;   
+  localWork [0] = 32;       localWork[1]  = 4;
+
+  compactCount.set_args(sizeof(int)*128, srcValues.p(), this->devMemCounts.p(), &N, &sParam, this->devMemCountsx.p());
   compactCount.setWork(globalWork, localWork);
+  compactMove.set_args(sizeof(uint)*192, srcValues.p(), output.p(),this->devMemCounts.p(), &N, &sParam, this->devMemCountsx.p());
+  compactMove.setWork(globalWork, localWork);
 
-  ///////////////
-
-  exScanBlock.set_arg<cl_mem>(0, this->devMemCounts.p());  
-  int blocks = 120*4;
-  exScanBlock.set_arg<int>(1, &blocks);
-  exScanBlock.set_arg<cl_mem>(2, this->devMemCountsx.p());
-  exScanBlock.set_arg<int>(3, NULL, 512); //shared memory allocation
-  
 
   globalWork[0] = 512; globalWork[1] = 1;
   localWork [0] = 512; localWork [1] = 1;
-
+  int compactBlocks = 120*4;    //Number of blocks used for the compactCount and move calls
+  exScanBlock.set_args(sizeof(int)*512, this->devMemCounts.p(), &compactBlocks, this->devMemCountsx.p());
   exScanBlock.setWork(globalWork, localWork);
-
-  //////////////
-
-  compactMove.set_arg<cl_mem>(0, srcValues.p());
-  compactMove.set_arg<cl_mem>(1, output.p());
-  compactMove.set_arg<cl_mem>(2, this->devMemCounts.p());
-  compactMove.set_arg<uint>(3, &N);
-  compactMove.set_arg<uint>(4, NULL, 192); //Dynamic shared memory
-  compactMove.set_arg<setupParams>(5, &sParam);
-  compactMove.set_arg<cl_mem>(6, this->devMemCountsx.p());
-
-  globalWork[0] = 120*32;  globalWork[1] = 4;
-  localWork [0] = 32;      localWork [1] = 4;
-
-  compactMove.setWork(globalWork, localWork);
 
   ////////////////////
 
-  compactCount.execute(execStream->s());
-  exScanBlock.execute(execStream->s());
-  compactMove.execute(execStream->s());
+  compactCount.execute2(execStream->s());
+  exScanBlock .execute2(execStream->s());
+  compactMove .execute2(execStream->s());
   
   if (validCount)
   {
@@ -215,18 +158,16 @@ void octree::gpuCompact(my_dev::context &devContext,
 
 //Splits an array of integers, the values in srcValid indicate if a
 //value is valid (1 == valid anything else is UNvalid) returns the 
-//splitted values in the output array (first all valid 
+//split values in the output array (first all valid
 //number and then the invalid ones) and the total
 //number of valid items is stored in 'count' 
-void octree::gpuSplit(my_dev::context &devContext, 
-                      my_dev::dev_mem<uint> &srcValues,
+void octree::gpuSplit(my_dev::dev_mem<uint> &srcValues,
                       my_dev::dev_mem<uint> &output,                        
                       int N, 
                       int *validCount)  // if validCount NULL leave count on device
 {
   //In the next step we associate the GPU memory with the Kernel arguments
-  //my_dev::dev_mem<uint> counts(devContext, 512), countx(devContext, 512);
-  //Memory that should be alloced outside the function:
+  //Memory that should be allocated outside the function:
   //devMemCounts and devMemCountsx 
   
   // make sure previous reset has finished.
@@ -239,57 +180,32 @@ void octree::gpuSplit(my_dev::context &devContext,
   sParam.extraElements = N % 64;
   sParam.extraOffset = N - sParam.extraElements;
   
-  compactCount.set_arg<cl_mem>(0, srcValues.p());
-  compactCount.set_arg<cl_mem>(1, this->devMemCounts.p());
-  compactCount.set_arg<uint>(2, &N);
-  compactCount.set_arg<int>(3, NULL, 128);
-  compactCount.set_arg<setupParams>(4, &sParam);
-  compactCount.set_arg<cl_mem>(5, this->devMemCountsx.p());
-  
+
   vector<size_t> localWork(2), globalWork(2);
   globalWork[0] = 32*120;   globalWork[1] = 4;
-  localWork [0] = 32;       localWork[1] = 4;   
+  localWork [0] = 32;       localWork[1] = 4;
+
+  compactCount.set_args(sizeof(int)*128, srcValues.p(), this->devMemCounts.p(), &N, &sParam, this->devMemCountsx.p());
   compactCount.setWork(globalWork, localWork);
 
-  ///////////////
-
-  exScanBlock.set_arg<cl_mem>(0, this->devMemCounts.p());  
-  int blocks = 120*4;
-  exScanBlock.set_arg<int>(1, &blocks);
-  exScanBlock.set_arg<cl_mem>(2, this->devMemCountsx.p());
-  exScanBlock.set_arg<int>(3, NULL, 512); //shared memory allocation
+  splitMove.set_args(sizeof(uint)*192, srcValues.p(), output.p(),this->devMemCounts.p(), &N, &sParam);
+  splitMove.setWork(globalWork, localWork);
 
   globalWork[0] = 512; globalWork[1] = 1;
   localWork [0] = 512; localWork [1] = 1;
-
+  int compactBlocks = 120*4;    //Number of blocks used for the compactCount and move calls
+  exScanBlock.set_args(sizeof(int)*512, this->devMemCounts.p(), &compactBlocks, this->devMemCountsx.p());
   exScanBlock.setWork(globalWork, localWork);
 
-  //////////////
-
-  splitMove.set_arg<cl_mem>(0, srcValues.p());
-  splitMove.set_arg<cl_mem>(1, output.p());
-  splitMove.set_arg<cl_mem>(2, this->devMemCounts.p());
-  splitMove.set_arg<uint>(3, &N);
-  splitMove.set_arg<uint>(4, NULL, 192); //Dynamic shared memory
-  splitMove.set_arg<setupParams>(5, &sParam);
-  
-  globalWork[0] = 120*32;  globalWork[1] = 4;
-  localWork [0] = 32;      localWork [1] = 4;
-
-  splitMove.setWork(globalWork, localWork);
-
   ////////////////////
-  compactCount.execute(execStream->s());
-  exScanBlock.execute(execStream->s());
-  splitMove.execute(execStream->s());
+  compactCount.execute2(execStream->s());
+  exScanBlock. execute2(execStream->s());
+  splitMove.   execute2(execStream->s());
 
   if (validCount) {
     this->devMemCountsx.d2h();
     *validCount = this->devMemCountsx[0];
   }
 }
-
-
-
 
 

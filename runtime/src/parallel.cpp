@@ -885,26 +885,14 @@ double get_time2() {
 
 #endif
 
-void octree::mpiInit(int argc,char *argv[], int &procId, int &nProcs)
+void octree::mpiSetup()
 {
 #ifdef USE_MPI
   int  namelen;
   char processor_name[MPI_MAX_PROCESSOR_NAME];
 
-  int mpiInitialized = 0;
-  MPI_Initialized(&mpiInitialized);
-
-  if(!mpiInitialized)
-  {
-    MPI_Init(&argc,&argv);
-    int provided;
-
-    //MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
-    //assert(provided == MPI_THREAD_MULTIPLE);
-  }
-
-  MPI_Comm_size(mpiCommWorld, &nProcs);
-  MPI_Comm_rank(mpiCommWorld, &procId);
+  MPI_Comm_size(mpiCommWorld, &this->nProcs);
+  MPI_Comm_rank(mpiCommWorld, &this->procId);
 
   myComm = new MPIComm(procId, nProcs,mpiCommWorld);
 
@@ -917,11 +905,10 @@ void octree::mpiInit(int argc,char *argv[], int &procId, int &nProcs)
   LOGF(   stderr, "Proc id: %d @ %s , total processes: %d (mpiInit) \n", procId, processor_name, nProcs);
   fprintf(stderr, "Proc id: %d @ %s , total processes: %d (mpiInit) \n", procId, processor_name, nProcs);
 
-  currentRLow  = new double4[nProcs];
-  currentRHigh = new double4[nProcs];
 
-  curSysState             = new sampleRadInfo[nProcs];
-
+  currentRLow          = new double4[nProcs];
+  currentRHigh         = new double4[nProcs];
+  curSysState          = new sampleRadInfo[nProcs];
   globalGrpTreeCount   = new uint[nProcs];
   globalGrpTreeOffsets = new uint[nProcs];
 }
@@ -950,6 +937,15 @@ void octree::AllSum(double &value)
   MPI_Allreduce(&value,&tmp,1, MPI_DOUBLE, MPI_SUM,mpiCommWorld);
   value = tmp;
 #endif
+}
+
+double octree::SumOnRootRank(double value)
+{
+ double temp = value;
+#ifdef USE_MPI
+  MPI_Reduce(&value,&temp,1, MPI_DOUBLE, MPI_SUM,0, mpiCommWorld);
+#endif
+  return temp;
 }
 
 int octree::SumOnRootRank(int value)
@@ -1566,7 +1562,7 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
   char buff5[1024];
   sprintf(buff5,"EXCHANGE-%d: tCheckDomain: %lg ta2aSize: %lg tSort: %lg tExtract: %lg tDomainEx: %lg nExport: %d nImport: %d \n",
       procId, tCheck-tStart, ta2aSize, tSort-tCheck, tExtract-tSort, tEnd-tExtract,nExportParticles, localTree.n - (currentN-nExportParticles));
-  devContext.writeLogEvent(buff5);
+  devContext->writeLogEvent(buff5);
 
   if(!doInOneGo) delete[] extraBodyBuffer;
 
@@ -1755,7 +1751,7 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree
                 procId, tSendEnd-tStart, tSyncGPU-tSendEnd,
                 tAllocComplete-tSyncGPU, tEnd-tAllocComplete,
                 t94-tStart, tSendEnd-t94);
-  devContext.writeLogEvent(buff5);
+  devContext->writeLogEvent(buff5);
 
 #endif
 
@@ -2238,7 +2234,7 @@ void octree::sendCurrentInfoGrpTree()
   char buff5[1024];
   sprintf(buff5,"BLETTIME-%d: Iter: %d tGrpSend: %lg nGrpSizeSmall: %d nGrpSizeLarge: %d nSmall: %d nLarge: %d tAllgather: %lg tAllGatherv: %lg tSendRecv: %lg AllGatherVSize: %f\n",
                  procId, iter, tEndGrp-tStartGrp, nGroupsSmallSet, nGroupsFullSet, nGroupsSmall, nGroupsLarge, t1-t0, t2-t1, tEndGrp-t2, allGatherVSize / (1024*1024.));
-  devContext.writeLogEvent(buff5);
+  devContext->writeLogEvent(buff5);
 
 #endif
 }
@@ -4405,7 +4401,7 @@ tAlltoAll: %lg tGetLETSend: %lg tTotal: %lg mbSize-a2a: %f nA2AQsend: %d nA2AQre
      get_time()-tStatsStartUpStart,
      ZA1, nQuickCheckRealSends, nQuickCheckReceives, nQuickBoundaryOk, nBoundaryOk);
      //ZA1, nQuickCheckSends, nQuickRecv, nBoundaryOk);
-   devContext.writeLogEvent(buff5); //TODO DELETE
+   devContext->writeLogEvent(buff5); //TODO DELETE
 
 //  if(recvAllToAllBuffer) delete[] recvAllToAllBuffer;
   delete[] treeBuffersSource;
@@ -4955,12 +4951,12 @@ void octree::mergeAndLaunchLETStructures(
   char buff5[512];
   sprintf(buff5, "LETXTIME-%d Iter: %d Processed: %d topTree: %lg Alloc: %lg  Copy/Update: %lg TotalC: %lg Wait: %lg TotalRun: %lg \n",
                   procId, iter, procTrees, t1-t0, t2-t1,t3-t2,t3-t0, t4-t3, t4-t0);
-  devContext.writeLogEvent(buff5); //TODO DELETE
+  devContext->writeLogEvent(buff5); //TODO DELETE
 }
 
 
 
-
+#if 0
 void octree::ICSend(int destination, real4 *bodyPositions, real4 *bodyVelocities,  ullong *bodiesIDs, int toSend)
 {
 #ifdef USE_MPI
@@ -4973,6 +4969,7 @@ void octree::ICSend(int destination, real4 *bodyPositions, real4 *bodyVelocities
   MPI_Send( bodiesIDs,      toSend*sizeof(ullong), MPI_BYTE, destination, destination*2+3, mpiCommWorld);
 #endif
 }
+
 
 void octree::ICRecv(int recvFrom, vector<real4> &bodyPositions, vector<real4> &bodyVelocities,  vector<ullong> &bodiesIDs)
 {
@@ -4993,6 +4990,7 @@ void octree::ICRecv(int recvFrom, vector<real4> &bodyPositions, vector<real4> &b
   MPI_Recv( (ullong*)&bodiesIDs[0],      nreceive*sizeof(ullong), MPI_BYTE, recvFrom, procId*2+3, mpiCommWorld,&status);
 #endif
 }
+#endif
 
 //Sum the number of particles on all processes
 void octree::mpiSumParticleCount(int numberOfParticles)

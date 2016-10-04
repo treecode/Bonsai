@@ -1,5 +1,5 @@
 #include "octree.h"
-
+#include "nvToolsExt.h"
 
 //External imports in order to call thrust or cub functions which have been compiled by nvcc
 extern "C" void thrustDataReorderU4 (const int N, my_dev::dev_mem<uint> &permutation, my_dev::dev_mem<uint4>  &dIn, my_dev::dev_mem<uint4>  &dOut);
@@ -24,21 +24,12 @@ extern "C" void  cubSort(my_dev::dev_mem<uint4>  &srcKeys,
 void octree::getBoundaries(tree_structure &tree, real4 &r_min, real4 &r_max)
 {
   //Start reduction to get the boundary's of the system
-  boundaryReduction.set_arg<int>(0, &tree.n);
-  boundaryReduction.set_arg<cl_mem>(1, tree.bodies_Ppos.p());
-  boundaryReduction.set_arg<cl_mem>(2, devMemRMIN.p());
-  boundaryReduction.set_arg<cl_mem>(3, devMemRMAX.p());
-
-  //devMemRMIN.zeroMem(); devMemRMAX.zeroMem();
-
   boundaryReduction.setWork(tree.n, NTHREAD_BOUNDARY, NBLOCK_BOUNDARY);  //256 threads and 120 blocks in total
-  boundaryReduction.execute(execStream->s());
-  
+  boundaryReduction.set_args(0, &tree.n, tree.bodies_Ppos.p(), devMemRMIN.p(), devMemRMAX.p());
+  boundaryReduction.execute2(execStream->s());
 
-  devMemRMIN.d2h();     //Need to be defined and initialized somewhere outside this function
-  devMemRMAX.d2h();     //Need to be defined and initialized somewhere outside this function
-//  r_min = make_real4(devMemRMIN[0].x, devMemRMIN[0].y, devMemRMIN[0].z, +1e10f);
-//  r_max = make_real4(devMemRMAX[0].x, devMemRMAX[0].y, devMemRMAX[0].z, -1e10f);
+  devMemRMIN.d2h();
+  devMemRMAX.d2h();
   
   r_min = make_real4(+1e10, +1e10, +1e10, +1e10);
   r_max = make_real4(-1e10, -1e10, -1e10, -1e10);
@@ -60,8 +51,6 @@ void octree::getBoundaries(tree_structure &tree, real4 &r_min, real4 &r_max)
   
   LOG("Found boundarys, number of particles %d : \n", tree.n);
   LOG("min: %f\t%f\t%f\tmax: %f\t%f\t%f \n", r_min.x,r_min.y,r_min.z,r_max.x,r_max.y,r_max.z);
-//  LOG("2min: %f\t%f\t%f\tmax: %f\t%f\t%f \n", devMemRMIN[120].x, devMemRMIN[120].y, devMemRMIN[120].z,devMemRMAX[120].x, devMemRMAX[120].y,devMemRMAX[120].z);
-
 
   //  FILE *fout = fopen("boundaries.txt","w");
   //  tree.bodies_Ppos.d2h();
@@ -80,19 +69,12 @@ void octree::getBoundaries(tree_structure &tree, real4 &r_min, real4 &r_max)
 void octree::getBoundariesGroups(tree_structure &tree, real4 &r_min, real4 &r_max)
 {
   //Start reduction to get the boundary's of the system
-  boundaryReductionGroups.set_arg<int>(0, &tree.n_groups);
-  boundaryReductionGroups.set_arg<cl_mem>(1, tree.groupCenterInfo.p());
-  boundaryReductionGroups.set_arg<cl_mem>(2, tree.groupSizeInfo.p());
-  boundaryReductionGroups.set_arg<cl_mem>(3, devMemRMIN.p());
-  boundaryReductionGroups.set_arg<cl_mem>(4, devMemRMAX.p());
-
-
-  boundaryReductionGroups.setWork(tree.n_groups, NTHREAD_BOUNDARY, NBLOCK_BOUNDARY);  //256 threads and 120 blocks in total
-  boundaryReductionGroups.execute(execStream->s());
-
+  boundaryReductionGroups.setWork(tree.n_groups, NTHREAD_BOUNDARY, NBLOCK_BOUNDARY);
+  boundaryReductionGroups.set_args(0, &tree.n_groups, tree.groupCenterInfo.p(), tree.groupSizeInfo.p(), devMemRMIN.p(), devMemRMAX.p());
+  boundaryReductionGroups.execute2(execStream->s());
    
-  devMemRMIN.d2h();     //Need to be defined and initialized somewhere outside this function
-  devMemRMAX.d2h();     //Need to be defined and initialized somewhere outside this function
+  devMemRMIN.d2h();
+  devMemRMAX.d2h();
   r_min = make_real4(+1e10f, +1e10f, +1e10f, +1e10f);
   r_max = make_real4(-1e10f, -1e10f, -1e10f, -1e10f);
 
@@ -128,14 +110,14 @@ void octree::getBoundariesGroups(tree_structure &tree, real4 &r_min, real4 &r_ma
   r_max.z = (float)((r_max.z < 0) ? r_max.z * smallFac1 : r_max.z * smallFac2);
   
   
-  LOG("Found group boundarys after increase, number of groups %d : \n", tree.n_groups);
+  LOG("Found group boundary's after increase, number of groups %d : \n", tree.n_groups);
   LOG("min: %f\t%f\t%f\tmax: %f\t%f\t%f \n", r_min.x,r_min.y,r_min.z,r_max.x,r_max.y,r_max.z);
 }
 
 void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate, bool doFullShuffle) {
 
   //We assume the bodies are already on the GPU
-  devContext.startTiming(execStream->s());
+  devContext->startTiming(execStream->s());
   real4 r_min = {+1e10, +1e10, +1e10, +1e10}; 
   real4 r_max = {-1e10, -1e10, -1e10, -1e10};   
   
@@ -180,17 +162,13 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate, bool doFullS
   genBufOffset2 = tempD    .cmalloc_copy(tree.generalBuffer1, tree.n, genBufOffset2); //uint7*N-uint8*N
   genBufOffset2 = tempE    .cmalloc_copy(tree.generalBuffer1, tree.n, genBufOffset2); //uint8*N-uint9*N
 
-  //Compute the keys directly into srcValues will be sorted into tree.bodies_key below
-  build_key_list.set_arg<cl_mem>(0,   srcValues.p());
-  build_key_list.set_arg<cl_mem>(1,   tree.bodies_Ppos.p());
-  build_key_list.set_arg<int>(2,      &tree.n);
-  build_key_list.set_arg<real4>(3,    &tree.corner);
-  build_key_list.setWork(tree.n, 128); //128 threads per block
-  build_key_list.execute(execStream->s());
+  //Compute the keys directly into srcValues which then will be sorted into tree.bodies_key below
+  build_key_list.setWork(tree.n, 128);
+  build_key_list.set_args(0, srcValues.p(), tree.bodies_Ppos.p(), &tree.n, &tree.corner);
+  build_key_list.execute2(execStream->s());
 
-//  execStream->sync();
-  
 #if 0
+  //  execStream->sync();
   srcValues.d2h();
   for(int i=0; i < tree.n; i++)
   {
@@ -198,13 +176,12 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate, bool doFullS
           i, srcValues[i].x,srcValues[i].y, srcValues[i].z, srcValues[i].w);
       if(i > 10) break;
   }
-
 #endif
 
   // If srcValues and buffer are different, then the original values
   // are preserved, if they are the same srcValues will be overwritten
   if(tree.n > 0) gpuSort(srcValues, tree.oriParticleOrder, tempB, tempC, tempD, tempE, tree.n);
-  this->dataReorder(tree.n, tree.oriParticleOrder, srcValues, tree.bodies_key);
+  dataReorder(tree.n, tree.oriParticleOrder, srcValues, tree.bodies_key, true, true);
 
 #if 0
   tree.bodies_key.d2h();
@@ -218,10 +195,10 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate, bool doFullS
 #endif
 
 
-  devContext.stopTiming("Sorting", 0, execStream->s());  
+  devContext->stopTiming("Sorting", 0, execStream->s());
 
   //Call the reorder data functions
-  devContext.startTiming(execStream->s());
+  devContext->startTiming(execStream->s());
 
   //JB this if statement is required until I fix the order
   //of functions in main.cpp  
@@ -236,11 +213,9 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate, bool doFullS
     ullBuffer.   cmalloc_copy(tree.generalBuffer1, tree.n, 0);
     realBuffer.  cmalloc_copy(tree.generalBuffer1, tree.n, 0);
 
-    dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_Ppos, real4Buffer1);
-    dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_ids, ullBuffer);
-
-    //Density values
-    dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_h, realBuffer);
+    dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_Ppos, real4Buffer1, true, true);
+    dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_ids,  ullBuffer,    true, true);
+    dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_h,    realBuffer,   true, true);          //Density values
   }
   else
   {
@@ -272,7 +247,7 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate, bool doFullS
 
   } //end if
   
-  devContext.stopTiming("Data-reordering", 1, execStream->s());
+  devContext->stopTiming("Data-reordering", 1, execStream->s());
 
 //  exit(0);
 }
@@ -316,10 +291,15 @@ template<typename T> void octree::dataReorder(const int              N,
                                               my_dev::dev_mem<uint> &permutation,
                                               my_dev::dev_mem<T>    &dIn,
                                               my_dev::dev_mem<T>    &scratch,
-                                              bool                   overwrite)
+                                              bool                   overwrite,
+                                              bool                   devOnly)
 {
   dataReorder2(N, permutation, dIn, scratch);
-  if(overwrite)  dIn.copy(scratch,  N);
+  if(overwrite)
+  {
+      if(devOnly) dIn.copy_devonly(scratch,  N);
+      else        dIn.copy        (scratch,  N);
+  }
 }
 
 //Predefined templates to point to the correct external functions

@@ -16,7 +16,7 @@ void octree::compute_properties(tree_structure &tree) {
     check if 10*n_nodes < 3*N if so increase buffer size
     
    *****************************************************/
-  devContext.startTiming(execStream->s());
+  devContext->startTiming(execStream->s());
   
   if(10*tree.n_nodes > 3*tree.n)
   {
@@ -24,39 +24,33 @@ void octree::compute_properties(tree_structure &tree) {
     tree.generalBuffer1.cresize(10*tree.n_nodes*4, false);
   }
   
-  my_dev::dev_mem<double4> multipoleD;      //Double precision buffer to store temp results
+  my_dev::dev_mem<double4> multipoleD;      //Double precision buffer to store temporary results
   my_dev::dev_mem<real4>   nodeLowerBounds; //Lower bounds used for computing box sizes
   my_dev::dev_mem<real4>   nodeUpperBounds; //Upper bounds used for computing box sizes
   
-  int memBufOffset = multipoleD.cmalloc_copy          (tree.generalBuffer1, 3*tree.n_nodes, 0);
-      memBufOffset = nodeLowerBounds.cmalloc_copy(tree.generalBuffer1, tree.n_nodes, memBufOffset);
-      memBufOffset = nodeUpperBounds.cmalloc_copy(tree.generalBuffer1, tree.n_nodes, memBufOffset);
+  int memBufOffset = multipoleD.cmalloc_copy     (tree.generalBuffer1, 3*tree.n_nodes, 0);
+      memBufOffset = nodeLowerBounds.cmalloc_copy(tree.generalBuffer1,   tree.n_nodes, memBufOffset);
+      memBufOffset = nodeUpperBounds.cmalloc_copy(tree.generalBuffer1,   tree.n_nodes, memBufOffset);
 
   double t0 = get_time();
   this->resetCompact(); //Make sure compact has been reset, for setActiveGrp later on
 
   //Set the group properties
-  setPHGroupData.set_arg<int>(0,    &tree.n_groups);
-  setPHGroupData.set_arg<int>(1,    &tree.n);
-  setPHGroupData.set_arg<cl_mem>(2, tree.bodies_Ppos.p());
-  setPHGroupData.set_arg<cl_mem>(3, tree.group_list.p());
-  setPHGroupData.set_arg<cl_mem>(4, tree.groupCenterInfo.p());
-  setPHGroupData.set_arg<cl_mem>(5, tree.groupSizeInfo.p());
+  setPHGroupData.set_args(0, &tree.n_groups, &tree.n, tree.bodies_Ppos.p(), tree.group_list.p(),
+                             tree.groupCenterInfo.p(),tree.groupSizeInfo.p());
   setPHGroupData.setWork(-1, NCRIT, tree.n_groups);
-  setPHGroupData.execute(copyStream->s());
+  setPHGroupData.execute2(copyStream->s());
 
   //Set valid list to zero to reset the active particles
   tree.activeGrpList.zeroMemGPUAsync(execStream->s());
-  setActiveGrps.set_arg<int>(0,    &tree.n);
-  setActiveGrps.set_arg<float>(1,  &t_current);
-  setActiveGrps.set_arg<cl_mem>(2, tree.bodies_time.p());
-  setActiveGrps.set_arg<cl_mem>(3, tree.body2group_list.p());
-  setActiveGrps.set_arg<cl_mem>(4, tree.activeGrpList.p());
+
+  setActiveGrps.set_args(0, &tree.n, &t_current, tree.bodies_time.p(), tree.body2group_list.p(), tree.activeGrpList.p());
   setActiveGrps.setWork(tree.n, 128);
-  setActiveGrps.execute(execStream->s());
+  setActiveGrps.execute2(execStream->s());
+
 
   //Compact the valid list to get a list of valid groups
-  gpuCompact(devContext, tree.activeGrpList, tree.active_group_list,
+  gpuCompact(tree.activeGrpList, tree.active_group_list,
              tree.n_groups, &tree.n_active_groups);
 
 //  this->resetCompact();
@@ -75,57 +69,41 @@ void octree::compute_properties(tree_structure &tree) {
 
 
   //Computes the tree-properties (size, cm, monopole, quadrupole, etc)
+
   //start the kernel for the leaf-type nodes
-  propsLeafD.set_arg<int>(0,    &tree.n_leafs);
-  propsLeafD.set_arg<cl_mem>(1, tree.leafNodeIdx.p());
-  propsLeafD.set_arg<cl_mem>(2, tree.node_bodies.p());
-  propsLeafD.set_arg<cl_mem>(3, tree.bodies_Ppos.p());  
-  propsLeafD.set_arg<cl_mem>(4, multipoleD.p());
-  propsLeafD.set_arg<cl_mem>(5, nodeLowerBounds.p());
-  propsLeafD.set_arg<cl_mem>(6, nodeUpperBounds.p());
-  propsLeafD.set_arg<cl_mem>(7, tree.bodies_Pvel.p()); //Velocity to get max eps
-  propsLeafD.set_arg<cl_mem>(8, tree.bodies_ids.p());  //Ids to distinguish DM and stars
-  propsLeafD.set_arg<cl_mem>(9, tree.bodies_h.p());    //Density search radius
-  propsLeafD.set_arg<float >(10, &h_min);              //minimum size of search radius
+  propsLeafD.set_args(0, &tree.n_leafs, tree.leafNodeIdx.p(), tree.node_bodies.p(), tree.bodies_Ppos.p(),
+                         multipoleD.p(), nodeLowerBounds.p(), nodeUpperBounds.p(),
+                         tree.bodies_Pvel.p(), //Velocity to get max eps
+                         tree.bodies_ids.p(),  //Ids to distinguish DM and stars
+                         tree.bodies_h.p(),    //Density search radius
+                         &h_min);              //minimum size of search radius)
   propsLeafD.setWork(tree.n_leafs, 128);
   LOG("PropsLeaf: on number of leaves: %d \n", tree.n_leafs);
-  propsLeafD.execute(execStream->s()); 
+  propsLeafD.execute2(execStream->s());
+
    
   
-  int temp = tree.n_nodes-tree.n_leafs;
-  propsNonLeafD.set_arg<int>(0,    &temp);
-  propsNonLeafD.set_arg<cl_mem>(1, tree.leafNodeIdx.p());
-  propsNonLeafD.set_arg<cl_mem>(2, tree.node_level_list.p());
-  propsNonLeafD.set_arg<cl_mem>(3, tree.n_children.p());  
-  propsNonLeafD.set_arg<cl_mem>(4, multipoleD.p());
-  propsNonLeafD.set_arg<cl_mem>(5, nodeLowerBounds.p());
-  propsNonLeafD.set_arg<cl_mem>(6, nodeUpperBounds.p());
+  int curLevel = tree.n_levels;
+  propsNonLeafD.set_args(0, &curLevel, tree.leafNodeIdx.p(), tree.node_level_list.p(), tree.n_children.p(), multipoleD.p(),
+                         nodeLowerBounds.p(), nodeUpperBounds.p());
 
   //Work from the bottom up
-  for(int i=tree.n_levels; i >= 1; i--)
+  for(curLevel=tree.n_levels; curLevel >= 1; curLevel--)
   {   
-    int totalOnThisLevel = tree.node_level_list[i]-tree.node_level_list[i-1];
+    int totalOnThisLevel = tree.node_level_list[curLevel]-tree.node_level_list[curLevel-1];
     propsNonLeafD.setWork(totalOnThisLevel, 128);
-    propsNonLeafD.set_arg<int>(0,    &i); //set the level
-    propsNonLeafD.execute(execStream->s());
+    propsNonLeafD.execute2(execStream->s());
 
     LOG("PropsNonLeaf, nodes on level %d : %d (start: %d end: %d)\t\n",
-          i, totalOnThisLevel,tree.node_level_list[i-1], tree.node_level_list[i]);
+            curLevel, totalOnThisLevel,tree.node_level_list[curLevel-1], tree.node_level_list[curLevel]);
   }
   
-  propsScalingD.set_arg<int>(0,    &tree.n_nodes);
-  propsScalingD.set_arg<cl_mem>(1, multipoleD.p());
-  propsScalingD.set_arg<cl_mem>(2, nodeLowerBounds.p());
-  propsScalingD.set_arg<cl_mem>(3, nodeUpperBounds.p());
-  propsScalingD.set_arg<cl_mem>(4, tree.n_children.p());  
-  propsScalingD.set_arg<cl_mem>(5, tree.multipole.p());
-  propsScalingD.set_arg<float >(6, &theta);
-  propsScalingD.set_arg<cl_mem>(7, tree.boxSizeInfo.p());
-  propsScalingD.set_arg<cl_mem>(8, tree.boxCenterInfo.p());
-  propsScalingD.set_arg<cl_mem>(9, tree.node_bodies.p());
+  propsScalingD.set_args(0, &tree.n_nodes, multipoleD.p(), nodeLowerBounds.p(), nodeUpperBounds.p(),
+                            tree.n_children.p(), tree.multipole.p(), &theta, tree.boxSizeInfo.p(),
+                            tree.boxCenterInfo.p(), tree.node_bodies.p());
   propsScalingD.setWork(tree.n_nodes, 128);
   LOG("propsScaling: on number of nodes: %d \n", tree.n_nodes); // propsScalingD.printWorkSize();
-  propsScalingD.execute(execStream->s());   
+  propsScalingD.execute2(execStream->s());
 
   #ifdef INDSOFT
     //If we use individual softening we need to get the max softening value
@@ -214,7 +192,7 @@ if(iter == 20)
 }
 #endif
 
-   devContext.stopTiming("Compute-properties", 3, execStream->s());
+   devContext->stopTiming("Compute-properties", 3, execStream->s());
 } //compute_propertiesD
 
 

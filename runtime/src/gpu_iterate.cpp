@@ -70,7 +70,7 @@ void octree::iterate_setup(IterationData &idata) {
   CU_SAFE_CALL(cudaEventCreate(&startRemoteGrav));
   CU_SAFE_CALL(cudaEventCreate(&endRemoteGrav));
 
-  devContext.writeLogEvent("Start execution\n");
+  devContext->writeLogEvent("Start execution\n");
 
   //Setup of the multi-process particle distribution, initially it should be equal
   #ifdef USE_MPI
@@ -134,9 +134,9 @@ bool octree::iterate_once(IterationData &idata) {
     double tTempTime = get_time();
 
     //predict local tree
-    devContext.startTiming(execStream->s());
+    devContext->startTiming(execStream->s());
     predict(this->localTree);
-    devContext.stopTiming("Predict", 9, execStream->s());
+    devContext->stopTiming("Predict", 9, execStream->s());
 
     idata.totalPredCor += get_time() - tTempTime;
 
@@ -147,9 +147,9 @@ bool octree::iterate_once(IterationData &idata) {
       {
         double domUp =0, domEx = 0;
         double tZ = get_time();
-        devContext.startTiming(execStream->s());
+        devContext->startTiming(execStream->s());
         parallelDataSummary(localTree, lastTotal, lastLocal, domUp, domEx, false);
-        devContext.stopTiming("UpdateDomain", 6, execStream->s());
+        devContext->stopTiming("UpdateDomain", 6, execStream->s());
         double tZZ = get_time();
         idata.lastDomTime   = tZZ-tZ;
         idata.totalDomTime += idata.lastDomTime;
@@ -157,9 +157,9 @@ bool octree::iterate_once(IterationData &idata) {
         idata.totalDomUp += domUp;
         idata.totalDomEx += domEx;
 
-        devContext.startTiming(execStream->s());
+        devContext->startTiming(execStream->s());
         mpiSync();
-        devContext.stopTiming("DomainUnbalance", 12, execStream->s());
+        devContext->stopTiming("DomainUnbalance", 12, execStream->s());
 
         idata.totalDomWait += get_time()-tZZ;
 
@@ -170,9 +170,9 @@ bool octree::iterate_once(IterationData &idata) {
 
     if (useDirectGravity)
     {
-      devContext.startTiming(gravStream->s());
+      devContext->startTiming(gravStream->s());
       direct_gravity(this->localTree);
-      devContext.stopTiming("Direct_gravity", 4);
+      devContext->stopTiming("Direct_gravity", 4);
     }
     else
     {
@@ -194,9 +194,9 @@ bool octree::iterate_once(IterationData &idata) {
 
 
         #ifdef DO_BLOCK_TIMESTEP
-                devContext.startTiming(execStream->s());
+                devContext->startTiming(execStream->s());
                 setActiveGrpsFunc(this->localTree);
-                devContext.stopTiming("setActiveGrpsFunc", 10, execStream->s());
+                devContext->stopTiming("setActiveGrpsFunc", 10, execStream->s());
                 idata.Nact_since_last_tree_rebuild = 0;
         #endif
 
@@ -206,9 +206,9 @@ bool octree::iterate_once(IterationData &idata) {
       else
       {
         #ifdef DO_BLOCK_TIMESTEP
-          devContext.startTiming(execStream->s());
+          devContext->startTiming(execStream->s());
           setActiveGrpsFunc(this->localTree);
-          devContext.stopTiming("setActiveGrpsFunc", 10, execStream->s());      
+          devContext->stopTiming("setActiveGrpsFunc", 10, execStream->s());
           idata.Nact_since_last_tree_rebuild = 0;
         #endif        
         //Don't rebuild only update the current boxes
@@ -251,7 +251,7 @@ bool octree::iterate_once(IterationData &idata) {
    char buff2[512];
    sprintf(buff2, "INT Interaction at (rank= %d ) iter: %d\tdirect: %llu\tappr: %llu\tavg dir: %f\tavg appr: %f\n",
                    procId,iter, directSum ,apprSum, directSum / (float)localTree.n, apprSum / (float)localTree.n);
-   devContext.writeLogEvent(buff2);
+   devContext->writeLogEvent(buff2);
 #endif
    LOGF(stderr,"Stats calculation took: %lg \n", get_time()-tTempTime);
 
@@ -267,7 +267,7 @@ bool octree::iterate_once(IterationData &idata) {
     sprintf(buff,  "APPTIME [%d]: Iter: %d\t%g \tn: %d EventTime: %f  and %f\tSum: %f\n",
         procId, iter, idata.lastGravTime, this->localTree.n, ms, msLET, ms+msLET);
     LOGF(stderr,"%s", buff);
-    devContext.writeLogEvent(buff);
+    devContext->writeLogEvent(buff);
 #else
     ms    = 1;
     msLET = 1;
@@ -284,9 +284,9 @@ bool octree::iterate_once(IterationData &idata) {
 
     //Corrector
     tTempTime = get_time();
-    devContext.startTiming(execStream->s());
+    devContext->startTiming(execStream->s());
     correct(this->localTree);
-    devContext.stopTiming("Correct", 8, execStream->s());
+    devContext->stopTiming("Correct", 8, execStream->s());
     idata.totalPredCor += get_time() - tTempTime;
 
 
@@ -296,13 +296,13 @@ bool octree::iterate_once(IterationData &idata) {
       #ifdef USE_MPI
       //Wait on all processes and time how long the waiting took
       t1 = get_time();
-      devContext.startTiming(execStream->s());
+      devContext->startTiming(execStream->s());
       //Gather info about the load-balance, used to decide if we need to refine the domains
       MPI_Allreduce(&lastTotal, &maxExecTimePrevStep, 1, MPI_FLOAT, MPI_MAX, mpiCommWorld);
       MPI_Allreduce(&lastTotal, &avgExecTimePrevStep, 1, MPI_FLOAT, MPI_SUM, mpiCommWorld);
       avgExecTimePrevStep /= nProcs;
 
-      devContext.stopTiming("Unbalance", 12, execStream->s());
+      devContext->stopTiming("Unbalance", 12, execStream->s());
       idata.lastWaitTime  += get_time() - t1;
       idata.totalWaitTime += idata.lastWaitTime;
       #endif
@@ -312,9 +312,9 @@ bool octree::iterate_once(IterationData &idata) {
 
     //Compute energies
     tTempTime = get_time();
-    devContext.startTiming(execStream->s());
+    devContext->startTiming(execStream->s());
     double de = compute_energies(this->localTree);
-    devContext.stopTiming("Energy", 7, execStream->s());
+    devContext->stopTiming("Energy", 7, execStream->s());
     idata.totalPredCor += get_time() - tTempTime;
 
     if(statisticsIter > 0)
@@ -428,6 +428,7 @@ void octree::iterate() {
   IterationData idata;
   iterate_setup(idata);
 
+
   while(true)
   {
     bool stopRun = iterate_once(idata);
@@ -447,7 +448,8 @@ void octree::iterate() {
       LOGF(stderr,"%s", textBuff);
       LOGF(stdout,"%s", textBuff);
     }
-    devContext.writeLogEvent(textBuff);
+
+    devContext->writeLogEvent(textBuff);
     this->writeLogToFile();     //Write the logdata to file
 
     if(stopRun) break;
@@ -466,14 +468,11 @@ void octree::predict(tree_structure &tree)
 
   //First we get the minimum time, which is the next integration time
   #ifdef DO_BLOCK_TIMESTEP
-    int blockSize = NBLOCK_REDUCE ;
-    getTNext.set_arg<int>(0,    &tree.n);
-    getTNext.set_arg<cl_mem>(1, tree.bodies_time.p());
-    getTNext.set_arg<cl_mem>(2, tnext.p());
-    getTNext.set_arg<float>(3,  NULL, 128); //Dynamic shared memory
-    getTNext.setWork(-1, 128, blockSize);
-    getTNext.execute(execStream->s());
+    getTNext.set_args(sizeof(float)*128, &tree.n, tree.bodies_time.p(), tnext.p());
+    getTNext.setWork(-1, 128, NBLOCK_REDUCE);
+    getTNext.execute2(execStream->s());
 
+    //TODO
     //This will not work in block-step! Only shared- time step
     //in block step we need syncs and global communication
     if(tree.n == 0)
@@ -487,7 +486,7 @@ void octree::predict(tree_structure &tree)
       tnext.d2h();
       t_previous = t_current;
       t_current  = tnext[0];
-      for (int i = 1; i < blockSize ; i++)
+      for (int i = 1; i < NBLOCK_REDUCE ; i++)
       {
           t_current = std::min(t_current, tnext[i]);
       }
@@ -500,21 +499,13 @@ void octree::predict(tree_structure &tree)
   #endif
 
 
-    
-  //Set valid list to zero
-  predictParticles.set_arg<int>(0,    &tree.n);
-  predictParticles.set_arg<float>(1,  &t_current);
-  predictParticles.set_arg<float>(2,  &t_previous);
-  predictParticles.set_arg<cl_mem>(3, tree.bodies_pos.p());
-  predictParticles.set_arg<cl_mem>(4, tree.bodies_vel.p());
-  predictParticles.set_arg<cl_mem>(5, tree.bodies_acc0.p());
-  predictParticles.set_arg<cl_mem>(6, tree.bodies_time.p());
-  predictParticles.set_arg<cl_mem>(7, tree.bodies_Ppos.p());
-  predictParticles.set_arg<cl_mem>(8, tree.bodies_Pvel.p());  
-  predictParticles.setWork(tree.n, 128);
-  predictParticles.execute(execStream->s());
+    //Set valid list to zero, TODO should we act on this comment?
 
-  
+    predictParticles.set_args(0, &tree.n, &t_current, &t_previous, tree.bodies_pos.p(), tree.bodies_vel.p(),
+                    tree.bodies_acc0.p(), tree.bodies_time.p(), tree.bodies_Ppos.p(), tree.bodies_Pvel.p());
+    predictParticles.setWork(tree.n, 128);
+    predictParticles.execute2(execStream->s());
+
 } //End predict
 
 
@@ -525,23 +516,18 @@ void octree::setActiveGrpsFunc(tree_structure &tree)
 
 void octree::direct_gravity(tree_structure &tree)
 {
-  directGrav.set_arg<cl_mem>(0, tree.bodies_acc1.p());
-  directGrav.set_arg<cl_mem>(1, tree.bodies_Ppos.p());
-  directGrav.set_arg<cl_mem>(2, tree.bodies_Ppos.p());
-  directGrav.set_arg<int>(3,    &tree.n);
-  directGrav.set_arg<int>(4,    &tree.n);
-  directGrav.set_arg<float>(5,  &(this->eps2));
-  directGrav.set_arg<float4>(6, NULL, 256);
-  std::vector<size_t> localWork(2), globalWork(2);
-  localWork[0] = 256; localWork[1] = 1;
-  globalWork[0] = 256 * ((tree.n + 255) / 256);
-  globalWork[1] = 1;
-  directGrav.setWork(globalWork, localWork);
-  directGrav.execute(gravStream->s());  //First half
+    std::vector<size_t> localWork  = {256, 1};
+    std::vector<size_t> globalWork = {static_cast<size_t>(256 * ((tree.n + 255) / 256)), 1};
+
+    directGrav.set_args(sizeof(float4)*256, tree.bodies_acc0.p(), tree.bodies_Ppos.p(),
+                        tree.bodies_Ppos.p(), &tree.n, &tree.n, &(this->eps2));
+    directGrav.setWork(globalWork, localWork);
+    directGrav.execute2(gravStream->s());
 }
 
 void octree::approximate_gravity(tree_structure &tree)
 { 
+
   uint2 node_begend;
   int level_start = tree.startLevelMin;
   node_begend.x   = tree.level_list[level_start].x;
@@ -550,38 +536,45 @@ void octree::approximate_gravity(tree_structure &tree)
   tree.activePartlist.zeroMemGPUAsync(gravStream->s());
   LOG("node begend: %d %d iter-> %d\n", node_begend.x, node_begend.y, iter);
 
+//  Hier gebleven, nu nog _let doen
+
   //Set the kernel parameters, many!
-  approxGrav.set_arg<int>(0,    &tree.n_active_groups);
-  approxGrav.set_arg<int>(1,    &tree.n);
-  approxGrav.set_arg<float>(2,  &(this->eps2));
-  approxGrav.set_arg<uint2>(3,  &node_begend);
-  approxGrav.set_arg<cl_mem>(4,  tree.active_group_list.p());
-  approxGrav.set_arg<cl_mem>(5,  tree.bodies_Ppos.p());
-  approxGrav.set_arg<cl_mem>(6,  tree.multipole.p());
-  approxGrav.set_arg<cl_mem>(7,  tree.bodies_acc1.p());
-  approxGrav.set_arg<cl_mem>(8,  tree.bodies_Ppos.p());
-  approxGrav.set_arg<cl_mem>(9,  tree.ngb.p());
-  approxGrav.set_arg<cl_mem>(10, tree.activePartlist.p());
-  approxGrav.set_arg<cl_mem>(11, tree.interactions.p());
-  approxGrav.set_arg<cl_mem>(12, tree.boxSizeInfo.p());
-  approxGrav.set_arg<cl_mem>(13, tree.groupSizeInfo.p());
-  approxGrav.set_arg<cl_mem>(14, tree.boxCenterInfo.p());
-  approxGrav.set_arg<cl_mem>(15, tree.groupCenterInfo.p());
-  approxGrav.set_arg<cl_mem>(16, tree.bodies_Pvel.p());
-  approxGrav.set_arg<cl_mem>(17, tree.generalBuffer1.p());  //The buffer to store the tree walks
-  approxGrav.set_arg<cl_mem>(18, tree.bodies_h.p());        //Per particle search radius
-  approxGrav.set_arg<cl_mem>(19, tree.bodies_dens.p());     //Per particle density (x) and nnb (y)
-  approxGrav.set_arg<real4>(20,  tree.boxSizeInfo,   4, "texNodeSize");
-  approxGrav.set_arg<real4>(21,  tree.boxCenterInfo, 4, "texNodeCenter");
-  approxGrav.set_arg<real4>(22,  tree.multipole,     4, "texMultipole");
-  approxGrav.set_arg<real4>(23,  tree.bodies_Ppos,   4, "texBody");
-    
+  approxGrav.set_args(0, &tree.n_active_groups,
+                         &tree.n,
+                         &(this->eps2),
+                         &node_begend,
+                         tree.active_group_list.p(),
+                         tree.bodies_Ppos.p(),
+                         tree.multipole.p(),
+                         tree.bodies_acc1.p(),
+                         tree.bodies_Ppos.p(),
+                         tree.ngb.p(),
+                         tree.activePartlist.p(),
+                         tree.interactions.p(),
+                         tree.boxSizeInfo.p(),
+                         tree.groupSizeInfo.p(),
+                         tree.boxCenterInfo.p(),
+                         tree.groupCenterInfo.p(),
+                         tree.bodies_Pvel.p(),
+                         tree.generalBuffer1.p(),  //The buffer to store the tree walks
+                         tree.bodies_h.p(),        //Per particle search radius
+                         tree.bodies_dens.p());    //Per particle density (x) and nnb (y)
+
+  approxGrav.set_texture<real4>(0,  tree.boxSizeInfo,    "texNodeSize");
+  approxGrav.set_texture<real4>(1,  tree.boxCenterInfo,  "texNodeCenter");
+  approxGrav.set_texture<real4>(2,  tree.multipole,      "texMultipole");
+  approxGrav.set_texture<real4>(3,  tree.bodies_Ppos,   "texBody");
+
   approxGrav.setWork(-1, NTHREAD, nBlocksForTreeWalk);
-//  approxGrav.setWork(-1, 32, 1);
+  //approxGrav.setWork(-1, 32, 1);
 
   cudaEventRecord(startLocalGrav, gravStream->s());
-  approxGrav.execute(gravStream->s());  //First half
+  approxGrav.execute2(gravStream->s());  //First half
   cudaEventRecord(endLocalGrav, gravStream->s());
+
+
+
+
 
 #if 0
 	//Print density information
@@ -621,7 +614,7 @@ if(firstIter0 == true || iter == 40){
 
 
   //Print interaction statistics
-  #if 0
+  #if 1
   
   tree.body2group_list.d2h();
   tree.interactions.d2h();
@@ -745,15 +738,17 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
   approxGravLET.set_arg<cl_mem>(18, tree.bodies_h.p());    //Per particle search radius
   approxGravLET.set_arg<cl_mem>(19, tree.bodies_dens.p()); //Per particle density (x) and nnb (y)
   
-  approxGravLET.set_arg<real4>(20, remoteTree.fullRemoteTree, 4, "texNodeSize",
+  approxGravLET.set_arg<real4>(20, remoteTree.fullRemoteTree,  "texNodeSize",
                                1*(remoteP), remoteN );
-  approxGravLET.set_arg<real4>(21, remoteTree.fullRemoteTree, 4, "texNodeCenter",
+  approxGravLET.set_arg<real4>(21, remoteTree.fullRemoteTree,  "texNodeCenter",
                                1*(remoteP) + (remoteN + nodeTexOffset), remoteN);
-  approxGravLET.set_arg<real4>(22, remoteTree.fullRemoteTree, 4, "texMultipole",
+  approxGravLET.set_arg<real4>(22, remoteTree.fullRemoteTree,  "texMultipole",
                                1*(remoteP) + 2*(remoteN + nodeTexOffset), 3*remoteN);
-  approxGravLET.set_arg<real4>(23, remoteTree.fullRemoteTree, 4, "texBody", 0, remoteP);  
+  approxGravLET.set_arg<real4>(23, remoteTree.fullRemoteTree,  "texBody", 0, remoteP);
 
   approxGravLET.setWork(-1, NTHREAD, nBlocksForTreeWalk);
+
+
     
   if(letRunning)
   {
@@ -850,12 +845,13 @@ void octree::correct(tree_structure &tree)
   #ifdef DO_BLOCK_TIMESTEP
     //Reduce the number of valid particles
     gravStream->sync(); //Sync to make sure that the gravity phase is finished
-    getNActive.set_arg<int>(0,    &tree.n);
-    getNActive.set_arg<cl_mem>(1, tree.activePartlist.p());
-    getNActive.set_arg<cl_mem>(2, this->nactive.p());
-    getNActive.set_arg<int>(3,    NULL, 128); //Dynamic shared memory , equal to number of threads
+//    getNActive.set_arg<int>(0,    &tree.n);
+//    getNActive.set_arg<cl_mem>(1, tree.activePartlist.p());
+//    getNActive.set_arg<cl_mem>(2, this->nactive.p());
+//    getNActive.set_arg<int>(3,    NULL, 128); //Dynamic shared memory , equal to number of threads
+    getNActive.set_args(sizeof(int)*128, &tree.n, tree.activePartlist.p(), this->nactive.p());
     getNActive.setWork(-1, 128,   NBLOCK_REDUCE);
-    getNActive.execute(execStream->s());
+    getNActive.execute2(execStream->s());
 
     //Reduce the last parts on the host
     this->nactive.d2h();
@@ -866,55 +862,32 @@ void octree::correct(tree_structure &tree)
   LOG("Active particles: %d \n", tree.n_active_particles);
 
 
-
-
-
   my_dev::dev_mem<float2>  float2Buffer;
   my_dev::dev_mem<real4>   real4Buffer1;
 
   int memOffset = float2Buffer.cmalloc_copy(tree.generalBuffer1, tree.n, 0);
       memOffset = real4Buffer1.cmalloc_copy(tree.generalBuffer1, tree.n, memOffset);
-  
- 
-  correctParticles.set_arg<int   >(0, &tree.n);
-  correctParticles.set_arg<float >(1, &t_current);
-  correctParticles.set_arg<cl_mem>(2, tree.bodies_time.p());
-  correctParticles.set_arg<cl_mem>(3, tree.activePartlist.p());
-  correctParticles.set_arg<cl_mem>(4, tree.bodies_vel.p());
-  correctParticles.set_arg<cl_mem>(5, tree.bodies_acc0.p());
-  correctParticles.set_arg<cl_mem>(6, tree.bodies_acc1.p());
-  correctParticles.set_arg<cl_mem>(7, tree.bodies_h.p());
-  correctParticles.set_arg<cl_mem>(8, tree.bodies_dens.p());
-  correctParticles.set_arg<cl_mem>(9, tree.bodies_pos.p());
-  correctParticles.set_arg<cl_mem>(10, tree.bodies_Ppos.p());
-  correctParticles.set_arg<cl_mem>(11, tree.bodies_Pvel.p());
-  correctParticles.set_arg<cl_mem>(12, tree.oriParticleOrder.p());
-  correctParticles.set_arg<cl_mem>(13, real4Buffer1.p());
-  correctParticles.set_arg<cl_mem>(14, float2Buffer.p());
+
+
+  correctParticles.set_args(0, &tree.n, &t_current, tree.bodies_time.p(), tree.activePartlist.p(),
+                            tree.bodies_vel.p(), tree.bodies_acc0.p(), tree.bodies_acc1.p(),
+                            tree.bodies_h.p(), tree.bodies_dens.p(), tree.bodies_pos.p(),
+                            tree.bodies_Ppos.p(), tree.bodies_Pvel.p(), tree.oriParticleOrder.p(),
+                            real4Buffer1.p(), float2Buffer.p());
   correctParticles.setWork(tree.n, 128);
-  correctParticles.execute(execStream->s());
+  correctParticles.execute2(execStream->s());
  
-  //Copy the reshuffled items back to their original buffers
+  //Copy the shuffled items back to their original buffers
   tree.bodies_acc0.copy_devonly(real4Buffer1, tree.n);
   tree.bodies_time.copy_devonly(float2Buffer, float2Buffer.get_size());
 
 
   #ifdef DO_BLOCK_TIMESTEP
-    computeDt.set_arg<int>(0,    &tree.n);
-    computeDt.set_arg<float>(1,  &t_current);
-    computeDt.set_arg<float>(2,  &(this->eta));
-    computeDt.set_arg<int>(3,    &(this->dt_limit));
-    computeDt.set_arg<float>(4,  &(this->eps2));
-    computeDt.set_arg<cl_mem>(5, tree.bodies_time.p());
-    computeDt.set_arg<cl_mem>(6, tree.bodies_vel.p());
-    computeDt.set_arg<cl_mem>(7, tree.ngb.p());
-    computeDt.set_arg<cl_mem>(8, tree.bodies_pos.p());
-    computeDt.set_arg<cl_mem>(9, tree.bodies_acc0.p());
-    computeDt.set_arg<cl_mem>(10, tree.activePartlist.p());
-    computeDt.set_arg<float >(11, &timeStep);
-
+    computeDt.set_args(0, &tree.n, &t_current, &(this->eta), &(this->dt_limit), &(this->eps2),
+                          tree.bodies_time.p(), tree.bodies_vel.p(), tree.ngb.p(), tree.bodies_pos.p(),
+                          tree.bodies_acc0.p(), tree.activePartlist.p(), &timeStep);
     computeDt.setWork(tree.n, 128);
-    computeDt.execute(execStream->s());
+    computeDt.execute2(execStream->s());
   #endif
 }
 
@@ -951,22 +924,14 @@ double octree::compute_energies(tree_structure &tree)
     LOG("Energy (on host): Etot = %.10lg Ekin = %.10lg Epot = %.10lg \n", hEtot, hEkin, hEpot);
   #endif
 
-  //float2 energy : x is kinetic energy, y is potential energy
+  //float2 energy: x is kinetic energy, y is potential energy
   int blockSize = NBLOCK_REDUCE ;
   my_dev::dev_mem<double2>  energy;
   energy.cmalloc_copy(tree.generalBuffer1, blockSize, 0);
   
-
-    
-  computeEnergy.set_arg<int>(0,    &tree.n);
-  computeEnergy.set_arg<cl_mem>(1, tree.bodies_pos.p());
-  computeEnergy.set_arg<cl_mem>(2, tree.bodies_vel.p());
-  computeEnergy.set_arg<cl_mem>(3, tree.bodies_acc0.p());
-  computeEnergy.set_arg<cl_mem>(4, energy.p());
-  computeEnergy.set_arg<double>(5, NULL, 128*2); //Dynamic shared memory, equal to number of threads times 2
-
+  computeEnergy.set_args(sizeof(double)*128*2, &tree.n, tree.bodies_pos.p(), tree.bodies_vel.p(), tree.bodies_acc0.p(), energy.p());
   computeEnergy.setWork(-1, 128, blockSize);
-  computeEnergy.execute(execStream->s());
+  computeEnergy.execute2(execStream->s());
 
   //Reduce the last parts on the host
   energy.d2h();
@@ -1026,101 +991,3 @@ double octree::compute_energies(tree_structure &tree)
   return de;
 }
 
-
-#if 0
-//TODO JB remove this function
-void octree::checkRemovalDistance(tree_structure &tree)
-{
-  //Download all particle properties to the host
-
-  tree.bodies_pos.d2h();    //The particles positions
-  tree.bodies_key.d2h();    //The particles keys
-  tree.bodies_vel.d2h();    //Velocities
-  tree.bodies_acc0.d2h();    //Acceleration
-  tree.bodies_acc1.d2h();    //Acceleration
-  tree.bodies_time.d2h();  //The timestep details (.x=tb, .y=te
-  tree.bodies_ids.d2h();
-
-  bool modified = false;
-
-  tree.multipole.d2h();
-  real4 com = tree.multipole[0];
-
-  int storeIdx = 0;
-
-  int NTotalT = 0, NFirstT = 0, NSecondT = 0, NThirdT = 0;
-
-  for(int i=0; i < tree.n ; i++)
-  {
-    real4 posi = tree.bodies_pos[i];
-
-    real4 r;
-    r.x = (posi.x-com.x); r.y = (posi.y-com.y);r.z = (posi.z-com.z);
-    float dist = (r.x*r.x) + (r.y*r.y) + (r.z*r.z);
-    dist = sqrt(dist);
-
-    tree.bodies_pos[storeIdx] = tree.bodies_pos[i];
-    tree.bodies_key[storeIdx] = tree.bodies_key[i];
-    tree.bodies_vel[storeIdx] = tree.bodies_vel[i];
-    tree.bodies_acc0[storeIdx] = tree.bodies_acc0[i];
-    tree.bodies_acc1[storeIdx] = tree.bodies_acc1[i];
-    tree.bodies_time[storeIdx] = tree.bodies_time[i];
-    tree.bodies_ids[storeIdx] = tree.bodies_ids[i];
-
-    if(dist > removeDistance)
-    {
-        //Remove this particle
-        cerr << "Removing particle: " << i << " distance is: " << dist;
-        cerr << "\tPOSM: " << posi.x << " " << posi.y << " " << posi.z << " " << posi.w;
-        cerr << "\tCOM: " << com.x << " " << com.y << " " << com.z << " " << com.w << endl;
-
-        //Add this particles potential energy to the sum
-//         removedPot += hostbodies[i].w*0.5*hostacc0[i].w;
-        modified =  true;
-    }
-    else
-    {
-      storeIdx++; //Increase the store position
-
-      NTotalT++;
-      NFirstT = 0, NSecondT = 0, NThirdT = 0;
-
-      //Specific for Jeroens files
-      if(tree.bodies_ids[i] >= 0 && tree.bodies_ids[i] < 100000000) NThirdT++;
-      if(tree.bodies_ids[i] >= 100000000 && tree.bodies_ids[i] < 200000000) NSecondT++;
-      if(tree.bodies_ids[i] >= 200000000 && tree.bodies_ids[i] < 300000000) NFirstT++;
-    }
-  } //end for loop
-
-
-  NTotal  = NTotalT;
-  NFirst  = NFirstT;
-  NSecond = NSecondT;
-  NThird  = NThirdT;
-
-
-  if(modified)
-  {
-    tree.setN(storeIdx);
-
-    //Now copy them back
-    tree.bodies_pos.h2d();    //The particles positions
-    tree.bodies_key.h2d();    //The particles keys
-    tree.bodies_vel.h2d();    //Velocities
-    tree.bodies_acc0.h2d();    //Acceleration
-    tree.bodies_acc1.h2d();    //Acceleration
-    tree.bodies_time.h2d();  //The timestep details (.x=tb, .y=te
-    tree.bodies_ids.h2d();
-
-    //Compute the energy!
-    store_energy_flag = true;
-    compute_energies(tree);
-  }//end if modified
-  else
-  {
-        cerr << "Nothing removed! :-) \n";
-  }
-
-  //TODO sync the number of particles with process 0 for correct header file
-}
-#endif

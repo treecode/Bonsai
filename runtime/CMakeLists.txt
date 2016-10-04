@@ -301,7 +301,7 @@ cuda_add_executable(${BINARY_NAME}
   ${HFILES}
   ${CUFILES}
   ${PROFFILES}
-  OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING} ${KEEP} -Xcompiler="-fPIE"
+  OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING} ${KEEP} -Xcompiler="-fPIE" -std=c++11 
   )
 
 if (USE_MPI)  

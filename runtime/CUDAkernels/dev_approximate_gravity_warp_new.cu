@@ -754,7 +754,7 @@ bool treewalk(
   if(counters.x == 0xFFFFFFFF && counters.y == 0xFFFFFFFF)
     return false;
 
-#if 1
+#if 0
   /* CUDA 8RC work around */
   if(bid < 0) // bid ==0 && laneId < nb_i && && threadIdx.x == 0)
   {

@@ -125,7 +125,6 @@ void octree::reallocateParticleMemory(tree_structure &tree)
   tree.bodies_time.cresize(n_bodies, reduce);    //ccalloc -> init to 0
   
   //Density
-//  const int oldHsize = tree.bodies_h.get_size();
   tree.bodies_h.cresize(n_bodies, reduce);
   tree.bodies_dens.cresize(n_bodies, reduce);
   
@@ -160,7 +159,7 @@ void octree::reallocateParticleMemory(tree_structure &tree)
 
 void octree::allocateTreePropMemory(tree_structure &tree)
 {
-  devContext.startTiming(execStream->s());
+  devContext->startTiming(execStream->s());
   int n_nodes = tree.n_nodes;
 
   //Allocate memory
@@ -193,12 +192,12 @@ void octree::allocateTreePropMemory(tree_structure &tree)
     tree.boxCenterInfo.cmalloc(n_nodes, true); //host allocated
     tree.groupCenterInfo.cmalloc(tree.n_groups,true);
   }
-  devContext.stopTiming("Memory", 11, execStream->s());
+  devContext->stopTiming("Memory", 11, execStream->s());
 }
 
 void octree::build (tree_structure &tree) {
 
-  devContext.startTiming(execStream->s());
+  devContext->startTiming(execStream->s());
   int level      = 0;
   int validCount = 0;
   int offset     = 0;
@@ -206,7 +205,6 @@ void octree::build (tree_structure &tree) {
   this->resetCompact();
 
   /******** create memory buffers **********/
-
 
   my_dev::dev_mem<uint>   validList;
   my_dev::dev_mem<uint>   compactList;
@@ -230,6 +228,7 @@ void octree::build (tree_structure &tree) {
   //[[validList--2*tree.n],[compactList--2*tree.n],[node_key--4*tree.n],
   //[levelOffset--256], [maxLevel--256], [free--at-least: 12-8*tree.n-256]]
 
+  LOGF(stderr,"Before zeromem\n");
   //Set the default values to zero
   validList.  zeroMemGPUAsync(execStream->s());
   levelOffset.zeroMemGPUAsync(execStream->s());
@@ -241,53 +240,25 @@ void octree::build (tree_structure &tree) {
   /******** set kernels parameters **********/
 
 
-  build_key_list.set_arg<cl_mem>(0,   tree.bodies_key.p());
-  build_key_list.set_arg<cl_mem>(1,   tree.bodies_Ppos.p());
-  build_key_list.set_arg<int>(2,      &tree.n);
-  build_key_list.set_arg<real4>(3,    &tree.corner);
-  build_key_list.setWork(tree.n, 128);
 
-  build_valid_list.set_arg<int>(0, &tree.n);
-  build_valid_list.set_arg<int>(1, &level);
-  build_valid_list.set_arg<cl_mem>(2,  tree.bodies_key.p());
-  build_valid_list.set_arg<cl_mem>(3,  validList.p());
-  build_valid_list.set_arg<cl_mem>(4,  this->devMemCountsx.p());
+  build_valid_list.set_args(0, &tree.n, &level, tree.bodies_key.p(),  validList.p(), this->devMemCountsx.p());
   build_valid_list.setWork(tree.n, 128);
 
-  vector<size_t> localWork(2), globalWork(2);
-  globalWork[0] = 120*32;  globalWork[1] = 4;
-  localWork [0] = 128;      localWork [1] = 1;
+  build_nodes.set_args(0, &level, devMemCountsx.p(),  levelOffset.p(), maxLevel.p(),
+                       tree.level_list.p(), compactList.p(), tree.bodies_key.p(), node_key.p(),
+                       tree.n_children.p(), tree.node_bodies.p());
+  build_nodes.setWork(vector<size_t>{120*32,4}, vector<size_t>{128,1});
 
-  build_nodes.setWork(globalWork, localWork);
-  build_nodes.set_arg<cl_mem>(1,  this->devMemCountsx.p());
-  build_nodes.set_arg<cl_mem>(2,  levelOffset.p());
-  build_nodes.set_arg<cl_mem>(3,  maxLevel.p());
-  build_nodes.set_arg<cl_mem>(4,  tree.level_list.p());
-  build_nodes.set_arg<cl_mem>(5,  compactList.p());
-  build_nodes.set_arg<cl_mem>(6,  tree.bodies_key.p());
-  build_nodes.set_arg<cl_mem>(7,  node_key.p());
-  build_nodes.set_arg<cl_mem>(8,  tree.n_children.p());
-  build_nodes.set_arg<cl_mem>(9,  tree.node_bodies.p());
-
-  link_tree.set_arg<int>(0,     &offset);
-  link_tree.set_arg<cl_mem>(1,  tree.n_children.p());
-  link_tree.set_arg<cl_mem>(2,  tree.node_bodies.p());
-  link_tree.set_arg<cl_mem>(3,  tree.bodies_Ppos.p());
-  link_tree.set_arg<real4>(4,   &tree.corner);
-  link_tree.set_arg<cl_mem>(5,  tree.level_list.p());
-  link_tree.set_arg<cl_mem>(6,  validList.p());
-  link_tree.set_arg<cl_mem>(7,  node_key.p());
-  link_tree.set_arg<cl_mem>(8,  tree.bodies_key.p());
 
   /******  build the levels *********/
-
+  LOGF(stderr,"Before build valid\n");
   // make sure previous resetCompact() has finished.
   this->devMemCountsx.waitForCopyEvent();
-
 //  devContext.startTiming(execStream->s());
 
   if(nProcs > 1)
   {
+      LOGF(stderr,"Before copy ppos valid\n");
     //Start copying the particle positions to the host, will overlap with tree-construction
     localTree.bodies_Ppos.d2h(tree.n, false, LETDataToHostStream->s());
   }
@@ -298,16 +269,9 @@ void octree::build (tree_structure &tree) {
   build_tree_node_levels(*this, validList, compactList, levelOffset, maxLevel, execStream->s());
 #else
   for (level = 0; level < MAXLEVELS; level++) {
-    // mark bodies to be combined into nodes
-    build_valid_list.set_arg<int>(1, &level);
-    build_valid_list.execute(execStream->s());
-
-    //gpuCompact to get number of created nodes
-    gpuCompact(devContext, validList, compactList, tree.n*2, 0);
-
-    // assemble nodes
-    build_nodes.set_arg<int>(0, &level);
-    build_nodes.execute(execStream->s());
+    build_valid_list.execute2(execStream->s());         //Mark bodies to be combined into nodes
+    gpuCompact(validList, compactList, tree.n*2, 0);    //Retrieve the number of created nodes
+    build_nodes.execute2(execStream->s());              //Assemble the nodes
   } //end for level
 
   // reset counts to 1 so next compact proceeds...
@@ -319,34 +283,26 @@ void octree::build (tree_structure &tree) {
 //  fprintf(stderr, " done in %g sec : %g Mptcl/sec\n", dt, tree.n/1e6/dt);
 //  devContext.stopTiming("Create-nodes", 10, execStream->s());
 
-  maxLevel.d2h(1);
-  level = maxLevel[0];
-
-  levelOffset.d2h(1);
-  offset = levelOffset[0];
-
-  tree.n_nodes = offset;
-
+  maxLevel.d2h(1);      level  = maxLevel[0];
+  levelOffset.d2h(1);   offset = levelOffset[0];
 
   /***** Link the tree ******/
 
+
+
   //The maximum number of levels that can be used is MAXLEVEl
-  //if max level is larger than that the program will exit
-  LOG("Max level : %d \n", level);
+  LOG("Tree built with %d levels\n", level);
   if(level >= MAXLEVELS)
   {
-    cerr << "The tree has become too deep, the program will exit. \n";
-    cerr << "Consider the removal of far away particles to prevent a too large box. \n";
+    std::cerr << "The tree has become too deep, the program will exit. \n";
+    std::cerr << "Consider the removal of far away particles to prevent a too large box. \n";
     exit(0);
   }
 
-  link_tree.setWork(tree.n_nodes , 128);
-  link_tree.printWorkSize("Link_tree: ");
-
-  tree.n_levels = level-1;
-
-  tree.level_list.d2h();
+  tree.n_nodes       = offset;
+  tree.n_levels      = level-1;
   tree.startLevelMin = 0;
+  tree.level_list.d2h();
   for(int i=0; i < level; i++)
   {
     LOG("%d\t%d\t%d\n", i, tree.level_list[i].x, tree.level_list[i].y);
@@ -361,62 +317,52 @@ void octree::build (tree_structure &tree) {
 
 
   //Link the tree
-  link_tree.set_arg<int>(0, &offset);   //Offset=number of nodes
-  link_tree.set_arg<int>(9, &tree.startLevelMin);
-  link_tree.execute(execStream->s());
+
+  link_tree.set_args(0, &offset,  tree.n_children.p(), tree.node_bodies.p(), tree.bodies_Ppos.p(), &tree.corner,
+                        tree.level_list.p(), validList.p(), node_key.p(), tree.bodies_key.p(), &tree.startLevelMin);
+  link_tree.setWork(tree.n_nodes , 128);
+  link_tree.execute2(execStream->s());
 
   //After executing link_tree, the id_list contains for each node the ID of its parent.
   //Valid_list contains for each node if its a leaf (valid) or a normal node -> non_valid
   //Execute a split on the validList to get separate id lists
   //for the leafs and nodes. Used when computing multipole expansions
 
-  if(tree.leafNodeIdx.get_size() > 0)
-    tree.leafNodeIdx.cresize_nocpy(tree.n_nodes, false);
-  else
-    tree.leafNodeIdx.cmalloc(tree.n_nodes , false);
+  if(tree.leafNodeIdx.get_size() > 0) tree.leafNodeIdx.cresize_nocpy(tree.n_nodes, false);
+  else                                tree.leafNodeIdx.cmalloc      (tree.n_nodes , false);
 
   //Split the leaf nodes and non-leaf nodes
-  gpuSplit(devContext, validList, tree.leafNodeIdx, tree.n_nodes, &tree.n_leafs);
+  gpuSplit(validList, tree.leafNodeIdx, tree.n_nodes, &tree.n_leafs);
 
   LOG("Total nodes: %d N_leafs: %d  non-leafs: %d \n", tree.n_nodes, tree.n_leafs, tree.n_nodes - tree.n_leafs);
 
-
-  build_level_list.set_arg<int>(0, &tree.n_nodes);
-  build_level_list.set_arg<int>(1, &tree.n_leafs);
-  build_level_list.set_arg<cl_mem>(2, tree.leafNodeIdx.p());
-  build_level_list.set_arg<cl_mem>(3, tree.node_bodies.p());
-  build_level_list.set_arg<cl_mem>(4, validList.p());
-  build_level_list.setWork(tree.n_nodes-tree.n_leafs, 128);
-
-  validList.zeroMemGPUAsync(execStream->s());
-
   //Build the level list based on the leafIdx list, required for easy
   //access during the compute node properties / multipole computation
-  build_level_list.execute(execStream->s());
+  build_level_list.set_args(0, &tree.n_nodes,  &tree.n_leafs, tree.leafNodeIdx.p(), tree.node_bodies.p(), validList.p());
+  build_level_list.setWork(tree.n_nodes-tree.n_leafs, 128);
+  validList.zeroMemGPUAsync(execStream->s());
+  build_level_list.execute2(execStream->s());
 
   //Compact the node-level boundaries into the node_level_list
-  gpuCompact(devContext, validList, tree.node_level_list,
-             2*(tree.n_nodes-tree.n_leafs), 0);
+  gpuCompact(validList, tree.node_level_list, 2*(tree.n_nodes-tree.n_leafs), 0);
 
-  /************   Start building the particle groups   *************/
+  /************   Start building the particle groups   *************
 
-  //We use the minimum tree-level to set extra boundaries, which ensures
-  //that groups are based on the tree-structure and will not be very big
+      We use the minimum tree-level to set extra boundaries, which ensures
+      that groups are based on the tree-structure and will not be very big
 
-  //Now use the previous computed offsets to build all boundaries.
-  //The ones based on top level boundaries and the group ones (every NCRIT particles)
+      The previous computed offsets are used to build all boundaries.
+      The ones based on top level boundaries and the group ones (every NCRIT particles)
+  */
+
   validList.zeroMemGPUAsync(execStream->s());
 
-  define_groups.set_arg<int>    (0, &tree.n);
-  define_groups.set_arg<cl_mem> (1, validList.p());
-  define_groups.set_arg<uint2>  (2, &tree.level_list[tree.startLevelMin+1]); //Bit deeper then the minimum for extra cuts
-  define_groups.set_arg<cl_mem> (3, tree.node_bodies.p());
-  define_groups.set_arg<cl_mem> (4, tree.node_level_list.p());
-  define_groups.set_arg<int>    (5, &level);
+  define_groups.set_args(0, &tree.n, validList.p(), &tree.level_list[tree.startLevelMin+1], tree.node_bodies.p(),
+                            tree.node_level_list.p(), &level);
   define_groups.setWork(tree.n, 128);
-  define_groups.execute(execStream->s());
+  define_groups.execute2(execStream->s());
 
-  //Ccopy the node_level_list back to host since we need it in compute properties
+  //Copy the node_level_list back to host since we need it to compute the tree properties
   LOG("Finished level list \n");
   tree.node_level_list.d2h();
   for(int i=0; i < level; i++)
@@ -424,28 +370,23 @@ void octree::build (tree_structure &tree) {
     LOG("node_level_list: %d \t%d\n", i, tree.node_level_list[i]);
   }
 
-  //Now compact validList to get the list of group ids
-  gpuCompact(devContext, validList, compactList, tree.n*2, &validCount);
+  //Compact the validList to get the list of group IDs
+  gpuCompact(validList, compactList, tree.n*2, &validCount);
   this->resetCompact();
   tree.n_groups = validCount/2;
   LOG("Found number of groups: %d \n", tree.n_groups);
 
-  if(tree.group_list.get_size() > 0)
-    tree.group_list.cresize_nocpy(tree.n_groups, false);
-  else
-    tree.group_list.cmalloc(tree.n_groups , false);
+  if(tree.group_list.get_size() > 0) tree.group_list.cresize_nocpy(tree.n_groups, false);
+  else                               tree.group_list.cmalloc      (tree.n_groups, false);
 
 
-  store_groups.set_arg<int>(0,    &tree.n);
-  store_groups.set_arg<int>(1,    &tree.n_groups);
-  store_groups.set_arg<cl_mem>(2, compactList.p());
-  store_groups.set_arg<cl_mem>(3, tree.body2group_list.p());
-  store_groups.set_arg<cl_mem>(4, tree.group_list.p());
+  store_groups.set_args(0, &tree.n, &tree.n_groups, compactList.p(), tree.body2group_list.p(), tree.group_list.p());
   store_groups.setWork(-1, NCRIT, tree.n_groups);
-  store_groups.execute(execStream->s());
+  store_groups.execute2(execStream->s());
 
 
   //Memory allocation for the valid group lists
+  //TODO get rid of this if by calling cresize when cmalloc is already called from inside the cmalloc call
   if(tree.active_group_list.get_size() > 0)
   {
     tree.active_group_list.cresize_nocpy(tree.n_groups, false);
@@ -458,7 +399,7 @@ void octree::build (tree_structure &tree) {
   }
 
   LOG("Tree built complete!\n");
-  devContext.stopTiming("Tree-construction", 2, execStream->s());
+  devContext->stopTiming("Tree-construction", 2, execStream->s());
 
   /*************************/
 }
@@ -491,12 +432,13 @@ void octree::parallelDataSummary(tree_structure &tree,
   if(updateBoundaries)
   {
     //Build keys on current positions, since those are already sorted, while predicted are not
-    build_key_list.set_arg<cl_mem>(0,   tree.bodies_key.p());
-    build_key_list.set_arg<cl_mem>(1,   tree.bodies_pos.p());
-    build_key_list.set_arg<int>(2,      &tree.n);
-    build_key_list.set_arg<real4>(3,    &tree.corner);
-    build_key_list.setWork(tree.n, 128); //128 threads per block
-    build_key_list.execute(execStream->s());
+//    build_key_list.set_arg<cl_mem>(0,   tree.bodies_key.p());
+//    build_key_list.set_arg<cl_mem>(1,   tree.bodies_pos.p());
+//    build_key_list.set_arg<int>(2,      &tree.n);
+//    build_key_list.set_arg<real4>(3,    &tree.corner);
+    build_key_list.set_args(0, tree.bodies_key.p(), tree.bodies_pos.p(), &tree.n, &tree.corner);
+    build_key_list.setWork(tree.n, 128);
+    build_key_list.execute2(execStream->s());
 
     /* added by evghenii, needed for 2D domain decomposition in parallel.cpp */
     tree.bodies_key.d2h(true,execStream->s());
@@ -520,9 +462,10 @@ void octree::parallelDataSummary(tree_structure &tree,
    //Note we can call this in parallel with the computation of the domain.
    //This is done on predicted positions, to make sure that particles AFTER
    //prediction are separated by boundaries
-   build_key_list.set_arg<cl_mem>(1,   tree.bodies_Ppos.p());
-   build_key_list.set_arg<real4>(3,    &tree.corner);
-   build_key_list.execute(execStream->s());
+//   build_key_list.set_arg<cl_mem>(1,   tree.bodies_Ppos.p());
+   build_key_list.reset_arg(1,   tree.bodies_Ppos.p());
+//   build_key_list.set_arg<real4>(3,    &tree.corner);
+   build_key_list.execute2(execStream->s());
 
    if(updateBoundaries)
    {
@@ -536,9 +479,9 @@ void octree::parallelDataSummary(tree_structure &tree,
     domComp = get_time()-t0;
     char buff5[1024];
     sprintf(buff5,"EXCHANGEA-%d: tUpdateBoundaries: %lg\n", procId,  domComp);
-    devContext.writeLogEvent(buff5);
+    devContext->writeLogEvent(buff5);
 
-    //Boundaries computed, now echange the particles
+    //Boundaries computed, now exchange the particles
     LOGF(stderr, "Computing, exchanging and recompute of domain boundaries took: %f \n",domComp);
     t0 = get_time();
     gpuRedistributeParticles_SFC(&tree.parallelBoundaries[0]); //Redistribute the particles

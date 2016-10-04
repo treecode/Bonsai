@@ -6,8 +6,16 @@
 #include "BonsaiSharedData.h"
 
 #ifndef WIN32
-#include <sys/time.h>
+    #include <sys/time.h>
 #endif
+
+
+#include "IDType.h"
+
+#ifdef USE_MPI
+    #include "BonsaiIO.h"
+#endif
+
 
 /*********************************/
 /*********************************/
@@ -404,237 +412,209 @@ void octree::dumpData()
   }
 }
 
+
+
+
+    /*
+     *
+     * Functions to read the MPI-IO based file format
+     *
+     *
+     */
+
+    template<typename T>
+    static inline T& lBonsaiSafeCast(BonsaiIO::DataTypeBase* ptrBase)
+    {
+    T* ptr = dynamic_cast<T*>(ptrBase);
+    assert(ptr != NULL);
+    return *ptr;
+    }
+
+
+    static double lReadBonsaiFields(
+        const int rank, const MPI_Comm &comm,
+        const std::vector<BonsaiIO::DataTypeBase*> &data,
+        BonsaiIO::Core &in,
+        const int reduce,
+        const bool restartFlag = true)
+    {
+        double dtRead = 0;
+        for (auto &type : data)
+        {
+            double t0 = MPI_Wtime();
+            if (rank == 0)
+            fprintf(stderr, " Reading %s ...\n", type->getName().c_str());
+            if (in.read(*type, restartFlag, reduce))
+            {
+                long long int nLoc = type->getNumElements();
+                long long int nGlb;
+                MPI_Allreduce(&nLoc, &nGlb, 1, MPI_DOUBLE, MPI_SUM, comm);
+                if (rank == 0)
+                {
+                    fprintf(stderr, " Read %lld of type %s\n", nGlb, type->getName().c_str());
+                    fprintf(stderr, " ---- \n");
+                }
+            }
+            else
+            {
+                if (rank == 0)
+                {
+                    fprintf(stderr, " %s  is not found, skipping\n", type->getName().c_str());
+                    fprintf(stderr, " ---- \n");
+                }
+            }
+
+            dtRead += MPI_Wtime() - t0;
+        }
+
+        return dtRead;
+    }
+
+
+    void octree::lReadBonsaiFile(std::vector<real4 > &bodyPositions,
+                                 std::vector<real4 > &bodyVelocities,
+                                 std::vector<ullong> &bodyIDs,
+                                 float &t_current,
+                                 const std::string &fileName,
+                                 const int rank, const int nrank,
+                                 const MPI_Comm &comm,
+                                 const bool restart,
+                                 const int reduceFactor)
+    {
+        if (rank == 0)
+            std::cerr << " >>> Reading Bonsai file format : " << fileName <<  std::endl;
+
+        BonsaiIO::Core *in;
+        try
+        {
+            in = new BonsaiIO::Core(rank, nrank, comm, BonsaiIO::READ, fileName);
+        }
+        catch (const std::exception &e)
+        {
+            if (rank == 0)
+            fprintf(stderr, "Something went wrong: %s \n", e.what());
+            MPI_Finalize();
+            ::exit(0);
+        }
+
+        if (rank == 0)
+            in->getHeader().printFields();
+
+        std::vector<BonsaiIO::DataTypeBase*> data;
+        typedef float float3[3];
+        typedef float float2[2];
+
+        using IDType = BonsaiIO::DataType<IDType>;
+        using Pos    = BonsaiIO::DataType<real4>;
+        using Vel    = BonsaiIO::DataType<float3>;
+        using RhoH   = BonsaiIO::DataType<float2>;
+        data.push_back(new IDType("DM:IDType"));
+        data.push_back(new Pos   ("DM:POS:real4"));
+        data.push_back(new Vel   ("DM:VEL:float[3]"));
+        data.push_back(new IDType("Stars:IDType"));
+        data.push_back(new Pos   ("Stars:POS:real4"));
+        data.push_back(new Vel   ("Stars:VEL:float[3]"));
+
+        const double dtRead = lReadBonsaiFields(rank, comm, data, *in, reduceFactor, restart);
+
+        const auto &DM_IDType = lBonsaiSafeCast<IDType>(data[0]);
+        const auto &DM_Pos    = lBonsaiSafeCast<Pos   >(data[1]);
+        const auto &DM_Vel    = lBonsaiSafeCast<Vel   >(data[2]);
+        const auto &S_IDType  = lBonsaiSafeCast<IDType>(data[3]);
+        const auto &S_Pos     = lBonsaiSafeCast<Pos   >(data[4]);
+        const auto &S_Vel     = lBonsaiSafeCast<Vel   >(data[5]);
+
+        const size_t nDM = DM_IDType.size();
+        assert(nDM == DM_Pos.size());
+        assert(nDM == DM_Vel.size());
+
+        const size_t nS = S_IDType.size();
+        assert(nS == S_Pos.size());
+        assert(nS == S_Vel.size());
+
+
+        //NFirst  = static_cast<std::remove_reference<decltype(NFirst )>::type>(nDM);
+        //NSecond = static_cast<std::remove_reference<decltype(NSecond)>::type>(nS);
+
+
+        bodyPositions.resize(nDM+nS);
+        bodyVelocities.resize(nDM+nS);
+        bodyIDs.resize(nDM+nS);
+
+        /* store DM */
+
+        constexpr int ntypecount = 10;
+        std::array<size_t,ntypecount> ntypeloc, ntypeglb;
+        std::fill(ntypeloc.begin(), ntypeloc.end(), 0);
+        for (int i = 0; i < nDM; i++)
+        {
+            ntypeloc[0]++;
+            auto &pos = bodyPositions[i];
+            auto &vel = bodyVelocities[i];
+            auto &ID  = bodyIDs[i];
+            pos = DM_Pos[i];
+            pos.w *= reduceFactor;
+            vel = make_float4(DM_Vel[i][0], DM_Vel[i][1], DM_Vel[i][2],0.0f);
+            ID  = DM_IDType[i].getID() + DARKMATTERID;
+        }
+
+        for (int i = 0; i < nS; i++)
+        {
+            auto &pos = bodyPositions[nDM+i];
+            auto &vel = bodyVelocities[nDM+i];
+            auto &ID  = bodyIDs[nDM+i];
+            pos = S_Pos[i];
+            pos.w *= reduceFactor;
+            vel = make_float4(S_Vel[i][0], S_Vel[i][1], S_Vel[i][2],0.0f);
+            ID  = S_IDType[i].getID();
+            switch (S_IDType[i].getType())
+            {
+            case 1:  /*  Bulge */
+                ID += BULGEID;
+                break;
+            case 2:  /*  Disk */
+                ID += DISKID;
+                break;
+            }
+            if (S_IDType[i].getType() < ntypecount)
+            ntypeloc[S_IDType[i].getType()]++;
+        }
+
+        MPI_Reduce(&ntypeloc, &ntypeglb, ntypecount, MPI_LONG_LONG, MPI_SUM, 0, comm);
+        if (rank == 0)
+        {
+            size_t nsum = 0;
+            for (int type = 0; type < ntypecount; type++)
+            {
+            nsum += ntypeglb[type];
+            if (ntypeglb[type] > 0)
+                fprintf(stderr, "bonsai-read: ptype= %d:  np= %zu \n",type, ntypeglb[type]);
+            }
+            assert(nsum > 0);
+        }
+
+
+        LOGF(stderr,"Read time from snapshot: %f \n", in->getTime());
+
+        if(static_cast<float>(in->getTime()) > 10e10 ||
+            static_cast<float>(in->getTime()) < -10e10){
+            //tree->set_t_current(0);
+            t_current = 0;
+        }
+        else{
+            //tree->set_t_current(static_cast<float>(in->getTime()));
+            t_current = static_cast<float>(in->getTime());
+        }
+
+        in->close();
+        const double bw = in->computeBandwidth()/1e6;
+        for (auto d : data)
+            delete d;
+        delete in;
+        if (rank == 0)
+            fprintf(stderr, " :: dtRead= %g  sec readBW= %g MB/s \n", dtRead, bw);
+    }
+
 #endif
-
-void octree::write_snapshot_per_process(real4 *bodyPositions, real4 *bodyVelocities, ullong* bodyIds,
-                                        int n, string fileName, float time)
-{
-    NTotal = n;
-    NFirst = NSecond = NThird = 0;
-
-    for(int i=0; i < n; i++)
-    {
-      if(bodyIds[i] >= DISKID  && bodyIds[i] < BULGEID)       NThird++;
-      if(bodyIds[i] >= BULGEID && bodyIds[i] < DARKMATTERID)  NSecond++;
-      if(bodyIds[i] >= DARKMATTERID)                          NFirst++;
-    }
-
-    //Sync them to process 0
-    int NCombTotal, NCombFirst, NCombSecond, NCombThird;
-    NCombTotal  = (NTotal);
-    NCombFirst  = (NFirst);
-    NCombSecond = (NSecond);
-    NCombThird  = (NThird);
-
-    //Since the bulge and disk particles are star particles, lets add them
-    NCombSecond += NCombThird;
-
-
-    ofstream outputFile;
-    outputFile.open(fileName.c_str(), ios::out | ios::binary);
-
-    dumpV2  h;
-
-    if(!outputFile.is_open())
-    {
-      cout << "Can't open output file: "<< fileName << std::endl;
-      ::exit(0);
-    }
-
-    //Create Tipsy header
-    h.time    = time;
-    h.nbodies = NCombTotal;
-    h.ndim    = 3;
-    h.ndark   = NCombFirst;
-    h.nstar   = NCombSecond;    //In case of disks we have to finish this
-    h.nsph    = 0;
-    h.version = 2;
-    outputFile.write((char*)&h, sizeof(h));
-
-    //First write the dark matter particles
-    for(int i=0; i < NCombTotal ; i++)
-    {
-      if(bodyIds[i] >= DARKMATTERID)
-      {
-        //Set particle properties
-        dark_particleV2 d;
-        //d.eps = bodyVelocities[i].w;
-        d.mass = bodyPositions[i].w;
-        d.pos[0] = bodyPositions[i].x;
-        d.pos[1] = bodyPositions[i].y;
-        d.pos[2] = bodyPositions[i].z;
-        d.vel[0] = bodyVelocities[i].x;
-        d.vel[1] = bodyVelocities[i].y;
-        d.vel[2] = bodyVelocities[i].z;
-        d.setID(bodyIds[i]);      //Custom change to Tipsy format
-
-        outputFile.write((char*)&d, sizeof(d));
-      } //end if
-    } //end i loop
-
-    //Next write the star particles
-    for(int i=0; i < NCombTotal ; i++)
-    {
-      if(bodyIds[i] < DARKMATTERID)
-      {
-        //Set particle properties
-        star_particleV2 s;
-        //s.eps = bodyVelocities[i].w;
-        s.mass = bodyPositions[i].w;
-        s.pos[0] = bodyPositions[i].x;
-        s.pos[1] = bodyPositions[i].y;
-        s.pos[2] = bodyPositions[i].z;
-        s.vel[0] = bodyVelocities[i].x;
-        s.vel[1] = bodyVelocities[i].y;
-        s.vel[2] = bodyVelocities[i].z;
-        s.setID(bodyIds[i]);      //Custom change to tipsy format
-
-        s.metals = 0;
-        s.tform = 0;
-        outputFile.write((char*)&s, sizeof(s));
-      }
-
-    } //end i loop
-
-    outputFile.close();
-
-    LOGF(stderr,"Wrote %d bodies to tipsy file \n", NCombTotal);
-
-}
-
-void octree::write_dumbp_snapshot_parallel_tipsyV2(real4 *bodyPositions, real4 *bodyVelocities, ullong* bodyIds, int n, string fileName,
-                                                 int NCombTotal, int NCombFirst, int NCombSecond, int NCombThird, float time)
-{
-  //Rank 0 does the writing
-  if(mpiGetRank() == 0)
-  {
-    ofstream outputFile;
-    outputFile.open(fileName.c_str(), ios::out | ios::binary);
-
-    dumpV2  h;
-
-    if(!outputFile.is_open())
-    {
-      cout << "Can't open output file: "<< fileName << std::endl;
-      ::exit(0);
-    }
-
-    //Create Tipsy header
-    h.time    = time;
-    h.nbodies = NCombTotal;
-    h.ndim    = 3;
-    h.ndark   = NCombFirst;
-    h.nstar   = NCombSecond;    //In case of disks we have to finish this
-    h.nsph    = 0;
-    h.version = 2;
-
-    outputFile.write((char*)&h, sizeof(h));
-
-    //Buffer to store complete snapshot
-    vector<real4>   allPositions;
-    vector<real4>   allVelocities;
-    vector<ullong>  allIds;
-
-    allPositions.insert(allPositions.begin(), &bodyPositions[0], &bodyPositions[n]);
-    allVelocities.insert(allVelocities.begin(), &bodyVelocities[0], &bodyVelocities[n]);
-    allIds.insert(allIds.begin(), &bodyIds[0], &bodyIds[n]);
-
-    //Now receive the data from the other processes
-    vector<real4>   extPositions;
-    vector<real4>   extVelocities;
-    vector<ullong>  extIds;
-
-    for(int recvFrom=1; recvFrom < mpiGetNProcs(); recvFrom++)
-    {
-      ICRecv(recvFrom, extPositions, extVelocities,  extIds);
-
-      allPositions.insert(allPositions.end(), extPositions.begin(), extPositions.end());
-      allVelocities.insert(allVelocities.end(), extVelocities.begin(), extVelocities.end());
-      allIds.insert(allIds.end(), extIds.begin(), extIds.end());
-    }
-
-
-    //First write the dark matter particles
-    for(int i=0; i < NCombTotal ; i++)
-    {
-      if(allIds[i] >= DARKMATTERID)
-      {
-        //Set particle properties
-        dark_particleV2 d;
-        d.mass   = allPositions[i].w;
-        d.pos[0] = allPositions[i].x;
-        d.pos[1] = allPositions[i].y;
-        d.pos[2] = allPositions[i].z;
-        d.vel[0] = allVelocities[i].x;
-        d.vel[1] = allVelocities[i].y;
-        d.vel[2] = allVelocities[i].z;
-        d.setID(allIds[i]);
-        outputFile.write((char*)&d, sizeof(d));
-      } //end if
-    } //end i loop
-
-
-    //Next write the star particles
-    for(int i=0; i < NCombTotal ; i++)
-    {
-      if(allIds[i] < DARKMATTERID)
-      {
-        //Set particle properties
-        star_particleV2 s;
-        s.mass = allPositions[i].w;
-        s.pos[0] = allPositions[i].x;
-        s.pos[1] = allPositions[i].y;
-        s.pos[2] = allPositions[i].z;
-        s.vel[0] = allVelocities[i].x;
-        s.vel[1] = allVelocities[i].y;
-        s.vel[2] = allVelocities[i].z;
-        s.setID(allIds[i]);
-        s.metals = 0;
-        s.tform = 0;
-        outputFile.write((char*)&s, sizeof(s));
-     } //end if
-    } //end i loop
-
-    outputFile.close();
-  }
-  else
-  {
-    //All other ranks send their data to process 0
-    ICSend(0,  bodyPositions, bodyVelocities,  bodyIds, n);
-  }
-}
-
-void octree::write_dumbp_snapshot_parallel(real4 *bodyPositions, real4 *bodyVelocities, ullong* bodyIds, int n, string fileName, float time)
-{
-    NTotal = n;
-    NFirst = NSecond = NThird = 0;
-    
-    for(int i=0; i < n; i++)
-    { 
-      //Specific for JB his files
-      if(bodyIds[i] >= DISKID  && bodyIds[i] < BULGEID)       NThird++;
-      if(bodyIds[i] >= BULGEID && bodyIds[i] < DARKMATTERID)  NSecond++;
-      if(bodyIds[i] >= DARKMATTERID)                          NFirst++;
-    }
-    
-    //Sync them to process 0
-    int NCombTotal, NCombFirst, NCombSecond, NCombThird;
-    NCombTotal  = SumOnRootRank(NTotal);
-    NCombFirst  = SumOnRootRank(NFirst);
-    NCombSecond = SumOnRootRank(NSecond);
-    NCombThird  = SumOnRootRank(NThird);
-    
-    //Since the dust and disk particles are star particles
-    //lets add them
-    NCombSecond += NCombThird;    
-
-    char fullFileName[256];
-    sprintf(fullFileName, "%s", fileName.c_str());
-    string tempName; tempName.assign(fullFileName);
-    write_dumbp_snapshot_parallel_tipsyV2(bodyPositions, bodyVelocities, bodyIds, n, tempName,
-                                        NCombTotal, NCombFirst, NCombSecond, NCombThird, time);
-    return;
-
-};
 
 
