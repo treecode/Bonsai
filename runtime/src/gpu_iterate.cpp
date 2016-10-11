@@ -99,6 +99,8 @@ void octree::iterate_setup(IterationData &idata) {
     }
   #endif
 
+  sort_bodies(localTree, true, true); //Initial sort to get global boundaries to compute keys
+
   letRunning      = false;
   idata.startTime = get_time();
 }
@@ -536,8 +538,6 @@ void octree::approximate_gravity(tree_structure &tree)
   tree.activePartlist.zeroMemGPUAsync(gravStream->s());
   LOG("node begend: %d %d iter-> %d\n", node_begend.x, node_begend.y, iter);
 
-//  Hier gebleven, nu nog _let doen
-
   //Set the kernel parameters, many!
   approxGrav.set_args(0, &tree.n_active_groups,
                          &tree.n,
@@ -571,9 +571,6 @@ void octree::approximate_gravity(tree_structure &tree)
   cudaEventRecord(startLocalGrav, gravStream->s());
   approxGrav.execute2(gravStream->s());  //First half
   cudaEventRecord(endLocalGrav, gravStream->s());
-
-
-
 
 
 #if 0
@@ -614,8 +611,7 @@ if(firstIter0 == true || iter == 40){
 
 
   //Print interaction statistics
-  #if 1
-  
+  #if 0
   tree.body2group_list.d2h();
   tree.interactions.d2h();
     long long directSum = 0;
@@ -705,51 +701,38 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
 
   LOG("LET node begend [%d]: %d %d iter-> %d\n", procId, node_begend.x, node_begend.y, iter);
 
-  //Set the kernel parameters, many!
-  approxGravLET.set_arg<int>(0,    &tree.n_active_groups);
-  approxGravLET.set_arg<int>(1,    &tree.n);
-  approxGravLET.set_arg<float>(2,  &(this->eps2));
-  approxGravLET.set_arg<uint2>(3,  &node_begend);
-  approxGravLET.set_arg<cl_mem>(4, tree.active_group_list.p());
-  approxGravLET.set_arg<cl_mem>(5, remoteTree.fullRemoteTree.p());
-
   void *multiLoc = remoteTree.fullRemoteTree.a(1*(remoteP) + 2*(remoteN+nodeTexOffset));
-  approxGravLET.set_arg<cl_mem>(6, &multiLoc);  
-
-  approxGravLET.set_arg<cl_mem>(7, tree.bodies_acc1.p());
-  approxGravLET.set_arg<cl_mem>(8, tree.bodies_Ppos.p());
-  approxGravLET.set_arg<cl_mem>(9, tree.ngb.p());
-  approxGravLET.set_arg<cl_mem>(10, tree.activePartlist.p());
-  approxGravLET.set_arg<cl_mem>(11, tree.interactions.p());
-  
   void *boxSILoc = remoteTree.fullRemoteTree.a(1*(remoteP));
-  approxGravLET.set_arg<cl_mem>(12, &boxSILoc);  
-
-  approxGravLET.set_arg<cl_mem>(13, tree.groupSizeInfo.p());
-
   void *boxCILoc = remoteTree.fullRemoteTree.a(1*(remoteP) + remoteN + nodeTexOffset);
-  approxGravLET.set_arg<cl_mem>(14, &boxCILoc);  
 
-  approxGravLET.set_arg<cl_mem>(15, tree.groupCenterInfo.p());  
-  
-
-  approxGravLET.set_arg<cl_mem>(16, tree.bodies_Pvel.p()); //<- Predicted local body velocity
-  approxGravLET.set_arg<cl_mem>(17, tree.generalBuffer1.p()); //<- Predicted local body velocity, TODO figure out what this is
-  approxGravLET.set_arg<cl_mem>(18, tree.bodies_h.p());    //Per particle search radius
-  approxGravLET.set_arg<cl_mem>(19, tree.bodies_dens.p()); //Per particle density (x) and nnb (y)
-  
-  approxGravLET.set_arg<real4>(20, remoteTree.fullRemoteTree,  "texNodeSize",
-                               1*(remoteP), remoteN );
-  approxGravLET.set_arg<real4>(21, remoteTree.fullRemoteTree,  "texNodeCenter",
-                               1*(remoteP) + (remoteN + nodeTexOffset), remoteN);
-  approxGravLET.set_arg<real4>(22, remoteTree.fullRemoteTree,  "texMultipole",
-                               1*(remoteP) + 2*(remoteN + nodeTexOffset), 3*remoteN);
-  approxGravLET.set_arg<real4>(23, remoteTree.fullRemoteTree,  "texBody", 0, remoteP);
+  approxGravLET.set_args(0,
+                         &tree.n_active_groups,
+                         &tree.n,
+                         &(this->eps2),
+                         &node_begend,
+                         tree.active_group_list.p(),
+                         remoteTree.fullRemoteTree.p(),
+                         &multiLoc,
+                         tree.bodies_acc1.p(),
+                         tree.bodies_Ppos.p(),
+                         tree.ngb.p(),
+                         tree.activePartlist.p(),
+                         tree.interactions.p(),
+                         &boxSILoc,
+                         tree.groupSizeInfo.p(),
+                         &boxCILoc,
+                         tree.groupCenterInfo.p(),
+                         tree.bodies_Pvel.p(),      //<- Predicted local body velocity
+                         tree.generalBuffer1.p(),  //The buffer to store the tree walks
+                         tree.bodies_h.p(),        //Per particle search radius
+                         tree.bodies_dens.p());    //Per particle density (x) and nnb (y)
+  approxGravLET.set_texture<real4>(0,  remoteTree.fullRemoteTree, "texNodeSize",  1*(remoteP), remoteN);
+  approxGravLET.set_texture<real4>(1,  remoteTree.fullRemoteTree, "texNodeCenter",1*(remoteP) + (remoteN + nodeTexOffset),     remoteN);
+  approxGravLET.set_texture<real4>(2,  remoteTree.fullRemoteTree, "texMultipole" ,1*(remoteP) + 2*(remoteN + nodeTexOffset), 3*remoteN);
+  approxGravLET.set_texture<real4>(3,  remoteTree.fullRemoteTree, "texBody"      ,0,                                           remoteP);
 
   approxGravLET.setWork(-1, NTHREAD, nBlocksForTreeWalk);
-
-
-    
+  
   if(letRunning)
   {
     //don't want to overwrite the data of previous LET tree
@@ -765,7 +748,7 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
   tree.activePartlist.zeroMemGPUAsync(gravStream->s()); //Resets atomics
 
   CU_SAFE_CALL(cudaEventRecord(startRemoteGrav, gravStream->s()));
-  approxGravLET.execute(gravStream->s());
+  approxGravLET.execute2(gravStream->s());
   CU_SAFE_CALL(cudaEventRecord(endRemoteGrav, gravStream->s()));
   letRunning = true;
 
@@ -912,6 +895,7 @@ double octree::compute_energies(tree_structure &tree)
                                  vel.z*vel.z);
       hEpot += tree.bodies_pos[i].w*0.5*tree.bodies_acc0[i].w;
       //if(i < 128)
+      if(i < 0)
       {
     	  LOGF(stderr,"%d\tAcc: %f %f %f %f\tPx: %f\tVx: %f\tkin: %f\tpot: %f\n", i,
     			  tree.bodies_acc0[i].x, tree.bodies_acc0[i].y, tree.bodies_acc0[i].z,

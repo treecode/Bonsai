@@ -228,7 +228,6 @@ void octree::build (tree_structure &tree) {
   //[[validList--2*tree.n],[compactList--2*tree.n],[node_key--4*tree.n],
   //[levelOffset--256], [maxLevel--256], [free--at-least: 12-8*tree.n-256]]
 
-  LOGF(stderr,"Before zeromem\n");
   //Set the default values to zero
   validList.  zeroMemGPUAsync(execStream->s());
   levelOffset.zeroMemGPUAsync(execStream->s());
@@ -251,7 +250,6 @@ void octree::build (tree_structure &tree) {
 
 
   /******  build the levels *********/
-  LOGF(stderr,"Before build valid\n");
   // make sure previous resetCompact() has finished.
   this->devMemCountsx.waitForCopyEvent();
 //  devContext.startTiming(execStream->s());
@@ -429,13 +427,10 @@ void octree::parallelDataSummary(tree_structure &tree,
   real4 r_max = {-1e10, -1e10, -1e10, -1e10};
   this->getBoundaries(tree, r_min, r_max); //Used for predicted position keys further down
 
+  build_key_list.set_args(0, tree.bodies_key.p(), tree.bodies_pos.p(), &tree.n, &tree.corner);
   if(updateBoundaries)
   {
     //Build keys on current positions, since those are already sorted, while predicted are not
-//    build_key_list.set_arg<cl_mem>(0,   tree.bodies_key.p());
-//    build_key_list.set_arg<cl_mem>(1,   tree.bodies_pos.p());
-//    build_key_list.set_arg<int>(2,      &tree.n);
-//    build_key_list.set_arg<real4>(3,    &tree.corner);
     build_key_list.set_args(0, tree.bodies_key.p(), tree.bodies_pos.p(), &tree.n, &tree.corner);
     build_key_list.setWork(tree.n, 128);
     build_key_list.execute2(execStream->s());
@@ -462,9 +457,7 @@ void octree::parallelDataSummary(tree_structure &tree,
    //Note we can call this in parallel with the computation of the domain.
    //This is done on predicted positions, to make sure that particles AFTER
    //prediction are separated by boundaries
-//   build_key_list.set_arg<cl_mem>(1,   tree.bodies_Ppos.p());
    build_key_list.reset_arg(1,   tree.bodies_Ppos.p());
-//   build_key_list.set_arg<real4>(3,    &tree.corner);
    build_key_list.execute2(execStream->s());
 
    if(updateBoundaries)

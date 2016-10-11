@@ -753,11 +753,11 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   }
 
   tree->localTree.bodies_time.h2d();
-  tree->localTree.bodies_pos.h2d();
-  tree->localTree.bodies_vel.h2d();
+  tree->localTree.bodies_pos. h2d();
+  tree->localTree.bodies_vel. h2d();
   tree->localTree.bodies_Ppos.h2d();
   tree->localTree.bodies_Pvel.h2d();
-  tree->localTree.bodies_ids.h2d();
+  tree->localTree.bodies_ids. h2d();
 
 
   #ifdef USE_MPI
@@ -778,8 +778,6 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   bool simulationFinished = false;
   ioSharedData.writingFinished       = true;
 
-
-  tree->iterate();
 
   /* w/o MPI-IO use async fwrite, so use 2 threads otherwise, use 1 threads
    */

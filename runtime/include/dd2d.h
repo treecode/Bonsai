@@ -75,7 +75,8 @@ struct DD2D
           (void*)&keys2recv[keys2recv_size], &keys_sizes[0], &keys_displ[0], MPI_FLOAT, root, mpi_comm);
     } 
 #else
-    std::vector<int> keys2send_size(nProc,0), keys2recv_size(nProc), keys2recv_displ(nProc+1,0);
+    //Original std::vector<int> keys2send_size(nProc,0), keys2recv_size(nProc), keys2recv_displ(nProc+1,0);
+    std::vector<int> keys2send_size(nProc+1,0), keys2recv_size(nProc+1), keys2recv_displ(nProc+1,0);
 
     for (int p = 0; p < np; p++)
       keys2send_size[p] = keys2send[p].size();
@@ -258,7 +259,7 @@ struct DD2D
       chopSortedKeys(nPx, Key::min(), keys1d_recv, boundaries1d);
     }
 
-    /* boradcast 1d boundaries to all procs */
+    /* Broadcast 1d boundaries to all procs */
 
     MPI_Bcast(&boundaries1d[0], nPx*Key::SIZEFLT, MPI_FLOAT, 0, mpi_comm);
     boundaries1d.push_back(Key::max());

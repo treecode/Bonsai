@@ -1345,17 +1345,11 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
   boundariesGPU.h2d();
 
 
-  domainCheckSFCAndAssign.set_arg<int>(0,     &localTree.n);
-  domainCheckSFCAndAssign.set_arg<int>(1,     &nProcs);
-  domainCheckSFCAndAssign.set_arg<uint4>(2,   &lowerBoundary);
-  domainCheckSFCAndAssign.set_arg<uint4>(3,   &upperBoundary);
-  domainCheckSFCAndAssign.set_arg<cl_mem>(4,   boundariesGPU.p());
-  domainCheckSFCAndAssign.set_arg<cl_mem>(5,   localTree.bodies_key.p());
-  domainCheckSFCAndAssign.set_arg<cl_mem>(6,   validList2.p());
-  domainCheckSFCAndAssign.set_arg<cl_mem>(7,   idList.p());
-  domainCheckSFCAndAssign.set_arg<int   >(8,   &procId);
+  domainCheckSFCAndAssign.set_args(0, &localTree.n, &nProcs, &lowerBoundary, &upperBoundary,
+                                      boundariesGPU.p(), localTree.bodies_key.p(), validList2.p(),
+                                      idList.p(), &procId);
   domainCheckSFCAndAssign.setWork(localTree.n, 128);
-  domainCheckSFCAndAssign.execute(execStream->s());
+  domainCheckSFCAndAssign.execute2(execStream->s());
   execStream->sync();
 
   //After this we don't need boundariesGPU anymore so can overwrite that memory space
@@ -1439,22 +1433,14 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
 
           if(items > 0)
           {
-            extractOutOfDomainParticlesAdvancedSFC2.set_arg<int>(0,    &extractOffset);
-            extractOutOfDomainParticlesAdvancedSFC2.set_arg<int>(1,    &items);
-            extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(2, validList2.p());
-            extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(3, localTree.bodies_Ppos.p());
-            extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(4, localTree.bodies_Pvel.p());
-            extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(5, localTree.bodies_pos.p());
-            extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(6, localTree.bodies_vel.p());
-            extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(7, localTree.bodies_acc0.p());
-            extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(8, localTree.bodies_acc1.p());
-            extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(9, localTree.bodies_time.p());
-            extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(10, localTree.bodies_ids.p());
-            extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(11, localTree.bodies_key.p());
-            extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(12, localTree.bodies_h.p());
-            extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(13, bodyBuffer.p());
+            extractOutOfDomainParticlesAdvancedSFC2.set_args(
+                    0, &extractOffset, &items, validList2.p(),
+                    localTree.bodies_Ppos.p(), localTree.bodies_Pvel.p(), localTree.bodies_pos.p(),
+                    localTree.bodies_vel.p(), localTree.bodies_acc0.p(), localTree.bodies_acc1.p(),
+                    localTree.bodies_time.p(), localTree.bodies_ids.p(), localTree.bodies_key.p(),
+                    localTree.bodies_h.p(), bodyBuffer.p());
             extractOutOfDomainParticlesAdvancedSFC2.setWork(items, 128);
-            extractOutOfDomainParticlesAdvancedSFC2.execute(execStream->s());
+            extractOutOfDomainParticlesAdvancedSFC2.execute2(execStream->s());
 
             if(!doInOneGo)
             {
@@ -1502,31 +1488,19 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
 
         double t3 = get_time();
         //Internal particle movement
-        internalMoveSFC2.set_arg<int>(0,     &validCount);
-        internalMoveSFC2.set_arg<int>(1,     &localTree.n);
-        internalMoveSFC2.set_arg<uint4>(2,   &lowerBoundary);
-        internalMoveSFC2.set_arg<uint4>(3,   &upperBoundary);
-        internalMoveSFC2.set_arg<cl_mem>(4,  validList3.p());
-        internalMoveSFC2.set_arg<cl_mem>(5,  atomicBuff.p());
-        internalMoveSFC2.set_arg<cl_mem>(6,  localTree.bodies_Ppos.p());
-        internalMoveSFC2.set_arg<cl_mem>(7,  localTree.bodies_Pvel.p());
-        internalMoveSFC2.set_arg<cl_mem>(8,  localTree.bodies_pos.p());
-        internalMoveSFC2.set_arg<cl_mem>(9,  localTree.bodies_vel.p());
-        internalMoveSFC2.set_arg<cl_mem>(10, localTree.bodies_acc0.p());
-        internalMoveSFC2.set_arg<cl_mem>(11, localTree.bodies_acc1.p());
-        internalMoveSFC2.set_arg<cl_mem>(12, localTree.bodies_time.p());
-        internalMoveSFC2.set_arg<cl_mem>(13, localTree.bodies_ids.p());
-        internalMoveSFC2.set_arg<cl_mem>(14, localTree.bodies_key.p());
-        internalMoveSFC2.set_arg<cl_mem>(15, localTree.bodies_h.p());
+        internalMoveSFC2.set_args(0, &validCount, &localTree.n, &lowerBoundary, &upperBoundary,
+                validList3.p(), atomicBuff.p(), localTree.bodies_Ppos.p(),
+                localTree.bodies_Pvel.p(), localTree.bodies_pos.p(), localTree.bodies_vel.p(),
+                localTree.bodies_acc0.p(), localTree.bodies_acc1.p(), localTree.bodies_time.p(),
+                localTree.bodies_ids.p(), localTree.bodies_key.p(), localTree.bodies_h.p());
         internalMoveSFC2.setWork(validCount, 128);
-        internalMoveSFC2.execute(execStream->s());
-        //  execStream->sync();
-        //LOGF(stderr,"Internal move: %lg  Since start: %lg \n", get_time()-t3,get_time()-tStart);
+        internalMoveSFC2.execute2(execStream->s());
+        //execStream->sync(); LOGF(stderr,"Internal move: %lg  Since start: %lg \n", get_time()-t3,get_time()-tStart);
+
     } //if tid == 0
     else if(tid == 1)
     {
       //The MPI thread, performs a2a during memory copies
-
       memset(nparticles,  0, sizeof(int)*(nProcs+1));
       memset(nreceive,    0, sizeof(int)*(nProcs));
       memset(nsendDispls, 0, sizeof(int)*(nProcs));
@@ -1711,31 +1685,20 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree
 //      for(int z=0; z<items; z++)
 //      {
 //    	  LOGF(stderr,"RECV: %d\t%f %f %f %f\t%f %f %f %f\n",
-//      		i,
+//      		z,
 //      		bodyBuffer[z].Ppos.x,bodyBuffer[z].Ppos.y,bodyBuffer[z].Ppos.z,bodyBuffer[z].Ppos.w,
 //      		bodyBuffer[z].Pvel.x,bodyBuffer[z].Pvel.y,bodyBuffer[z].Pvel.z,bodyBuffer[z].Pvel.w);
-//
 //      }
 
 
       //Start the kernel that puts everything in place
-      insertNewParticlesSFC.set_arg<int>(0,    &nToSend);
-      insertNewParticlesSFC.set_arg<int>(1,    &items);
-      insertNewParticlesSFC.set_arg<int>(2,    &tree.n);
-      insertNewParticlesSFC.set_arg<int>(3,    &insertOffset);
-      insertNewParticlesSFC.set_arg<cl_mem>(4,  localTree.bodies_Ppos.p());
-      insertNewParticlesSFC.set_arg<cl_mem>(5,  localTree.bodies_Pvel.p());
-      insertNewParticlesSFC.set_arg<cl_mem>(6,  localTree.bodies_pos.p());
-      insertNewParticlesSFC.set_arg<cl_mem>(7,  localTree.bodies_vel.p());
-      insertNewParticlesSFC.set_arg<cl_mem>(8,  localTree.bodies_acc0.p());
-      insertNewParticlesSFC.set_arg<cl_mem>(9,  localTree.bodies_acc1.p());
-      insertNewParticlesSFC.set_arg<cl_mem>(10, localTree.bodies_time.p());
-      insertNewParticlesSFC.set_arg<cl_mem>(11, localTree.bodies_ids.p());
-      insertNewParticlesSFC.set_arg<cl_mem>(12, localTree.bodies_key.p());
-      insertNewParticlesSFC.set_arg<cl_mem>(13, localTree.bodies_h.p());
-      insertNewParticlesSFC.set_arg<cl_mem>(14, bodyBuffer.p());
+      insertNewParticlesSFC.set_args(0,
+              &nToSend, &items, &tree.n, &insertOffset, localTree.bodies_Ppos.p(),
+              localTree.bodies_Pvel.p(), localTree.bodies_pos.p(), localTree.bodies_vel.p(),
+              localTree.bodies_acc0.p(), localTree.bodies_acc1.p(), localTree.bodies_time.p(),
+              localTree.bodies_ids.p(), localTree.bodies_key.p(), localTree.bodies_h.p(), bodyBuffer.p());
       insertNewParticlesSFC.setWork(items, 128);
-      insertNewParticlesSFC.execute(execStream->s());
+      insertNewParticlesSFC.execute2(execStream->s());
     }// if items > 0
     insertOffset += items;
   } //for recvCount
