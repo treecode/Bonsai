@@ -23,7 +23,7 @@
 #include <map>
 #include <cuda_runtime.h>
 #include <vector_functions.h>
-
+#include <unistd.h>
 #include <thrust/device_ptr.h>
 
 #include <iostream>
@@ -449,9 +449,6 @@ namespace my_dev {
 
       CU_SAFE_CALL(cudaEventCreate(&asyncCopyEvent));
       eventSet = true;
-
-      int dev; CU_SAFE_CALL(cudaGetDevice(&dev));
-      LOGF(stderr,"Allocating: %p %d\n", asyncCopyEvent, dev);
     }
 
     void free_mem()
@@ -534,6 +531,8 @@ namespace my_dev {
         CU_SAFE_CALL(cudaMallocHost((T**)&host_ptr, size*sizeof(T)));}
       else{
         host_ptr = (T*)malloc(size*sizeof(T));}
+
+      //fprintf(stderr,"host ptr: %p new: %d \n",host_ptr, size);
         
       CU_SAFE_CALL(cudaMalloc((T**)&hDeviceMem, size*sizeof(T)));
       increaseMemUsage(size*sizeof(T));
@@ -553,6 +552,8 @@ namespace my_dev {
       else
         host_ptr = (T*)calloc(size, sizeof(T));
       
+      //fprintf(stderr,"host calloc ptr: %p new: %d \n",host_ptr, size);
+
       CU_SAFE_CALL(cudaMalloc((T**)&hDeviceMem, size*sizeof(T)));           
       
       CU_SAFE_CALL(cudaMemset((void*)hDeviceMem, 0, size*sizeof(T)));     
@@ -591,8 +592,18 @@ namespace my_dev {
       else
       {
         //Resizes the current array
-        //New size is smaller, don't do anything with the allocated memory                
+        //New size is smaller, don't do anything with the allocated memory
         host_ptr = (T*)realloc(host_ptr, n*sizeof(T));
+
+        //On my machine realloc somtimes failed, retrying seems to fix it (JB)
+        int count = 0;
+        while(host_ptr == nullptr)
+        {
+            usleep(10); count++;
+            fprintf(stderr,"Realloc failed, try again, size-old: %d new: %d attempt: %d\n", size,n, count);
+            host_ptr = (T*)realloc(host_ptr, n*sizeof(T));
+            if(host_ptr == nullptr && count > 10) {fprintf(stderr,"Realloc failed too often, exit\n"); exit(0); }
+        }
       }
       
       //This version compared to the commented out one above, first allocates
