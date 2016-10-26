@@ -537,6 +537,66 @@ void octree::approximate_gravity(tree_structure &tree)
 
   tree.activePartlist.zeroMemGPUAsync(gravStream->s());
   LOG("node begend: %d %d iter-> %d\n", node_begend.x, node_begend.y, iter);
+  SPHDensity.set_args(0, &tree.n_active_groups,
+                         &tree.n,
+                         &(this->eps2),
+                         &node_begend,
+                         tree.active_group_list.p(),
+                         tree.bodies_Ppos.p(),
+                         tree.multipole.p(),
+                         tree.bodies_acc1.p(),
+                         tree.bodies_Ppos.p(),
+                         tree.ngb.p(),
+                         tree.activePartlist.p(),
+                         tree.interactions.p(),
+                         tree.boxSizeInfo.p(),
+                         tree.groupSizeInfo.p(),
+                         tree.boxCenterInfo.p(),
+                         tree.groupCenterInfo.p(),
+                         tree.bodies_Pvel.p(),
+                         tree.generalBuffer1.p(),  //The buffer to store the tree walks
+                         tree.bodies_h.p(),        //Per particle search radius
+                         tree.bodies_dens.p());    //Per particle density (x) and nnb (y)
+
+  SPHDensity.set_texture<real4>(0,  tree.boxSizeInfo,    "texNodeSize");
+  SPHDensity.set_texture<real4>(1,  tree.boxCenterInfo,  "texNodeCenter");
+  SPHDensity.set_texture<real4>(2,  tree.multipole,      "texMultipole");
+  SPHDensity.set_texture<real4>(3,  tree.bodies_Ppos,   "texBody");
+
+  //SPHDensity.setWork(-1, NTHREAD, nBlocksForTreeWalk);
+  SPHDensity.setWork(-1, 32, 1);
+
+
+  //Set some semi random H for testing
+  for(int i=0; i < tree.n; i++)
+  {
+      tree.bodies_h[i] = 2*drand48();
+  }
+  tree.bodies_h.h2d();
+
+
+
+  cudaEventRecord(startLocalGrav, gravStream->s());
+  SPHDensity.execute2(gravStream->s());  //First half
+  cudaEventRecord(endLocalGrav, gravStream->s());
+
+  cudaDeviceSynchronize();
+
+  tree.bodies_dens.d2h();
+  for(int i=0; i < tree.n; i++)
+  {
+    fprintf(stderr,"Density properties: %d\t H: %f rho: %f  nb: %f \n", 
+            i, tree.bodies_h[i], tree.bodies_dens[i].x,  tree.bodies_dens[i].y);
+  }
+
+  Hier gebleven, checken of het aantal neighbours berkeenen klopt
+      en dan een density berekening fixen
+
+
+  cudaDeviceReset();
+  fprintf(stderr,"Exit!\n"); exit(0);
+
+
 
   //Set the kernel parameters, many!
   approxGrav.set_args(0, &tree.n_active_groups,

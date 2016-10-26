@@ -385,6 +385,7 @@ protected:
   my_dev::kernel predictParticles;
   my_dev::kernel getNActive;
   my_dev::kernel approxGrav;
+  my_dev::kernel SPHDensity;
   my_dev::kernel approxGravLET;
   my_dev::kernel correctParticles;
   my_dev::kernel computeDt;

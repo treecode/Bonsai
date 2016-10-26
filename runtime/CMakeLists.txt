@@ -145,6 +145,7 @@ set (CUFILES
   CUDAkernels/timestep.cu
   CUDAkernels/depthSort.cu
   CUDAkernels/dev_direct_gravity.cu
+  CUDAkernels/dev_sph.cu
   )
 
 if (COMPILE_SM35)

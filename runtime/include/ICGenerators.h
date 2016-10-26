@@ -375,6 +375,48 @@ struct DiskShuffle
      bodyVelocities[i].w = 0;
     }
   }
+  
+  void generateSPHCube(vector<real4>   &bodyPositions,
+                       vector<real4>   &bodyVelocities,
+                       vector<ullong>  &bodyIDs,
+                       const int        procId,
+                       const int        nProcs,
+                       const int        nSPH)
+  {
+    //Cube
+    const int nSPH3 = nSPH*nSPH*nSPH;
+    if (procId == 0) printf("Using SPH Cube model with n= %d per process \n", nSPH3);
+    assert(nSPH >= 0);
+    bodyPositions.resize(nSPH3);
+    bodyVelocities.resize(nSPH3);
+    bodyIDs.resize(nSPH3);
+
+    srand48(procId+19840501);
+
+    /* generate uniform cube */
+    int i = 0;
+    for (int x= 0; x < nSPH; x++)
+    {
+      for(int y=0; y < nSPH; y++)
+      {
+         for(int z=0; z < nSPH; z++)
+         {
+            bodyIDs[i]   =  ((unsigned long long) nSPH3)*procId + i;
+
+            bodyPositions[i].x = x;
+            bodyPositions[i].y = y;
+            bodyPositions[i].z = z;
+            bodyPositions[i].w = (1.0/nSPH3) * 1.0/nSPH3;
+
+            bodyVelocities[i].x = 0;
+            bodyVelocities[i].y = 0;
+            bodyVelocities[i].z = 0;
+            bodyVelocities[i].w = 0;
+            i++;
+         }//z
+      }//y
+    }//x
+  }//func
 
   /*
    *

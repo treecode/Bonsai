@@ -194,6 +194,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   
 
   int nPlummer  = -1;
+  int nSPH      = -1;
   int nSphere   = -1;
   int nCube     = -1;
   int nMilkyWay = -1;
@@ -259,12 +260,12 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     ADDUSAGE("     --taskvar  #       variable name to obtain task id [for randoms seed] before MPI_Init. \n");
 #endif
     ADDUSAGE("     --plummer  #       use Plummer model with # particles per proc");
-		ADDUSAGE("     --sphere   #       use spherical model with # particles per proc");
-		ADDUSAGE("     --cube     #       use cube model with # particles per proc");
+    ADDUSAGE("     --sphere   #       use spherical model with # particles per proc");
+	ADDUSAGE("     --cube     #       use cube model with # particles per proc");
     ADDUSAGE("     --diskmode         use diskmode to read same input file all MPI taks and randomly shuffle its positions");
+    ADDUSAGE("     --sph              Create N by N cube with particles on fixed coordinates");
     ADDUSAGE("     --mpirendermode    use MPI to communicate with the renderer. Must only be used with bonsai_driver. [disabled]");
-		ADDUSAGE(" ");
-
+    ADDUSAGE(" ");
 
 		opt.setFlag( "help" ,   'h');
 		opt.setFlag( "diskmode");
@@ -286,6 +287,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 #endif
     opt.setOption( "sphere");
     opt.setOption( "cube");
+    opt.setOption( "sph");
     opt.setOption( "dev" );
     opt.setOption( "renderdev" );
     opt.setOption( "logfile" );
@@ -337,6 +339,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     if ((optarg = opt.getValue("infile")))       fileName           = string(optarg);
     if ((optarg = opt.getValue("bonsaifile")))   bonsaiFileName     = std::string(optarg);
     if ((optarg = opt.getValue("plummer")))      nPlummer           = atoi(optarg);
+    if ((optarg = opt.getValue("sph")))          nSPH               = atoi(optarg);
     if ((optarg = opt.getValue("milkyway")))     nMilkyWay          = atoi(optarg);
     if ((optarg = opt.getValue("mwfork")))       nMWfork            = atoi(optarg);
     if ((optarg = opt.getValue("taskvar")))      taskVar            = std::string(optarg);
@@ -367,7 +370,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     if ((optarg = opt.getValue("dTglow")))	 dTstartGlow  = (float)atof(optarg);
     dTstartGlow = std::max(dTstartGlow, 1.0f);
 #endif
-    if (bonsaiFileName.empty() && fileName.empty() && nPlummer == -1 && nSphere == -1 && nMilkyWay == -1 && nCube == -1)
+    if (bonsaiFileName.empty() && fileName.empty() && nPlummer == -1 && nSphere == -1 && nMilkyWay == -1 && nCube == -1 && nSPH == -1)
     {
       opt.printUsage();
       ::exit(0);
@@ -668,7 +671,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     fprintf(stderr,"Usage of these options requires to code to be built with MPI support!\n"); exit(0);
 #endif      
   }
-  else if ((nPlummer == -1 && nSphere == -1  && nCube == -1 && !diskmode && nMilkyWay == -1) || restartSim)
+  else if ((nPlummer == -1 && nSphere == -1  && nCube == -1 && !diskmode && nMilkyWay == -1 && nSPH == -1) || restartSim)
   {
     float sTime = 0;
     tree->fileIO->readFile(mpiCommWorld, bodyPositions, bodyVelocities, bodyIDs, fileName,
@@ -716,6 +719,10 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   else if (diskmode)
   {
     generateShuffledDiskModel(bodyPositions, bodyVelocities, bodyIDs, procId, nProcs, fileName);
+  }
+  else if (nSPH >= 0)
+  {
+    generateSPHCube(bodyPositions, bodyVelocities, bodyIDs, procId, nProcs, nSPH);
   }
   else
     assert(0);
