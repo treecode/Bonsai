@@ -379,10 +379,12 @@ struct DiskShuffle
   void generateSPHCube(vector<real4>   &bodyPositions,
                        vector<real4>   &bodyVelocities,
                        vector<ullong>  &bodyIDs,
+                       vector<real2>   &bodyDens,
                        const int        procId,
                        const int        nProcs,
                        const int        nSPH)
   {
+#if 0
     //Cube
     const int nSPH3 = nSPH*nSPH*nSPH;
     if (procId == 0) printf("Using SPH Cube model with n= %d per process \n", nSPH3);
@@ -416,6 +418,82 @@ struct DiskShuffle
          }//z
       }//y
     }//x
+#else
+    const double SMTH  = 1.2;
+    const int nxStep   = 128; //Default 128
+    const int boxStep  = 8;
+
+    int nTotal  = (nxStep*0.5)*(nxStep/boxStep)*(nxStep/boxStep);
+        nTotal += nTotal*0.5;
+
+    if (procId == 0) printf("Using SPH model with n= %d per process \n", nTotal);
+    assert(nTotal >= 0);
+    bodyPositions.resize(nTotal);
+    bodyVelocities.resize(nTotal);
+    bodyIDs.resize(nTotal);
+    bodyDens.resize(nTotal);
+
+    const double dx    = 1.0 / nxStep;
+    const double box_x = 1.0;
+    const double box_y = box_x / boxStep;
+    const double box_z = box_x / boxStep;
+
+    int i = 0;
+    for(double x = 0 ; x < box_x * 0.5 ; x += dx){
+        for(double y = 0 ; y < box_y ; y += dx){
+            for(double z = 0 ; z < box_z ; z += dx){
+                bodyPositions[i].x  = x;
+                bodyPositions[i].y  = y;
+                bodyPositions[i].z  = z;
+                bodyPositions[i].w  = 0.75;
+                bodyVelocities[i].x = 0;
+                bodyVelocities[i].y = 0;
+                bodyVelocities[i].z = 0;
+                bodyVelocities[i].w = 0;
+                bodyIDs[i]          =  ((unsigned long long) nTotal)*procId + i;
+
+                bodyPositions[i].w = bodyPositions[i].w * box_x * box_y * box_z / (double)(bodyPositions.size());
+
+                bodyDens[i].x       = 1.0;                                                     //Density
+                bodyDens[i].y       = SMTH * pow(bodyPositions[i].w / bodyDens[i].x, 1.0/3.0); //Smoothing
+
+                //ith.eng  = 2.5;
+                //ith.mat  = 0;
+                i++;
+            }
+        }
+    }
+
+    for(double x = box_x * 0.5 ; x < box_x * 1.0 ; x += dx * 2.0){
+        for(double y = 0 ; y < box_y ; y += dx){
+            for(double z = 0 ; z < box_z ; z += dx){
+                bodyPositions[i].x  = x;
+                bodyPositions[i].y  = y;
+                bodyPositions[i].z  = z;
+                bodyPositions[i].w  = 0.75;
+                bodyVelocities[i].x = 0;
+                bodyVelocities[i].y = 0;
+                bodyVelocities[i].z = 0;
+                bodyVelocities[i].w = 0;
+                bodyIDs[i]          =  ((unsigned long long) nTotal)*procId + i;
+
+                bodyPositions[i].w = bodyPositions[i].w * box_x * box_y * box_z / (double)(bodyPositions.size());
+
+                bodyDens[i].x       = 0.5;                                                      //Density
+                bodyDens[i].y       = SMTH * pow(bodyPositions[i].w / bodyDens[i].x, 1.0/3.0);  //Smoothing
+
+                //Bla 0   0.009375 0.000000 1.000000 3
+
+                //ith.dens = 0.5;
+                //ith.eng  = 2.5;
+                i++;
+            }
+        }
+    }
+
+#endif
+
+
   }//func
 
   /*

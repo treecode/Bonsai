@@ -535,8 +535,14 @@ void octree::approximate_gravity(tree_structure &tree)
   node_begend.x   = tree.level_list[level_start].x;
   node_begend.y   = tree.level_list[level_start].y;
 
+
   tree.activePartlist.zeroMemGPUAsync(gravStream->s());
   LOG("node begend: %d %d iter-> %d\n", node_begend.x, node_begend.y, iter);
+
+
+#if 1
+  cudaDeviceSetLimit(cudaLimitPrintfFifoSize, 128*1024*1024);
+
   SPHDensity.set_args(0, &tree.n_active_groups,
                          &tree.n,
                          &(this->eps2),
@@ -561,43 +567,138 @@ void octree::approximate_gravity(tree_structure &tree)
   SPHDensity.set_texture<real4>(0,  tree.boxSizeInfo,    "texNodeSize");
   SPHDensity.set_texture<real4>(1,  tree.boxCenterInfo,  "texNodeCenter");
   SPHDensity.set_texture<real4>(2,  tree.multipole,      "texMultipole");
-  SPHDensity.set_texture<real4>(3,  tree.bodies_Ppos,   "texBody");
+  SPHDensity.set_texture<real4>(3,  tree.bodies_Ppos,    "texBody");
 
-  //SPHDensity.setWork(-1, NTHREAD, nBlocksForTreeWalk);
-  SPHDensity.setWork(-1, 32, 1);
+  SPHDensity.setWork(-1, NTHREAD, nBlocksForTreeWalk);
+//  SPHDensity.setWork(-1, 32, 1);
 
 
-  //Set some semi random H for testing
+//  //Set some semi random H for testing
+//  for(int i=0; i < tree.n; i++)
+//  {
+//      tree.bodies_h[i] = 2*drand48();
+//  }
+
+  tree.bodies_ids.d2h();
+  tree.bodies_Ppos.d2h();
+  tree.bodies_dens.d2h();
+
   for(int i=0; i < tree.n; i++)
   {
-      tree.bodies_h[i] = 2*drand48();
+      if(tree.bodies_ids[i] < 10)
+      fprintf(stderr,"Input: %d %lld || %f %f %f \t || %f %f\n",
+              i,
+              tree.bodies_ids[i],
+              tree.bodies_Ppos[i].x,
+              tree.bodies_Ppos[i].y,
+              tree.bodies_Ppos[i].z,
+              tree.bodies_dens[i].x,
+              tree.bodies_dens[i].y);
   }
+
+
+
   tree.bodies_h.h2d();
-
-
+//  tree.bodies_dens.zeroMem();
+  tree.interactions.zeroMem(); //TODO remove
+  cudaDeviceSynchronize();
 
   cudaEventRecord(startLocalGrav, gravStream->s());
+  double tStart = get_time();
   SPHDensity.execute2(gravStream->s());  //First half
   cudaEventRecord(endLocalGrav, gravStream->s());
 
   cudaDeviceSynchronize();
+  double tEnd = get_time();
+
+  float ms;
+  CU_SAFE_CALL(cudaEventElapsedTime(&ms, startLocalGrav, endLocalGrav));
+  fprintf(stderr,"SPH GPU step took: %f ms\t%lg sec\n", ms,  tEnd-tStart);
+
 
   tree.bodies_dens.d2h();
+
+   for(int i=0; i < tree.n; i++)
+   {
+//       if(tree.bodies_ids[i] < 10)
+       fprintf(stderr,"Output: %d %lld || %f %f %f \t || %f %f\n",
+               i,
+               tree.bodies_ids[i],
+               tree.bodies_Ppos[i].x,
+               tree.bodies_Ppos[i].y,
+               tree.bodies_Ppos[i].z,
+               tree.bodies_dens[i].x,
+               tree.bodies_dens[i].y);
+   }
+
+
+
+#if 1
+  //Count the number of tree-opening tests
+  tree.interactions.d2h();
+  long long openingTestSum = 0;
+  long long distanceTestSum = 0;
+
+  for(int i=0; i < tree.n; i++) { openingTestSum     += tree.interactions[i].x; distanceTestSum     += tree.interactions[i].y;   }
+  fprintf(stderr,"Number of opening angle checks: %lld [ %lld ] distance test: %lld [ %lld ] \n",
+          openingTestSum,  openingTestSum  / tree.n,
+          distanceTestSum, distanceTestSum / tree.n);
+#endif
+
+#if 0
+  //Verify results against N*N host test
+
+  tree.bodies_dens.d2h();
+  tree.bodies_Ppos.d2h();
+
+  const float SMTH = 1.1;
+
+  bool correct = true;
+
+  std::vector<int> nnb(tree.n, 0);
   for(int i=0; i < tree.n; i++)
   {
-    fprintf(stderr,"Density properties: %d\t H: %f rho: %f  nb: %f \n", 
-            i, tree.bodies_h[i], tree.bodies_dens[i].x,  tree.bodies_dens[i].y);
+      for(int j=0; j < tree.n; j++)
+      {
+          float r2 = 
+              (tree.bodies_Ppos[i].x- tree.bodies_Ppos[j].x)*(tree.bodies_Ppos[i].x- tree.bodies_Ppos[j].x) +
+              (tree.bodies_Ppos[i].y- tree.bodies_Ppos[j].y)*(tree.bodies_Ppos[i].y- tree.bodies_Ppos[j].y) +
+              (tree.bodies_Ppos[i].z- tree.bodies_Ppos[j].z)*(tree.bodies_Ppos[i].z- tree.bodies_Ppos[j].z);
+
+          if (sqrt(r2) < SMTH)
+          {
+              if(i != j) nnb[i] +=1;
+          }
+      }
   }
 
-  Hier gebleven, checken of het aantal neighbours berkeenen klopt
-      en dan een density berekening fixen
+
+  for(int i=0; i < tree.n; i++)
+  {
+    //if(0) 
+    if(nnb[i] != ((int)  tree.bodies_dens[i].y)){
+    fprintf(stdout,"Density properties: %d\t [%d, %d, %d] H: %f rho: %f  nb: %f || cpu-nb: %f\t %d\n", 
+            i, 
+            (int) tree.bodies_Ppos[i].x,
+            (int) tree.bodies_Ppos[i].y,
+            (int) tree.bodies_Ppos[i].z,
+            tree.bodies_h[i], 
+            tree.bodies_dens[i].x,  
+            tree.bodies_dens[i].y,
+            (float)nnb[i],
+            nnb[i] == ((int)  tree.bodies_dens[i].y)
+            );
+    correct = false;
+    }
+  }
+  if(correct) fprintf(stdout, "GPU and CPU results match!\n");
+#endif
+
+//cudaDeviceReset();  fprintf(stderr,"Exit!\n"); exit(0);
+#endif
 
 
-  cudaDeviceReset();
-  fprintf(stderr,"Exit!\n"); exit(0);
-
-
-
+  tree.activePartlist.zeroMemGPUAsync(gravStream->s()); //Set our atomic counter to zero :)
   //Set the kernel parameters, many!
   approxGrav.set_args(0, &tree.n_active_groups,
                          &tree.n,
@@ -628,9 +729,36 @@ void octree::approximate_gravity(tree_structure &tree)
   approxGrav.setWork(-1, NTHREAD, nBlocksForTreeWalk);
   //approxGrav.setWork(-1, 32, 1);
 
+  tree.interactions.zeroMem(); //TODO remove
+  cudaDeviceSynchronize();
   cudaEventRecord(startLocalGrav, gravStream->s());
+  tStart = get_time();
   approxGrav.execute2(gravStream->s());  //First half
   cudaEventRecord(endLocalGrav, gravStream->s());
+  gravStream->sync();
+
+#if 1
+  cudaDeviceSynchronize();
+  tEnd = get_time();
+  CU_SAFE_CALL(cudaEventElapsedTime(&ms, startLocalGrav, endLocalGrav));
+  fprintf(stderr,"Gravity step took: %f ms\t%lg sec\n", ms,  tEnd-tStart);
+
+#if 1
+  //Count the number of tree-opening tests
+  tree.interactions.d2h();
+  openingTestSum  = 0;
+  distanceTestSum = 0;
+
+  for(int i=0; i < tree.n; i++) { openingTestSum     += tree.interactions[i].x; distanceTestSum     += tree.interactions[i].y;   }
+  fprintf(stderr,"Number of opening angle checks: %lld [ %lld ] direct ops: %lld [ %lld ] \n",
+          openingTestSum,  openingTestSum  / tree.n,
+          distanceTestSum, distanceTestSum / tree.n);
+#endif
+
+
+  cudaDeviceReset();
+  fprintf(stderr,"Exit!\n"); exit(0);
+#endif
 
 
 #if 0
@@ -942,7 +1070,7 @@ double octree::compute_energies(tree_structure &tree)
   Ekin = 0.0; Epot = 0.0;
 
   #if 0
-    double hEkin = 0.0;
+  double hEkin = 0.0;
     double hEpot = 0.0;
 
     tree.bodies_pos.d2h();
@@ -955,7 +1083,7 @@ double octree::compute_energies(tree_structure &tree)
                                  vel.z*vel.z);
       hEpot += tree.bodies_pos[i].w*0.5*tree.bodies_acc0[i].w;
       //if(i < 128)
-      if(i < 0)
+      //if(i < 0)
       {
     	  LOGF(stderr,"%d\tAcc: %f %f %f %f\tPx: %f\tVx: %f\tkin: %f\tpot: %f\n", i,
     			  tree.bodies_acc0[i].x, tree.bodies_acc0[i].y, tree.bodies_acc0[i].z,

@@ -208,14 +208,17 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate, bool doFullS
     my_dev::dev_mem<real4>  real4Buffer1;
     my_dev::dev_mem<ullong> ullBuffer;
     my_dev::dev_mem<float>  realBuffer;
+    my_dev::dev_mem<real2>  real2Buffer;
 
     real4Buffer1.cmalloc_copy(tree.generalBuffer1, tree.n, 0);
     ullBuffer.   cmalloc_copy(tree.generalBuffer1, tree.n, 0);
     realBuffer.  cmalloc_copy(tree.generalBuffer1, tree.n, 0);
+    real2Buffer. cmalloc_copy(tree.generalBuffer1, tree.n, 0);
 
     dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_Ppos, real4Buffer1, true, true);
     dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_ids,  ullBuffer,    true, true);
     dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_h,    realBuffer,   true, true);          //Density values
+    dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_dens, real2Buffer,  true, true);          //Density values
   }
   else
   {
@@ -225,10 +228,12 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate, bool doFullS
     my_dev::dev_mem<float2>   float2Buffer;
     my_dev::dev_mem<ullong>   ullBuffer;
     my_dev::dev_mem<float>    realBuffer;
+    my_dev::dev_mem<real2>    real2Buffer;
     real4Buffer1.cmalloc_copy(tree.generalBuffer1, tree.n, 0);
     float2Buffer.cmalloc_copy(tree.generalBuffer1, tree.n, 0);
     ullBuffer.   cmalloc_copy(tree.generalBuffer1, tree.n, 0);
     realBuffer.  cmalloc_copy(tree.generalBuffer1, tree.n, 0);
+    real2Buffer. cmalloc_copy(tree.generalBuffer1, tree.n, 0);
 
     //Position, velocity and acc0
     dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_pos, real4Buffer1);
@@ -240,10 +245,11 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate, bool doFullS
     dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_Ppos, real4Buffer1);
     dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_Pvel, real4Buffer1);
     dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_time, float2Buffer);
-    dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_ids, ullBuffer);
+    dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_ids,  ullBuffer);
 
     //Density values
-    dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_h, realBuffer);
+    dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_h,    realBuffer);
+    dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_dens, real2Buffer);
 
   } //end if
   

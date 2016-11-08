@@ -143,6 +143,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   vector<real4>   bodyPositions;
   vector<real4>   bodyVelocities;
   vector<ullong>  bodyIDs;
+  vector<real2>   bodyDensity; //x=density, y=smoothing range
 
  
   float eps      = 0.05f;
@@ -722,7 +723,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   }
   else if (nSPH >= 0)
   {
-    generateSPHCube(bodyPositions, bodyVelocities, bodyIDs, procId, nProcs, nSPH);
+    generateSPHCube(bodyPositions, bodyVelocities, bodyIDs, bodyDensity, procId, nProcs, nSPH);
   }
   else
     assert(0);
@@ -757,6 +758,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     tree->localTree.bodies_Pvel[i] = bodyVelocities[i];
     tree->localTree.bodies_ids[i]  = bodyIDs[i];
     tree->localTree.bodies_time[i] = make_float2(tree->get_t_current(), tree->get_t_current());
+    tree->localTree.bodies_dens[i] = bodyDensity[i];
   }
 
   tree->localTree.bodies_time.h2d();
@@ -765,6 +767,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   tree->localTree.bodies_Ppos.h2d();
   tree->localTree.bodies_Pvel.h2d();
   tree->localTree.bodies_ids. h2d();
+  tree->localTree.bodies_dens.h2d();
 
 
   #ifdef USE_MPI

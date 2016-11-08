@@ -536,6 +536,8 @@ public:
   void   correct(tree_structure &tree);
   double compute_energies(tree_structure &tree);
 
+
+
   //Parallel version functions
 
   int procId, nProcs;                   //Process ID in the mpi stack, number of processors in the commm world
@@ -589,6 +591,8 @@ public:
   void      AllSum(double &value);
   int       SumOnRootRank(int value);
   double    SumOnRootRank(double value);
+
+  void dumpTreeStructureToFile(tree_structure &tree);
 
   //Main MPI functions
 

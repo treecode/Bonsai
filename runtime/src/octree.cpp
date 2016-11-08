@@ -617,4 +617,174 @@ void octree::dumpData()
 
 #endif
 
+void octree::dumpTreeStructureToFile(tree_structure &tree)
+{
+
+    //Write the tree structure to file
+    tree.multipole.d2h();
+    tree.boxSizeInfo.d2h();
+    tree.boxCenterInfo.d2h();
+    char fileName[256];
+    for(int i=0; i < tree.n_levels; i++)
+    {
+
+      sprintf(fileName, "fullTreeStructure-%d-level-%d.txt", mpiGetRank(), i);
+      ofstream nodeFile;
+      nodeFile.open(fileName);
+      nodeFile << "NODES" << endl;
+      for(int j=tree.level_list[i].x; j < tree.level_list[i].y; j++)
+      {
+          nodeFile << tree.boxCenterInfo[j].x << "\t" << tree.boxCenterInfo[j].y << "\t" << tree.boxCenterInfo[j].z;
+          nodeFile << "\t"  << tree.boxSizeInfo[j].x << "\t" << tree.boxSizeInfo[j].y << "\t" << tree.boxSizeInfo[j].z << "\n";
+      }//for j
+      nodeFile.close();
+    }//for i
+
+    //Write the source particles
+    sprintf(fileName, "fullTreeStructureParticles-%d.txt", mpiGetRank());
+    ofstream partFile;
+    partFile.open(fileName);
+    tree.bodies_Ppos.d2h();
+    partFile << "POINTS\n";
+    for(int i=0; i < tree.n; i++)
+    {
+      float4  pos =  tree.bodies_Ppos[i];
+      partFile << pos.x << "\t" << pos.y << "\t" << pos.z << endl;
+    }
+    partFile.close();
+
+    //Write the groups
+    tree.groupCenterInfo.d2h();
+    tree.groupSizeInfo.d2h();
+    sprintf(fileName, "fullTreeStructureGroups-%d.txt", mpiGetRank());
+    FILE *out = fopen(fileName, "w");
+    fprintf(out,"NODES\n");
+    for(int j= 0; j < tree.n_groups; j++)
+    {
+      fprintf(out, "%f %f %f %f %f %f \n",
+          tree.groupCenterInfo[j].x,tree.groupCenterInfo[j].y,tree.groupCenterInfo[j].z,
+          tree.groupSizeInfo[j].x,tree.groupSizeInfo[j].y,tree.groupSizeInfo[j].z);
+    }
+    fclose(out);
+
+#if 0
+  tree.boxSizeInfo.d2h();
+  tree.boxCenterInfo.d2h();
+
+  FILE *f = fopen("nodes.txt", "w");
+  for(int i=0; i < tree.n_nodes; i++)
+  {
+
+      if(
+          tree.boxCenterInfo[i].x-tree.boxSizeInfo[i].x <= 8 &&
+          tree.boxCenterInfo[i].x+tree.boxSizeInfo[i].x >= 8 &&
+          tree.boxCenterInfo[i].y-tree.boxSizeInfo[i].y <= 8 &&
+          tree.boxCenterInfo[i].y+tree.boxSizeInfo[i].y >= 8 &&
+          tree.boxCenterInfo[i].z-tree.boxSizeInfo[i].z <= 77 &&
+          tree.boxCenterInfo[i].z+tree.boxSizeInfo[i].z >= 77)
+      {
+    fprintf(f,"FOUND Box: %d  [ %lg %lg %lg ] size: [ %lg %lg %lg ] node: %d \n",
+            i,
+            tree.boxCenterInfo[i].x,
+            tree.boxCenterInfo[i].y,
+            tree.boxCenterInfo[i].z,
+            tree.boxSizeInfo[i].x,
+            tree.boxSizeInfo[i].y,
+            tree.boxSizeInfo[i].z,
+            tree.boxCenterInfo[i].w > 0.0);
+  }
+
+
+
+
+
+    fprintf(f,"Box: %d  [ %lg %lg %lg ] size: [ %lg %lg %lg ] node: %d \n",
+            i,
+            tree.boxCenterInfo[i].x,
+            tree.boxCenterInfo[i].y,
+            tree.boxCenterInfo[i].z,
+            tree.boxSizeInfo[i].x,
+            tree.boxSizeInfo[i].y,
+            tree.boxSizeInfo[i].z,
+            tree.boxCenterInfo[i].w > 0.0);
+  }
+  fclose(f);
+#endif
+
+#if 0
+
+
+if(iter == 20)
+{
+   char fileName[256];
+    sprintf(fileName, "groups-%d.bin", mpiGetRank());
+    ofstream nodeFile;
+    nodeFile.open(fileName, ios::out | ios::binary);
+    if(nodeFile.is_open())
+    {
+      nodeFile.write((char*)&tree.n_groups, sizeof(int));
+
+      for(int i=0; i < tree.n_groups; i++)
+      {
+        nodeFile.write((char*)&tree.groupSizeInfo[i],  sizeof(real4)); //size
+        nodeFile.write((char*)&tree.groupCenterInfo[i], sizeof(real4)); //center
+      }
+    }
+  }
+
+ //Write the tree-structure
+ if(iter == 20)
+ {
+   tree.multipole.d2h();
+  tree.boxSizeInfo.d2h();
+  tree.boxCenterInfo.d2h();
+  tree.bodies_Ppos.d2h();
+
+    char fileName[256];
+    sprintf(fileName, "fullTreeStructure-%d.bin", mpiGetRank());
+    ofstream nodeFile;
+    //nodeFile.open(nodeFileName.c_str());
+    nodeFile.open(fileName, ios::out | ios::binary);
+    if(nodeFile.is_open())
+    {
+      uint2 node_begend;
+      int level_start = tree.startLevelMin;
+      node_begend.x   = tree.level_list[level_start].x;
+      node_begend.y   = tree.level_list[level_start].y;
+
+      nodeFile.write((char*)&node_begend.x, sizeof(int));
+      nodeFile.write((char*)&node_begend.y, sizeof(int));
+      nodeFile.write((char*)&tree.n_nodes, sizeof(int));
+      nodeFile.write((char*)&tree.n, sizeof(int));
+
+      for(int i=0; i < tree.n; i++)
+      {
+        nodeFile.write((char*)&tree.bodies_Ppos[i], sizeof(real4));
+      }
+
+      for(int i=0; i < tree.n_nodes; i++)
+      {
+        nodeFile.write((char*)&tree.multipole[3*i+0], sizeof(real4));
+        nodeFile.write((char*)&tree.multipole[3*i+1], sizeof(real4));
+        nodeFile.write((char*)&tree.multipole[3*i+2], sizeof(real4));;
+      }
+
+      for(int i=0; i < tree.n_nodes; i++)
+      {
+        nodeFile.write((char*)&tree.boxSizeInfo[i], sizeof(real4));
+      }
+      for(int i=0; i < tree.n_nodes; i++)
+      {
+        nodeFile.write((char*)&tree.boxCenterInfo[i], sizeof(real4));
+      }
+
+      nodeFile.close();
+    }
+}
+#endif
+
+}
+
+
+
 

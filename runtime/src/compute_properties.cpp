@@ -120,77 +120,7 @@ void octree::compute_properties(tree_structure &tree) {
   LOGF(stderr, "Compute properties took: %lg  wait: %lg \n", get_time()-t0, get_time()-t1);
 
 
-#if 0
-
-
-if(iter == 20)
-{
-   char fileName[256];
-    sprintf(fileName, "groups-%d.bin", mpiGetRank());
-    ofstream nodeFile;
-    nodeFile.open(fileName, ios::out | ios::binary);
-    if(nodeFile.is_open())
-    {
-      nodeFile.write((char*)&tree.n_groups, sizeof(int));
-
-      for(int i=0; i < tree.n_groups; i++)
-      {
-        nodeFile.write((char*)&tree.groupSizeInfo[i],  sizeof(real4)); //size
-        nodeFile.write((char*)&tree.groupCenterInfo[i], sizeof(real4)); //center
-      }
-    }
-  }
-
- //Write the tree-structure
- if(iter == 20)
- {
-   tree.multipole.d2h();
-  tree.boxSizeInfo.d2h();
-  tree.boxCenterInfo.d2h();
-  tree.bodies_Ppos.d2h();
-
-    char fileName[256];
-    sprintf(fileName, "fullTreeStructure-%d.bin", mpiGetRank());
-    ofstream nodeFile;
-    //nodeFile.open(nodeFileName.c_str());
-    nodeFile.open(fileName, ios::out | ios::binary);
-    if(nodeFile.is_open())
-    {
-      uint2 node_begend;
-      int level_start = tree.startLevelMin;
-      node_begend.x   = tree.level_list[level_start].x;
-      node_begend.y   = tree.level_list[level_start].y;
-
-      nodeFile.write((char*)&node_begend.x, sizeof(int));
-      nodeFile.write((char*)&node_begend.y, sizeof(int));
-      nodeFile.write((char*)&tree.n_nodes, sizeof(int));
-      nodeFile.write((char*)&tree.n, sizeof(int));
-
-      for(int i=0; i < tree.n; i++)
-      {
-        nodeFile.write((char*)&tree.bodies_Ppos[i], sizeof(real4));
-      }
-
-      for(int i=0; i < tree.n_nodes; i++)
-      {
-        nodeFile.write((char*)&tree.multipole[3*i+0], sizeof(real4));
-        nodeFile.write((char*)&tree.multipole[3*i+1], sizeof(real4));
-        nodeFile.write((char*)&tree.multipole[3*i+2], sizeof(real4));;
-      }
-
-      for(int i=0; i < tree.n_nodes; i++)
-      {
-        nodeFile.write((char*)&tree.boxSizeInfo[i], sizeof(real4));
-      }
-      for(int i=0; i < tree.n_nodes; i++)
-      {
-        nodeFile.write((char*)&tree.boxCenterInfo[i], sizeof(real4));
-      }
-
-      nodeFile.close();
-    }
-}
-#endif
+  //this->dumpTreeStructureToFile(tree);
 
    devContext->stopTiming("Compute-properties", 3, execStream->s());
 } //compute_propertiesD
