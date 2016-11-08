@@ -1333,10 +1333,14 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
   my_dev::dev_mem<uint2>  validList3;
   my_dev::dev_mem<uint4>  boundariesGPU;
   my_dev::dev_mem<uint>   idList;
+  my_dev::dev_mem<uint>   atomicBuff; //Used for counting during particle movement
+
   int tempOffset1 = validList2.   cmalloc_copy(localTree.generalBuffer1, localTree.n, 0);
       tempOffset1 = validList3.   cmalloc_copy(localTree.generalBuffer1, localTree.n, tempOffset1);
   int tempOffset  = idList.       cmalloc_copy(localTree.generalBuffer1, localTree.n, tempOffset1);
                     boundariesGPU.cmalloc_copy(localTree.generalBuffer1, nProcs+2,    tempOffset);
+  tempOffset1     = atomicBuff.   cmalloc_copy(localTree.generalBuffer1, 1,           tempOffset1);
+
 
   for(int idx=0; idx <= nProcs; idx++)
   {
@@ -1480,10 +1484,6 @@ void octree::gpuRedistributeParticles_SFC(uint4 *boundaries)
 
         //Now we have to move particles from the back of the array to the invalid spots
         //this can be done in parallel with exchange operation to hide some time
-
-        //One integer for counting
-        my_dev::dev_mem<uint>  atomicBuff;
-        memOffset1 = atomicBuff.cmalloc_copy(localTree.generalBuffer1,1, tempOffset1);
         atomicBuff.zeroMem();
 
         double t3 = get_time();
