@@ -47,9 +47,10 @@ __forceinline__ static __device__ int ringAddr(const int i)
 /* FDPS Kernel */
 
 
+#define  PARAM_SMTH 1.2
+
+
 //__device__ __forceinline__ float pow3(float a) { return a*a*a; }
-//
-//
 //__device__ __forceinline__ float W(const PS::F64vec dr, const PS::F64 h) const{
 //    const float H = supportRadius() * h;
 //    const float s = sqrt(dr * dr) / H;
@@ -58,35 +59,38 @@ __forceinline__ static __device__ int ringAddr(const int i)
 //    r_value *= (1365./64.) / (H * H * H * math::pi);
 //    return r_value;
 //}
-//
 
-//Wendland C6
- struct kernel_t{
-    //W
-    __device__ __forceinline__ float W(const float dr, const float h) const{
-        const float H = supportRadius() * h;
-        const float s = dr / H;
-        float r_value;
-        r_value = (1.0f + s * (8.0f + s * (25.0f + s * (32.0f)))) * pow8(plus(1.0f - s));
-        r_value *= (1365.f/64.f) / (H * H * H * M_PI);
-        return r_value;
-    }
 
-    static __device__  __forceinline__ float supportRadius(){
-        return 3.5f;
-    }
+namespace density
+{
+    //Wendland C6
+     struct kernel_t{
+        //W
+        __device__ __forceinline__ float W(const float dr, const float h) const{
+            const float H = supportRadius() * h;
+            const float s = dr / H;
+            float r_value;
+            r_value = (1.0f + s * (8.0f + s * (25.0f + s * (32.0f)))) * pow8(plus(1.0f - s));
+            r_value *= (1365.f/64.f) / (H * H * H * M_PI);
+            return r_value;
+        }
 
-    template <typename type>  type
-    static __device__ __forceinline__  pow8(const type arg){
-        const type arg2 = arg * arg;
-        const type arg4 = arg2 * arg2;
-        return arg4 * arg4;
-    }
+        static __device__  __forceinline__ float supportRadius(){
+            return 3.5f;
+        }
 
-    template <typename type>  type
-    static __device__ __forceinline__  plus(const type arg){
-        return (arg > 0) ? arg : 0;
-    }
+        template <typename type>  type
+        static __device__ __forceinline__  pow8(const type arg){
+            const type arg2 = arg * arg;
+            const type arg4 = arg2 * arg2;
+            return arg4 * arg4;
+        }
+
+        template <typename type>  type
+        static __device__ __forceinline__  plus(const type arg){
+            return (arg > 0) ? arg : 0;
+        }
+    };
 };
 
 static __device__ __forceinline__ void addDensity(
@@ -95,7 +99,7 @@ static __device__ __forceinline__ void addDensity(
     const float3    posj,
     const float     eps2,
           float    &density,
-    const kernel_t &kernel)
+    const density::kernel_t &kernel)
 {
 #if 1  // to test performance of a tree-walk
   const float3 dr    = make_float3(posj.x - pos.x, posj.y - pos.y, posj.z - pos.z);
@@ -103,19 +107,9 @@ static __device__ __forceinline__ void addDensity(
   const float r2eps  = r2 + eps2;
   const float r      = sqrtf(r2eps);
 
-  float tempD = massj*kernel.W(r, pos.w);
-
-//  const int laneIdx = threadIdx.x & (WARP_SIZE-1);
-//  if(laneIdx == 31)
-//  {
-//      if(pos.x == 0.0 && tempD > 0.0)
-//      printf("Status: %f %f %f || %f %f %f\t dens: %lg r: %f smth: %f Add: %lg\n",
-//              pos.x, pos.y, pos.z,
-//              posj.x, posj.y, posj.z,
-//              density, r, pos.w, tempD);
-//  }
-  density +=tempD;
+  density += massj*kernel.W(r, pos.w);
   //Prevent adding ourself, TODO should make this 'if' more efficient, like multiply with something
+  //Not needed for this SPH kernel?
   //if(r2 != 0) density +=tempD;
 #endif
 }
@@ -130,7 +124,7 @@ struct directDensity {
               float2  density_i[NI],
         const float4 *body)
     {
-      kernel_t kernel;
+      density::kernel_t kernel;
       const float4 M0 = (FULL || ptclIdx >= 0) ? body[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
 
       for (int j = 0; j < WARP_SIZE; j++)
@@ -147,6 +141,8 @@ struct directDensity {
       }
     }
 };
+
+
 
 
 
@@ -184,8 +180,7 @@ static __device__ __forceinline__ void computeDensityAndNgb(
 
 #endif
 }
-
-#if 1
+#if 0
 static __device__ __forceinline__ float adjustH(const float h_old, const float nnb)
 {
 	const float nbDesired 	= 7;
@@ -194,11 +189,6 @@ static __device__ __forceinline__ float adjustH(const float h_old, const float n
 	return (h_old*fScale);
 }
 #endif
-
-
-
-
-
 
 
 
@@ -273,7 +263,7 @@ struct directAcc {
 
 /*
  * TODO, we can probably add the cellH/smoothing length to the groupSize to save
- * some operations in these comparisons
+ * the cellH variable and instead compare to 0
  */
 
 __device__ bool split_node_sph_md(
@@ -363,10 +353,6 @@ uint2 approximate_sph(
     pos_i[i] = _pos_i[i];
 
   uint2 interactionCounters = {0}; /* # of approximate and exact force evaluations */
-
-#pragma unroll 1
-  for (int i = 0; i < NI; i++)
-    dens_i[i] = make_float2(0,0);
 
 
   volatile int *tmpList = shmem;
@@ -591,35 +577,25 @@ bool treewalk(
   float4 acc_i [2];
   float2 dens_i[2];  
 
-
-  //TODO without this if statement it crashes on the GTX1080 but not on the K20c
-  if(threadIdx.x > 20484)  printf("[%d] Group info: %d %d \n", threadIdx.x, body_i[0], body_i[1], ni);
-
-  pos_i[0]    = group_body_pos[body_i[0]];
-  pos_i[0].w  = 1.0f/body_h[body_i[0]];
-  pos_i[0].w *= pos_i[0].w;  /* .w stores 1/h^2 to speed up computations */
-  if(ni > 1){       //Only read if we actually have ni == 2
-    pos_i[1]    = group_body_pos[body_i[1]];
-    pos_i[1].w  = 1.0f/body_h[body_i[1]];  
-    pos_i[1].w *= pos_i[1].w;  /* .w stores 1/h^2 to speed up computations */
-  }
-
   acc_i[0]  = acc_i[1]  = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
   dens_i[0] = dens_i[1] = make_float2(0.0f, 0.0f);
 
+  pos_i[0]    = group_body_pos[body_i[0]];
+  dens_i[0].y = body_dens_out[body_i[0]].y;
+//  pos_i[0].w  = 1.0f/body_h[body_i[0]];
+//  pos_i[0].w *= pos_i[0].w;  /* .w stores 1/h^2 to speed up computations */
+  if(ni > 1){       //Only read if we actually have ni == 2
+    pos_i[1]    = group_body_pos[body_i[1]];
+    dens_i[1].y = body_dens_out[body_i[1]].y;
+//    pos_i[0].w = body_dens_out[body_i[0]].y;
+//    pos_i[1].w  = 1.0f/body_h[body_i[1]];
+//    pos_i[1].w *= pos_i[1].w;  /* .w stores 1/h^2 to speed up computations */
+  }
+
+
 #if 1
-  pos_i[0].w                = body_dens_out[body_i[0]].y;  //y is smoothing range
-  if(ni > 1 )   pos_i[1].w  = body_dens_out[body_i[1]].y;  //y is smoothing range
-
-//  if(body_i[0] == 3839)
-//  {
-//      printf("GROUP %d %d lane: %d \t %f %f %f \n", bid, ni, laneId, pos_i[0].x,pos_i[0].y,pos_i[0].z);
-//  }
-//  if(body_i[1] == 3839)
-//  {
-//      printf("GROUP2 %d %d lane: %d \t %f %f %f \n", bid, ni, laneId, pos_i[1].x,pos_i[1].y,pos_i[1].z);
-//  }
-
+//  if(body_i[0] == 3839) { printf("GROUP %d %d lane: %d \t %f %f %f \n", bid, ni, laneId, pos_i[0].x,pos_i[0].y,pos_i[0].z);}
+//  if(body_i[1] == 3839) { printf("GROUP2 %d %d lane: %d \t %f %f %f \n", bid, ni, laneId, pos_i[1].x,pos_i[1].y,pos_i[1].z);}
 #else
   const float tempH = 1.1;
 
@@ -629,8 +605,13 @@ bool treewalk(
 
   uint2 counters = {0};
 
-  for(int nLoop=0; nLoop < 1; nLoop++)
+  for(int nLoop=0; nLoop < 3; nLoop++) //TODO consider pulling this out of the kernel and instead do 3 kernel launches
   {
+      dens_i[0].x = dens_i[1].x = 0.0f; //Reset density
+
+      pos_i[0].w                = dens_i[0].y;  //y is smoothing range
+      if(ni > 1 )   pos_i[1].w  = dens_i[1].y;  //y is smoothing range
+
       //Compute the cellH, which is the maximum body_h value
       //as we search for the whole group in parallel we have to 
       //be sure to include all possibly required particles
@@ -639,7 +620,7 @@ bool treewalk(
       {
         cellH = max(cellH, warpAllReduceMax(pos_i[1].w));
       }
-      cellH *= 2.5; //TODO This is needed to get the results to match those of FDPS, why is that??
+      cellH *= 3; //TODO This (value around 3) is needed to get the results to match those of FDPS, why is that. Looks like there is no hard cutoff in the kernel??
       cellH *= cellH; //Squared for distance comparison without sqrt
 
 
@@ -652,69 +633,76 @@ bool treewalk(
 //      }
 
       //For periodic boundaries, mirror the group and body positions along the periodic axis
-      //TODO
+      float3 domainSize = {1.0f, 0.125f, 0.125f};   //Hardcoded for our testing IC
 
-
-#if 0
-      const bool INTCOUNT = false;
-#else
-      const bool INTCOUNT = true;
-#endif
+      for(int ix=-1; ix <= 1; ix++)     //Periodic around X
       {
-        if (ni == 1)
-          counters = approximate_sph<SHIFT2, BLOCKDIM2, 1, INTCOUNT>(
-              acc_i,
-              pos_i,
-              group_pos,
-              body_j,
-              eps2, 
-              node_begend,
-              shmem, 
-              lmem, 
-              curGroupSize,
-              dens_i,
-              nodeSize,
-              nodeCenter,
-              nodeMultipole,
-              cellH);
-        else
-          counters = approximate_sph<SHIFT2, BLOCKDIM2, 2, INTCOUNT>(
-              acc_i,
-              pos_i,
-              group_pos,
-              body_j,
-              eps2, 
-              node_begend,
-              shmem, 
-              lmem, 
-              curGroupSize,
-              dens_i,
-              nodeSize,
-              nodeCenter,
-              nodeMultipole,
-              cellH
-              );
-      }
-      if(counters.x == 0xFFFFFFFF && counters.y == 0xFFFFFFFF)
-      {
-        //DEVPRINT("ON DEV: OUT OF MEMORY \n",0);
-        return false;
-      }
+        for(int iy=-1; iy <= 1; iy++)   //Periodic around Y
+        {
+          for(int iz=-1; iz <= 1; iz++) //Periodic around Z
+          {
+              float4 pGroupPos   = group_pos;
+              float4 pBodyPos[2] = {pos_i[0], pos_i[1]};
 
-      //TODO
-      pos_i[0].w               =  adjustH(pos_i[0].w, dens_i[0].y);
-      if(ni > 1 )  pos_i[1].w  =  adjustH(pos_i[1].w, dens_i[1].y);
+              pGroupPos.x   += (domainSize.x*ix); pBodyPos[0].x += (domainSize.x*ix); pBodyPos[1].x += (domainSize.x*ix);
+              pGroupPos.y   += (domainSize.y*iy); pBodyPos[0].y += (domainSize.y*iy); pBodyPos[1].y += (domainSize.y*iy);
+              pGroupPos.z   += (domainSize.z*iz); pBodyPos[0].z += (domainSize.z*iz); pBodyPos[1].z += (domainSize.z*iz);
+
+              uint2 curCounters = {0};
+
+        #if 0
+              const bool INTCOUNT = false;
+        #else
+              const bool INTCOUNT = true;
+        #endif
+              {
+                if (ni == 1)
+                    curCounters = approximate_sph<SHIFT2, BLOCKDIM2, 1, INTCOUNT>(
+                      acc_i,
+                      pBodyPos,
+                      pGroupPos,
+                      body_j,
+                      eps2,
+                      node_begend,
+                      shmem,
+                      lmem,
+                      curGroupSize,
+                      dens_i,
+                      nodeSize,
+                      nodeCenter,
+                      nodeMultipole,
+                      cellH);
+                else
+                    curCounters = approximate_sph<SHIFT2, BLOCKDIM2, 2, INTCOUNT>(
+                      acc_i,
+                      pBodyPos,
+                      pGroupPos,
+                      body_j,
+                      eps2,
+                      node_begend,
+                      shmem,
+                      lmem,
+                      curGroupSize,
+                      dens_i,
+                      nodeSize,
+                      nodeCenter,
+                      nodeMultipole,
+                      cellH);
+              }
+              if(curCounters.x == 0xFFFFFFFF && curCounters.y == 0xFFFFFFFF)
+              {
+                return false; //Out of tree-walk memory
+              }
+              counters.x += curCounters.x;
+              counters.y += curCounters.y;
+          } //for periodic Z
+        } //for periodic Y
+      } //for periodic X
+
+      //Update the smoothing range for next iteration
+                 dens_i[0].y = PARAM_SMTH * cbrtf(group_body_pos[body_i[0]].w / dens_i[0].x);
+      if(ni > 1) dens_i[1].y = PARAM_SMTH * cbrtf(group_body_pos[body_i[1]].w / dens_i[1].x);
   } //for nLoop
-
-//  dens_i[0].x            = pos_i[0].w;
-//  if(ni > 1) dens_i[1].x = pos_i[1].w;
-
-
-
-  //195         assert(PARAM::Dim == 3);
-  //196         dens[id].smth = PARAM::SMTH * cbrt(ith.mass / dens_buf);
-  //197         dens[id].dens = dens_buf;
-
 
 
 
@@ -733,18 +721,12 @@ bool treewalk(
   if (laneId < nb_i) 
   {
     const int addr = body_i[0];
-    {
-      //const float hinv = 1.0f/body_h[addr];
-      //const float C   = 3465.0f/(512.0f*M_PI)*hinv*hinv*hinv;
-      //dens_i[0].x *= C;  /* scale rho */
-    }
     if (ACCUMULATE)
     {
-      acc_out     [addr].x += acc_i[0].x;
-      acc_out     [addr].y += acc_i[0].y;
-      acc_out     [addr].z += acc_i[0].z;
-      acc_out     [addr].w += acc_i[0].w;
-
+      acc_out      [addr].x += acc_i[0].x;
+      acc_out      [addr].y += acc_i[0].y;
+      acc_out      [addr].z += acc_i[0].z;
+      acc_out      [addr].w += acc_i[0].w;
 
       body_dens_out[addr].x += dens_i[0].x;
       body_dens_out[addr].y += dens_i[0].y; //TODO can not sum lengths
@@ -753,7 +735,6 @@ bool treewalk(
     {
       acc_out      [addr] =  acc_i[0];
       body_dens_out[addr] = dens_i[0];
-//      body_dens_out[addr].x = -99;
     }
     //       ngb_out     [addr] = ngb_i;
     ngb_out     [addr] = addr; //JB Fixed this for demo 
@@ -771,28 +752,21 @@ bool treewalk(
     if (ni == 2)
     {
       const int addr = body_i[1];
-      {
-        const float hinv = 1.0f/body_h[addr];
-        const float C   = 3465.0f/(512.0f*M_PI)*hinv*hinv*hinv;
-       // dens_i[1].x *= C;  /* scale rho */
-      }
       if (ACCUMULATE)
       {
-        acc_out     [addr].x += acc_i[1].x;
-        acc_out     [addr].y += acc_i[1].y;
-        acc_out     [addr].z += acc_i[1].z;
-        acc_out     [addr].w += acc_i[1].w;
+        acc_out      [addr].x += acc_i[1].x;
+        acc_out      [addr].y += acc_i[1].y;
+        acc_out      [addr].z += acc_i[1].z;
+        acc_out      [addr].w += acc_i[1].w;
       
         body_dens_out[addr].x += dens_i[1].x;
-      	body_dens_out[addr].y += dens_i[1].y;
+      	body_dens_out[addr].y += dens_i[1].y; //TODO can not sum lengths
       }
       else
       {
         acc_out      [addr] =  acc_i[1];
         body_dens_out[addr] = dens_i[1];
-      
-//        body_dens_out[addr].x = -99;
-       }
+      }
 
       //         ngb_out     [addr] = ngb_i;
       ngb_out     [addr] = addr; //JB Fixed this for demo 
