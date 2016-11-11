@@ -1,4 +1,3 @@
-
 #ifndef TREEWALK_INCLUDE_H
 #define TREEWALK_INCLUDE_H
 
@@ -14,6 +13,16 @@
 #define warpId (threadIdx.x >> WARP_SIZE2)
 
 #define BTEST(x) (-(int)(x))
+
+
+
+  template<int SHIFT>
+__forceinline__ static __device__ int ringAddr(const int i)
+{
+  return (i & ((CELL_LIST_MEM_PER_WARP<<SHIFT) - 1));
+}
+
+
 
 /************************************/
 /*********   PREFIX SUM   ***********/

@@ -552,7 +552,7 @@ void octree::approximate_gravity(tree_structure &tree)
                          tree.multipole.p(),
                          tree.bodies_acc1.p(),
                          tree.bodies_Ppos.p(),
-                         tree.ngb.p(),
+                         tree.bodies_Pvel.p(),
                          tree.activePartlist.p(),
                          tree.interactions.p(),
                          tree.boxSizeInfo.p(),
@@ -561,8 +561,8 @@ void octree::approximate_gravity(tree_structure &tree)
                          tree.groupCenterInfo.p(),
                          tree.bodies_Pvel.p(),
                          tree.generalBuffer1.p(),  //The buffer to store the tree walks
-                         tree.bodies_h.p(),        //Per particle search radius
-                         tree.bodies_dens.p());    //Per particle density (x) and nnb (y)
+                         tree.bodies_dens.p(),     //Per particle density (x) and nnb (y)
+                         tree.bodies_grad.p());
 
   SPHDensity.set_texture<real4>(0,  tree.boxSizeInfo,    "texNodeSize");
   SPHDensity.set_texture<real4>(1,  tree.boxCenterInfo,  "texNodeCenter");
@@ -620,7 +620,7 @@ void octree::approximate_gravity(tree_structure &tree)
 
    for(int i=0; i < tree.n; i++)
    {
-//       if(tree.bodies_ids[i] < 10)
+       if(tree.bodies_ids[i] < 10)
        fprintf(stderr,"Output: %d %lld || %f %f %f \t || %f %f\n",
                i,
                tree.bodies_ids[i],

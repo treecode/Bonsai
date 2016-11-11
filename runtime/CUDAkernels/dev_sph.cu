@@ -1,24 +1,20 @@
 #include "bonsai.h"
 #include <stdio.h>
 #include <stdarg.h>
+#include "node_specs.h"
+
 #include "treewalk_includes.h"
+#include "sph_includes.h"
+
 
 /*
  * TODO
- * - Include periodic boundary conditions
- * - Symmetry try for symmetric hydro force
- * - Update of smoothing after an iteration
+ * - Symmetry tree for symmetric hydro force
  */
 
 #include "../profiling/bonsai_timing.h"
 PROF_MODULE(dev_approximate_gravity);
 
-
-#include "node_specs.h"
-
-#ifdef WIN32
-#define M_PI        3.14159265358979323846264338328
-#endif
 
 
 #define DEVPRINT(fmt, ...) { \
@@ -33,121 +29,10 @@ PROF_MODULE(dev_approximate_gravity);
 /*************** Tree walk ************/
 /**************************************/
 
-  template<int SHIFT>
-__forceinline__ static __device__ int ringAddr(const int i)
-{
-  return (i & ((CELL_LIST_MEM_PER_WARP<<SHIFT) - 1));
-}
-
-
-
-/***********************************/
-/***** DENSITY   ******************/
-
-/* FDPS Kernel */
-
-
-#define  PARAM_SMTH 1.2
-
-
-//__device__ __forceinline__ float pow3(float a) { return a*a*a; }
-//__device__ __forceinline__ float W(const PS::F64vec dr, const PS::F64 h) const{
-//    const float H = supportRadius() * h;
-//    const float s = sqrt(dr * dr) / H;
-//    float r_value;
-//    r_value = (1.0 + s * (8.0 + s * (25.0 + s * (32.0)))) * math::pow8(math::plus(1.0 - s));
-//    r_value *= (1365./64.) / (H * H * H * math::pi);
-//    return r_value;
-//}
-
-
-namespace density
-{
-    //Wendland C6
-     struct kernel_t{
-        //W
-        __device__ __forceinline__ float W(const float dr, const float h) const{
-            const float H = supportRadius() * h;
-            const float s = dr / H;
-            float r_value;
-            r_value = (1.0f + s * (8.0f + s * (25.0f + s * (32.0f)))) * pow8(plus(1.0f - s));
-            r_value *= (1365.f/64.f) / (H * H * H * M_PI);
-            return r_value;
-        }
-
-        static __device__  __forceinline__ float supportRadius(){
-            return 3.5f;
-        }
-
-        template <typename type>  type
-        static __device__ __forceinline__  pow8(const type arg){
-            const type arg2 = arg * arg;
-            const type arg4 = arg2 * arg2;
-            return arg4 * arg4;
-        }
-
-        template <typename type>  type
-        static __device__ __forceinline__  plus(const type arg){
-            return (arg > 0) ? arg : 0;
-        }
-    };
-};
-
-static __device__ __forceinline__ void addDensity(
-    const float4    pos,
-    const float     massj,
-    const float3    posj,
-    const float     eps2,
-          float    &density,
-    const density::kernel_t &kernel)
-{
-#if 1  // to test performance of a tree-walk
-  const float3 dr    = make_float3(posj.x - pos.x, posj.y - pos.y, posj.z - pos.z);
-  const float r2     = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
-  const float r2eps  = r2 + eps2;
-  const float r      = sqrtf(r2eps);
-
-  density += massj*kernel.W(r, pos.w);
-  //Prevent adding ourself, TODO should make this 'if' more efficient, like multiply with something
-  //Not needed for this SPH kernel?
-  //if(r2 != 0) density +=tempD;
-#endif
-}
-
-template<int NI, bool FULL>
-struct directDensity {
-    __device__ __forceinline__ void operator()(
-              float4  acc_i[NI],
-        const float4  pos_i[NI],
-        const int     ptclIdx,
-        const float   eps2,
-              float2  density_i[NI],
-        const float4 *body)
-    {
-      density::kernel_t kernel;
-      const float4 M0 = (FULL || ptclIdx >= 0) ? body[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
-
-      for (int j = 0; j < WARP_SIZE; j++)
-      {
-        const float4 jM0   = make_float4(__shfl(M0.x, j), __shfl(M0.y, j), __shfl(M0.z, j), __shfl(M0.w,j));
-        const float  jmass = jM0.w;
-        const float3 jpos  = make_float3(jM0.x, jM0.y, jM0.z);
-    #pragma unroll
-        for (int k = 0; k < NI; k++)
-        {
-          addDensity(pos_i[k], jmass, jpos, eps2, density_i[k].x, kernel);
-          density_i[k].y++;
-        }
-      }
-    }
-};
-
-
 
 
 
 /* Bonsai SC2014 Kernel */
-
 
 static __device__ __forceinline__ void computeDensityAndNgb(
     const float r2, const float hinv2, const float mass, 
@@ -192,66 +77,10 @@ static __device__ __forceinline__ float adjustH(const float h_old, const float n
 
 
 
-/*********** Forces *************/
-
-static __device__ __forceinline__ float4 add_acc(
-          float4  acc,
-    const float4  pos,
-    const float   massj, const float3 posj,
-    const float   eps2,
-          float2 &density)
-{
-#if 1  // to test performance of a tree-walk 
-  const float3 dr = make_float3(posj.x - pos.x, posj.y - pos.y, posj.z - pos.z);
-
-  const float r2     = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
-  const float r2eps  = r2 + eps2;
-  const float rinv   = rsqrtf(r2eps);
-  const float rinv2  = rinv*rinv;
-  const float mrinv  = massj * rinv;
-  const float mrinv3 = mrinv * rinv2;
-
-  acc.w -= mrinv;
-  acc.x += mrinv3 * dr.x;
-  acc.y += mrinv3 * dr.y;
-  acc.z += mrinv3 * dr.z;
-
-  //Prevent adding ourself
-  if(r2 != 0) computeDensityAndNgb(r2,pos.w,massj,density.x,density.y);
-#endif
-  return acc;
-}
-
-template<int NI, bool FULL>
-struct directAcc {
-     __device__ __forceinline__ void operator()(
-            float4  acc_i[NI],
-      const float4  pos_i[NI],
-      const int     ptclIdx,
-      const float   eps2,
-            float2  density_i[NI],
-      const float4 *body) const
-     {
-          const float4 M0 = (FULL || ptclIdx >= 0) ? body[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
-         //const float4 M0 = (FULL || ptclIdx >= 0) ? tex1Dfetch(texBody, ptclIdx) : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
-
-        //#pragma unroll
-          for (int j = 0; j < WARP_SIZE; j++)
-          {
-            const float4 jM0   = make_float4(__shfl(M0.x, j), __shfl(M0.y, j), __shfl(M0.z, j), __shfl(M0.w,j));
-            const float  jmass = jM0.w;
-            const float3 jpos  = make_float3(jM0.x, jM0.y, jM0.z);
-        #pragma unroll
-            for (int k = 0; k < NI; k++)
-              acc_i[k] = add_acc(acc_i[k], pos_i[k], jmass, jpos, eps2, density_i[k]);
-          }
-      }
-};//directAcc
-
 
 //Until I figure out how to do this using templates, for now using defines
 //to switch between Acceleration and density
-#define directOP directDensity
+#define directOP SPH::density::directOperator
 //#define directOP directAcc
 
 
@@ -367,13 +196,11 @@ uint2 approximate_sph(
   int nCells = top_cells.y - top_cells.x;
 
 
-  int cellListBlock        = 0;
-  int nextLevelCellCounter = 0;
-
+  int cellListBlock           = 0;
+  int nextLevelCellCounter    = 0;
   unsigned int cellListOffset = 0;
 
   /* process level with n_cells */
-  int level = 0; //TODO remove, only used for printing information
 #if 1
   while (nCells > 0)
   {
@@ -511,16 +338,15 @@ uint2 approximate_sph(
     /* if the current level is processed, schedule the next level */
     if (cellListBlock >= nCells)
     {
-      level++;
       cellListOffset += nCells;
       nCells          = nextLevelCellCounter;
       cellListBlock   = nextLevelCellCounter = 0;
     }
-
   }  /* level completed */
 #endif
 
 
+  //Process remaining items
   if (directCounter > 0)
   {
     directOP<NI,false>()(acc_i, pos_i, laneIdx < directCounter ? directPtclIdx : -1, eps2, dens_i, body_j);
@@ -550,9 +376,7 @@ bool treewalk(
     int             *lmem,
     float4          *acc_out,
     int2            *interactions,
-    int             *ngb_out,
     int             *active_inout,
-    float           *body_h,
     float2          *body_dens_out)
 {
 
@@ -564,6 +388,7 @@ bool treewalk(
   real4 group_pos       = groupCenterInfo[bid];
   real4 curGroupSize    = groupSizeInfo[bid];
 #endif
+
   const int   groupData       = __float_as_int(curGroupSize.w);
   const uint body_addr        =   groupData & CRITMASK;
   const uint nb_i             = ((groupData & INVCMASK) >> CRITBIT) + 1;
@@ -576,6 +401,8 @@ bool treewalk(
   float4 pos_i [2];
   float4 acc_i [2];
   float2 dens_i[2];  
+
+  SPH::density dens2_i[2];
 
   acc_i[0]  = acc_i[1]  = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
   dens_i[0] = dens_i[1] = make_float2(0.0f, 0.0f);
@@ -592,17 +419,6 @@ bool treewalk(
 //    pos_i[1].w *= pos_i[1].w;  /* .w stores 1/h^2 to speed up computations */
   }
 
-
-#if 1
-//  if(body_i[0] == 3839) { printf("GROUP %d %d lane: %d \t %f %f %f \n", bid, ni, laneId, pos_i[0].x,pos_i[0].y,pos_i[0].z);}
-//  if(body_i[1] == 3839) { printf("GROUP2 %d %d lane: %d \t %f %f %f \n", bid, ni, laneId, pos_i[1].x,pos_i[1].y,pos_i[1].z);}
-#else
-  const float tempH = 1.1;
-
-  pos_i[0].w             = tempH;
-  if(ni > 1 ) pos_i[1].w = tempH;
-#endif
-
   uint2 counters = {0};
 
   for(int nLoop=0; nLoop < 3; nLoop++) //TODO consider pulling this out of the kernel and instead do 3 kernel launches
@@ -612,8 +428,8 @@ bool treewalk(
       pos_i[0].w                = dens_i[0].y;  //y is smoothing range
       if(ni > 1 )   pos_i[1].w  = dens_i[1].y;  //y is smoothing range
 
-      //Compute the cellH, which is the maximum body_h value
-      //as we search for the whole group in parallel we have to 
+      //Compute the cellH, which is the maximum smoothing value off all particles
+      //in a group because as we search for the whole group in parallel we have to
       //be sure to include all possibly required particles
       float cellH = warpAllReduceMax(pos_i[0].w);
       if(ni == 2)
@@ -700,6 +516,7 @@ bool treewalk(
       } //for periodic X
 
       //Update the smoothing range for next iteration
+
                  dens_i[0].y = PARAM_SMTH * cbrtf(group_body_pos[body_i[0]].w / dens_i[0].x);
       if(ni > 1) dens_i[1].y = PARAM_SMTH * cbrtf(group_body_pos[body_i[1]].w / dens_i[1].x);
   } //for nLoop
@@ -736,8 +553,6 @@ bool treewalk(
       acc_out      [addr] =  acc_i[0];
       body_dens_out[addr] = dens_i[0];
     }
-    //       ngb_out     [addr] = ngb_i;
-    ngb_out     [addr] = addr; //JB Fixed this for demo 
     active_inout[addr] = 1;
     if (ACCUMULATE)
     {
@@ -767,9 +582,6 @@ bool treewalk(
         acc_out      [addr] =  acc_i[1];
         body_dens_out[addr] = dens_i[1];
       }
-
-      //         ngb_out     [addr] = ngb_i;
-      ngb_out     [addr] = addr; //JB Fixed this for demo 
       active_inout[addr] = 1;     
       if (ACCUMULATE)
       {
@@ -789,27 +601,27 @@ bool treewalk(
 
 template<bool ACCUMULATE, int BLOCKDIM2>
 static __device__
-void approximate_gravity_main(
+void approximate_SPH_main(
     const int n_active_groups,
-    int    n_bodies,
-    float eps2,
-    uint2 node_begend,
-    int    *active_groups,
-    real4  *body_pos,
-    real4  *multipole_data,
-    float4 *acc_out,
-    real4  *group_body_pos,           //This can be different from body_pos
-    int    *ngb_out,
-    int    *active_inout,
-    int2   *interactions,
-    float4  *boxSizeInfo,
-    float4  *groupSizeInfo,
-    float4  *boxCenterInfo,
-    float4  *groupCenterInfo,
-    real4   *body_vel,
-    int     *MEM_BUF,
-    float   *body_h,
-    float2  *body_dens) 
+    int       n_bodies,
+    float     eps2,
+    uint2     node_begend,
+    int      *active_groups,
+    real4    *body_pos,
+    real4    *multipole_data,
+    float4   *acc_out,
+    real4    *group_body_pos,
+    real4    *group_body_vel,
+    int      *active_inout,
+    int2     *interactions,
+    float4   *boxSizeInfo,
+    float4   *groupSizeInfo,
+    float4   *boxCenterInfo,
+    float4   *groupCenterInfo,
+    real4    *body_vel,
+    int      *MEM_BUF,
+    float2   *body_dens,
+    float4   *body_grad)
 {
   const int blockDim2 = BLOCKDIM2;
   const int shMemSize = 1 * (1 << blockDim2);
@@ -817,8 +629,8 @@ void approximate_gravity_main(
 
   const int nWarps2 = blockDim2 - WARP_SIZE2;
 
-  const int sh_offs = (shMemSize >> nWarps2) * warpId;
-  int *shmem = shmem_pool + sh_offs;
+  const int sh_offs    = (shMemSize >> nWarps2) * warpId;
+  int *shmem           = shmem_pool + sh_offs;
   volatile int *shmemv = shmem;
 
 
@@ -858,25 +670,23 @@ void approximate_gravity_main(
 
     int *lmem = &MEM_BUF[(CELL_LIST_MEM_PER_WARP<<nWarps2)*blockIdx.x + CELL_LIST_MEM_PER_WARP*warpId];
     const bool success = treewalk<0,blockDim2,ACCUMULATE>(
-        bid, 
-        eps2,
-        node_begend,
-        active_groups,
-        group_body_pos,
-        body_pos,
-        groupSizeInfo,
-        groupCenterInfo,
-        boxCenterInfo,
-        boxSizeInfo,
-        multipole_data,           
-        shmem,
-        lmem,
-        acc_out,
-        interactions,
-        ngb_out,
-        active_inout,
-        body_h,
-        body_dens);
+                                    bid,
+                                    eps2,
+                                    node_begend,
+                                    active_groups,
+                                    group_body_pos,
+                                    body_pos,
+                                    groupSizeInfo,
+                                    groupCenterInfo,
+                                    boxCenterInfo,
+                                    boxSizeInfo,
+                                    multipole_data,
+                                    shmem,
+                                    lmem,
+                                    acc_out,
+                                    interactions,
+                                    active_inout,
+                                    body_dens);
 
 #if 0
     if (bid % 10 == 0)
@@ -914,7 +724,6 @@ void approximate_gravity_main(
               lmem1,
               acc_out,
               interactions,
-              ngb_out,
               active_inout);
           assert(success);
         }
@@ -960,9 +769,7 @@ void approximate_gravity_main(
                                                             lmem1,
                                                             acc_out,
                                                             interactions,
-                                                            ngb_out,
                                                             active_inout,
-                                                            body_h,
                                                             body_dens);
       assert(success);
 
@@ -980,27 +787,27 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
   __global__ void
   dev_sph_density(
       const int n_active_groups,
-      int    n_bodies,
-      float eps2,
-      uint2 node_begend,
-      int    *active_groups,
-      real4  *body_pos,
+      int       n_bodies,
+      float     eps2,
+      uint2     node_begend,
+      int       *active_groups,
+      real4     *body_pos,                //J-particles
       __restrict__ real4  *multipole_data,
-      float4 *acc_out,
-      real4  *group_body_pos,           //This can be different from body_pos
-      int    *ngb_out,
-      int    *active_inout,
-      int2   *interactions,
-      float4  *boxSizeInfo,
-      float4  *groupSizeInfo,
-      float4  *boxCenterInfo,
-      float4  *groupCenterInfo,
-      real4   *body_vel,
-      int     *MEM_BUF,
-      float   *body_h,
-      float2  *body_dens) 
+      float4    *acc_out,
+      real4     *group_body_pos,           //This can be different from body_pos
+      real4     *group_body_vel,           //This can be different from body_vel
+      int       *active_inout,
+      int2      *interactions,
+      float4    *boxSizeInfo,
+      float4    *groupSizeInfo,
+      float4    *boxCenterInfo,
+      float4    *groupCenterInfo,
+      real4     *body_vel,               //J-particles
+      int       *MEM_BUF,
+      float2    *body_dens,
+      float4    *body_grad)
 {
-  approximate_gravity_main<false, NTHREAD2>(
+  approximate_SPH_main<false, NTHREAD2>(
       n_active_groups,
       n_bodies,
       eps2,
@@ -1010,7 +817,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
       multipole_data,
       acc_out,
       group_body_pos,           //This can be different from body_pos
-      ngb_out,
+      group_body_vel,           //This can be different from body_vel
       active_inout,
       interactions,
       boxSizeInfo,
@@ -1019,8 +826,8 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
       groupCenterInfo,
       body_vel,
       MEM_BUF,
-      body_h,
-      body_dens);
+      body_dens,
+      body_grad);
 }
 
 
@@ -1037,7 +844,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
       real4  *multipole_data,
       float4 *acc_out,
       real4  *group_body_pos,           //This can be different from body_pos
-      int    *ngb_out,
+      real4  *group_body_vel,
       int    *active_inout,
       int2   *interactions,
       float4  *boxSizeInfo,
@@ -1046,10 +853,10 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
       float4  *groupCenterInfo,
       real4   *body_vel,
       int     *MEM_BUF,
-      float   *body_h,
-      float2  *body_dens) 
+      float2  *body_dens,
+      float4  *body_grad)
 {
-  approximate_gravity_main<true, NTHREAD2>(
+      approximate_SPH_main<true, NTHREAD2>(
       n_active_groups,
       n_bodies,
       eps2,
@@ -1059,7 +866,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
       multipole_data,
       acc_out,
       group_body_pos,           //This can be different from body_pos
-      ngb_out,
+      group_body_vel,           //This can be different from body_pos
       active_inout,
       interactions,
       boxSizeInfo,
@@ -1068,7 +875,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
       groupCenterInfo,
       body_vel,
       MEM_BUF,
-      body_h,
-      body_dens);
+      body_dens,
+      body_grad);
 }
 

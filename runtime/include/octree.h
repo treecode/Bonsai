@@ -234,8 +234,9 @@ class tree_structure
     my_dev::dev_mem<real4>  bodies_Pvel;    //Predicted velocity
     
     //Density related buffers
-    my_dev::dev_mem<real>  bodies_h;       //The particles search radius
-    my_dev::dev_mem<real2> bodies_dens;    //The particles density (x) and number of neighbours (y)
+    my_dev::dev_mem<real2> bodies_dens;    //The particles density (x) and smoothing length (y)
+    my_dev::dev_mem<real4> bodies_grad;    //The density gradient
+    my_dev::dev_mem<real > bodies_h;       //Search radius, keep for compatability for now
 
     my_dev::dev_mem<uint>   oriParticleOrder;  //Used in the correct function to speedup reorder
 

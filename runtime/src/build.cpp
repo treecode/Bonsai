@@ -25,12 +25,10 @@ void octree::allocateParticleMemory(tree_structure &tree)
   tree.bodies_acc1.ccalloc(n_bodies, false);    //ccalloc -> init to 0
   tree.bodies_time.ccalloc(n_bodies, false);    //ccalloc -> init to 0
 
-  //density
-  tree.bodies_h.cmalloc(n_bodies, true);
+  //SPH related
+  tree.bodies_grad.cmalloc(n_bodies, true);
   tree.bodies_dens.cmalloc(n_bodies, true);
-  //Init to -1
-  for(int i=0; i < n_bodies; i++) tree.bodies_h[i] = -1;
-  tree.bodies_h.h2d();
+  tree.bodies_h.   cmalloc(n_bodies, true);
 
 
   tree.oriParticleOrder.cmalloc(n_bodies, false);      //To desort the bodies tree later on
@@ -124,9 +122,10 @@ void octree::reallocateParticleMemory(tree_structure &tree)
   tree.bodies_acc1.cresize(n_bodies, reduce);    //ccalloc -> init to 0
   tree.bodies_time.cresize(n_bodies, reduce);    //ccalloc -> init to 0
   
-  //Density
-  tree.bodies_h.cresize(n_bodies, reduce);
+  //SPH Related
+  tree.bodies_grad.cresize(n_bodies, reduce);
   tree.bodies_dens.cresize(n_bodies, reduce);
+  tree.bodies_h.   cresize(n_bodies, reduce);
   
   tree.oriParticleOrder.cresize(n_bodies,   reduce);     //To desort the bodies tree later on
   //iteration properties / information

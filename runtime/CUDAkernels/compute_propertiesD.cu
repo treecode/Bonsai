@@ -102,8 +102,8 @@ KERNEL_DECLARE(compute_leaf)( const int n_leafs,
                               real4 *nodeUpperBounds,
                               real4  *body_vel,
                               ulonglong1 *body_id,
-			      real  *body_h, 
-			      const float h_min) {
+                              real  *body_h,
+			                  const float h_min) {
 
   CUXTIMER("compute_leaf");
   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
@@ -266,6 +266,7 @@ KERNEL_DECLARE(compute_leaf)( const int n_leafs,
   }
 #else
   {
+#if 1
     const float3 len = make_float3(r_max.x-r_min.x, r_max.y-r_min.y, r_max.z-r_min.z);
     const float  vol = cbrtf(len.x*len.y*len.z);
     float hp  = 0;
@@ -278,6 +279,7 @@ KERNEL_DECLARE(compute_leaf)( const int n_leafs,
     for(int i=firstChild; i < lastChild; i++)
       if(body_h[i] < 0)
         body_h[i] = hp;
+#endif
   }
 #endif
 
