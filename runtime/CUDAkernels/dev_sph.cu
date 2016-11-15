@@ -4,7 +4,7 @@
 #include "node_specs.h"
 
 #include "treewalk_includes.h"
-#include "sph_includes.h"
+
 
 
 /*
@@ -20,10 +20,11 @@ PROF_MODULE(dev_approximate_gravity);
 #define DEVPRINT(fmt, ...) { \
      if (0)                  \
      {                        \
-         printf("ONDEV [ %d,%d,%d ] " fmt,blockIdx.x, threadIdx.x, __LINE__,  __VA_ARGS__); \
+         printf("ONDEV [ %d,%d, %d] line: %d  " fmt,blockIdx.x, threadIdx.x, laneId, __LINE__,  __VA_ARGS__); \
      }   \
  }  \
 
+#include "sph_includes.h"
 
 /**************************************/
 /*************** Tree walk ************/
@@ -32,48 +33,48 @@ PROF_MODULE(dev_approximate_gravity);
 
 
 
-/* Bonsai SC2014 Kernel */
-
-static __device__ __forceinline__ void computeDensityAndNgb(
-    const float r2, const float hinv2, const float mass, 
-    float &density, float &nb)
-{
-#if 0  /* full kernel for reference */
-  const float hinv = 1.0f/h;
-  const float hinv2 = hinv*hinv;
-  const float hinv3 = hinv*hinv2;
-  const float C     = 3465.0f/(512.0f*M_PI)*hinv3;
-  const float q2    = r2*hinv2;
-  const float rho   = fmaxf(0.0f, 1.0f - q2);
-  nb      += ceilf(rho);
-  const float rho2 = rho*rho;
-  density += C * rho2*rho2;
-#elif 0
-  const float rho   = fmaxf(0.0f, 1.0f - r2*hinv2);   /* fma, fmax */
-  const float rho2  = rho*rho;                        /* fmul */
-  density += rho2*rho2;                               /* fma */
-  nb      += ceilf(rho2);                             /* fadd, ceil */
-
-  /*2x fma, 1x fmul, 1x fadd, 1x ceil, 1x fmax */
-  /* total: 6 flops or 8 flops with ceil&fmax */
-#else
-
-  if(r2 < hinv2 && mass > 0)
-  {
-      nb  += 1;
-  }
-
-#endif
-}
-#if 0
-static __device__ __forceinline__ float adjustH(const float h_old, const float nnb)
-{
-	const float nbDesired 	= 7;
-	const float f      	    = 0.5f * (1.0f + cbrtf(nbDesired / nnb));
-	const float fScale 	    = max(min(f, 1.2), 0.8);
-	return (h_old*fScale);
-}
-#endif
+///* Bonsai SC2014 Kernel */
+//
+//static __device__ __forceinline__ void computeDensityAndNgb(
+//    const float r2, const float hinv2, const float mass,
+//    float &density, float &nb)
+//{
+//#if 0  /* full kernel for reference */
+//  const float hinv = 1.0f/h;
+//  const float hinv2 = hinv*hinv;
+//  const float hinv3 = hinv*hinv2;
+//  const float C     = 3465.0f/(512.0f*M_PI)*hinv3;
+//  const float q2    = r2*hinv2;
+//  const float rho   = fmaxf(0.0f, 1.0f - q2);
+//  nb      += ceilf(rho);
+//  const float rho2 = rho*rho;
+//  density += C * rho2*rho2;
+//#elif 0
+//  const float rho   = fmaxf(0.0f, 1.0f - r2*hinv2);   /* fma, fmax */
+//  const float rho2  = rho*rho;                        /* fmul */
+//  density += rho2*rho2;                               /* fma */
+//  nb      += ceilf(rho2);                             /* fadd, ceil */
+//
+//  /*2x fma, 1x fmul, 1x fadd, 1x ceil, 1x fmax */
+//  /* total: 6 flops or 8 flops with ceil&fmax */
+//#else
+//
+//  if(r2 < hinv2 && mass > 0)
+//  {
+//      nb  += 1;
+//  }
+//
+//#endif
+//}
+//#if 0
+//static __device__ __forceinline__ float adjustH(const float h_old, const float nnb)
+//{
+//	const float nbDesired 	= 7;
+//	const float f      	    = 0.5f * (1.0f + cbrtf(nbDesired / nnb));
+//	const float fScale 	    = max(min(f, 1.2), 0.8);
+//	return (h_old*fScale);
+//}
+//#endif
 
 
 
@@ -82,7 +83,10 @@ static __device__ __forceinline__ float adjustH(const float h_old, const float n
 //to switch between Acceleration and density
 #define directOP SPH::density::directOperator
 //#define directOP directAcc
+#define directOPGrad SPH::derivative::directOperator
 
+#define testSPHWalk treewalk_grad
+//#define testSPHWalk treewalk
 
 /*******************************/
 /****** Opening criterion ******/
@@ -155,6 +159,497 @@ __device__ bool split_node_sph_md(
 
 #define TEXTURES
 
+
+
+
+template<int SHIFT, int BLOCKDIM2, int NI, bool INTCOUNT>
+static __device__
+uint2 approximate_sph_grad(
+                              float4  acc_i[NI],
+                        const float4 _pos_i[NI],
+                        const float4 _vel_i[NI],
+                        const float4  groupPos,
+                        const float4 *body_pos_j,
+                        const float4 *body_vel_j,
+                        const float   eps2,
+                        const uint2   top_cells,
+                        int          *shmem,
+                        int          *cellList,
+                        const float4  groupSize,
+                        SPH::density::data      dens_i[NI],
+                        SPH::derivative::data   derivative_i[NI],
+                        const float4 *nodeSize,
+                        const float4 *nodeCenter,
+                        const float4 *nodeMultipole,
+                        const float   cellH)
+{
+  const int laneIdx = threadIdx.x & (WARP_SIZE-1);
+
+  /* this helps to unload register pressure */
+  float4 pos_i[NI], vel_i[NI];
+#pragma unroll 1
+  for (int i = 0; i < NI; i++){
+    pos_i[i] = _pos_i[i];
+    vel_i[i] = _vel_i[i];
+  }
+
+  uint2 interactionCounters = {0}; /* # of approximate and exact force evaluations */
+
+
+  volatile int *tmpList = shmem;
+
+  int directPtclIdx = 0;
+  int directCounter = 0;
+
+  for (int root_cell = top_cells.x; root_cell < top_cells.y; root_cell += WARP_SIZE)
+    if (root_cell + laneIdx < top_cells.y)
+      cellList[ringAddr<SHIFT>(root_cell - top_cells.x + laneIdx)] = root_cell + laneIdx;
+
+  int nCells = top_cells.y - top_cells.x;
+
+
+  int cellListBlock           = 0;
+  int nextLevelCellCounter    = 0;
+  unsigned int cellListOffset = 0;
+
+  /* process level with n_cells */
+#if 1
+  while (nCells > 0)
+  {
+    /* extract cell index from the current level cell list */
+    const int cellListIdx = cellListBlock + laneIdx;
+    const bool useCell    = cellListIdx < nCells;
+    const int cellIdx     = !useCell ? 0 : cellList[ringAddr<SHIFT>(cellListOffset + cellListIdx)];
+    cellListBlock        += min(WARP_SIZE, nCells - cellListBlock);
+
+    /* read from gmem cell's info */
+    const float4 cellSize = nodeSize[cellIdx];
+    const float4 cellPos  = nodeCenter[cellIdx];
+    //const float4 cellSize = tex1Dfetch(ztexNodeSize,   cellIdx);
+    //const float4 cellPos  = tex1Dfetch(ztexNodeCenter, cellIdx);
+    bool splitCell         = split_node_sph_md(cellSize, cellPos, groupPos, groupSize, cellH);
+    interactionCounters.x += 1; //Keep track of number of opening tests
+
+
+    /* compute first child, either a cell if node or a particle if leaf */
+    const int cellData = __float_as_int(cellSize.w);
+    const int firstChild =  cellData & 0x0FFFFFFF;
+    const int nChildren  = (cellData & 0xF0000000) >> 28;
+
+    if(cellData == 0xFFFFFFFF) splitCell = false;
+
+    /**********************************************/
+    /* split cells that satisfy opening condition */
+    /**********************************************/
+
+    const bool isNode = cellPos.w > 0.0f;
+
+    {
+      bool splitNode  = isNode && splitCell && useCell;
+
+      /* use exclusive scan to compute scatter addresses for each of the child cells */
+      const int2 childScatter = warpIntExclusiveScan(nChildren & (-splitNode));
+
+      /* make sure we still have available stack space */
+      //JB This does not seem to work, I have cells that are being overwritten
+      //if (childScatter.y + nCells - cellListBlock > (CELL_LIST_MEM_PER_WARP<<SHIFT))
+      //Using this instead which gives the correct results
+      if (childScatter.y + nCells - cellListBlock + nextLevelCellCounter > (CELL_LIST_MEM_PER_WARP<<SHIFT))
+        return make_uint2(0xFFFFFFFF,0xFFFFFFFF);
+
+      /* if so populate next level stack in gmem */
+      if (splitNode)
+      {
+          const int scatterIdx = cellListOffset + nCells + nextLevelCellCounter + childScatter.x;
+          for (int i = 0; i < nChildren; i++)
+              cellList[ringAddr<SHIFT>(scatterIdx + i)] = firstChild + i;
+      }
+      nextLevelCellCounter += childScatter.y;  /* increment nextLevelCounter by total # of children */
+    }
+
+#if 1
+    {
+      /***********************************/
+      /******       DIRECT          ******/
+      /***********************************/
+
+      const bool isLeaf = !isNode;
+      bool isDirect = splitCell && isLeaf && useCell;
+
+      const int firstBody =   cellData & BODYMASK;
+      const int     nBody = ((cellData & INVBMASK) >> LEAFBIT)+1;
+
+      const int2 childScatter = warpIntExclusiveScan(nBody & (-isDirect));
+      int nParticle  = childScatter.y;
+      int nProcessed = 0;
+      int2 scanVal   = {0};
+
+      /* conduct segmented scan for all leaves that need to be expanded */
+      while (nParticle > 0)
+      {
+        if(laneId == 9) DEVPRINT("Launch segment scan, currently stored: %d\n", directCounter);
+
+        tmpList[laneIdx] = 1;
+        if (isDirect && (childScatter.x - nProcessed < WARP_SIZE))
+        {
+          isDirect = false;
+          tmpList[childScatter.x - nProcessed] = -1-firstBody;
+        }
+        scanVal = inclusive_segscan_warp(tmpList[laneIdx], scanVal.y);
+        const int  ptclIdx = scanVal.x;
+
+        if(ptclIdx == 20657)
+        {
+            DEVPRINT("Found ptcl %d \n", ptclIdx);
+        }
+
+
+        if (nParticle >= WARP_SIZE)
+        {
+          if(laneId == 9) DEVPRINT("Launch directOp\n",0);
+
+          directOPGrad<NI,true>()(acc_i, pos_i, vel_i, ptclIdx, eps2, derivative_i, body_pos_j, body_vel_j);
+          nParticle  -= WARP_SIZE;
+          nProcessed += WARP_SIZE;
+          if (INTCOUNT)
+            interactionCounters.y += WARP_SIZE*NI;
+        }
+        else
+        {
+          if(laneId == 9) DEVPRINT("Store in shmem nParticle: %d\n",nParticle);
+
+
+          const int scatterIdx = directCounter + laneIdx;
+          tmpList[laneIdx] = directPtclIdx;
+          if (scatterIdx < WARP_SIZE)
+            tmpList[scatterIdx] = ptclIdx;
+
+          directCounter += nParticle;
+
+          if(laneId == 9) DEVPRINT("After storing in shmem nParticle: %d\n",directCounter);
+
+
+          if (directCounter >= WARP_SIZE)
+          {
+            /* evaluate cells stored in shmem */
+//              directAcc<NI,true>(acc_i, pos_i, tmpList[laneIdx], eps2, dens_i);
+            directOPGrad<NI,true>()(acc_i, pos_i, vel_i, tmpList[laneIdx], eps2, derivative_i, body_pos_j, body_vel_j);
+//            directOPGrad<NI,true>()(acc_i, pos_i, vel_i, ptclIdx, eps2, derivative_i, body_pos_j, body_vel_j);
+            directCounter -= WARP_SIZE;
+            const int scatterIdx = directCounter + laneIdx - nParticle;
+            if (scatterIdx >= 0)
+              tmpList[scatterIdx] = ptclIdx;
+            if (INTCOUNT)
+              interactionCounters.y += WARP_SIZE*NI;
+          }
+          directPtclIdx = tmpList[laneIdx];
+
+          nParticle = 0;
+        }
+      }
+    }
+#endif
+
+    /* if the current level is processed, schedule the next level */
+    if (cellListBlock >= nCells)
+    {
+      cellListOffset += nCells;
+      nCells          = nextLevelCellCounter;
+      cellListBlock   = nextLevelCellCounter = 0;
+    }
+  }  /* level completed */
+#endif
+
+
+  //Process remaining items
+  if (directCounter > 0)
+  {
+    directOPGrad<NI,false>()(acc_i, pos_i, vel_i, laneIdx < directCounter ? directPtclIdx : -1, eps2, derivative_i, body_pos_j, body_vel_j);
+    if (INTCOUNT)
+      interactionCounters.y += directCounter * NI;
+    directCounter = 0;
+  }
+
+  return interactionCounters;
+}
+
+template<int SHIFT2, int BLOCKDIM2, bool ACCUMULATE>
+static __device__
+bool treewalk_grad(
+    const int        bid,
+    const float      eps2,
+    const uint2      node_begend,
+    const int       *active_groups,
+    const real4     *group_body_pos,
+    const real4     *group_body_vel,
+    const real4     *body_pos_j,
+    const real4     *body_vel_j,
+    const float4    *groupSizeInfo,
+    const float4    *groupCenterInfo,
+    const float4    *nodeCenter,
+    const float4    *nodeSize,
+    const float4    *nodeMultipole,
+    int             *shmem,
+    int             *lmem,
+    float4          *acc_out,
+    int2            *interactions,
+    int             *active_inout,
+    float2          *body_dens_out,
+    float4          *body_grad_out)
+{
+
+  /*********** set necessary thread constants **********/
+#ifdef DO_BLOCK_TIMESTEP
+  real4 group_pos       = groupCenterInfo[active_groups[bid]];
+  real4 curGroupSize    = groupSizeInfo[active_groups[bid]];
+#else
+  real4 group_pos       = groupCenterInfo[bid];
+  real4 curGroupSize    = groupSizeInfo[bid];
+#endif
+
+  const int   groupData       = __float_as_int(curGroupSize.w);
+  const uint body_addr        =   groupData & CRITMASK;
+  const uint nb_i             = ((groupData & INVCMASK) >> CRITBIT) + 1;
+
+
+
+
+  uint body_i[2];
+  const int ni = nb_i <= WARP_SIZE ? 1 : 2;
+  body_i[0]    = body_addr + laneId%nb_i;
+  body_i[1]    = body_addr + WARP_SIZE + laneId%(nb_i - WARP_SIZE);
+
+
+
+  float4 pos_i [2];
+  float4 vel_i [2];
+  float4 acc_i [2];
+  SPH::density::data    dens_i[2];
+  SPH::derivative::data derivative_i[2];
+
+  acc_i[0]  = acc_i[1]  = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+  dens_i[0].clear(); dens_i[1].clear();
+  derivative_i[0]  = derivative_i[1]  = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+
+
+  pos_i[0]       = group_body_pos[body_i[0]];
+  vel_i[0]       = group_body_vel[body_i[0]];
+  dens_i[0].smth = body_dens_out[body_i[0]].y;
+  if(ni > 1){       //Only read if we actually have ni == 2
+    pos_i[1]       = group_body_pos[body_i[1]];
+    vel_i[1]       = group_body_vel[body_i[1]];
+    dens_i[1].smth = body_dens_out[body_i[1]].y;
+  }
+
+  uint2 counters = {0};
+
+  //NOTE ONLY 1 iteration for gradient
+  for(int nLoop=0; nLoop < 1; nLoop++) //TODO consider pulling this out of the kernel and instead do 3 kernel launches
+  {
+      dens_i[0].dens = dens_i[1].dens = 0.0f; //Reset density
+
+      pos_i[0].w                = dens_i[0].smth;  //y is smoothing range
+      if(ni > 1 )   pos_i[1].w  = dens_i[1].smth;  //y is smoothing range
+
+      //Compute the cellH, which is the maximum smoothing value off all particles
+      //in a group because as we search for the whole group in parallel we have to
+      //be sure to include all possibly required particles
+      float cellH = warpAllReduceMax(pos_i[0].w);
+      if(ni == 2)
+      {
+        cellH = max(cellH, warpAllReduceMax(pos_i[1].w));
+      }
+      cellH *= 3.5; //TODO This (value around 3) is needed to get the results to match those of FDPS, why is that. Looks like there is no hard cutoff in the kernel??
+      cellH *= cellH; //Squared for distance comparison without sqrt
+
+      //For periodic boundaries, mirror the group and body positions along the periodic axis
+      float3 domainSize = {1.0f, 0.125f, 0.125f};   //Hardcoded for our testing IC
+
+      for(int ix=-1; ix <= 1; ix++)     //Periodic around X
+      {
+        for(int iy=-1; iy <= 1; iy++)   //Periodic around Y
+        {
+          for(int iz=-1; iz <= 1; iz++) //Periodic around Z
+          {
+              float4 pGroupPos   = group_pos;
+              float4 pBodyPos[2] = {pos_i[0], pos_i[1]};
+
+              pGroupPos.x   += (domainSize.x*ix); pBodyPos[0].x += (domainSize.x*ix); pBodyPos[1].x += (domainSize.x*ix);
+              pGroupPos.y   += (domainSize.y*iy); pBodyPos[0].y += (domainSize.y*iy); pBodyPos[1].y += (domainSize.y*iy);
+              pGroupPos.z   += (domainSize.z*iz); pBodyPos[0].z += (domainSize.z*iz); pBodyPos[1].z += (domainSize.z*iz);
+
+              uint2 curCounters = {0};
+
+        #if 0
+              const bool INTCOUNT = false;
+        #else
+              const bool INTCOUNT = true;
+        #endif
+              {
+                if (ni == 1)
+                    curCounters = approximate_sph_grad<SHIFT2, BLOCKDIM2, 1, INTCOUNT>(
+                      acc_i,
+                      pBodyPos,
+                      vel_i,
+                      pGroupPos,
+                      body_pos_j,
+                      body_vel_j,
+                      eps2,
+                      node_begend,
+                      shmem,
+                      lmem,
+                      curGroupSize,
+                      dens_i,
+                      derivative_i,
+                      nodeSize,
+                      nodeCenter,
+                      nodeMultipole,
+                      cellH);
+                else
+                    curCounters = approximate_sph_grad<SHIFT2, BLOCKDIM2, 2, INTCOUNT>(
+                      acc_i,
+                      pBodyPos,
+                      vel_i,
+                      pGroupPos,
+                      body_pos_j,
+                      body_vel_j,
+                      eps2,
+                      node_begend,
+                      shmem,
+                      lmem,
+                      curGroupSize,
+                      dens_i,
+                      derivative_i,
+                      nodeSize,
+                      nodeCenter,
+                      nodeMultipole,
+                      cellH);
+              }
+              if(curCounters.x == 0xFFFFFFFF && curCounters.y == 0xFFFFFFFF)
+              {
+                return false; //Out of tree-walk memory
+              }
+              counters.x += curCounters.x;
+              counters.y += curCounters.y;
+          } //for periodic Z
+        } //for periodic Y
+      } //for periodic X
+
+      //Finalize the gradient
+
+      //TODO
+//derivative_i[0].finalize(group_body_pos[body_i[0]].w);
+   //   if(ni > 1) derivative_i[1].finalize(group_body_pos[body_i[1]].w);
+  } //for nLoop
+
+
+
+#if 0
+  /* CUDA 8RC work around */
+  if(bid < 0) // bid ==0 && laneId < nb_i && && threadIdx.x == 0)
+  {
+      printf("TEST\n");
+    //printf("ON DEV [%d %d : %d %d ] ACC: %f %f %f %f INT: %d %d \n",
+    //      bid, threadIdx.x, nb_i, body_i[0],
+    //      acc_i[0].x,acc_i[0].y,acc_i[0].z,acc_i[0].w,
+    //      counters.x, counters.y);
+  }
+#endif
+
+  if (laneId < nb_i)
+  {
+    const int addr = body_i[0];
+    if (ACCUMULATE)
+    {
+      acc_out      [addr].x += acc_i[0].x;
+      acc_out      [addr].y += acc_i[0].y;
+      acc_out      [addr].z += acc_i[0].z;
+      acc_out      [addr].w += acc_i[0].w;
+
+      body_grad_out[addr].x += derivative_i[0].x;
+      body_grad_out[addr].y += derivative_i[0].y;
+      body_grad_out[addr].z += derivative_i[0].z;
+      body_grad_out[addr].w += derivative_i[0].w;
+
+      body_dens_out[addr].x += dens_i[0].dens;
+      body_dens_out[addr].y += dens_i[0].smth; //TODO can not sum lengths
+    }
+    else
+    {
+      acc_out      [addr] =  acc_i[0];
+      //body_dens_out[addr] = make_float2(dens_i[0].dens, dens_i[0].smth);
+      body_dens_out[addr] = make_float2(-99, 123);//TODO
+
+      body_grad_out[addr].x = derivative_i[0].x;
+      body_grad_out[addr].y = derivative_i[0].y;
+      body_grad_out[addr].z = derivative_i[0].z;
+      body_grad_out[addr].w = derivative_i[0].w;
+    }
+    active_inout[addr] = 1;
+    if (ACCUMULATE)
+    {
+      interactions[addr].x += counters.x / ni;
+      interactions[addr].y += counters.y / ni ;
+    }
+    else
+    {
+      interactions[addr].x = counters.x / ni;
+      interactions[addr].y = counters.y / ni ;
+    }
+    if (ni == 2)
+    {
+      const int addr = body_i[1];
+      if (ACCUMULATE)
+      {
+        acc_out      [addr].x += acc_i[1].x;
+        acc_out      [addr].y += acc_i[1].y;
+        acc_out      [addr].z += acc_i[1].z;
+        acc_out      [addr].w += acc_i[1].w;
+
+        body_grad_out[addr].x += derivative_i[1].x;
+        body_grad_out[addr].y += derivative_i[1].y;
+        body_grad_out[addr].z += derivative_i[1].z;
+        body_grad_out[addr].w += derivative_i[1].w;
+
+        body_dens_out[addr].x += dens_i[1].dens;
+        body_dens_out[addr].y += dens_i[1].smth; //TODO can not sum lengths
+      }
+      else
+      {
+        acc_out      [addr] =  acc_i[1];
+//        body_dens_out[addr] = make_float2(dens_i[1].dens, dens_i[1].smth);
+        body_grad_out[addr].x = derivative_i[1].x;
+        body_grad_out[addr].y = derivative_i[1].y;
+        body_grad_out[addr].z = derivative_i[1].z;
+        body_grad_out[addr].w = derivative_i[1].w;
+        body_dens_out[addr] = make_float2(-99, 123);//TODO
+      }
+      active_inout[addr] = 1;
+      if (ACCUMULATE)
+      {
+        interactions[addr].x += counters.x / ni;
+        interactions[addr].y += counters.y / ni;
+      }
+      else
+      {
+        interactions[addr].x = counters.x / ni;
+        interactions[addr].y = counters.y / ni;
+      }
+    }
+  }
+
+  return true;
+}
+
+
+
+
+
+
+
+/* Density code */
+
+
 template<int SHIFT, int BLOCKDIM2, int NI, bool INTCOUNT>
 static __device__ 
 uint2 approximate_sph(
@@ -167,7 +662,7 @@ uint2 approximate_sph(
                         int          *shmem,
                         int          *cellList,
                         const float4  groupSize,
-                        float2        dens_i[NI],
+                        SPH::density::data  dens_i[NI],
                         const float4 *nodeSize,
                         const float4 *nodeCenter,
                         const float4 *nodeMultipole,
@@ -244,21 +739,6 @@ uint2 approximate_sph(
       //Using this instead which gives the correct results
       if (childScatter.y + nCells - cellListBlock + nextLevelCellCounter > (CELL_LIST_MEM_PER_WARP<<SHIFT))
         return make_uint2(0xFFFFFFFF,0xFFFFFFFF);
-
-          /*DEVPRINT("level: %d cell: [ %d ] StackIdx: %d  Child %d goes to: %d ( %d ) [%d + %d + %d + %d ]  guard: %d [ %d %d %d ] ||  %f %f %f [ %f %f %f ]  || %f %f %f [ %f %f %f ] cellH: %f || split: %d \n",
-            level,
-            cellIdx,
-            cellListOffset + cellListIdx,
-            firstChild,  splitNode ? cellListOffset + nCells + nextLevelCellCounter + childScatter.x : -1,
-            ringAddr<SHIFT>(  cellListOffset + nCells + nextLevelCellCounter + childScatter.x ),
-            cellListOffset, nCells, nextLevelCellCounter, childScatter.x,
-            childScatter.y + nCells - cellListBlock,
-            childScatter.y, nCells, cellListBlock,
-            cellPos.x, cellPos.y, cellPos.z, cellSize.x, cellSize.y, cellSize.z,
-            groupPos.x, groupPos.y, groupPos.z, groupSize.x, groupSize.y, groupSize.z,
-            cellH, splitCell);*/
-
-
 
       /* if so populate next level stack in gmem */
       if (splitNode)
@@ -366,7 +846,9 @@ bool treewalk(
     const uint2      node_begend,
     const int       *active_groups,
     const real4     *group_body_pos,
-    const real4     *body_j,
+    const real4     *group_body_vel,
+    const real4     *body_pos_j,
+    const real4     *body_vel_j,
     const float4    *groupSizeInfo,
     const float4    *groupCenterInfo,
     const float4    *nodeCenter,
@@ -377,7 +859,8 @@ bool treewalk(
     float4          *acc_out,
     int2            *interactions,
     int             *active_inout,
-    float2          *body_dens_out)
+    float2          *body_dens_out,
+    float4          *body_grad_out)
 {
 
   /*********** set necessary thread constants **********/
@@ -400,33 +883,27 @@ bool treewalk(
 
   float4 pos_i [2];
   float4 acc_i [2];
-  float2 dens_i[2];  
-
-  SPH::density dens2_i[2];
+  SPH::density::data dens_i[2];
 
   acc_i[0]  = acc_i[1]  = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
-  dens_i[0] = dens_i[1] = make_float2(0.0f, 0.0f);
+  dens_i[0].clear(); dens_i[1].clear();
 
-  pos_i[0]    = group_body_pos[body_i[0]];
-  dens_i[0].y = body_dens_out[body_i[0]].y;
-//  pos_i[0].w  = 1.0f/body_h[body_i[0]];
-//  pos_i[0].w *= pos_i[0].w;  /* .w stores 1/h^2 to speed up computations */
+
+  pos_i[0]       = group_body_pos[body_i[0]];
+  dens_i[0].smth = body_dens_out[body_i[0]].y;
   if(ni > 1){       //Only read if we actually have ni == 2
     pos_i[1]    = group_body_pos[body_i[1]];
-    dens_i[1].y = body_dens_out[body_i[1]].y;
-//    pos_i[0].w = body_dens_out[body_i[0]].y;
-//    pos_i[1].w  = 1.0f/body_h[body_i[1]];
-//    pos_i[1].w *= pos_i[1].w;  /* .w stores 1/h^2 to speed up computations */
+    dens_i[1].smth = body_dens_out[body_i[1]].y;
   }
 
   uint2 counters = {0};
 
   for(int nLoop=0; nLoop < 3; nLoop++) //TODO consider pulling this out of the kernel and instead do 3 kernel launches
   {
-      dens_i[0].x = dens_i[1].x = 0.0f; //Reset density
+      dens_i[0].dens = dens_i[1].dens = 0.0f; //Reset density
 
-      pos_i[0].w                = dens_i[0].y;  //y is smoothing range
-      if(ni > 1 )   pos_i[1].w  = dens_i[1].y;  //y is smoothing range
+      pos_i[0].w                = dens_i[0].smth;  //y is smoothing range
+      if(ni > 1 )   pos_i[1].w  = dens_i[1].smth;  //y is smoothing range
 
       //Compute the cellH, which is the maximum smoothing value off all particles
       //in a group because as we search for the whole group in parallel we have to
@@ -477,7 +954,7 @@ bool treewalk(
                       acc_i,
                       pBodyPos,
                       pGroupPos,
-                      body_j,
+                      body_pos_j,
                       eps2,
                       node_begend,
                       shmem,
@@ -493,7 +970,7 @@ bool treewalk(
                       acc_i,
                       pBodyPos,
                       pGroupPos,
-                      body_j,
+                      body_pos_j,
                       eps2,
                       node_begend,
                       shmem,
@@ -516,9 +993,8 @@ bool treewalk(
       } //for periodic X
 
       //Update the smoothing range for next iteration
-
-                 dens_i[0].y = PARAM_SMTH * cbrtf(group_body_pos[body_i[0]].w / dens_i[0].x);
-      if(ni > 1) dens_i[1].y = PARAM_SMTH * cbrtf(group_body_pos[body_i[1]].w / dens_i[1].x);
+                 dens_i[0].finalize(group_body_pos[body_i[0]].w);
+      if(ni > 1) dens_i[1].finalize(group_body_pos[body_i[1]].w);
   } //for nLoop
 
 
@@ -545,13 +1021,13 @@ bool treewalk(
       acc_out      [addr].z += acc_i[0].z;
       acc_out      [addr].w += acc_i[0].w;
 
-      body_dens_out[addr].x += dens_i[0].x;
-      body_dens_out[addr].y += dens_i[0].y; //TODO can not sum lengths
+      body_dens_out[addr].x += dens_i[0].dens;
+      body_dens_out[addr].y += dens_i[0].smth; //TODO can not sum lengths
     }
     else
     {
       acc_out      [addr] =  acc_i[0];
-      body_dens_out[addr] = dens_i[0];
+      body_dens_out[addr] = make_float2(dens_i[0].dens, dens_i[0].smth);
     }
     active_inout[addr] = 1;
     if (ACCUMULATE)
@@ -574,13 +1050,13 @@ bool treewalk(
         acc_out      [addr].z += acc_i[1].z;
         acc_out      [addr].w += acc_i[1].w;
       
-        body_dens_out[addr].x += dens_i[1].x;
-      	body_dens_out[addr].y += dens_i[1].y; //TODO can not sum lengths
+        body_dens_out[addr].x += dens_i[1].dens;
+      	body_dens_out[addr].y += dens_i[1].smth; //TODO can not sum lengths
       }
       else
       {
         acc_out      [addr] =  acc_i[1];
-        body_dens_out[addr] = dens_i[1];
+        body_dens_out[addr] = make_float2(dens_i[1].dens, dens_i[1].smth);
       }
       active_inout[addr] = 1;     
       if (ACCUMULATE)
@@ -665,17 +1141,20 @@ void approximate_SPH_main(
     bid   = shmemv[0];
     if (bid >= n_active_groups) return;
 //    if (bid >= 1) return; //JB TDO REMOVE
-//    if(bid != 59) continue;//JB TODO REMOVE
+//    if(bid != 60) continue;//JB TODO REMOVE
 
 
     int *lmem = &MEM_BUF[(CELL_LIST_MEM_PER_WARP<<nWarps2)*blockIdx.x + CELL_LIST_MEM_PER_WARP*warpId];
-    const bool success = treewalk<0,blockDim2,ACCUMULATE>(
+    //const bool success = treewalk<0,blockDim2,ACCUMULATE>(
+    const bool success = treewalk_grad<0,blockDim2,ACCUMULATE>(
                                     bid,
                                     eps2,
                                     node_begend,
                                     active_groups,
                                     group_body_pos,
+                                    group_body_vel,
                                     body_pos,
+                                    body_vel,
                                     groupSizeInfo,
                                     groupCenterInfo,
                                     boxCenterInfo,
@@ -686,7 +1165,8 @@ void approximate_SPH_main(
                                     acc_out,
                                     interactions,
                                     active_inout,
-                                    body_dens);
+                                    body_dens,
+                                    body_grad);
 
 #if 0
     if (bid % 10 == 0)
@@ -714,7 +1194,9 @@ void approximate_SPH_main(
               node_begend,
               active_groups,
               group_body_pos,
+              group_body_vel,
               body_pos,
+              body_vel,
               groupSizeInfo,
               groupCenterInfo,
               boxCenterInfo,
@@ -724,7 +1206,9 @@ void approximate_SPH_main(
               lmem1,
               acc_out,
               interactions,
-              active_inout);
+              active_inout
+              body_dens,
+              body_grad);
           assert(success);
         }
       }    
@@ -759,7 +1243,9 @@ void approximate_SPH_main(
                                                             node_begend,
                                                             active_groups,
                                                             group_body_pos,
+                                                            group_body_vel,
                                                             body_pos,
+                                                            body_vel,
                                                             groupSizeInfo,
                                                             groupCenterInfo,
                                                             boxCenterInfo,
@@ -770,7 +1256,8 @@ void approximate_SPH_main(
                                                             acc_out,
                                                             interactions,
                                                             active_inout,
-                                                            body_dens);
+                                                            body_dens,
+                                                            body_grad);
       assert(success);
 
       if(laneId == 0)
