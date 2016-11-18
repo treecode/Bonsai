@@ -570,30 +570,58 @@ void octree::approximate_gravity(tree_structure &tree)
   SPHDensity.set_texture<real4>(3,  tree.bodies_Ppos,    "texBody");
 
   SPHDensity.setWork(-1, NTHREAD, nBlocksForTreeWalk);
-//  SPHDensity.setWork(-1, 32, 1);
+  //  SPHDensity.setWork(-1, 32, 1);
+
+  SPHDerivative.set_args(0, &tree.n_active_groups,
+                          &tree.n,
+                          &(this->eps2),
+                          &node_begend,
+                          tree.active_group_list.p(),
+                          tree.bodies_Ppos.p(),
+                          tree.multipole.p(),
+                          tree.bodies_acc1.p(),
+                          tree.bodies_Ppos.p(),
+                          tree.bodies_Pvel.p(),
+                          tree.activePartlist.p(),
+                          tree.interactions.p(),
+                          tree.boxSizeInfo.p(),
+                          tree.groupSizeInfo.p(),
+                          tree.boxCenterInfo.p(),
+                          tree.groupCenterInfo.p(),
+                          tree.bodies_Pvel.p(),
+                          tree.generalBuffer1.p(),  //The buffer to store the tree walks
+                          tree.bodies_dens.p(),     //Per particle density (x) and nnb (y)
+                          tree.bodies_grad.p());
+
+  SPHDerivative.set_texture<real4>(0,  tree.boxSizeInfo,    "texNodeSize");
+  SPHDerivative.set_texture<real4>(1,  tree.boxCenterInfo,  "texNodeCenter");
+  SPHDerivative.set_texture<real4>(2,  tree.multipole,      "texMultipole");
+  SPHDerivative.set_texture<real4>(3,  tree.bodies_Ppos,    "texBody");
+  SPHDerivative.setWork(-1, NTHREAD, nBlocksForTreeWalk);
+ //  SPHDerivative.setWork(-1, 32, 1);
 
 
-//  //Set some semi random H for testing
-//  for(int i=0; i < tree.n; i++)
-//  {
-//      tree.bodies_h[i] = 2*drand48();
-//  }
 
   tree.bodies_ids.d2h();
   tree.bodies_Ppos.d2h();
   tree.bodies_dens.d2h();
+  tree.bodies_grad.d2h();
 
   for(int i=0; i < tree.n; i++)
   {
       if(tree.bodies_ids[i] < 10)
-      fprintf(stderr,"Input: %d %lld || %f %f %f \t || %f %f\n",
+      fprintf(stderr,"Input: %d %lld || %f %f %f %lg\t || %f %f\t|| %f %f %f\n",
               i,
               tree.bodies_ids[i],
               tree.bodies_Ppos[i].x,
               tree.bodies_Ppos[i].y,
               tree.bodies_Ppos[i].z,
+              tree.bodies_Ppos[i].w,
               tree.bodies_dens[i].x,
-              tree.bodies_dens[i].y);
+              tree.bodies_dens[i].y,
+              tree.bodies_grad[i].x,
+              tree.bodies_grad[i].y,
+              tree.bodies_grad[i].z);
   }
 
 
@@ -601,12 +629,20 @@ void octree::approximate_gravity(tree_structure &tree)
   tree.bodies_h.h2d();
 //  tree.bodies_dens.zeroMem();
   tree.interactions.zeroMem(); //TODO remove
+  tree.bodies_grad.zeroMem(); //TODO remove
   cudaDeviceSynchronize();
 
   cudaEventRecord(startLocalGrav, gravStream->s());
   double tStart = get_time();
   SPHDensity.execute2(gravStream->s());  //First half
   cudaEventRecord(endLocalGrav, gravStream->s());
+  tree.activePartlist.zeroMemGPUAsync(gravStream->s());
+  SPHDensity.execute2(gravStream->s());  //First half
+  tree.activePartlist.zeroMemGPUAsync(gravStream->s());
+  SPHDensity.execute2(gravStream->s());  //First half
+  tree.activePartlist.zeroMemGPUAsync(gravStream->s());
+  SPHDerivative.execute2(gravStream->s());  //First half
+
 
   cudaDeviceSynchronize();
   double tEnd = get_time();
@@ -617,18 +653,25 @@ void octree::approximate_gravity(tree_structure &tree)
 
 
   tree.bodies_dens.d2h();
+  tree.bodies_grad.d2h();
 
    for(int i=0; i < tree.n; i++)
    {
-       if(tree.bodies_ids[i] < 10)
-       fprintf(stderr,"Output: %d %lld || %f %f %f \t || %f %f\n",
+//       if(tree.bodies_ids[i] < 10)
+//           if(i >=3839 && i < 3855)
+       fprintf(stderr,"Output: %d %lld || %f %f %f %lg\t || %f %f\t|| %f %f %f %f\n",
                i,
                tree.bodies_ids[i],
                tree.bodies_Ppos[i].x,
                tree.bodies_Ppos[i].y,
                tree.bodies_Ppos[i].z,
+               tree.bodies_Ppos[i].w,
                tree.bodies_dens[i].x,
-               tree.bodies_dens[i].y);
+               tree.bodies_dens[i].y,
+               tree.bodies_grad[i].w,
+               tree.bodies_grad[i].x,
+               tree.bodies_grad[i].y,
+               tree.bodies_grad[i].z);
    }
 
 

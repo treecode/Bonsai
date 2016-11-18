@@ -77,31 +77,62 @@ namespace SPH
         }
     };
 
+    namespace density
+    {
+        //typedef struct __device_builtin__ __attribute__((aligned(8)))  data
+        typedef struct  __attribute__((aligned(8)))  data
+        {
+            float dens;
+            float smth;
+
+            __device__ __forceinline__ void finalize(const float mass)
+            {
+                //Normalize by smoothing range
+                smth = PARAM_SMTH * cbrtf(mass / dens);
+            }
+
+            __device__ __forceinline__ void clear() {dens = 0; smth = 0;}
+
+            __device__ __forceinline__ void operator=(SPH::density::data t) {dens=t.dens; smth=t.smth;};
+            __device__ __forceinline__ float2 operator=(float2 t) {
+                   dens=t.x;
+                   smth=t.y;
+                   return t;
+               }
+
+        } data;
+    }
+
+    namespace derivative
+    {
+        typedef struct  __attribute__((aligned(16)))  data
+        {
+            float x,y,z,w;
+            __device__ __forceinline__ void finalize(const float density)
+            {
+               //Normalize by density range
+               x /= density;
+               y /= density;
+               z /= density;
+               w /= density;
+            }
+            __device__ __forceinline__ void clear() {x = 0; y = 0; z= 0; w = 0;}
+
+            __device__ __forceinline__ void operator  =(SPH::derivative::data t) {x=t.x; y=t.y; z=t.z; w=t.w;};
+            __device__ __forceinline__ float4 operator=(float4 t) {
+                   x=t.x; y=t.y; x=t.z; y=t.w;
+                   return t;
+               }
+
+        } data;
+    }
+
+
+enum SPHVal {DENSITY, DERIVATIVE};
 
 namespace density
 {
-    //typedef struct __device_builtin__ __attribute__((aligned(8)))  data
-    typedef struct  __attribute__((aligned(8)))  data
-    {
-        float dens;
-        float smth;
 
-        __device__ __forceinline__ void finalize(const float mass)
-        {
-            //Normalize by smoothing range
-            smth = PARAM_SMTH * cbrtf(mass / dens);
-        }
-
-        __device__ __forceinline__ void clear() {dens = 0; smth = 0;}
-
-        __device__ __forceinline__ void operator=(SPH::density::data t) {dens=t.dens; smth=t.smth;};
-        __device__ __forceinline__ float2 operator=(float2 t) {
-               dens=t.x;
-               smth=t.y;
-               return t;
-           }
-
-    } data;
 
     static __device__ __forceinline__ void addDensity(
         const float4    pos,
@@ -126,18 +157,25 @@ namespace density
 
 
 
+
     template<int NI, bool FULL>
     struct directOperator {
+
+        static const SPHVal type = SPH::DENSITY;
+
         __device__ __forceinline__ void operator()(
-                  float4  acc_i[NI],
-            const float4  pos_i[NI],
-            const int     ptclIdx,
-            const float   eps2,
-            SPH::density::data  density_i[NI],
-            const float4 *body)
+                     float4  acc_i[NI],
+               const float4  pos_i[NI],
+               const float4  vel_i[NI],
+               const int     ptclIdx,
+               const float   eps2,
+               SPH::density::data     density_i[NI],
+               SPH::derivative::data gradient_i[NI],
+               const float4 *body_jpos,
+               const float4 *body_jvel)
         {
           SPH::kernel_t kernel;
-          const float4 M0 = (FULL || ptclIdx >= 0) ? body[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+          const float4 M0 = (FULL || ptclIdx >= 0) ? body_jpos[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
 
           for (int j = 0; j < WARP_SIZE; j++)
           {
@@ -157,27 +195,6 @@ namespace density
 
 namespace derivative
 {
-    typedef struct  __attribute__((aligned(16)))  data
-    {
-        float x,y,z,w;
-        __device__ __forceinline__ void finalize(const float density)
-        {
-                //Normalize by smoothing range
-               x /= density;
-               y /= density;
-               z /= density;
-               w /= density;
-        }
-        __device__ __forceinline__ void clear() {x = 0; y = 0; z= 0; w = 0;}
-
-        __device__ __forceinline__ void operator  =(SPH::derivative::data t) {x=t.x; y=t.y; z=t.z; w=t.w;};
-        __device__ __forceinline__ float4 operator=(float4 t) {
-               x=t.x; y=t.y; x=t.z; y=t.w;
-               return t;
-           }
-
-    } data;
-
     static __device__ __forceinline__ void addParticleEffect(
         const float4    posi,
         const float4    veli,
@@ -204,14 +221,22 @@ namespace derivative
       gradient.w -= massj* (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z);
     }
 
+
+
+
+
     template<int NI, bool FULL>
     struct directOperator {
+
+         static const SPHVal type = SPH::DERIVATIVE;
+
         __device__ __forceinline__ void operator()(
                   float4  acc_i[NI],
             const float4  pos_i[NI],
             const float4  vel_i[NI],
             const int     ptclIdx,
             const float   eps2,
+            SPH::density::data  density_i[NI],
             SPH::derivative::data gradient_i[NI],
             const float4 *body_jpos,
             const float4 *body_jvel)
@@ -230,7 +255,6 @@ namespace derivative
         #pragma unroll
             for (int k = 0; k < NI; k++)
             {
-              float prev =  gradient_i[k].x;
               addParticleEffect(pos_i[k], vel_i[k], jmass, jpos, jvel, eps2, gradient_i[k], kernel);
             }
           }

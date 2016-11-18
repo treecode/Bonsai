@@ -446,9 +446,12 @@ struct DiskShuffle
                 bodyPositions[i].y  = y;
                 bodyPositions[i].z  = z;
                 bodyPositions[i].w  = 0.75;
-                bodyVelocities[i].x = 0;
-                bodyVelocities[i].y = 0;
-                bodyVelocities[i].z = 0;
+
+                //vel is test values
+                bodyVelocities[i].x = x;
+                bodyVelocities[i].y = -y;
+                bodyVelocities[i].z = 2*z;
+
                 bodyVelocities[i].w = 0;
                 bodyIDs[i]          =  ((unsigned long long) nTotal)*procId + i;
 
@@ -471,9 +474,12 @@ struct DiskShuffle
                 bodyPositions[i].y  = y;
                 bodyPositions[i].z  = z;
                 bodyPositions[i].w  = 0.75;
-                bodyVelocities[i].x = 0;
-                bodyVelocities[i].y = 0;
-                bodyVelocities[i].z = 0;
+
+                //vel is test values
+                bodyVelocities[i].x = x;
+                bodyVelocities[i].y = -y;
+                bodyVelocities[i].z = 2*z;
+
                 bodyVelocities[i].w = 0;
                 bodyIDs[i]          =  ((unsigned long long) nTotal)*procId + i;
 
@@ -482,7 +488,6 @@ struct DiskShuffle
                 bodyDens[i].x       = 0.5;                                                      //Density
                 bodyDens[i].y       = SMTH * pow(bodyPositions[i].w / bodyDens[i].x, 1.0/3.0);  //Smoothing
 
-                //Bla 0   0.009375 0.000000 1.000000 3
 
                 //ith.dens = 0.5;
                 //ith.eng  = 2.5;

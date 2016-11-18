@@ -65,7 +65,8 @@ void octree::load_kernels() {
   setActiveGrps.   create("setActiveGroups", 	     (const void*)&setActiveGroups);
   computeEnergy.   create("compute_energy_double",   (const void*)&compute_energy_double);
   approxGrav.	   create("dev_approximate_gravity", (const void*)&dev_approximate_gravity);
-  SPHDensity.      create("dev_sph_density", (const void*)&dev_sph_density);
+  SPHDensity.      create("dev_sph_density",         (const void*)&dev_sph_density);
+  SPHDerivative.   create("dev_sph_derivative",      (const void*)&dev_sph_derivative);
 
   //Parallel kernels
   approxGravLET.						  create("dev_approximate_gravity_let", 			(const void*)&dev_approximate_gravity_let);
