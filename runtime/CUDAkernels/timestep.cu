@@ -198,6 +198,35 @@ static __device__ __forceinline__ float adjustH(const float h_old, const float n
 	const float fScale 	= max(min(f, 2.0), 0.5);
 	return (h_old*fScale);
 }
+
+
+//TODO this kernel should be checking for active particles and not just assuming
+  //all particles
+//The hydro properties: x = pressure, y = soundspeed, z = Energy , w = Balsala Switch
+KERNEL_DECLARE(set_pressure)(const int     n_bodies,
+                             const float2 *density,
+                             float4       *hydro)
+{
+    const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
+    const int tid =  threadIdx.y * blockDim.x + threadIdx.x;
+    const int dim =  blockDim.x * blockDim.y;
+
+    int idx = bid * dim + tid;
+    if (idx >= n_bodies) return;
+
+    float2 dens = density[idx];
+    float4 hyd  = hydro[idx];
+
+    const float hcr = 1.4f;
+
+    hyd.x =       (hcr - 1.0f) * dens.x * hyd.z;    //Set pressure
+    hyd.y = sqrtf((hcr - 1.0f) * hcr    * hyd.z);    //Set sound speed
+
+    hydro[idx] = hyd;
+}
+
+
+
 KERNEL_DECLARE(correct_particles)(const int n_bodies,
                                   /*  1 */   float tc,
                                   /*  2 */   float2 *time,

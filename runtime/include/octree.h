@@ -237,6 +237,9 @@ class tree_structure
     my_dev::dev_mem<real2> bodies_dens;    //The particles density (x) and smoothing length (y)
     my_dev::dev_mem<real4> bodies_grad;    //The density gradient
     my_dev::dev_mem<real > bodies_h;       //Search radius, keep for compatability for now
+    my_dev::dev_mem<real4> bodies_hydro;   //The hydro properties: x = pressure, y = soundspeed, z = Energy , w = Balsala Switch
+    my_dev::dev_mem<real4> bodies_hydro_out;   //The hydro result array
+
 
     my_dev::dev_mem<uint>   oriParticleOrder;  //Used in the correct function to speedup reorder
 
@@ -386,12 +389,16 @@ protected:
   my_dev::kernel predictParticles;
   my_dev::kernel getNActive;
   my_dev::kernel approxGrav;
-  my_dev::kernel SPHDensity;
-  my_dev::kernel SPHDerivative;
   my_dev::kernel approxGravLET;
   my_dev::kernel correctParticles;
   my_dev::kernel computeDt;
   my_dev::kernel computeEnergy;
+
+  //SPH kernels
+  my_dev::kernel SPHDensity;
+  my_dev::kernel SPHDerivative;
+  my_dev::kernel SPHHydro;
+  my_dev::kernel setPressure;
 
   //Other
   my_dev::kernel directGrav;

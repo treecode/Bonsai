@@ -380,6 +380,7 @@ struct DiskShuffle
                        vector<real4>   &bodyVelocities,
                        vector<ullong>  &bodyIDs,
                        vector<real2>   &bodyDens,
+                       vector<real4>   &bodyHydro,
                        const int        procId,
                        const int        nProcs,
                        const int        nSPH)
@@ -432,6 +433,7 @@ struct DiskShuffle
     bodyVelocities.resize(nTotal);
     bodyIDs.resize(nTotal);
     bodyDens.resize(nTotal);
+    bodyHydro.resize(nTotal);
 
     const double dx    = 1.0 / nxStep;
     const double box_x = 1.0;
@@ -459,6 +461,12 @@ struct DiskShuffle
 
                 bodyDens[i].x       = 1.0;                                                     //Density
                 bodyDens[i].y       = SMTH * pow(bodyPositions[i].w / bodyDens[i].x, 1.0/3.0); //Smoothing
+
+                //The hydro properties
+                bodyHydro[i].x      = 0;    //pressure
+                bodyHydro[i].y      = 0;    //Sound speed
+                bodyHydro[i].z      = 2.5;  //Energy
+                bodyHydro[i].w      = 0;    // Balsala Switch
 
                 //ith.eng  = 2.5;
                 //ith.mat  = 0;
@@ -488,6 +496,11 @@ struct DiskShuffle
                 bodyDens[i].x       = 0.5;                                                      //Density
                 bodyDens[i].y       = SMTH * pow(bodyPositions[i].w / bodyDens[i].x, 1.0/3.0);  //Smoothing
 
+                //The hydro properties
+                 bodyHydro[i].x      = 0;    //pressure
+                 bodyHydro[i].y      = 0;    //Sound speed
+                 bodyHydro[i].z      = 2.5;  //Energy
+                 bodyHydro[i].w      = 0;    // Balsala Switch
 
                 //ith.dens = 0.5;
                 //ith.eng  = 2.5;

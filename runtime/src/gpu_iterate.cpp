@@ -548,21 +548,33 @@ void octree::approximate_gravity(tree_structure &tree)
                          &(this->eps2),
                          &node_begend,
                          tree.active_group_list.p(),
-                         tree.bodies_Ppos.p(),
-                         tree.multipole.p(),
-                         tree.bodies_acc1.p(),
+                         //i particle properties
                          tree.bodies_Ppos.p(),
                          tree.bodies_Pvel.p(),
+                         tree.bodies_dens.p(),
+                         tree.bodies_grad.p(),
+                         tree.bodies_hydro.p(),
                          tree.activePartlist.p(),
                          tree.interactions.p(),
                          tree.boxSizeInfo.p(),
                          tree.groupSizeInfo.p(),
                          tree.boxCenterInfo.p(),
                          tree.groupCenterInfo.p(),
-                         tree.bodies_Pvel.p(),
+                         tree.multipole.p(),
                          tree.generalBuffer1.p(),  //The buffer to store the tree walks
+                         //j particle properties
+                         tree.bodies_Ppos.p(),
+                         tree.bodies_Pvel.p(),
                          tree.bodies_dens.p(),     //Per particle density (x) and nnb (y)
+                         tree.bodies_grad.p(),
+                         tree.bodies_hydro.p(),
+                         //Result buffers
+                         tree.bodies_acc1.p(),
+                         tree.bodies_dens.p(),
+                         tree.bodies_hydro_out.p(),
                          tree.bodies_grad.p());
+
+
 
   SPHDensity.set_texture<real4>(0,  tree.boxSizeInfo,    "texNodeSize");
   SPHDensity.set_texture<real4>(1,  tree.boxCenterInfo,  "texNodeCenter");
@@ -572,32 +584,86 @@ void octree::approximate_gravity(tree_structure &tree)
   SPHDensity.setWork(-1, NTHREAD, nBlocksForTreeWalk);
   //  SPHDensity.setWork(-1, 32, 1);
 
-  SPHDerivative.set_args(0, &tree.n_active_groups,
-                          &tree.n,
-                          &(this->eps2),
-                          &node_begend,
-                          tree.active_group_list.p(),
-                          tree.bodies_Ppos.p(),
-                          tree.multipole.p(),
-                          tree.bodies_acc1.p(),
-                          tree.bodies_Ppos.p(),
-                          tree.bodies_Pvel.p(),
-                          tree.activePartlist.p(),
-                          tree.interactions.p(),
-                          tree.boxSizeInfo.p(),
-                          tree.groupSizeInfo.p(),
-                          tree.boxCenterInfo.p(),
-                          tree.groupCenterInfo.p(),
-                          tree.bodies_Pvel.p(),
-                          tree.generalBuffer1.p(),  //The buffer to store the tree walks
-                          tree.bodies_dens.p(),     //Per particle density (x) and nnb (y)
-                          tree.bodies_grad.p());
+  //TODO this should be checking for active particles and not just assuming
+  //all particles
+  setPressure.set_args(0, &tree.n, tree.bodies_dens.p(), tree.bodies_hydro.p());
+  setPressure.setWork(tree.n, 128);
+
+
+  SPHDerivative.set_args(0,   &tree.n_active_groups,
+                              &tree.n,
+                              &(this->eps2),
+                              &node_begend,
+                              tree.active_group_list.p(),
+                              //i particle properties
+                              tree.bodies_Ppos.p(),
+                              tree.bodies_Pvel.p(),
+                              tree.bodies_dens.p(),
+                              tree.bodies_grad.p(),
+                              tree.bodies_hydro.p(),
+                              tree.activePartlist.p(),
+                              tree.interactions.p(),
+                              tree.boxSizeInfo.p(),
+                              tree.groupSizeInfo.p(),
+                              tree.boxCenterInfo.p(),
+                              tree.groupCenterInfo.p(),
+                              tree.multipole.p(),
+                              tree.generalBuffer1.p(),  //The buffer to store the tree walks
+                              //j particle properties
+                              tree.bodies_Ppos.p(),
+                              tree.bodies_Pvel.p(),
+                              tree.bodies_dens.p(),     //Per particle density (x) and nnb (y)
+                              tree.bodies_grad.p(),
+                              tree.bodies_hydro.p(),
+                              //Result buffers
+                              tree.bodies_acc1.p(),
+                              tree.bodies_dens.p(),
+                              tree.bodies_hydro_out.p(),
+                              tree.bodies_grad.p());
 
   SPHDerivative.set_texture<real4>(0,  tree.boxSizeInfo,    "texNodeSize");
   SPHDerivative.set_texture<real4>(1,  tree.boxCenterInfo,  "texNodeCenter");
   SPHDerivative.set_texture<real4>(2,  tree.multipole,      "texMultipole");
   SPHDerivative.set_texture<real4>(3,  tree.bodies_Ppos,    "texBody");
   SPHDerivative.setWork(-1, NTHREAD, nBlocksForTreeWalk);
+ //  SPHDerivative.setWork(-1, 32, 1);
+
+  SPHHydro.set_args(0, &tree.n_active_groups,
+          &tree.n,
+          &(this->eps2),
+          &node_begend,
+          tree.active_group_list.p(),
+          //i particle properties
+          tree.bodies_Ppos.p(),
+          tree.bodies_Pvel.p(),
+          tree.bodies_dens.p(),
+          tree.bodies_grad.p(),
+          tree.bodies_hydro.p(),
+          tree.activePartlist.p(),
+          tree.interactions.p(),
+          tree.boxSizeInfo.p(),
+          tree.groupSizeInfo.p(),
+          tree.boxCenterInfo.p(),
+          tree.groupCenterInfo.p(),
+          tree.multipole.p(),
+          tree.generalBuffer1.p(),  //The buffer to store the tree walks
+          //j particle properties
+          tree.bodies_Ppos.p(),
+          tree.bodies_Pvel.p(),
+          tree.bodies_dens.p(),     //Per particle density (x) and nnb (y)
+          tree.bodies_grad.p(),
+          tree.bodies_hydro.p(),
+          //Result buffers
+          tree.bodies_acc1.p(),
+          tree.bodies_dens.p(),
+          tree.bodies_hydro_out.p(),
+          tree.bodies_grad.p());
+
+  SPHHydro.set_texture<real4>(0,  tree.boxSizeInfo,    "texNodeSize");
+  SPHHydro.set_texture<real4>(1,  tree.boxCenterInfo,  "texNodeCenter");
+  SPHHydro.set_texture<real4>(2,  tree.multipole,      "texMultipole");
+  SPHHydro.set_texture<real4>(3,  tree.bodies_Ppos,    "texBody");
+  SPHHydro.setWork(-1, NTHREAD, nBlocksForTreeWalk);
  //  SPHDerivative.setWork(-1, 32, 1);
 
 
@@ -630,18 +696,28 @@ void octree::approximate_gravity(tree_structure &tree)
 //  tree.bodies_dens.zeroMem();
   tree.interactions.zeroMem(); //TODO remove
   tree.bodies_grad.zeroMem(); //TODO remove
+
+  tree.bodies_acc1.zeroMemGPUAsync(gravStream->s()); //For testing Hydro forces
+
   cudaDeviceSynchronize();
 
   cudaEventRecord(startLocalGrav, gravStream->s());
   double tStart = get_time();
-  SPHDensity.execute2(gravStream->s());  //First half
+  SPHDensity.execute2(gravStream->s());  //First iteration
   cudaEventRecord(endLocalGrav, gravStream->s());
+  //TODO copy the output density to the input density?
   tree.activePartlist.zeroMemGPUAsync(gravStream->s());
-  SPHDensity.execute2(gravStream->s());  //First half
+  SPHDensity.execute2(gravStream->s());  //second iteration
   tree.activePartlist.zeroMemGPUAsync(gravStream->s());
-  SPHDensity.execute2(gravStream->s());  //First half
+  SPHDensity.execute2(gravStream->s());  //Third iteration
+
+  setPressure.execute2(gravStream->s());
+
   tree.activePartlist.zeroMemGPUAsync(gravStream->s());
-  SPHDerivative.execute2(gravStream->s());  //First half
+  SPHDerivative.execute2(gravStream->s());  //Derivative
+//
+  tree.activePartlist.zeroMemGPUAsync(gravStream->s());
+  SPHHydro.execute2(gravStream->s());  //Hydro force
 
 
   cudaDeviceSynchronize();
@@ -654,12 +730,16 @@ void octree::approximate_gravity(tree_structure &tree)
 
   tree.bodies_dens.d2h();
   tree.bodies_grad.d2h();
+  tree.bodies_hydro.d2h();
+  tree.bodies_acc1.d2h();
 
    for(int i=0; i < tree.n; i++)
    {
-//       if(tree.bodies_ids[i] < 10)
+       if(tree.bodies_ids[i] < 10)
 //           if(i >=3839 && i < 3855)
-       fprintf(stderr,"Output: %d %lld || %f %f %f %lg\t || %f %f\t|| %f %f %f %f\n",
+       //if(i >=3839 && i < 3855)
+//       if(tree.bodies_ids[i] > 15455 && tree.bodies_ids[i] < 15465)
+       fprintf(stderr,"Output: %d %lld || Pos: %f %f %f %lg\t || Dens: %f %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
                i,
                tree.bodies_ids[i],
                tree.bodies_Ppos[i].x,
@@ -671,7 +751,15 @@ void octree::approximate_gravity(tree_structure &tree)
                tree.bodies_grad[i].w,
                tree.bodies_grad[i].x,
                tree.bodies_grad[i].y,
-               tree.bodies_grad[i].z);
+               tree.bodies_grad[i].z,
+               tree.bodies_hydro[i].x,
+               tree.bodies_hydro[i].y,
+               tree.bodies_hydro[i].z,
+               tree.bodies_hydro[i].w,
+               tree.bodies_acc1[i].x,
+               tree.bodies_acc1[i].y,
+               tree.bodies_acc1[i].z,
+               tree.bodies_acc1[i].w);
    }
 
 
