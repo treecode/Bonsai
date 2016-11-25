@@ -73,10 +73,11 @@ void octree::compute_properties(tree_structure &tree) {
   //start the kernel for the leaf-type nodes
   propsLeafD.set_args(0, &tree.n_leafs, tree.leafNodeIdx.p(), tree.node_bodies.p(), tree.bodies_Ppos.p(),
                          multipoleD.p(), nodeLowerBounds.p(), nodeUpperBounds.p(),
-                         tree.bodies_Pvel.p(), //Velocity to get max eps
+                         tree.bodies_Pvel.p(),  //Velocity to get max eps
                          tree.bodies_ids.p(),   //Ids to distinguish DM and stars
-                         tree.bodies_h.p(),    //Density search radius
-                         &h_min);              //minimum size of search radius)
+                         tree.bodies_h.p(),     //Density search radius
+                         &h_min,                //minimum size of search radius)
+                         tree.bodies_dens.p()); //Density to get max smoothing value
   propsLeafD.setWork(tree.n_leafs, 128);
   LOG("PropsLeaf: on number of leaves: %d \n", tree.n_leafs);
   propsLeafD.execute2(execStream->s());

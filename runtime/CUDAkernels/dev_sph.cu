@@ -77,7 +77,6 @@ PROF_MODULE(dev_approximate_gravity);
 //#endif
 
 
-
 /*******************************/
 /****** Opening criterion ******/
 /*******************************/
@@ -89,12 +88,12 @@ PROF_MODULE(dev_approximate_gravity);
  * the cellH variable and instead compare to 0
  */
 
-__device__ bool split_node_sph_md(
-    const float4 nodeSize,
-    const float4 nodeCenter,
-    const float4 groupCenter,
-    const float4 groupSize,
-    const float  cellH)
+__device__ bool split_node_sph_md(const float4 nodeSize,
+                                  const float4 nodeCenter,
+                                  const float4 groupCenter,
+                                  const float4 groupSize,
+                                  const float  grpH,
+                                  const float  cellH)
 {
   //Compute the distance between the group and the cell
   float3 dr = {fabs(groupCenter.x - nodeCenter.x) - (groupSize.x + nodeSize.x),
@@ -107,7 +106,7 @@ __device__ bool split_node_sph_md(
 
   //Distance squared, no need to do sqrt since opening criteria has been squared
   float ds2    = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
-  return (ds2 <= cellH);
+  return (ds2 <= (grpH+cellH));
 }
 
 #else
@@ -154,27 +153,27 @@ __device__ bool split_node_sph_md(
 
 template<int SHIFT, int BLOCKDIM2, int NI, bool INTCOUNT, template<int NI2, bool FULL> class directOP>
 static __device__
-uint2 approximate_sph_grad(
-                              float4  acc_i  [NI],
-                        const float4 _pos_i  [NI],
-                        const float4 _vel_i  [NI],
-                        const float4 _hydro_i[NI],
-                        const float4  groupPos,
-                        const float4 *body_pos_j,
-                        const float4 *body_vel_j,
-                        const float4 *body_hydro_j,
-                        const float2 *body_dens_j,
-                        const float   eps2,
-                        const uint2   top_cells,
-                        int          *shmem,
-                        int          *cellList,
-                        const float4  groupSize,
+uint2 approximate_sph(
+                              float4     acc_i   [NI] /* out */,
+                        const float4     _pos_i  [NI],
+                        const float4     _vel_i  [NI],
+                        const float4     _hydro_i[NI],
+                        const float4     groupPos,
+                        const float4    *body_pos_j,
+                        const float4    *body_vel_j,
+                        const float4    *body_hydro_j,
+                        const float2    *body_dens_j,
+                        const float      eps2,
+                        const uint2      top_cells,
+                        int             *shmem,
+                        int             *cellList,
+                        const float4     groupSize,
                         SPH::density::data      density_i   [NI],
                         SPH::derivative::data   derivative_i[NI],
-                        const float4 *nodeSize,
-                        const float4 *nodeCenter,
-                        const float4 *nodeMultipole,
-                        const float   cellH)
+                        const float4    *nodeSize,
+                        const float4    *nodeCenter,
+                        const float4    *nodeMultipole,
+                        const float      grpH)
 {
   const int laneIdx = threadIdx.x & (WARP_SIZE-1);
 
@@ -221,12 +220,18 @@ uint2 approximate_sph_grad(
     const float4 cellPos  = nodeCenter[cellIdx];
     //const float4 cellSize = tex1Dfetch(ztexNodeSize,   cellIdx);
     //const float4 cellPos  = tex1Dfetch(ztexNodeCenter, cellIdx);
-    bool splitCell         = split_node_sph_md(cellSize, cellPos, groupPos, groupSize, cellH);
+
+    //For hydro-force we also compare it with smoothing range of the cell, for other props
+    //we just use 0. Let's hope compiler is smart enough to notice it stays 0 in that case
+    float cellH  = 0;
+    if(directOP<1, true>::type == SPH::HYDROFORCE) cellH = fabs(cellPos.w);
+
+    bool splitCell         = split_node_sph_md(cellSize, cellPos, groupPos, groupSize, grpH, cellH);
     interactionCounters.x += 1; //Keep track of number of opening tests
 
 
     /* compute first child, either a cell if node or a particle if leaf */
-    const int cellData = __float_as_int(cellSize.w);
+    const int cellData   = __float_as_int(cellSize.w);
     const int firstChild =  cellData & 0x0FFFFFFF;
     const int nChildren  = (cellData & 0xF0000000) >> 28;
 
@@ -351,6 +356,36 @@ uint2 approximate_sph_grad(
   return interactionCounters;
 }
 
+//Re-compute the box position and size but now with the smoothing length taken into account
+__device__ void computeGroupBoundsWithSmoothingLength(const float4 pos[2], const int ni,
+                                                      float4 &grpCenter, float4 &grpSize)
+{
+    //Compute the extends of the 'box' around this particle
+    float  smth  = pos[0].w*3.5;
+    float3 r_min = make_float3(pos[0].x-smth, pos[0].y-smth, pos[0].z-smth);
+    float3 r_max = make_float3(pos[0].x+smth, pos[0].y+smth, pos[0].z+smth);
+
+    if(ni > 1)  //Reduce within the thread the 2 possible particles
+    {
+        smth    = pos[1].w*3.5;
+        r_min.x = fminf(pos[1].x-smth, r_min.x); r_min.y = fminf(pos[1].y-smth, r_min.y); r_min.z = fminf(pos[1].z-smth, r_min.z);
+        r_max.x = fmaxf(pos[1].x+smth, r_max.x); r_max.y = fmaxf(pos[1].y+smth, r_max.y); r_max.z = fmaxf(pos[1].z+smth, r_max.z);
+    }
+
+    //Reduce the whole group
+    r_min.x = warpAllReduceMin(r_min.x); r_min.y = warpAllReduceMin(r_min.y); r_min.z = warpAllReduceMin(r_min.z);
+    r_max.x = warpAllReduceMax(r_max.x); r_max.y = warpAllReduceMax(r_max.y); r_max.z = warpAllReduceMax(r_max.z);
+
+    //Compute the group center and size
+    grpCenter.x = 0.5*(r_min.x + r_max.x);
+    grpCenter.y = 0.5*(r_min.y + r_max.y);
+    grpCenter.z = 0.5*(r_min.z + r_max.z);
+
+    grpSize.x = fmaxf(fabs(grpCenter.x-r_min.x), fabs(grpCenter.x-r_max.x));
+    grpSize.y = fmaxf(fabs(grpCenter.y-r_min.y), fabs(grpCenter.y-r_max.y));
+    grpSize.z = fmaxf(fabs(grpCenter.z-r_min.z), fabs(grpCenter.z-r_max.z));
+}
+
 
 template<int SHIFT2, int BLOCKDIM2, bool ACCUMULATE, template<int NI2, bool FULL> class directOp>
 static __device__
@@ -397,28 +432,24 @@ bool treewalk_control(
   const uint body_addr        =   groupData & CRITMASK;
   const uint nb_i             = ((groupData & INVCMASK) >> CRITBIT) + 1;
 
-
   uint body_i[2];
   const int ni = nb_i <= WARP_SIZE ? 1 : 2;
   body_i[0]    = body_addr + laneId%nb_i;
   body_i[1]    = body_addr + WARP_SIZE + laneId%(nb_i - WARP_SIZE);
 
 
-  float4 pos_i [2];
-  float4 vel_i [2];
-  float4 acc_i [2];
+  float4 pos_i [2], vel_i [2], acc_i [2], hydro_i[2];
   SPH::density::data    dens_i[2];
   SPH::derivative::data derivative_i[2];
-  float4                hydro_i[2];
 
   acc_i[0]  = acc_i[1]  = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
   dens_i[0].clear();       dens_i[1].clear();
   derivative_i[0].clear(); derivative_i[1].clear();
 
-  pos_i[0]       = group_body_pos[body_i[0]];
-  vel_i[0]       = group_body_vel[body_i[0]];
-  hydro_i[0]     = group_body_hydro[body_i[0]];
-  dens_i[0].smth = group_body_dens[body_i[0]].y;
+  pos_i[0]         = group_body_pos[body_i[0]];
+  vel_i[0]         = group_body_vel[body_i[0]];
+  hydro_i[0]       = group_body_hydro[body_i[0]];
+  dens_i[0].smth   = group_body_dens[body_i[0]].y;
 
   if(ni > 1){       //Only read if we actually have ni == 2
     pos_i[1]       = group_body_pos[body_i[1]];
@@ -428,17 +459,11 @@ bool treewalk_control(
 
   }
 
-    if(directOp<1, true>::type == SPH::HYDROFORCE) {
-                   dens_i[0].dens = group_body_dens[body_i[0]].x; //For the hydro force we need the current density value
+  //For the hydro force we need the current density value
+  if(directOp<1, true>::type == SPH::HYDROFORCE) {
+                   dens_i[0].dens = group_body_dens[body_i[0]].x;
         if(ni > 1) dens_i[1].dens = group_body_dens[body_i[1]].x;
-    }
-
-
-  //Need this here until we have a kernel to reset values
-//  if(directOp<1, true>::type == SPH::DENSITY) {
-//                 body_dens_out[body_i[0]].x = 0; //Need to reset here as we can't reset it together with smth
-//      if(ni > 1) body_dens_out[body_i[1]].x = 0; //Need to reset here as we can't reset it together with smth
-//  }
+  }
 
   uint2 counters = {0};
 
@@ -446,6 +471,7 @@ bool treewalk_control(
   pos_i[0].w                = dens_i[0].smth;  //y is smoothing range
   if(ni > 1 )   pos_i[1].w  = dens_i[1].smth;  //y is smoothing range
 
+#if 1
   //Compute the cellH, which is the maximum smoothing value off all particles
   //in a group because as we search for the whole group in parallel we have to
   //be sure to include all possibly required particles
@@ -454,25 +480,30 @@ bool treewalk_control(
   {
     cellH = max(cellH, warpAllReduceMax(pos_i[1].w));
   }
-  cellH *= 3.5; //TODO This (value around 3) is needed to get the results to match those of FDPS, why is that. Looks like there is no hard cutoff in the kernel??
+  cellH *= SPH::kernel_t::supportRadius(); //3.5;   //TODO This (value around 3) is needed to get the results to match those of FDPS, why is that. Looks like there is no hard cutoff in the kernel??
   cellH *= cellH; //Squared for distance comparison without sqrt
+#else
+  //TODO: This results in more cells being opened. Look into this later, might be related to the 3.5 factor
+  computeGroupBoundsWithSmoothingLength(pos_i, ni, group_pos, curGroupSize);
+  const float cellH = 0;
+#endif
 
   //For periodic boundaries, mirror the group and body positions along the periodic axis
   float3 domainSize = {1.0f, 0.125f, 0.125f};   //Hardcoded for our testing IC
 
   //TODO use templates or parameterize this at some point
-//  for(int ix=-1; ix <= 1; ix++)     //Periodic around X
+  for(int ix=-1; ix <= 1; ix++)     //Periodic around X
   {
-//    for(int iy=-1; iy <= 1; iy++)   //Periodic around Y
+    for(int iy=-1; iy <= 1; iy++)   //Periodic around Y
     {
-//      for(int iz=-1; iz <= 1; iz++) //Periodic around Z
+      for(int iz=-1; iz <= 1; iz++) //Periodic around Z
       {
           float4 pGroupPos   = group_pos;
           float4 pBodyPos[2] = {pos_i[0], pos_i[1]};
 
-//          pGroupPos.x   += (domainSize.x*ix); pBodyPos[0].x += (domainSize.x*ix); pBodyPos[1].x += (domainSize.x*ix);
-//          pGroupPos.y   += (domainSize.y*iy); pBodyPos[0].y += (domainSize.y*iy); pBodyPos[1].y += (domainSize.y*iy);
-//          pGroupPos.z   += (domainSize.z*iz); pBodyPos[0].z += (domainSize.z*iz); pBodyPos[1].z += (domainSize.z*iz);
+          pGroupPos.x   += (domainSize.x*ix); pBodyPos[0].x += (domainSize.x*ix); pBodyPos[1].x += (domainSize.x*ix);
+          pGroupPos.y   += (domainSize.y*iy); pBodyPos[0].y += (domainSize.y*iy); pBodyPos[1].y += (domainSize.y*iy);
+          pGroupPos.z   += (domainSize.z*iz); pBodyPos[0].z += (domainSize.z*iz); pBodyPos[1].z += (domainSize.z*iz);
 
           uint2 curCounters = {0};
 
@@ -482,32 +513,30 @@ bool treewalk_control(
           const bool INTCOUNT = true;
     #endif
           {
-
-
             if (ni == 1)
-                curCounters = approximate_sph_grad<SHIFT2, BLOCKDIM2, 1, INTCOUNT, directOp>(
-                  acc_i,
-                  pBodyPos,
-                  vel_i,
-                  hydro_i,
-                  pGroupPos,
-                  body_pos_j,
-                  body_vel_j,
-                  body_hydro_j,
-                  body_dens_out,    //TODO this should be a different pointer namely the J-particle density
-                  eps2,
-                  node_begend,
-                  shmem,
-                  lmem,
-                  curGroupSize,
-                  dens_i,
-                  derivative_i,
-                  nodeSize,
-                  nodeCenter,
-                  nodeMultipole,
-                  cellH);
+                curCounters = approximate_sph<SHIFT2, BLOCKDIM2, 1, INTCOUNT, directOp>(
+                        acc_i,
+                        pBodyPos,
+                        vel_i,
+                        hydro_i,
+                        pGroupPos,
+                        body_pos_j,
+                        body_vel_j,
+                        body_hydro_j,
+                        body_dens_out,    //TODO this should be a different pointer namely the J-particle density
+                        eps2,
+                        node_begend,
+                        shmem,
+                        lmem,
+                        curGroupSize,
+                        dens_i,
+                        derivative_i,
+                        nodeSize,
+                        nodeCenter,
+                        nodeMultipole,
+                        cellH);
             else
-                curCounters = approximate_sph_grad<SHIFT2, BLOCKDIM2, 2, INTCOUNT, directOp>(
+                curCounters = approximate_sph<SHIFT2, BLOCKDIM2, 2, INTCOUNT, directOp>(
                         acc_i,
                         pBodyPos,
                         vel_i,
@@ -560,25 +589,24 @@ bool treewalk_control(
                             body_grad_out[addr].z*body_grad_out[addr].z;
               float temp3 = 1.0e-4 * body_hydro_out[addr].y / body_dens_out[addr].y;
 
-              //Note using group_body_hydro here instead of body_hydro_out
+              //Note using group_body_hydro here instead of body_hydro_out to store Balsala Switch
               group_body_hydro[addr].w = temp / (temp + sqrtf(temp2) + temp3);
-
           }
 
-          //Density requires a bit more work as the smoothing range is based on it
-          //TODO not sure how this is going to work out in parallel version.
-          //Possibly we need a different kernel to update smoothing range after
-          //all remote data has been used
 
           if(directOp<1, true>::type == SPH::DENSITY)
           {
+              //Density requires a bit more work as the smoothing range is based on it
+              //TODO not sure how this is going to work out in parallel version.
+              //Possibly we need a different kernel to update smoothing range after
+              //all remote data has been used
+
               //No addition until we start working on multi-GPU calls
               //dens_i[i].dens       += body_dens_out[addr].x;
               dens_i[i].finalize(group_body_pos[body_i[i]].w);
               body_dens_out[addr].x = dens_i[i].dens;
               body_dens_out[addr].y = dens_i[i].smth; //The sum has been scaled so we can assign
           }
-
 
           if(directOp<1, true>::type == SPH::HYDROFORCE)
           {
@@ -587,7 +615,6 @@ bool treewalk_control(
               body_acc_out      [addr].z += acc_i[i].z;
               body_acc_out      [addr].w += acc_i[i].w;
           }
-
         }
         active_inout[addr] = 1;
         {

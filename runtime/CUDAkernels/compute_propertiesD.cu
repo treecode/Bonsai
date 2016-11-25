@@ -93,17 +93,18 @@ static __device__ void compute_bounds_node(float3 &r_min, float3 &r_max,
 }
 
 
-KERNEL_DECLARE(compute_leaf)( const int n_leafs,
-                              uint *leafsIdxs,
-                              uint2 *node_bodies,
-                              real4 *body_pos,
-                              double4 *multipole,
-                              real4 *nodeLowerBounds,
-                              real4 *nodeUpperBounds,
-                              real4  *body_vel,
-                              ulonglong1 *body_id,
-                              real  *body_h,
-			                  const float h_min) {
+KERNEL_DECLARE(compute_leaf)(const int         n_leafs,
+                                   uint       *leafsIdxs,
+                                   uint2      *node_bodies,
+                                   real4      *body_pos,
+                                   double4    *multipole,
+                                   real4      *nodeLowerBounds,
+                                   real4      *nodeUpperBounds,
+                                   real4      *body_vel,
+                                   ulonglong1 *body_id,
+                                   real       *body_h,
+			                 const float       h_min,
+			                 const float2     *body_dens) {
 
   CUXTIMER("compute_leaf");
   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
@@ -149,13 +150,21 @@ KERNEL_DECLARE(compute_leaf)( const int n_leafs,
 
   //Loop over the children=>particles=>bodys
   //unroll increases register usage #pragma unroll 16
-  float maxEps = -100.0f;
+  float maxEps  = -100.0f;
+  float maxSmth = -100.0f;
   int count=0;
   for(int i=firstChild; i < lastChild; i++)
   {
     p      = body_pos[i];
     maxEps = fmaxf(body_vel[i].w, maxEps);      //Determine the max softening within this leaf
     count++;
+
+    //SPH max smoothing value for the cell
+    //TODO this should be taken from the box-extends which makes
+    //the box tighter and hence more efficient. ( for example (boxEdge-particle.pos > smoothing)
+    maxSmth = fmaxf(body_dens[i].y, maxSmth);
+
+
     compute_monopole(mass, posx, posy, posz, p);
     compute_quadropole(oct_q11, oct_q22, oct_q33, oct_q12, oct_q13, oct_q23, p);
     compute_bounds(r_min, r_max, p);
@@ -182,16 +191,16 @@ KERNEL_DECLARE(compute_leaf)( const int n_leafs,
   multipole[3*nodeID + 2] = Q1;        //Quadropole
 
   //Store the node boundaries
-  nodeLowerBounds[nodeID] = make_float4(r_min.x, r_min.y, r_min.z, 0.0f);
+  nodeLowerBounds[nodeID] = make_float4(r_min.x, r_min.y, r_min.z, maxSmth);  //4th parameter holds the maximum smoothing range of underlying particles
   nodeUpperBounds[nodeID] = make_float4(r_max.x, r_max.y, r_max.z, 1.0f);  //4th parameter is set to 1 to indicate this is a leaf
 
 
 
 #if 0
-  //Addition for density computation, we require seperate search radii
+  //Addition for density computation, we require separate search radii
   //for star particles and dark-matter particles. Note that we could 
   //combine most of this with the loops above. But for clarity
-  //I kept them seperate untill it all is tested and functions correctly
+  //I kept them separate until it all is tested and functions correctly
 
   ulonglong1 DARKMATTERID;
   DARKMATTERID.x = 3000000000000000000ULL;
@@ -331,13 +340,16 @@ KERNEL_DECLARE(compute_non_leaf)(const int curLevel,         //Level for which w
   r_max = make_float3(-1e10f, -1e10f, -1e10f);
 
   //Process the children (1 to 8)
-  float maxEps = -100.0f;
+  float maxEps  = -100.0f;
+  float maxSmth = -100.0f;
   for(int i=firstChild; i < firstChild+nChildren; i++)
   {
     //Gogo process this data!
     double4 tmon = multipole[3*i + 0];
 
-    maxEps = max(multipole[3*i + 1].w, maxEps);
+    maxEps  = max(multipole[3*i + 1].w, maxEps);
+    maxSmth = max(nodeLowerBounds[i].w, maxSmth);
+
 
     compute_monopole_node(mass, posx, posy, posz, tmon);
     compute_quadropole_node(oct_q11, oct_q22, oct_q33, oct_q12, oct_q13, oct_q23,
@@ -346,7 +358,7 @@ KERNEL_DECLARE(compute_non_leaf)(const int curLevel,         //Level for which w
   }
 
   //Save the bounds
-  nodeLowerBounds[nodeID] = make_float4(r_min.x, r_min.y, r_min.z, 0.0f);
+  nodeLowerBounds[nodeID] = make_float4(r_min.x, r_min.y, r_min.z, maxSmth);
   nodeUpperBounds[nodeID] = make_float4(r_max.x, r_max.y, r_max.z, 0.0f); //4th is set to 0 to indicate a non-leaf
 
   //Regularize and store the results
@@ -368,16 +380,16 @@ KERNEL_DECLARE(compute_non_leaf)(const int curLevel,         //Level for which w
 
   return;
 }
-KERNEL_DECLARE(compute_scaling)(const int node_count,
-                                           double4 *multipole,
-                                           real4 *nodeLowerBounds,
-                                           real4 *nodeUpperBounds,
-                                           uint  *n_children,
-                                           real4 *multipoleF,
-                                           float theta,
-                                           real4 *boxSizeInfo,
-                                           real4 *boxCenterInfo,
-                                           uint2 *node_bodies){
+KERNEL_DECLARE(compute_scaling)(const int      node_count,
+                                      double4 *multipole,
+                                      real4   *nodeLowerBounds,
+                                      real4   *nodeUpperBounds,
+                                      uint    *n_children,
+                                      real4   *multipoleF,
+                                      float    theta,
+                                      real4   *boxSizeInfo,
+                                      real4   *boxCenterInfo,
+                                      uint2   *node_bodies){
 
   CUXTIMER("compute_scaling");
   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
@@ -454,7 +466,7 @@ KERNEL_DECLARE(compute_scaling)(const int node_count,
   boxCenterInfo[idx].z = mon.z;
 #endif
 
-  //Extra check, shouldnt be necessary, probably it is otherwise the test for leaf can fail
+  //Extra check, shouldn't be necessary, probably it is otherwise the test for leaf can fail
   //So it IS important Otherwise 0.0 < 0 can fail, now it will be: -1e-12 < 0 
   if(l < 0.000001)
     l = 0.000001;
@@ -491,13 +503,26 @@ KERNEL_DECLARE(compute_scaling)(const int node_count,
 
   boxCenterInfo[idx].w = cellOp;
 
+  /* For SPH we re-use boxCenterInfo[idx].w  to hold the max smoothing range
+   * of the particles within this cell. TODO use a better variable to hold this?
+   */
+  bool doSPH = true;
+  if(doSPH)
+  {
+      if (r_max.w > 0){
+          boxCenterInfo[idx].w = -(r_min.w*r_min.w);
+      }
+      else {
+          boxCenterInfo[idx].w =  (r_min.w*r_min.w);
+      }
+  }
 
-  //Change the indirections of the leaf nodes so they point to
-  //the particle data
+  //Change the indirections of the leaf nodes so
+  //they point to the particle data
   bool leaf = (r_max.w > 0);
   if(leaf)
   {
-    pfirst = pfirst | ((nchild-1) << LEAFBIT);
+    pfirst             = pfirst | ((nchild-1) << LEAFBIT);
     boxSizeInfo[idx].w = __int_as_float(pfirst);
   }
 

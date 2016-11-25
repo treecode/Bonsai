@@ -705,6 +705,7 @@ void octree::approximate_gravity(tree_structure &tree)
   double tStart = get_time();
   SPHDensity.execute2(gravStream->s());  //First iteration
   cudaEventRecord(endLocalGrav, gravStream->s());
+#if 1
   //TODO copy the output density to the input density?
   tree.activePartlist.zeroMemGPUAsync(gravStream->s());
   SPHDensity.execute2(gravStream->s());  //second iteration
@@ -715,10 +716,18 @@ void octree::approximate_gravity(tree_structure &tree)
 
   tree.activePartlist.zeroMemGPUAsync(gravStream->s());
   SPHDerivative.execute2(gravStream->s());  //Derivative
-//
+
+
+//  Hier gebleven, de smoothing range moet toegevoegd worden
+//  aan het tree-structure en daarna ook gechecked worden
+//  tijdens de tree-walk
+  compute_properties(tree); //TODO make this smarter as in only compute cells not groups.
+
+
+  tree.interactions.zeroMemGPUAsync(gravStream->s());
   tree.activePartlist.zeroMemGPUAsync(gravStream->s());
   SPHHydro.execute2(gravStream->s());  //Hydro force
-
+#endif
 
   cudaDeviceSynchronize();
   double tEnd = get_time();
@@ -769,11 +778,12 @@ void octree::approximate_gravity(tree_structure &tree)
   tree.interactions.d2h();
   long long openingTestSum = 0;
   long long distanceTestSum = 0;
-
-  for(int i=0; i < tree.n; i++) { openingTestSum     += tree.interactions[i].x; distanceTestSum     += tree.interactions[i].y;   }
-  fprintf(stderr,"Number of opening angle checks: %lld [ %lld ] distance test: %lld [ %lld ] \n",
+  int minOps = 10e6, maxOps = 0;
+  for(int i=0; i < tree.n; i++) { openingTestSum     += tree.interactions[i].x; distanceTestSum     += tree.interactions[i].y;
+                                  minOps = min(minOps, tree.interactions[i].y); maxOps = max(maxOps, tree.interactions[i].y); }
+  fprintf(stderr,"Number of opening angle checks: %lld [ %lld ] distance test: %lld [ Avg: %lld Min: %d Max: %d ] \n",
           openingTestSum,  openingTestSum  / tree.n,
-          distanceTestSum, distanceTestSum / tree.n);
+          distanceTestSum, distanceTestSum / tree.n, minOps, maxOps);
 #endif
 
 #if 0

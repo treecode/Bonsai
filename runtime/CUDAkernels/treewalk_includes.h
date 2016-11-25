@@ -145,7 +145,13 @@ float warpAllReduceMax(float val)
        val = max(val, __shfl_xor(val, mask)); 
   return val;
 }
-
+__inline__ __device__
+float warpAllReduceMin(float val)
+{
+  for (int mask = warpSize/2; mask > 0; mask /= 2)
+       val = min(val, __shfl_xor(val, mask));
+  return val;
+}
 
 
 #endif

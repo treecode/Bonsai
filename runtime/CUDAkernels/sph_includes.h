@@ -79,7 +79,6 @@ namespace SPH
 
     namespace density
     {
-        //typedef struct __device_builtin__ __attribute__((aligned(8)))  data
         typedef struct  __attribute__((aligned(8)))  data
         {
             float dens;
@@ -87,7 +86,7 @@ namespace SPH
 
             __device__ __forceinline__ void finalize(const float mass)
             {
-                //Normalize by smoothing range
+                //Normalize the smoothing range
                 smth = PARAM_SMTH * cbrtf(mass / dens);
             }
 
@@ -330,14 +329,16 @@ namespace hydroforce
       const float ith_abs_gradW = kernel.abs_gradW(r, posi.w);
       const float jth_abs_gradW = (smthj != 0) ? kernel.abs_gradW(r, smthj) : 0.0f; //Returns NaN if smthj is 0 which happens if we do not use the particle, so 'if' for now
       const float abs_gradW     = 0.5f * (ith_abs_gradW + jth_abs_gradW);
-      const float4 gradW = (r > 0) ? make_float4(abs_gradW * dr.x / r, abs_gradW * dr.y / r, abs_gradW * dr.z / r, 0.0f)
-                                 : make_float4(0.0f,0.0f,0.0f,0.0f);
+      const float4 gradW        = (r > 0) ? make_float4(abs_gradW * dr.x / r, abs_gradW * dr.y / r, abs_gradW * dr.z / r, 0.0f)
+                                          : make_float4(0.0f,0.0f,0.0f,0.0f);
 
       float temp = massj * (hydroi.x / (densi * densi) + hydroj.x / (densj * densj) + AV);
       temp       = (smthj != 0) ? temp : 0; //Same as above, a 0 smoothing length leads to NaN (divide by 0)
       acc.x           -= temp  * gradW.x;
       acc.y           -= temp  * gradW.y;
       acc.z           -= temp  * gradW.z;
+//      acc.y           += (fabs(abs_gradW) > 0);  //Count how often we do something useful in this function
+      //acc.z           += 1; //Count how often we enter this function
       acc.w           += massj * (hydroi.x / (densi * densi) + 0.5 * AV) * (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z); //eng_dot
     }
 
@@ -363,8 +364,6 @@ namespace hydroforce
         {
           float v_sig_max = 0; //TODO implement this value/keep track of it over various directOp calls
 
-
-
           SPH::kernel_t kernel;
           const float4 MP = (FULL || ptclIdx >= 0) ? body_jpos [ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
           const float4 MV = (FULL || ptclIdx >= 0) ? body_jvel [ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
@@ -388,12 +387,6 @@ namespace hydroforce
             }
           }//for WARP_SIZE
 
-//          if(laneId == 24) printf("Result: lane: %d  %f %f \n", laneId, acc_i[0].z, acc_i[1].z);
-
-          // force[id].acc.x = acc.x;
-          // force[id].acc.y = acc.y;
-          // force[id].acc.z = acc.z;
-          //force[id].eng_dot = eng_dot;
           //force[id].dt = PARAM::C_CFL * 2.0 * ith.smth / v_sig_max;
 
 
