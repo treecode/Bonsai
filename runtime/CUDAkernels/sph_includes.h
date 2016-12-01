@@ -152,6 +152,265 @@ namespace SPH
 
 enum SPHVal {DENSITY, DERIVATIVE, HYDROFORCE};
 
+#if 1
+namespace density
+{
+    static __device__ __forceinline__ void addDensity(
+        const float4    pos,
+        const float     massj,
+        const float3    posj,
+        const float     eps2,
+              float    &dens,
+              int      &temp,
+        const SPH::kernel_t &kernel)
+    {
+    #if 1  // to test performance of a tree-walk
+      const float3 dr    = make_float3(posj.x - pos.x, posj.y - pos.y, posj.z - pos.z);
+      const float r2     = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
+      const float r2eps  = r2;// + eps2;
+      const float r      = sqrtf(r2eps);
+
+      temp = (fabs(massj*kernel.W(r, pos.w)) > 0);
+
+      dens += massj*kernel.W(r, pos.w);
+      //Prevent adding ourself, TODO should make this 'if' more efficient, like multiply with something
+      //Not needed for this SPH kernel?
+      //if(r2 != 0) density +=tempD;
+    #endif
+    }
+
+#if 1
+    static __device__ __forceinline__ void addDensity2(
+        const float4    pos,
+        const float4    dr,
+        const float     eps2,
+              float    &dens,
+              int      &temp,
+        const SPH::kernel_t &kernel)
+    {
+    #if 1  // to test performance of a tree-walk
+//      const float r2     = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
+      const float r2eps  = dr.x;// + eps2;
+      const float r      = sqrtf(r2eps);
+
+      temp = (fabs(dr.w*kernel.W(r, pos.w)) > 0);
+
+      dens += dr.w*kernel.W(r, pos.w);
+
+    #endif
+    }
+
+    static __device__ __forceinline__ void addDensity3(
+        const float4    pos,
+        const float     r2,
+        const float     massj,
+        const float     eps2,
+              float    &dens,
+        const SPH::kernel_t &kernel)
+    {
+    #if 1
+      const float r      = sqrtf(r2);
+      dens += massj*kernel.W(r, pos.w);
+    #endif
+    }
+#endif
+
+    template<int NI, bool FULL>
+    struct directOperator {
+
+        static const SPHVal type = SPH::DENSITY;
+
+        __device__ __forceinline__ void operator()(
+                float4  acc_i[NI],
+          const float4  pos_i[NI],
+          const float4  vel_i[NI],
+          const int     ptclIdx,
+          const float   eps2,
+          SPH::density::data  density_i[NI],
+          SPH::derivative::data gradient_i[NI],
+          const float4  hydro_i[NI],  //Not used here
+          const float4 *body_jpos,
+          const float4 *body_jvel,
+          const float2 *body_jdens,   //Not used here
+          const float4 *body_hydro,    //Not used here
+                float4 *pB,
+                int    &pC
+          )
+        {
+          SPH::kernel_t kernel;
+#if 0
+          const float4 M0 = (FULL || ptclIdx >= 0) ? body_jpos[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+
+          for (int j = 0; j < WARP_SIZE; j++)
+          {
+            const float4 jM0   = make_float4(__shfl(M0.x, j), __shfl(M0.y, j), __shfl(M0.z, j), __shfl(M0.w,j));
+            const float  jmass = jM0.w;
+            const float3 jpos  = make_float3(jM0.x, jM0.y, jM0.z);
+        #pragma unroll
+            for (int k = 0; k < NI; k++)
+            {
+              int temp = 0;
+              addDensity(pos_i[k], jmass, jpos, eps2, density_i[k].dens, temp, kernel);
+              density_i[k].smth++;
+
+              gradient_i[k].x++;       //Number of operations
+              gradient_i[k].y += temp; //Number of useful operations
+            }
+          }
+        }
+#elif 0
+        //Version that shuffles the particle index instead of the particle-data
+        //With the idea being that each particle can work on it's own useful particle-index
+        //once we have a list of useful particle indices...
+
+        for (int j = 0; j < WARP_SIZE; j++)
+        {
+          int ptclIdx2 = __shfl(ptclIdx,j);
+          const float4 jM0 = (FULL || ptclIdx2 >= 0) ? body_jpos[ptclIdx2] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+          const float  jmass = jM0.w;
+          const float3 jpos  = make_float3(jM0.x, jM0.y, jM0.z);
+      #pragma unroll
+          for (int k = 0; k < NI; k++)
+          {
+            int temp = 0;
+            addDensity(pos_i[k], jmass, jpos, eps2, density_i[k].dens, temp, kernel);
+            density_i[k].smth++;
+
+            gradient_i[k].x++;       //Number of operations
+            gradient_i[k].y += temp; //Number of useful operations
+          }
+        }
+      }
+#elif 0
+        //Version that shuffles the particle index instead of the particle-data
+        //With the idea being that each particle can work on it's own useful particle-index
+        //once we have a list of useful particle indices...
+
+        for (int j = 0; j < WARP_SIZE; j++)
+        {
+          int ptclIdx2 = __shfl(ptclIdx,j);
+          const float4 jM0 = (FULL || ptclIdx2 >= 0) ? body_jpos[ptclIdx2] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+          const float  jmass = jM0.w;
+          const float3 jpos  = make_float3(jM0.x, jM0.y, jM0.z);
+      #pragma unroll
+          for (int k = 0; k < NI; k++)
+          {
+            int temp = 0;
+            addDensity(pos_i[k], jmass, jpos, eps2, density_i[k].dens, temp, kernel);
+            density_i[k].smth++;
+
+            //Count occurrences in which all threads have to process this particle
+            //temp = __all(temp);
+
+            //Count the particles that are useful for at least half the threads
+            //temp = __ballot(temp);
+            //temp = (__popc(temp) >= 16);
+
+            //Count the cases where I am the only one who finds this particle useful
+            int temp2 = __ballot(temp);
+            temp2 = (__popc(temp2));
+            if(temp2 == 1 && temp == 1) temp = 1;
+            else temp = 0;
+
+
+            gradient_i[k].x++;       //Number of operations
+            gradient_i[k].y += temp; //Number of useful operations
+          }
+        }
+      }
+#elif 0
+        //Version that makes a personal interaction list, too bad it's 10x slower because memory bus being overloaded...
+        float iH = pos_i[0].w*kernel.supportRadius();
+        iH      *= iH;
+
+        const float4 M0 = (FULL || ptclIdx >= 0) ? body_jpos[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, -1.0f);
+
+        for (int j = 0; j < WARP_SIZE; j++)
+        {
+            const float4 jM0   = make_float4(__shfl(M0.x, j), __shfl(M0.y, j), __shfl(M0.z, j), __shfl(M0.w,j));
+            const float3 dr    = make_float3(jM0.x - pos_i[0].x, jM0.y - pos_i[0].y, jM0.z - pos_i[0].z);
+            const float r2     = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
+            if(r2 <= iH && jM0.w >= 0) //Only use valid particles (no negative mass)
+            {
+                //pB[pC] = make_float4(dr.x, dr.y, dr.z, jM0.w);
+                pB[pC] = make_float4(r2, dr.y, dr.z, jM0.w);
+                pC++;
+            }
+        }
+
+        //If one of the lists is more than half full we evaluate the currently stored particles
+        if(__any(pC > 32) || !FULL)
+        {
+            density_i[0].smth += 1;
+
+            gradient_i[0].x+= 32;
+            const int k = pC > 32 ? 32 : pC;
+            for(int z=0; z < k; z++)
+            //for(int z=0; z < pC; z++)
+            {
+              int temp = 0;
+              addDensity2(pos_i[0], pB[z], eps2, density_i[0].dens, temp, kernel);
+
+              gradient_i[0].y++;
+            }
+            pC = 0;
+        }
+    }
+#else
+        //Version that first determines which of the ptclIndices are useful and then processes only
+        //those particles
+        float iH = pos_i[0].w*kernel.supportRadius();
+        iH      *= iH;
+
+        int markedIdx = 0;
+
+        const float4 M0 = (FULL || ptclIdx >= 0) ? body_jpos[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, -1.0f);
+
+        pB[laneId] = M0;
+
+        for (int j = 0; j < WARP_SIZE; j++)
+        {
+            const float4 jM0   = make_float4(__shfl(M0.x, j), __shfl(M0.y, j), __shfl(M0.z, j), __shfl(M0.w,j));
+            const float3 dr    = make_float3(jM0.x - pos_i[0].x, jM0.y - pos_i[0].y, jM0.z - pos_i[0].z);
+            const float r2     = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
+
+            bool useParticle   = (r2 <= iH && jM0.w >= 0);
+            //Warp vote to determine if this particle is useful to all threads, if so use it right away
+//            if(__all(useParticle)) addDensity3(pos_i[0], r2, jM0.w, eps2, density_i[0].dens, kernel);
+//            else
+                markedIdx         |= useParticle << j;
+
+            gradient_i[0].x++;       //Number of operations
+//            density_i[0].smth += useParticle;
+        }
+
+        //Sum particles we need
+//        gradient_i[0].y += __popc(markedIdx); //Number of useful operations
+
+
+        //Process the particles we find useful
+        while(__popc(markedIdx))
+        {
+            int idx             = __ffs(markedIdx)-1;   //The index of a useful particle
+            density_i[0].smth += 1;
+
+            //Zero the just used index
+            markedIdx = markedIdx & (~(1 << idx));
+
+            float   jmass = pB[idx].w;
+            float3  jpos  = make_float3(pB[idx].x, pB[idx].y, pB[idx].z);
+            int temp;
+
+            addDensity(pos_i[0], jmass, jpos, eps2, density_i[0].dens, temp, kernel);
+        }
+    }
+#endif
+
+    };
+}; //namespace density
+#endif
+
+#if 0
 namespace density
 {
 
@@ -162,6 +421,7 @@ namespace density
         const float3    posj,
         const float     eps2,
               float    &dens,
+              int      &temp,
         const SPH::kernel_t &kernel)
     {
     #if 1  // to test performance of a tree-walk
@@ -169,6 +429,8 @@ namespace density
       const float r2     = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
       const float r2eps  = r2;// + eps2;
       const float r      = sqrtf(r2eps);
+
+      temp = (fabs(massj*kernel.W(r, pos.w)) > 0);
 
       dens += massj*kernel.W(r, pos.w);
       //Prevent adding ourself, TODO should make this 'if' more efficient, like multiply with something
@@ -211,13 +473,18 @@ namespace density
         #pragma unroll
             for (int k = 0; k < NI; k++)
             {
-              addDensity(pos_i[k], jmass, jpos, eps2, density_i[k].dens, kernel);
+              int temp = 0;
+              addDensity(pos_i[k], jmass, jpos, eps2, density_i[k].dens, temp, kernel);
               density_i[k].smth++;
+
+              gradient_i[k].x++;
+              gradient_i[k].y += temp;
             }
           }
         }
     };
 }; //namespace density
+#endif
 
 namespace derivative
 {
@@ -269,7 +536,7 @@ namespace derivative
             const float4 *body_jvel,
             const float2 *body_jdens,   //Not used here
             const float4 *body_hydro    //Not used here
-            )
+            , float4 *pB,int    &pC)
         {
           SPH::kernel_t kernel;
           const float4 MP = (FULL || ptclIdx >= 0) ? body_jpos[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
@@ -335,10 +602,10 @@ namespace hydroforce
       float temp = massj * (hydroi.x / (densi * densi) + hydroj.x / (densj * densj) + AV);
       temp       = (smthj != 0) ? temp : 0; //Same as above, a 0 smoothing length leads to NaN (divide by 0)
       acc.x           -= temp  * gradW.x;
-      acc.y           -= temp  * gradW.y;
-      acc.z           -= temp  * gradW.z;
-//      acc.y           += (fabs(abs_gradW) > 0);  //Count how often we do something useful in this function
-      //acc.z           += 1; //Count how often we enter this function
+//      acc.y           -= temp  * gradW.y;
+//      acc.z           -= temp  * gradW.z;
+      acc.y           += (fabs(abs_gradW) > 0);  //Count how often we do something useful in this function
+      acc.z           += 1; //Count how often we enter this function
       acc.w           += massj * (hydroi.x / (densi * densi) + 0.5 * AV) * (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z); //eng_dot
     }
 
@@ -360,7 +627,8 @@ namespace hydroforce
             const float4 *body_jpos,
             const float4 *body_jvel,
             const float2 *body_jdens,
-            const float4 *body_hydro)
+            const float4 *body_hydro
+            , float4 *pB,int    &pC)
         {
           float v_sig_max = 0; //TODO implement this value/keep track of it over various directOp calls
 

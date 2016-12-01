@@ -705,7 +705,8 @@ void octree::approximate_gravity(tree_structure &tree)
   double tStart = get_time();
   SPHDensity.execute2(gravStream->s());  //First iteration
   cudaEventRecord(endLocalGrav, gravStream->s());
-#if 1
+
+#if 0
   //TODO copy the output density to the input density?
   tree.activePartlist.zeroMemGPUAsync(gravStream->s());
   SPHDensity.execute2(gravStream->s());  //second iteration
@@ -718,10 +719,9 @@ void octree::approximate_gravity(tree_structure &tree)
   SPHDerivative.execute2(gravStream->s());  //Derivative
 
 
-//  Hier gebleven, de smoothing range moet toegevoegd worden
-//  aan het tree-structure en daarna ook gechecked worden
-//  tijdens de tree-walk
-  compute_properties(tree); //TODO make this smarter as in only compute cells not groups.
+  //Note, I abuse the compute_prop function/opening angle criteria, so you can not use
+  //this for computing gravity at this point.
+  compute_properties(tree); //TODO make this smarter as in only compute cells not groups. And switch between SPH and Gravity
 
 
   tree.interactions.zeroMemGPUAsync(gravStream->s());
@@ -744,7 +744,8 @@ void octree::approximate_gravity(tree_structure &tree)
 
    for(int i=0; i < tree.n; i++)
    {
-       if(tree.bodies_ids[i] < 10)
+       if(i < 32)
+       //if(tree.bodies_ids[i] < 10)
 //           if(i >=3839 && i < 3855)
        //if(i >=3839 && i < 3855)
 //       if(tree.bodies_ids[i] > 15455 && tree.bodies_ids[i] < 15465)

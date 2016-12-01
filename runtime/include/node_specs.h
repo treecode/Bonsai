@@ -103,7 +103,7 @@ inline int getTreeWalkBlocksPerSM(int devMajor, int devMinor)
 #define  LEVELMASK 0xF8000000
 
 #define NLEAF 16
-#define NCRIT 64
+#define NCRIT 32
 #define NTHREAD 128
 
 #define NLEAFTEST 8
