@@ -783,13 +783,15 @@ bool treewalk_control(
     } //for periodic Y
   } //for periodic X
 
+#if 1
   if(laneId == 0)
   {
       ngbsOffset[bid+1] = make_int2(2048*bid, interactionBuffCount); //offset and size
   }
-
+#else
   //Dynamically launch the processing kernel for this group
-  if(laneId == -1)
+  //Set to -1 to disable and to 0 to enable it
+  if(laneId == 0)
   {
 
 
@@ -813,7 +815,7 @@ bool treewalk_control(
       derivative_i[0].y = end-start;
       cudaStreamDestroy(stream);
   }
-
+#endif
 
 
 
