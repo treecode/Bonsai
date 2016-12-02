@@ -70,6 +70,8 @@ void octree::load_kernels() {
   SPHHydro.        create("dev_sph_hydro",           (const void*)&dev_sph_hydro);
   setPressure.     create("set_pressure",            (const void*)&set_pressure);
 
+  SPHDensityNGBTest.     create("testChildKernel2",            (const void*)&testChildKernel2);
+
 
   //Parallel kernels
   approxGravLET.						  create("dev_approximate_gravity_let", 			(const void*)&dev_approximate_gravity_let);

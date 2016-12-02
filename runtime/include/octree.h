@@ -400,6 +400,8 @@ protected:
   my_dev::kernel SPHHydro;
   my_dev::kernel setPressure;
 
+  my_dev::kernel SPHDensityNGBTest;
+
   //Other
   my_dev::kernel directGrav;
 

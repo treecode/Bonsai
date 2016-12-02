@@ -539,6 +539,11 @@ void octree::approximate_gravity(tree_structure &tree)
   tree.activePartlist.zeroMemGPUAsync(gravStream->s());
   LOG("node begend: %d %d iter-> %d\n", node_begend.x, node_begend.y, iter);
 
+  my_dev::dev_mem<int>   ngbsList; ngbsList.cmalloc(1024*1024*2); //Fixed length for testing
+  my_dev::dev_mem<int2>  ngbOffsets; ngbOffsets.cmalloc(1024); //Fixed length for testing 0 is offset,
+
+  ngbOffsets.zeroMemGPUAsync(gravStream->s());
+  ngbsList.zeroMemGPUAsync(gravStream->s());
 
 #if 1
   cudaDeviceSetLimit(cudaLimitPrintfFifoSize, 128*1024*1024);
@@ -572,7 +577,11 @@ void octree::approximate_gravity(tree_structure &tree)
                          tree.bodies_acc1.p(),
                          tree.bodies_dens.p(),
                          tree.bodies_hydro_out.p(),
-                         tree.bodies_grad.p());
+                         tree.bodies_grad.p(),
+
+                         ngbsList.p(),
+                         ngbOffsets.p()
+                          );
 
 
 
@@ -707,6 +716,23 @@ void octree::approximate_gravity(tree_structure &tree)
   SPHDensity.execute2(gravStream->s());  //First iteration
   cudaEventRecord(endLocalGrav, gravStream->s());
 
+
+
+  SPHDensityNGBTest.set_args(0, &tree.n_groups,
+                                ngbOffsets.p(),
+                                tree.groupSizeInfo.p(),
+                                ngbsList.p(),
+                                tree.bodies_Ppos.p(),
+                                tree.bodies_dens.p(),
+                                tree.bodies_Ppos.p(),
+                                tree.bodies_dens.p());
+  //SPHDensityNGBTest.setWork(-1, 32, tree.n_groups);
+  //SPHDensityNGBTest.setWork(-1, 32, tree.n_groups);
+  SPHDensityNGBTest.setWork(-1, 256, tree.n_groups/8);
+  SPHDensityNGBTest.execute2(gravStream->s());  //First iteration
+
+
+
 #if 0
   //TODO copy the output density to the input density?
   tree.activePartlist.zeroMemGPUAsync(gravStream->s());
@@ -736,6 +762,12 @@ void octree::approximate_gravity(tree_structure &tree)
   float ms;
   CU_SAFE_CALL(cudaEventElapsedTime(&ms, startLocalGrav, endLocalGrav));
   fprintf(stderr,"SPH GPU step took: %f ms\t%lg sec\n", ms,  tEnd-tStart);
+
+  ngbOffsets.d2h();
+  for(int i=0; i < 10; i++)
+  {
+      fprintf(stderr,"GRP %d start: %d count: %d \n", i-1, ngbOffsets[i].x,ngbOffsets[i].y);
+  }
 
 
   tree.bodies_dens.d2h();

@@ -62,6 +62,8 @@ extern "C" void  (dev_sph_hydro)( const int n_active_groups, int    n_bodies, fl
 
 extern "C" void  (set_pressure)(const int     n_bodies, const float2 *density, float4       *hydro);
 
+extern "C" void  (testChildKernel2)(const int2   *ngbInfo,const float4 *groupSize,const int    *bodyList_,const float4 *group_body_pos,const float2 *group_body_dens,const float4 *body_jpos,float2 *dens_out);
+
 
 //Parallel.cu kernels
 extern "C" void  (gpu_internalMoveSFC2) (int       n_extract, int       n_bodies, uint4  lowBoundary, uint4  highBoundary, int2       *extractList, int       *indexList, real4     *Ppos, real4     *Pvel, real4     *pos, real4     *vel, real4     *acc0, real4     *acc1, float2    *time, unsigned long long        *body_id, uint4     *body_key);
