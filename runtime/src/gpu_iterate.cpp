@@ -744,7 +744,7 @@ void octree::approximate_gravity(tree_structure &tree)
 
    for(int i=0; i < tree.n; i++)
    {
-       if(i < 32)
+       if(i < 32 || (tree.bodies_grad[i].y > 0 && i < 129))
        //if(tree.bodies_ids[i] < 10)
 //           if(i >=3839 && i < 3855)
        //if(i >=3839 && i < 3855)

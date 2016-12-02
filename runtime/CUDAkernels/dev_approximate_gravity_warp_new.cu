@@ -1,12 +1,14 @@
 #include "bonsai.h"
 // #include "support_kernels.cu0
 #include <stdio.h>
-#include "treewalk_includes.h" 
+
 #include "../profiling/bonsai_timing.h"
 PROF_MODULE(dev_approximate_gravity);
 
 
 #include "node_specs.h"
+
+#include "treewalk_includes.h"
 
 #ifdef WIN32
 #define M_PI        3.14159265358979323846264338328
@@ -189,11 +191,11 @@ static __device__ int warp_exclusive_scan(const bool p)
 /*************** Tree walk ************/
 /**************************************/
 
-  template<int SHIFT>
-__forceinline__ static __device__ int ringAddr(const int i)
-{
-  return (i & ((CELL_LIST_MEM_PER_WARP<<SHIFT) - 1));
-}
+//  template<int SHIFT>
+//__forceinline__ static __device__ int ringAddr(const int i)
+//{
+//  return (i & ((CELL_LIST_MEM_PER_WARP<<SHIFT) - 1));
+//}
 
 #if 1 
 texture<float4, 1, cudaReadModeElementType> texNodeSize;
@@ -231,7 +233,7 @@ static __device__ __forceinline__ float4 add_acc(
 
   const float r2     = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
   const float r2eps  = r2 + eps2;
-  const float rinv   = rsqrtf(r2eps);
+  const float rinv   = (r2 == 0) ? 0 : rsqrtf(r2eps); //JB hack for 0 eps tests
   const float rinv2  = rinv*rinv;
   const float mrinv  = massj * rinv;
   const float mrinv3 = mrinv * rinv2;
@@ -476,6 +478,9 @@ uint2 approximate_gravity(
     /* check if cell opening condition is satisfied */
     const float4 cellCOM1 = make_float4(cellCOM.x, cellCOM.y, cellCOM.z, cellPos.w);
     bool splitCell = split_node_grav_impbh(cellCOM1, groupPos, groupSize);
+
+    interactionCounters.x += 1;
+
 #else /*added by egaburov, see compute_propertiesD.cu for matching code */
     bool splitCell = split_node_grav_impbh(cellPos, groupPos, groupSize);
 #endif
@@ -493,7 +498,6 @@ uint2 approximate_gravity(
     /**********************************************/
 
     const bool isNode = cellPos.w > 0.0f;
-
     {
       bool splitNode  = isNode && splitCell && useCell;
 
@@ -563,8 +567,7 @@ uint2 approximate_gravity(
         const int scatterIdx = approxCounter + approxScatter.x - approxScatter.y;
         if (approxCell && scatterIdx >= 0)
           tmpList[scatterIdx] = cellIdx;
-        if (INTCOUNT)
-          interactionCounters.x += WARP_SIZE*NI;
+        //if (INTCOUNT)  interactionCounters.x += WARP_SIZE*NI;
       }
       approxCellIdx = tmpList[laneIdx];
     }
@@ -649,8 +652,7 @@ uint2 approximate_gravity(
   if (approxCounter > 0)
   {
     approxAcc<NI,false>(acc_i, pos_i, dens_i, laneIdx < approxCounter ? approxCellIdx : -1, eps2);
-    if (INTCOUNT)
-      interactionCounters.x += approxCounter * NI;
+    //if (INTCOUNT) interactionCounters.x += approxCounter * NI;
     approxCounter = 0;
   }
 
