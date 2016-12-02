@@ -154,6 +154,7 @@ if (COMPILE_SM35)
     CUDAkernels/dev_approximate_gravity_warp_new.cu  
     )
   add_definitions("-DKEPLER")
+  #set(GENCODE -gencode arch=compute_61,code=sm_61 -gencode arch=compute_61,code=compute_61 -Xptxas=-v -ftz=true -lineinfo)
   set(GENCODE -gencode arch=compute_35,code=sm_35 -gencode arch=compute_35,code=compute_35 -Xptxas=-v -ftz=true -lineinfo)
   #  set(GENCODE -gencode arch=compute_35,code=sm_35 -gencode arch=compute_35,code=compute_35 -Xptxas=-v -ftz=true -lineinfo)
 
@@ -200,6 +201,8 @@ if (WIN32)
   add_definitions(-D_CRT_SECURE_NO_DEPRECATE)
 endif (WIN32)
 
+
+set(CUDA_SEPARABLE_COMPILATION TRUE)
 
 if (USE_OPENGL) 
   set(CCFILES ${CCFILES} src/renderloop.cpp src/render_particles.cpp)
@@ -305,6 +308,7 @@ cuda_add_executable(${BINARY_NAME}
   OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING} ${KEEP} -Xcompiler="-fPIE" -std=c++11 
   )
 
+
 if (USE_MPI)  
     add_executable(${BINARY_CLR_NAME}
       ${CLR_CCFILES}
@@ -331,6 +335,10 @@ endif(USE_GALACTICS OR USE_GALACTICS_IFORT)
 
 #target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES} -lrt -pie -rdynamic)
 target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES} -lrt ${EXTRA_MPI_LINK_FLAGS})
+target_link_libraries(${BINARY_NAME} -L/usr/local/cuda/lib64 -lcudadevrt)
+##CUDA_ADD_LIBRARY(${BINARY_NAME} -lcudadevrt)
+
+
 if (USE_MPI)
     target_link_libraries(${BINARY_CLR_NAME}  -lrt ${EXTRA_MPI_LINK_FLAGS})
     target_link_libraries(${BINARY_IO_NAME}   -lrt ${EXTRA_MPI_LINK_FLAGS})

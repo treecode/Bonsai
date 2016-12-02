@@ -582,7 +582,8 @@ void octree::approximate_gravity(tree_structure &tree)
   SPHDensity.set_texture<real4>(3,  tree.bodies_Ppos,    "texBody");
 
   SPHDensity.setWork(-1, NTHREAD, nBlocksForTreeWalk);
-  //  SPHDensity.setWork(-1, 32, 1);
+//    SPHDensity.setWork(-1, 32, 1);
+//  SPHDensity.setWork(-1, 128, 13);
 
   //TODO this should be checking for active particles and not just assuming
   //all particles
@@ -744,7 +745,7 @@ void octree::approximate_gravity(tree_structure &tree)
 
    for(int i=0; i < tree.n; i++)
    {
-       if(i < 32)
+       if(i < 32 || (tree.bodies_grad[i].y > 0 && i < 130))
        //if(tree.bodies_ids[i] < 10)
 //           if(i >=3839 && i < 3855)
        //if(i >=3839 && i < 3855)

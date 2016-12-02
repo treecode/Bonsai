@@ -640,6 +640,9 @@ bool treewalk_control(
   //For periodic boundaries, mirror the group and body positions along the periodic axis
   float3 domainSize = {1.0f, 0.125f, 0.125f};   //Hardcoded for our testing IC
 
+
+  long long int startC = clock64();
+
   //TODO use templates or parameterize this at some point
 //  for(int ix=-1; ix <= 1; ix++)     //Periodic around X
   {
@@ -724,7 +727,6 @@ bool treewalk_control(
   } //for periodic X
 
 
-
   //Dynamically launch the processing kernel for this group
   if(laneId == 0)
   {
@@ -799,6 +801,7 @@ bool treewalk_control(
               //TODO remove
               body_grad_out[addr].x += derivative_i[i].x;
               body_grad_out[addr].y += derivative_i[i].y;
+              //if(laneId == 0)body_grad_out[addr].y += endC-startC;
               body_grad_out[addr].z += derivative_i[i].z;
               body_grad_out[addr].w += derivative_i[i].w;
 
