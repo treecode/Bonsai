@@ -238,7 +238,7 @@ namespace density
           )
         {
           SPH::kernel_t kernel;
-#if 0
+#if 1
           const float4 M0 = (FULL || ptclIdx >= 0) ? body_jpos[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
 
           for (int j = 0; j < WARP_SIZE; j++)

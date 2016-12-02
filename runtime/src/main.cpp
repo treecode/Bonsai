@@ -747,6 +747,10 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 
   double t0 = tree->get_time();
 
+
+  bodyDensity.resize((int)bodyPositions.size());
+  bodyHydro.resize((int)bodyPositions.size());
+
   tree->localTree.setN((int)bodyPositions.size());
   tree->allocateParticleMemory(tree->localTree);
 

@@ -208,6 +208,50 @@ __device__ bool split_node_sph_md(
 #define TEXTURES
 
 
+__global__ void testChildKernel(const float4  curGroupSize,
+                                      int    *bodyList,
+                                const int     nBodyList,
+                                const float4 *group_body_pos,
+                                const float2 *group_body_dens,
+                                const float4 *body_jpos,
+                                      float2  *dens_out)
+{
+    const int   groupData       = __float_as_int(curGroupSize.w);
+    const uint body_addr        =   groupData & CRITMASK;
+    const uint nb_i             = ((groupData & INVCMASK) >> CRITBIT) + 1;
+
+
+    uint body_i;
+    body_i    = body_addr + laneId%nb_i;
+          float4 ipos  = group_body_pos[body_i];
+    const float  ismth = group_body_dens[body_i].y;
+    ipos.w = ismth;
+
+    float2 dens = make_float2(0,0);
+    const SPH::kernel_t kernel;
+
+    for(int i=0; i < nBodyList; i+= WARP_SIZE)
+    {
+        const float4 M0 = (i+laneId < nBodyList) ? body_jpos[bodyList[i+laneId]] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+
+        for (int j = 0; j < WARP_SIZE; j++)
+        {
+          const float4 jM0   = make_float4(__shfl(M0.x, j), __shfl(M0.y, j), __shfl(M0.z, j), __shfl(M0.w,j));
+          const float  massj = jM0.w;
+
+          const float3 dr    = make_float3(jM0.x - ipos.x, jM0.y - ipos.y, jM0.z - ipos.z);
+          const float r2     = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
+          const float r2eps  = r2;// + eps2;
+          const float r      = sqrtf(r2eps);
+
+          dens.x += massj*kernel.W(r, ipos.w);
+          dens.y += (fabs(massj*kernel.W(r, ipos.w)) > 0);
+        }
+    }
+    dens_out[laneId] = dens;
+}
+
+
 
 
 template<int SHIFT, int BLOCKDIM2, int NI, bool INTCOUNT, template<int NI2, bool FULL> class directOP>
@@ -227,6 +271,8 @@ uint2 approximate_sph(
                         int             *shmem,
                         float4          *privateInteractionList,
                         int             *cellList,
+                        int             *interactionBuff,
+                        int             &interactionBuffCount,
                         const float4     groupSize,
                         SPH::density::data      density_i   [NI],
                         SPH::derivative::data   derivative_i[NI],
@@ -236,7 +282,7 @@ uint2 approximate_sph(
                         const float      grpH)
 {
   const int laneIdx = threadIdx.x & (WARP_SIZE-1);
-
+#if 0
   /* this helps to unload register pressure */
   float4 pos_i[NI], vel_i[NI], hydro_i[NI];
 #pragma unroll 1
@@ -251,7 +297,7 @@ uint2 approximate_sph(
   //float4 *myInteractionList  = &privateInteractionList[8*threadIdx.x];
   float4 *myInteractionList  = &privateInteractionList[warpId*32];
   int     myInteractionCount = 0;
-
+#endif
 
   uint2 interactionCounters = {0}; /* # of approximate and exact force evaluations */
 
@@ -376,8 +422,13 @@ uint2 approximate_sph(
 
         if (nParticle >= WARP_SIZE)
         {
-          directOP<NI,true>()(acc_i, pos_i, vel_i, ptclIdx, eps2, density_i, derivative_i, hydro_i,
-                  body_pos_j, body_vel_j, body_dens_j, body_hydro_j,myInteractionList, myInteractionCount);
+          //Store the particles for this warp in global memory
+          interactionBuff[interactionBuffCount + laneId] =   ptclIdx;
+          interactionBuffCount += WARP_SIZE;
+
+
+//          directOP<NI,true>()(acc_i, pos_i, vel_i, ptclIdx, eps2, density_i, derivative_i, hydro_i,
+//                              body_pos_j, body_vel_j, body_dens_j, body_hydro_j,myInteractionList, myInteractionCount);
           nParticle  -= WARP_SIZE;
           nProcessed += WARP_SIZE;
           if (INTCOUNT)
@@ -394,9 +445,14 @@ uint2 approximate_sph(
 
           if (directCounter >= WARP_SIZE)
           {
+            //Store the particles for this warp in global memory
+            interactionBuff[interactionBuffCount + laneId] =   tmpList[laneIdx];
+            interactionBuffCount += WARP_SIZE;
+
+
             /* evaluate cells stored in shmem */
-            directOP<NI,true>()(acc_i, pos_i, vel_i, tmpList[laneIdx], eps2, density_i, derivative_i, hydro_i,
-                                body_pos_j, body_vel_j, body_dens_j, body_hydro_j, myInteractionList, myInteractionCount);
+//            directOP<NI,true>()(acc_i, pos_i, vel_i, tmpList[laneIdx], eps2, density_i, derivative_i, hydro_i,
+//                                body_pos_j, body_vel_j, body_dens_j, body_hydro_j, myInteractionList, myInteractionCount);
             directCounter -= WARP_SIZE;
             const int scatterIdx = directCounter + laneIdx - nParticle;
             if (scatterIdx >= 0)
@@ -425,8 +481,14 @@ uint2 approximate_sph(
   //Process remaining items
   if (directCounter > 0)
   {
-    directOP<NI,false>()(acc_i, pos_i, vel_i, laneIdx < directCounter ? directPtclIdx : -1, eps2, density_i, derivative_i, hydro_i,
-            body_pos_j, body_vel_j, body_dens_j, body_hydro_j,myInteractionList, myInteractionCount);
+      if(laneIdx < directCounter)
+      //Store the particles for this warp in global memory
+      interactionBuff[interactionBuffCount + laneId] =   directPtclIdx;
+      interactionBuffCount += directCounter;
+
+
+//    directOP<NI,false>()(acc_i, pos_i, vel_i, laneIdx < directCounter ? directPtclIdx : -1, eps2, density_i, derivative_i, hydro_i,
+//                         body_pos_j, body_vel_j, body_dens_j, body_hydro_j,myInteractionList, myInteractionCount);
     if (INTCOUNT)
       interactionCounters.y += directCounter * NI;
     directCounter = 0;
@@ -486,6 +548,7 @@ bool treewalk_control(
     int             *shmem,
     float4          *privateInteractionList,
     int             *lmem,
+    int             *interactionBuff,
     int2            *interactions,
     int             *active_inout,
     const real4     *body_pos_j,
@@ -568,6 +631,12 @@ bool treewalk_control(
   const float cellH = 0;
 #endif
 
+
+
+  int interactionBuffCount = 0;
+
+
+
   //For periodic boundaries, mirror the group and body positions along the periodic axis
   float3 domainSize = {1.0f, 0.125f, 0.125f};   //Hardcoded for our testing IC
 
@@ -609,6 +678,8 @@ bool treewalk_control(
                         shmem,
                         privateInteractionList,
                         lmem,
+                        interactionBuff,
+                        interactionBuffCount,
                         curGroupSize,
                         dens_i,
                         derivative_i,
@@ -632,6 +703,8 @@ bool treewalk_control(
                         shmem,
                         privateInteractionList,
                         lmem,
+                        interactionBuff,
+                        interactionBuffCount,
                         curGroupSize,
                         dens_i,
                         derivative_i,
@@ -649,6 +722,40 @@ bool treewalk_control(
       } //for periodic Z
     } //for periodic Y
   } //for periodic X
+
+
+
+  //Dynamically launch the processing kernel for this group
+  if(laneId == 0)
+  {
+      cudaStream_t stream;
+      cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking);
+
+      long long int start = clock64();
+
+      testChildKernel<<<1, 32, 0, stream>>>(curGroupSize,
+                                            interactionBuff,
+                                            interactionBuffCount,
+                                            group_body_pos,
+                                            group_body_dens,
+                                            body_pos_j,
+                                            (float2*)lmem);
+
+      //Since we reuse multiple buffers AND write the final result below we need to wait on this kernel to finish
+      //before we can continue with storing the results and processing of the next group
+      cudaDeviceSynchronize();
+      long long int end = clock64();
+      derivative_i[0].y = end-start;
+      cudaStreamDestroy(stream);
+  }
+
+
+
+
+  dens_i[0].dens = ((float2*)lmem)[laneId].x;
+  dens_i[0].smth = ((float2*)lmem)[laneId].y;
+  derivative_i[0].x = interactionBuff[laneId];
+
 
   if (laneId < nb_i)
   {
@@ -685,7 +792,7 @@ bool treewalk_control(
 
               //No addition until we start working on multi-GPU calls
               //dens_i[i].dens       += body_dens_out[addr].x;
-//REMOVE comment TODO              dens_i[i].finalize(group_body_pos[body_i[i]].w);
+//              dens_i[i].finalize(group_body_pos[body_i[i]].w);
               body_dens_out[addr].x = dens_i[i].dens;
               body_dens_out[addr].y = dens_i[i].smth; //The sum has been scaled so we can assign
 
@@ -694,6 +801,14 @@ bool treewalk_control(
               body_grad_out[addr].y += derivative_i[i].y;
               body_grad_out[addr].z += derivative_i[i].z;
               body_grad_out[addr].w += derivative_i[i].w;
+
+
+              if(bid == 0)
+              {
+//                  printf("interactionBuff idx: %d  value: %d \n", laneId, interactionBuff[laneId]);
+
+              }
+
           }
 
           if(directOp<1, true>::type == SPH::HYDROFORCE)
@@ -886,6 +1001,9 @@ void approximate_SPH_main(
 
 
     int *lmem = &MEM_BUF[(CELL_LIST_MEM_PER_WARP<<nWarps2)*blockIdx.x + CELL_LIST_MEM_PER_WARP*warpId];
+
+    int *interactionBuff = &lmem[32*1024];
+
     const bool success = treewalk_control<0,blockDim2,ACCUMULATE, directOp>(
                                     bid,
                                     eps2,
@@ -904,6 +1022,7 @@ void approximate_SPH_main(
                                     shmem,
                                     privateInteractionList,
                                     lmem,
+                                    interactionBuff,
                                     interactions,
                                     active_inout,
                                     body_pos_j,
@@ -998,6 +1117,7 @@ void approximate_SPH_main(
                                               shmem,
                                               privateInteractionList,
                                               lmem,
+                                              interactionBuff,
                                               interactions,
                                               active_inout,
                                               body_pos_j,
@@ -1190,7 +1310,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
           float4    *body_hydro_out,
           float4    *body_grad_out)
     {
-#if 0
+#if 1
   approximate_SPH_main<false, NTHREAD2, SPH::derivative::directOperator>(
           n_active_groups,
            n_bodies,
@@ -1292,7 +1412,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
 }
 
   extern "C"
-__launch_bounds__(NTHREAD,1024/NTHREAD)
+//__launch_bounds__(NTHREAD,1024/NTHREAD)
   __global__ void
   dev_sph_hydro(
           const int n_active_groups,
@@ -1327,7 +1447,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
           float4    *body_hydro_out,
           float4    *body_grad_out)
     {
-#if 0
+#if 1
           approximate_SPH_main<false, NTHREAD2, SPH::hydroforce::directOperator>(
           n_active_groups,
           n_bodies,
