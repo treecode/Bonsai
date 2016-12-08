@@ -238,12 +238,15 @@ namespace density
           )
         {
           SPH::kernel_t kernel;
-#if 0
+#if 1
           const float4 M0 = (FULL || ptclIdx >= 0) ? body_jpos[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
 
-          for (int j = 0; j < WARP_SIZE; j++)
+          const int NGROUPTemp = NCRIT;
+          const int offset     = NGROUPTemp*(laneId / NGROUPTemp);
+          //for (int j = 0; j < WARP_SIZE; j++)
+          for (int j = offset; j < offset+NGROUPTemp; j++)
           {
-            const float4 jM0   = make_float4(__shfl(M0.x, j), __shfl(M0.y, j), __shfl(M0.z, j), __shfl(M0.w,j));
+            const float4 jM0   = make_float4(__shfl(M0.x, j ), __shfl(M0.y, j), __shfl(M0.z, j), __shfl(M0.w,j));
             const float  jmass = jM0.w;
             const float3 jpos  = make_float3(jM0.x, jM0.y, jM0.z);
         #pragma unroll
@@ -251,8 +254,9 @@ namespace density
             {
               int temp = 0;
               addDensity(pos_i[k], jmass, jpos, eps2, density_i[k].dens, temp, kernel);
-              density_i[k].smth++;
+//              density_i[k].smth++;
 
+//
               gradient_i[k].x++;       //Number of operations
               gradient_i[k].y += temp; //Number of useful operations
             }
@@ -542,7 +546,10 @@ namespace derivative
           const float4 MP = (FULL || ptclIdx >= 0) ? body_jpos[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
           const float4 MV = (FULL || ptclIdx >= 0) ? body_jvel[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
 
-          for (int j = 0; j < WARP_SIZE; j++)
+          const int NGROUPTemp = NCRIT;
+          const int offset     = NGROUPTemp*(laneId / NGROUPTemp);
+          //for (int j = 0; j < WARP_SIZE; j++)
+          for (int j = offset; j < offset+NGROUPTemp; j++)
           {
             const float4 jM0   = make_float4(__shfl(MP.x, j), __shfl(MP.y, j), __shfl(MP.z, j), __shfl(MP.w,j));
             const float  jmass = jM0.w;
@@ -602,10 +609,10 @@ namespace hydroforce
       float temp = massj * (hydroi.x / (densi * densi) + hydroj.x / (densj * densj) + AV);
       temp       = (smthj != 0) ? temp : 0; //Same as above, a 0 smoothing length leads to NaN (divide by 0)
       acc.x           -= temp  * gradW.x;
-//      acc.y           -= temp  * gradW.y;
-//      acc.z           -= temp  * gradW.z;
-      acc.y           += (fabs(abs_gradW) > 0);  //Count how often we do something useful in this function
-      acc.z           += 1; //Count how often we enter this function
+      acc.y           -= temp  * gradW.y;
+      acc.z           -= temp  * gradW.z;
+//      acc.y           += (fabs(abs_gradW) > 0);  //Count how often we do something useful in this function
+//      acc.z           += 1; //Count how often we enter this function
       acc.w           += massj * (hydroi.x / (densi * densi) + 0.5 * AV) * (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z); //eng_dot
     }
 
@@ -638,7 +645,10 @@ namespace hydroforce
           const float4 MH = (FULL || ptclIdx >= 0) ? body_hydro[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
           const float2 MD = (FULL || ptclIdx >= 0) ? body_jdens[ptclIdx] : make_float2(0.0f, 0.0f);
 
-          for (int j = 0; j < WARP_SIZE; j++)
+          const int NGROUPTemp = NCRIT;
+          const int offset     = NGROUPTemp*(laneId / NGROUPTemp);
+          //for (int j = 0; j < WARP_SIZE; j++)
+          for (int j = offset; j < offset+NGROUPTemp; j++)
           {
             const float4 jM0   = make_float4(__shfl(MP.x, j), __shfl(MP.y, j), __shfl(MP.z, j), __shfl(MP.w,j));
             const float  jmass = jM0.w;

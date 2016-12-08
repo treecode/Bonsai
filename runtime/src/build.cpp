@@ -67,6 +67,7 @@ void octree::allocateParticleMemory(tree_structure &tree)
   //Tree properties, tree size is not known at fore hand so
   //allocate worst possible outcome
   int tempmem = n_bodies ; //Some default size in case tree.n is small
+  if(NLEAF < 16) tempmem *= 2;
   if(tree.n < 1024)
     tempmem = 2048;
 
@@ -221,7 +222,8 @@ void octree::build (tree_structure &tree) {
       memBufOffset = compactList.cmalloc_copy(tree.generalBuffer1, tree.n*2, memBufOffset);
   int memBufOffsetValidList = memBufOffset;
 
-  int tempmem = std::max(2048, tree.n); //Some default size in case tree.n is small
+  const int factor = (NLEAF < 16) ? 2 : 1;
+  int tempmem = std::max(2048, tree.n*factor); //Some default size in case tree.n is small
 
   memBufOffset = node_key.cmalloc_copy   (tree.generalBuffer1, tempmem,  memBufOffset);
   memBufOffset = levelOffset.cmalloc_copy(tree.generalBuffer1, 256,      memBufOffset);

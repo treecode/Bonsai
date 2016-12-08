@@ -543,11 +543,17 @@ KERNEL_DECLARE(gpu_setPHGroupData)(const int n_groups,
 
   if(bid >= n_groups)     return;
 
-  //Do a reduction on the particles assigned to this group
+  //We set a default amount of shared memory to make sure that the reduction has enough memory
+  //independent of the number of threads that is actually launched.
+  #if NCRIT > 64
+      #error "Fatal, NCRIT > 64 increase shared memory allocation below"
+  #endif
 
-  volatile __shared__ float3 shmem[2*NCRIT];
+  //Do a reduction on the particles assigned to this group
+  const int NCRIT_TEMP = 64;
+  volatile __shared__ float3 shmem[2*NCRIT_TEMP];
   volatile float3 *sh_rmin = (float3*)&shmem [ 0];
-  volatile float3 *sh_rmax = (float3*)&shmem[NCRIT];
+  volatile float3 *sh_rmax = (float3*)&shmem[NCRIT_TEMP];
 
   float3 r_min = make_float3(+1e10f, +1e10f, +1e10f);
   float3 r_max = make_float3(-1e10f, -1e10f, -1e10f);

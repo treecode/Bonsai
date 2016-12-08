@@ -38,7 +38,8 @@ void octree::compute_properties(tree_structure &tree) {
   //Set the group properties
   setPHGroupData.set_args(0, &tree.n_groups, &tree.n, tree.bodies_Ppos.p(), tree.group_list.p(),
                              tree.groupCenterInfo.p(),tree.groupSizeInfo.p());
-  setPHGroupData.setWork(-1, NCRIT, tree.n_groups);
+  const int nthreads = std::max(32,NCRIT);
+  setPHGroupData.setWork(-1, nthreads, tree.n_groups);
   setPHGroupData.execute2(copyStream->s());
 
   //Set valid list to zero to reset the active particles

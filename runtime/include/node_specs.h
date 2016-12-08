@@ -103,12 +103,33 @@ inline int getTreeWalkBlocksPerSM(int devMajor, int devMinor)
 #define  LEVELMASK 0xF8000000
 
 #define NLEAF 16
-#define NCRIT 32
+#define NCRIT 8
 #define NTHREAD 128
 
-#define NLEAFTEST 8
+#if NLEAF == 1
 
-#if NLEAF == 8
+#define NLEAF2 1
+#define LEAFBIT 31
+#define BODYMASK 0x7FFFFFFF
+#define INVBMASK 0x80000000
+
+
+#elif NLEAF == 2
+
+#define NLEAF2 2
+#define LEAFBIT 30
+#define BODYMASK 0x3FFFFFFF
+#define INVBMASK 0xC0000000
+
+#elif NLEAF == 4
+
+#define NLEAF2 2
+#define LEAFBIT 30
+#define BODYMASK 0x3FFFFFFF
+#define INVBMASK 0xC0000000
+
+
+#elif NLEAF == 8
 
 #define NLEAF2 3
 #define LEAFBIT 29
@@ -148,7 +169,31 @@ inline int getTreeWalkBlocksPerSM(int devMajor, int devMinor)
 #endif
 
 
-#if NCRIT == 8
+#if NCRIT == 1
+
+#define NCRIT2 2
+#define CRITBIT 30
+#define CRITMASK 0x3FFFFFFF
+#define INVCMASK 0xC0000000
+
+
+#elif NCRIT == 2
+
+#define NCRIT2 2
+#define CRITBIT 30
+#define CRITMASK 0x3FFFFFFF
+#define INVCMASK 0xC0000000
+
+
+#elif NCRIT == 4
+
+#define NCRIT2 2
+#define CRITBIT 30
+#define CRITMASK 0x3FFFFFFF
+#define INVCMASK 0xC0000000
+
+
+#elif NCRIT == 8
 
 #define NCRIT2 3
 #define CRITBIT 29
@@ -224,7 +269,7 @@ inline int getTreeWalkBlocksPerSM(int devMajor, int devMinor)
 
 
 #if NCRIT < NLEAF
-#error "Fatal, NCRIT < NLEAF. Please check that NCRIT >= NLEAF"
+//#error "Fatal, NCRIT < NLEAF. Please check that NCRIT >= NLEAF"
 #endif
 
 #endif /* _NODE_SPECS_H_ */

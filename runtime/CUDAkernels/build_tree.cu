@@ -255,7 +255,7 @@ KERNEL_DECLARE(cl_build_valid_list)(int n_bodies,
   const uint id  = bid * blockDim.x + tid;
   const uint4 key_F = {0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF};
   
-  if (id >= n_bodies) return;   // >=   since the last particle is extra boudnary particle
+  if (id >= n_bodies) return;   // >=   since the last particle is extra boundary particle
   
   uint4 mask = get_mask(level);
   mask.x = mask.x | ((uint)1 << 30) | ((uint)1 << 31);
@@ -341,7 +341,7 @@ KERNEL_DECLARE(cl_build_nodes)(uint level,
   
     uint4 key  = bodies_key[bi];
     uint4 mask = get_mask(level);
-    key = make_uint4(key.x & mask.x, key.y & mask.y, key.z & mask.z, 0); 
+           key = make_uint4(key.x & mask.x, key.y & mask.y, key.z & mask.z, 0);
 
     node_bodies[offset+id] = make_uint2(bi | (level << BITLEVELS), bj);
     node_key   [offset+id] = key;
@@ -448,7 +448,6 @@ KERNEL_DECLARE(cl_link_tree)(int n_nodes,
 
   uint2 cij;
 
-  
   if(id > 0)
     cij = level_list[level-1];
 

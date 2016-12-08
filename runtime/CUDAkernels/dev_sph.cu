@@ -654,6 +654,30 @@ bool treewalk_control(
 
   long long int endC = clock64();
 
+  //Reduce the parts into a final result using a shuffle reduce
+  //Should this depend on the size of the group?
+  if(directOp<1, true>::type == SPH::DENSITY)
+  {
+      dens_i[0].dens += __shfl_down(dens_i[0].dens, 16);
+      dens_i[0].dens += __shfl_down(dens_i[0].dens,  8);
+//      dens_i[0].dens += __shfl_down(dens_i[0].dens,  4);
+//      dens_i[0].dens += __shfl_down(dens_i[0].dens,  2);
+  }
+//
+//  derivative_i[0].y += __shfl_down(derivative_i[0].y, 16);
+//  derivative_i[0].y += __shfl_down(derivative_i[0].y,  8);
+//  derivative_i[0].y += __shfl_down(derivative_i[0].y,  4);
+//  derivative_i[0].y += __shfl_down(derivative_i[0].y,  2);
+//  derivative_i[0].x += __shfl_down(derivative_i[0].x, 16);
+//  derivative_i[0].x += __shfl_down(derivative_i[0].x,  8);
+//  derivative_i[0].x += __shfl_down(derivative_i[0].x,  4);
+//  derivative_i[0].x += __shfl_down(derivative_i[0].x,  2);
+//
+//  body_acc_out[laneId].x = body_i[0];
+//  body_acc_out[laneId].y = dens_i[0].dens;
+//  body_acc_out[laneId].z = derivative_i[0].x;
+//  body_acc_out[laneId].w = derivative_i[0].y;
+
   if (laneId < nb_i)
   {
     for(int i=0; i < ni; i++)
@@ -689,16 +713,17 @@ bool treewalk_control(
 
               //No addition until we start working on multi-GPU calls
               //dens_i[i].dens       += body_dens_out[addr].x;
-//REMOVE comment TODO              dens_i[i].finalize(group_body_pos[body_i[i]].w);
+              dens_i[i].finalize(group_body_pos[body_i[i]].w);
               body_dens_out[addr].x = dens_i[i].dens;
               body_dens_out[addr].y = dens_i[i].smth; //The sum has been scaled so we can assign
 
               //TODO remove
-              body_grad_out[addr].x += derivative_i[i].x;
-              //body_grad_out[addr].y += derivative_i[i].y;
-              if(laneId == 0) body_grad_out[addr].y += endC-startC;
-              body_grad_out[addr].z += derivative_i[i].z;
-              body_grad_out[addr].w += derivative_i[i].w;
+              body_grad_out[addr].x = derivative_i[i].x;
+
+              if(laneId == -1) body_grad_out[addr].y += endC-startC;
+              else body_grad_out[addr].y = derivative_i[i].y;
+              body_grad_out[addr].z = derivative_i[i].z;
+              body_grad_out[addr].w = derivative_i[i].w;
           }
 
           if(directOp<1, true>::type == SPH::HYDROFORCE)
@@ -883,10 +908,10 @@ void approximate_SPH_main(
 
     bid   = shmemv[0];
     if (bid >= n_active_groups) return;
-//    if (bid >= 1) return; //JB TDO REMOVE
 
+//    if (bid >= 1) return; //JB TDO REMOVE
 //    if(directOp<1, true>::type == SPH::HYDROFORCE)
-//        if(bid != 59) continue;//JB TODO REMOVE
+//    if(bid != 59) continue;//JB TODO REMOVE
 
 
 
@@ -1195,7 +1220,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
           float4    *body_hydro_out,
           float4    *body_grad_out)
     {
-#if 0
+#if 1
   approximate_SPH_main<false, NTHREAD2, SPH::derivative::directOperator>(
           n_active_groups,
            n_bodies,
@@ -1332,7 +1357,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
           float4    *body_hydro_out,
           float4    *body_grad_out)
     {
-#if 0
+#if 1
           approximate_SPH_main<false, NTHREAD2, SPH::hydroforce::directOperator>(
           n_active_groups,
           n_bodies,
