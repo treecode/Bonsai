@@ -220,6 +220,9 @@ namespace density
 
         static const SPHVal type = SPH::DENSITY;
 
+
+
+
         __device__ __forceinline__ void operator()(
                 float4  acc_i[NI],
           const float4  pos_i[NI],
@@ -232,9 +235,7 @@ namespace density
           const float4 *body_jpos,
           const float4 *body_jvel,
           const float2 *body_jdens,   //Not used here
-          const float4 *body_hydro,    //Not used here
-                float4 *pB,
-                int    &pC
+          const float4 *body_hydro    //Not used here
           )
         {
           SPH::kernel_t kernel;
@@ -243,7 +244,7 @@ namespace density
 
           const int NGROUPTemp = NCRIT;
           const int offset     = NGROUPTemp*(laneId / NGROUPTemp);
-          //for (int j = 0; j < WARP_SIZE; j++)
+//          for (int j = 0; j < WARP_SIZE; j++)
           for (int j = offset; j < offset+NGROUPTemp; j++)
           {
             const float4 jM0   = make_float4(__shfl(M0.x, j ), __shfl(M0.y, j), __shfl(M0.z, j), __shfl(M0.w,j));
@@ -526,7 +527,7 @@ namespace derivative
     struct directOperator {
 
          static const SPHVal type = SPH::DERIVATIVE;
-
+#if 0
         __device__ __forceinline__ void operator()(
                   float4  acc_i[NI],
             const float4  pos_i[NI],
@@ -540,7 +541,7 @@ namespace derivative
             const float4 *body_jvel,
             const float2 *body_jdens,   //Not used here
             const float4 *body_hydro    //Not used here
-            , float4 *pB,int    &pC)
+            )
         {
           SPH::kernel_t kernel;
           const float4 MP = (FULL || ptclIdx >= 0) ? body_jpos[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
@@ -548,7 +549,7 @@ namespace derivative
 
           const int NGROUPTemp = NCRIT;
           const int offset     = NGROUPTemp*(laneId / NGROUPTemp);
-          //for (int j = 0; j < WARP_SIZE; j++)
+//          for (int j = 0; j < WARP_SIZE; j++)
           for (int j = offset; j < offset+NGROUPTemp; j++)
           {
             const float4 jM0   = make_float4(__shfl(MP.x, j), __shfl(MP.y, j), __shfl(MP.z, j), __shfl(MP.w,j));
@@ -563,6 +564,52 @@ namespace derivative
             }
           }
         }
+#else
+        __device__ __forceinline__ void operator()(
+                  float4  acc_i[NI],
+            const float4  pos_i[NI],
+            const float4  vel_i[NI],
+            const int     ptclIdx,
+            const float   eps2,
+            SPH::density::data  density_i[NI],
+            SPH::derivative::data gradient_i[NI],
+            const float4  hydro_i[NI],  //Not used here
+            const float4 *body_jpos,
+            const float4 *body_jvel,
+            const float2 *body_jdens,   //Not used here
+            const float4 *body_hydro    //Not used here
+            )
+        {
+          SPH::kernel_t kernel;
+          const float4 MP = (FULL || ptclIdx >= 0) ? body_jpos[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+          const float4 MV = (FULL || ptclIdx >= 0) ? body_jvel[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+
+          const int NGROUPTemp = NCRIT;
+          const int offset     = NGROUPTemp*(laneId / NGROUPTemp);
+//          for (int j = 0; j < WARP_SIZE; j++)
+          for (int j = offset; j < offset+NGROUPTemp; j++)
+          {
+                const float4 jM0      = make_float4(__shfl(MP.x, j), __shfl(MP.y, j), __shfl(MP.z, j), __shfl(MP.w,j));
+                const float3 dr       = make_float3(jM0.x - pos_i[0].x, jM0.y - pos_i[0].y, jM0.z - pos_i[0].z);
+                const float r         = sqrtf(dr.x*dr.x + dr.y*dr.y + dr.z*dr.z);
+
+                const float abs_gradW = kernel.abs_gradW(r, pos_i[0].w);
+
+                const float4 gradW = (r > 0) ? make_float4(abs_gradW * dr.x / r, abs_gradW * dr.y / r, abs_gradW * dr.z / r, 0.0) : (float4){0.0, 0.0, 0.0, 0.0};
+
+                const float3 jvel  = make_float3(__shfl(MV.x, j), __shfl(MV.y, j), __shfl(MV.z, j));
+                const float3 dv    = make_float3(jvel.x - vel_i[0].x, jvel.y - vel_i[0].y, jvel.z - vel_i[0].z);
+                gradient_i[0].x -= jM0.w* (dv.y * gradW.z - dv.z * gradW.y);
+                gradient_i[0].y -= jM0.w* (dv.z * gradW.x - dv.x * gradW.z);
+                gradient_i[0].z -= jM0.w* (dv.x * gradW.y - dv.y * gradW.x);
+                gradient_i[0].w -= jM0.w* (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z);
+
+          }
+        }
+
+#endif
+
+
     };
 }; //namespace derivative
 
@@ -622,6 +669,7 @@ namespace hydroforce
 
          static const SPHVal type = SPH::HYDROFORCE;
 
+#if 0
         __device__ __forceinline__ void operator()(
                   float4  acc_i[NI],
             const float4  pos_i[NI],
@@ -666,9 +714,78 @@ namespace hydroforce
           }//for WARP_SIZE
 
           //force[id].dt = PARAM::C_CFL * 2.0 * ith.smth / v_sig_max;
-
-
         }
+#else
+
+        __device__ __forceinline__ void operator()(
+                  float4  acc_i[NI],
+            const float4  pos_i[NI],
+            const float4  vel_i[NI],
+            const int     ptclIdx,
+            const float   eps2,
+            SPH::density::data    density_i[NI],
+            SPH::derivative::data gradient_i[NI],
+            const float4  hydro_i[NI],
+            const float4 *body_jpos,
+            const float4 *body_jvel,
+            const float2 *body_jdens,
+            const float4 *body_hydro)
+        {
+          float v_sig_max = 0; //TODO implement this value/keep track of it over various directOp calls
+
+          SPH::kernel_t kernel;
+          const float4 MP = (FULL || ptclIdx >= 0) ? body_jpos [ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+          const float4 MV = (FULL || ptclIdx >= 0) ? body_jvel [ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+          const float4 MH = (FULL || ptclIdx >= 0) ? body_hydro[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+          const float2 MD = (FULL || ptclIdx >= 0) ? body_jdens[ptclIdx] : make_float2(0.0f, 0.0f);
+
+          const int NGROUPTemp = NCRIT;
+          const int offset     = NGROUPTemp*(laneId / NGROUPTemp);
+          //for (int j = 0; j < WARP_SIZE; j++)
+          for (int j = offset; j < offset+NGROUPTemp; j++)
+          {
+            const float4 jM0   = make_float4(__shfl(MP.x, j), __shfl(MP.y, j), __shfl(MP.z, j), __shfl(MP.w,j));
+            const float3 dr    = make_float3(pos_i[0].x - jM0.x, pos_i[0].y - jM0.y, pos_i[0].z - jM0.z);
+
+            const float3 jvel  = make_float3(__shfl(MV.x, j), __shfl(MV.y, j), __shfl(MV.z, j));
+            const float3 dv    = make_float3(vel_i[0].x - jvel.x, vel_i[0].y - jvel.y, vel_i[0].z - jvel.z);
+
+
+            //
+            const float r        = sqrtf(dr.x*dr.x + dr.y*dr.y + dr.z*dr.z);
+            const float xv_inner = dr.x * dv.x + dr.y * dv.y + dr.z * dv.z;
+            const float w_ij     = (xv_inner < 0.0f) ? xv_inner / r : 0.0f;
+
+            const float2 jD    = make_float2(__shfl(MD.x, j), __shfl(MD.y, j));
+            //
+            const float ith_abs_gradW = kernel.abs_gradW(r, pos_i[0].w);
+            const float jth_abs_gradW = (jD.y != 0) ? kernel.abs_gradW(r, jD.y) : 0.0f; //Returns NaN if smthj is 0 which happens if we do not use the particle, so 'if' for now
+            const float abs_gradW     = 0.5f * (ith_abs_gradW + jth_abs_gradW);
+            const float4 gradW        = (r > 0) ? make_float4(abs_gradW * dr.x / r, abs_gradW * dr.y / r, abs_gradW * dr.z / r, 0.0f)
+                                                : make_float4(0.0f,0.0f,0.0f,0.0f);
+            //AV
+            const float3 jH       = make_float3(__shfl(MH.x, j), __shfl(MH.y, j), __shfl(MH.w,j)); //Note w in z location
+
+            const float v_sig     = hydro_i[0].y + jH.y - 3.0f * w_ij;
+                        v_sig_max = (v_sig_max < v_sig) ? v_sig : v_sig_max;
+            const float AV        = - 0.5f * v_sig * w_ij / (0.5f * (density_i[0].dens + jD.x)) * 0.5f * (hydro_i[0].w + jH.z);
+
+
+            float temp = jM0.w * (hydro_i[0].x / (density_i[0].dens * density_i[0].dens) + jH.x / (jD.x * jD.x) + AV);
+            temp       = (jD.y != 0) ? temp : 0; //Same as above, a 0 smoothing length leads to NaN (divide by 0)
+
+      //      acc.y           += (fabs(abs_gradW) > 0);  //Count how often we do something useful in this function
+      //      acc.z           += 1; //Count how often we enter this function
+            acc_i[0].w           += jM0.w * (hydro_i[0].x / (density_i[0].dens * density_i[0].dens)  + 0.5 * AV) * (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z); //eng_dot
+            acc_i[0].x           -= temp  * gradW.x;
+            acc_i[0].y           -= temp  * gradW.y;
+            acc_i[0].z           -= temp  * gradW.z;
+          }//for WARP_SIZE
+
+          //force[id].dt = PARAM::C_CFL * 2.0 * ith.smth / v_sig_max;
+        }
+#endif
+
     };
 }; //namespace hydroforce
 

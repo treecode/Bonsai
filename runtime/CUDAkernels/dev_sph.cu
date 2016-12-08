@@ -31,8 +31,6 @@ PROF_MODULE(dev_approximate_gravity);
 /**************************************/
 
 
-
-
 ///* Bonsai SC2014 Kernel */
 //
 //static __device__ __forceinline__ void computeDensityAndNgb(
@@ -247,12 +245,6 @@ uint2 approximate_sph(
   }
 
 
-
-  //float4 *myInteractionList  = &privateInteractionList[8*threadIdx.x];
-  float4 *myInteractionList  = &privateInteractionList[warpId*32];
-  int     myInteractionCount = 0;
-
-
   uint2 interactionCounters = {0}; /* # of approximate and exact force evaluations */
 
 
@@ -377,7 +369,7 @@ uint2 approximate_sph(
         if (nParticle >= WARP_SIZE)
         {
           directOP<NI,true>()(acc_i, pos_i, vel_i, ptclIdx, eps2, density_i, derivative_i, hydro_i,
-                  body_pos_j, body_vel_j, body_dens_j, body_hydro_j,myInteractionList, myInteractionCount);
+                  body_pos_j, body_vel_j, body_dens_j, body_hydro_j);
           nParticle  -= WARP_SIZE;
           nProcessed += WARP_SIZE;
           if (INTCOUNT)
@@ -396,7 +388,7 @@ uint2 approximate_sph(
           {
             /* evaluate cells stored in shmem */
             directOP<NI,true>()(acc_i, pos_i, vel_i, tmpList[laneIdx], eps2, density_i, derivative_i, hydro_i,
-                                body_pos_j, body_vel_j, body_dens_j, body_hydro_j, myInteractionList, myInteractionCount);
+                                body_pos_j, body_vel_j, body_dens_j, body_hydro_j);
             directCounter -= WARP_SIZE;
             const int scatterIdx = directCounter + laneIdx - nParticle;
             if (scatterIdx >= 0)
@@ -426,7 +418,7 @@ uint2 approximate_sph(
   if (directCounter > 0)
   {
     directOP<NI,false>()(acc_i, pos_i, vel_i, laneIdx < directCounter ? directPtclIdx : -1, eps2, density_i, derivative_i, hydro_i,
-            body_pos_j, body_vel_j, body_dens_j, body_hydro_j,myInteractionList, myInteractionCount);
+            body_pos_j, body_vel_j, body_dens_j, body_hydro_j);
     if (INTCOUNT)
       interactionCounters.y += directCounter * NI;
     directCounter = 0;
