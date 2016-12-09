@@ -258,8 +258,8 @@ namespace density
 //              density_i[k].smth++;
 
 //
-              gradient_i[k].x++;       //Number of operations
-              gradient_i[k].y += temp; //Number of useful operations
+//              gradient_i[k].x++;       //Number of operations
+//              gradient_i[k].y += temp; //Number of useful operations
             }
           }
         }

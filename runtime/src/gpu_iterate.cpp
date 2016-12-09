@@ -582,7 +582,7 @@ void octree::approximate_gravity(tree_structure &tree)
   SPHDensity.set_texture<real4>(3,  tree.bodies_Ppos,    "texBody");
 
   SPHDensity.setWork(-1, NTHREAD, nBlocksForTreeWalk);
-  //  SPHDensity.setWork(-1, 32, 1);
+//  SPHDensity.setWork(-1, 32, 1);
 
   //TODO this should be checking for active particles and not just assuming
   //all particles
@@ -706,12 +706,15 @@ void octree::approximate_gravity(tree_structure &tree)
   SPHDensity.execute2(gravStream->s());  //First iteration
   cudaEventRecord(endLocalGrav, gravStream->s());
 
-#if 0
+#if 1
   //TODO copy the output density to the input density?
   tree.activePartlist.zeroMemGPUAsync(gravStream->s());
   SPHDensity.execute2(gravStream->s());  //second iteration
+
+
   tree.activePartlist.zeroMemGPUAsync(gravStream->s());
   SPHDensity.execute2(gravStream->s());  //Third iteration
+
 
   setPressure.execute2(gravStream->s());
 
@@ -744,8 +747,8 @@ void octree::approximate_gravity(tree_structure &tree)
 
    for(int i=0; i < tree.n; i++)
    {
-       if(i < 32 || (tree.bodies_grad[i].y > 0 && i < 129))
-       //if(tree.bodies_ids[i] < 10)
+//       if(i < 32 || (tree.bodies_grad[i].y > 0 && i < 129))
+//       if(tree.bodies_ids[i] < 10)
 //           if(i >=3839 && i < 3855)
        //if(i >=3839 && i < 3855)
 //       if(tree.bodies_ids[i] > 15455 && tree.bodies_ids[i] < 15465)
@@ -780,11 +783,17 @@ void octree::approximate_gravity(tree_structure &tree)
   long long openingTestSum = 0;
   long long distanceTestSum = 0;
   int minOps = 10e6, maxOps = 0;
-  for(int i=0; i < tree.n; i++) { openingTestSum     += tree.interactions[i].x; distanceTestSum     += tree.interactions[i].y;
-                                  minOps = min(minOps, tree.interactions[i].y); maxOps = max(maxOps, tree.interactions[i].y); }
-  fprintf(stderr,"Number of opening angle checks: %lld [ %lld ] distance test: %lld [ Avg: %lld Min: %d Max: %d ] \n",
+  long long interactionUsefull = 0;
+  long long interactionTotal   = 0;
+  for(int i=0; i < tree.n; i++) {
+      openingTestSum     += tree.interactions[i].x; distanceTestSum     += tree.interactions[i].y;
+      minOps = min(minOps, tree.interactions[i].y); maxOps = max(maxOps, tree.interactions[i].y);
+      interactionTotal   += tree.bodies_grad[i].x;  interactionUsefull   += tree.bodies_grad[i].y;
+  }
+  fprintf(stderr,"Number of opening angle checks: %lld [ %lld ] distance test: %lld [ Avg: %lld Min: %d Max: %d ] Interactions: avg-total: %lld avg-useful: %lld \n",
           openingTestSum,  openingTestSum  / tree.n,
-          distanceTestSum, distanceTestSum / tree.n, minOps, maxOps);
+          distanceTestSum, distanceTestSum / tree.n, minOps, maxOps,
+          interactionTotal / tree.n, interactionUsefull / tree.n);
 #endif
 
 #if 0

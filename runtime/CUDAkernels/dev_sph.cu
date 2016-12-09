@@ -509,6 +509,13 @@ bool treewalk_control(
   body_i[0]    = body_addr + laneId%nb_i;
   body_i[1]    = body_addr + WARP_SIZE + laneId%(nb_i - WARP_SIZE);
 
+  /*
+   * TODO fix the assignment, right now we assume each group has NCRIT particles when doing the reduction at the end
+   * if this is not the case then the reduction will be reading the wrong lanes!
+   * TODO Also consider removing all the [2] sized arrays as 64 particles per group is significantly slower and hence will
+   * probably not be used in the SPH kernels
+   */
+
 
   float4 pos_i [2], vel_i [2], acc_i [2], hydro_i[2];
   SPH::density::data    dens_i[2];
@@ -646,29 +653,26 @@ bool treewalk_control(
 
   long long int endC = clock64();
 
-  //Reduce the parts into a final result using a shuffle reduce
-  //Should this depend on the size of the group?
+  if(directOp<1, true>::type == SPH::DERIVATIVE)
+  {
+      derivative_i[0].x = warpGroupReduce(derivative_i[0].x);
+      derivative_i[0].y = warpGroupReduce(derivative_i[0].y);
+      derivative_i[0].z = warpGroupReduce(derivative_i[0].z);
+      derivative_i[0].w = warpGroupReduce(derivative_i[0].w);
+  }
   if(directOp<1, true>::type == SPH::DENSITY)
   {
-      dens_i[0].dens += __shfl_down(dens_i[0].dens, 16);
-      dens_i[0].dens += __shfl_down(dens_i[0].dens,  8);
-//      dens_i[0].dens += __shfl_down(dens_i[0].dens,  4);
-//      dens_i[0].dens += __shfl_down(dens_i[0].dens,  2);
+      dens_i[0].dens    = warpGroupReduce(dens_i[0].dens);
+      //              derivative_i[0].x = warpGroupReduce(derivative_i[0].x);
+      //              derivative_i[0].y = warpGroupReduce(derivative_i[0].y);
   }
-//
-//  derivative_i[0].y += __shfl_down(derivative_i[0].y, 16);
-//  derivative_i[0].y += __shfl_down(derivative_i[0].y,  8);
-//  derivative_i[0].y += __shfl_down(derivative_i[0].y,  4);
-//  derivative_i[0].y += __shfl_down(derivative_i[0].y,  2);
-//  derivative_i[0].x += __shfl_down(derivative_i[0].x, 16);
-//  derivative_i[0].x += __shfl_down(derivative_i[0].x,  8);
-//  derivative_i[0].x += __shfl_down(derivative_i[0].x,  4);
-//  derivative_i[0].x += __shfl_down(derivative_i[0].x,  2);
-//
-//  body_acc_out[laneId].x = body_i[0];
-//  body_acc_out[laneId].y = dens_i[0].dens;
-//  body_acc_out[laneId].z = derivative_i[0].x;
-//  body_acc_out[laneId].w = derivative_i[0].y;
+  if(directOp<1, true>::type == SPH::HYDROFORCE)
+  {
+      acc_i[0].x = warpGroupReduce(acc_i[0].x);
+      acc_i[0].y = warpGroupReduce(acc_i[0].y);
+      acc_i[0].z = warpGroupReduce(acc_i[0].z);
+      acc_i[0].w = warpGroupReduce(acc_i[0].w);
+  }
 
   if (laneId < nb_i)
   {
@@ -705,25 +709,26 @@ bool treewalk_control(
 
               //No addition until we start working on multi-GPU calls
               //dens_i[i].dens       += body_dens_out[addr].x;
+
               dens_i[i].finalize(group_body_pos[body_i[i]].w);
               body_dens_out[addr].x = dens_i[i].dens;
               body_dens_out[addr].y = dens_i[i].smth; //The sum has been scaled so we can assign
 
               //TODO remove
-              body_grad_out[addr].x = derivative_i[i].x;
+//              body_grad_out[addr].x = derivative_i[i].x;
 
-              if(laneId == -1) body_grad_out[addr].y += endC-startC;
-              else body_grad_out[addr].y = derivative_i[i].y;
-              body_grad_out[addr].z = derivative_i[i].z;
-              body_grad_out[addr].w = derivative_i[i].w;
+//              if(laneId == -1) body_grad_out[addr].y += endC-startC;
+//              else body_grad_out[addr].y = derivative_i[i].y;
+//              body_grad_out[addr].z = derivative_i[i].z;
+//              body_grad_out[addr].w = derivative_i[i].w;
           }
 
           if(directOp<1, true>::type == SPH::HYDROFORCE)
           {
-              body_acc_out      [addr].x += acc_i[i].x;
-              body_acc_out      [addr].y += acc_i[i].y;
-              body_acc_out      [addr].z += acc_i[i].z;
-              body_acc_out      [addr].w += acc_i[i].w;
+              body_acc_out      [addr].x += acc_i[0].x;
+              body_acc_out      [addr].y += acc_i[0].y;
+              body_acc_out      [addr].z += acc_i[0].z;
+              body_acc_out      [addr].w += acc_i[0].w;
           }
         }
         active_inout[addr] = 1;

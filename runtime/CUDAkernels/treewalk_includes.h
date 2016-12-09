@@ -153,5 +153,14 @@ float warpAllReduceMin(float val)
   return val;
 }
 
+__inline__ __device__
+float warpGroupReduce(float val)
+{
+    for(int i=NCRIT; i < WARP_SIZE; i*=2)
+        val += __shfl_down(val,  i);
+    return val;
+}
+
+
 
 #endif
