@@ -9,6 +9,11 @@ typedef float4 real4;
 //Dont uncomment this yet
 #define DO_BLOCK_TIMESTEP
 
+
+//This will depend on the SPH method, I stick it here to be able to prevent
+//having the loose constants around
+#define SPH_KERNEL_SIZE 3.5f
+
 //Enabling the following increases the number of particle properties
 //exchanged during mpi particle exchange. Only required if you run
 //block time steps. Not needed in the default shared time-step mode.

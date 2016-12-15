@@ -54,7 +54,7 @@ namespace SPH
 
 
         static __device__  __forceinline__ float supportRadius(){
-            return 3.5f;
+            return SPH_KERNEL_SIZE;
         }
 
         template <typename type>  type
@@ -594,7 +594,6 @@ namespace derivative
                 const float r         = sqrtf(dr.x*dr.x + dr.y*dr.y + dr.z*dr.z);
 
                 const float abs_gradW = kernel.abs_gradW(r, pos_i[0].w);
-
                 const float4 gradW = (r > 0) ? make_float4(abs_gradW * dr.x / r, abs_gradW * dr.y / r, abs_gradW * dr.z / r, 0.0) : (float4){0.0, 0.0, 0.0, 0.0};
 
                 const float3 jvel  = make_float3(__shfl(MV.x, j), __shfl(MV.y, j), __shfl(MV.z, j));
@@ -603,7 +602,6 @@ namespace derivative
                 gradient_i[0].y -= jM0.w* (dv.z * gradW.x - dv.x * gradW.z);
                 gradient_i[0].z -= jM0.w* (dv.x * gradW.y - dv.y * gradW.x);
                 gradient_i[0].w -= jM0.w* (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z);
-
           }
         }
 

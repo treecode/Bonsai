@@ -103,7 +103,7 @@ __device__ void useParticleMD(const float4       posi,
                               float4            *pB,
                               int               &pC)
 {
-    float iH = posi.w*3.5;
+    float iH = posi.w*SPH_KERNEL_SIZE;
     iH      *= iH;
 
     const float4 M0 = (ptclIdx >= 0) ? body_jpos[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, -1.0f);
@@ -432,13 +432,13 @@ __device__ void computeGroupBoundsWithSmoothingLength(const float4 pos[2], const
                                                       float4 &grpCenter, float4 &grpSize)
 {
     //Compute the extends of the 'box' around this particle
-    float  smth  = pos[0].w*3.5;
+    float  smth  = pos[0].w*SPH_KERNEL_SIZE;
     float3 r_min = make_float3(pos[0].x-smth, pos[0].y-smth, pos[0].z-smth);
     float3 r_max = make_float3(pos[0].x+smth, pos[0].y+smth, pos[0].z+smth);
 
     if(ni > 1)  //Reduce within the thread the 2 possible particles
     {
-        smth    = pos[1].w*3.5;
+        smth    = pos[1].w*SPH_KERNEL_SIZE;
         r_min.x = fminf(pos[1].x-smth, r_min.x); r_min.y = fminf(pos[1].y-smth, r_min.y); r_min.z = fminf(pos[1].z-smth, r_min.z);
         r_max.x = fmaxf(pos[1].x+smth, r_max.x); r_max.y = fmaxf(pos[1].y+smth, r_max.y); r_max.z = fmaxf(pos[1].z+smth, r_max.z);
     }
@@ -509,9 +509,9 @@ bool treewalk_control(
   body_i[0]    = body_addr + laneId%nb_i;
   body_i[1]    = body_addr + WARP_SIZE + laneId%(nb_i - WARP_SIZE);
 
+  body_i[0]    = body_addr + laneId%NCRIT; //This ensures that the thread groups work on independent particles.
+
   /*
-   * TODO fix the assignment, right now we assume each group has NCRIT particles when doing the reduction at the end
-   * if this is not the case then the reduction will be reading the wrong lanes!
    * TODO Also consider removing all the [2] sized arrays as 64 particles per group is significantly slower and hence will
    * probably not be used in the SPH kernels
    */
