@@ -25,7 +25,10 @@ struct IOSharedData_t
   volatile int   nBodies;
   unsigned long long * volatile  IDs;
   real4 * volatile Pos, * volatile Vel;
-  IOSharedData_t() : writingFinished(true), nBodies(0), IDs(NULL), Pos(NULL), Vel(NULL) {}
+  real4 * volatile Hyd, * volatile Drv;
+  real2 * volatile Den;
+
+  IOSharedData_t() : writingFinished(true), nBodies(0), IDs(NULL), Pos(NULL), Vel(NULL), Den(NULL), Hyd(NULL), Drv(NULL) {}
   void malloc(const int n) volatile
   {
     assert(nBodies == 0);
@@ -33,6 +36,10 @@ struct IOSharedData_t
     IDs = (unsigned long long*volatile)::malloc(n*sizeof(unsigned long long));
     Pos = (real4*volatile)::malloc(n*sizeof(real4));
     Vel = (real4*volatile)::malloc(n*sizeof(real4));
+
+    Den = (real2*volatile)::malloc(n*sizeof(real2));
+    Hyd = (real4*volatile)::malloc(n*sizeof(real4));
+    Drv = (real4*volatile)::malloc(n*sizeof(real4));
   }
   void free() volatile
   {
@@ -41,6 +48,9 @@ struct IOSharedData_t
     ::free(IDs);
     ::free(Pos);
     ::free(Vel);
+    ::free(Den);
+    ::free(Hyd);
+    ::free(Drv);
   }
   ~IOSharedData_t()
   {

@@ -331,8 +331,20 @@ void octree::dumpDataCommon(
     p.vy   = localTree.bodies_vel[i].y;
     p.vz   = localTree.bodies_vel[i].z;
     p.vw   = localTree.bodies_vel[i].w;
+//    p.h    = localTree.bodies_h[i];
     p.rho  = localTree.bodies_dens[i].x;
-    p.h    = localTree.bodies_h[i];
+    p.h    = localTree.bodies_dens[i].y;
+
+    p.hydrox = localTree.bodies_hydro[i].x;
+    p.hydroy = localTree.bodies_hydro[i].y;
+    p.hydroz = localTree.bodies_hydro[i].z;
+    p.hydrow = localTree.bodies_hydro[i].w;
+
+    p.drvx = localTree.bodies_grad[i].x;
+    p.drvy = localTree.bodies_grad[i].y;
+    p.drvz = localTree.bodies_grad[i].z;
+    p.drvw = localTree.bodies_grad[i].w;
+
     p.ID   = lGetIDType(localTree.bodies_ids[i]);
   }
   data.releaseLock();
@@ -366,7 +378,10 @@ void octree::dumpData()
     localTree.bodies_vel.d2h();
     localTree.bodies_ids.d2h();
     localTree.bodies_h.d2h();
-    localTree.bodies_dens.d2h();
+
+    localTree.bodies_dens. d2h();
+    localTree.bodies_hydro.d2h();
+    localTree.bodies_grad. d2h();
   }
 
 
@@ -425,9 +440,9 @@ void octree::dumpData()
     template<typename T>
     static inline T& lBonsaiSafeCast(BonsaiIO::DataTypeBase* ptrBase)
     {
-    T* ptr = dynamic_cast<T*>(ptrBase);
-    assert(ptr != NULL);
-    return *ptr;
+        T* ptr = dynamic_cast<T*>(ptrBase);
+        assert(ptr != NULL);
+        return *ptr;
     }
 
 
@@ -470,10 +485,12 @@ void octree::dumpData()
         return dtRead;
     }
 
-
     void octree::lReadBonsaiFile(std::vector<real4 > &bodyPositions,
                                  std::vector<real4 > &bodyVelocities,
                                  std::vector<ullong> &bodyIDs,
+                                 std::vector<real2>  &bodyDensity,
+                                 std::vector<real4>  &bodyHydro,
+                                 std::vector<real4>  &bodyDrv,
                                  float &t_current,
                                  const std::string &fileName,
                                  const int rank, const int nrank,
@@ -508,21 +525,38 @@ void octree::dumpData()
         using Pos    = BonsaiIO::DataType<real4>;
         using Vel    = BonsaiIO::DataType<float3>;
         using RhoH   = BonsaiIO::DataType<float2>;
+        using Hydro  = BonsaiIO::DataType<float4>;
+        using Drvt   = BonsaiIO::DataType<float4>;
+
         data.push_back(new IDType("DM:IDType"));
         data.push_back(new Pos   ("DM:POS:real4"));
         data.push_back(new Vel   ("DM:VEL:float[3]"));
+        data.push_back(new RhoH  ("DM:RHOH:float[2]"));
+        data.push_back(new Hydro ("DM:HYDRO:float[4]"));
+        data.push_back(new Drvt  ("DM:DRVT:float[4]"));
+
         data.push_back(new IDType("Stars:IDType"));
         data.push_back(new Pos   ("Stars:POS:real4"));
         data.push_back(new Vel   ("Stars:VEL:float[3]"));
+        data.push_back(new RhoH  ("Stars:RHOH:float[2]"));
+        data.push_back(new Hydro ("Stars:HYDRO:float[4]"));
+        data.push_back(new Drvt  ("Stars:DRVT:float[4]"));
 
         const double dtRead = lReadBonsaiFields(rank, comm, data, *in, reduceFactor, restart);
 
         const auto &DM_IDType = lBonsaiSafeCast<IDType>(data[0]);
         const auto &DM_Pos    = lBonsaiSafeCast<Pos   >(data[1]);
         const auto &DM_Vel    = lBonsaiSafeCast<Vel   >(data[2]);
-        const auto &S_IDType  = lBonsaiSafeCast<IDType>(data[3]);
-        const auto &S_Pos     = lBonsaiSafeCast<Pos   >(data[4]);
-        const auto &S_Vel     = lBonsaiSafeCast<Vel   >(data[5]);
+        const auto &DM_RhoH   = lBonsaiSafeCast<RhoH  >(data[3]);
+        const auto &DM_Hydro  = lBonsaiSafeCast<Hydro >(data[4]);
+        const auto &DM_Drvt   = lBonsaiSafeCast<Drvt  >(data[5]);
+
+        const auto &S_IDType  = lBonsaiSafeCast<IDType>(data[6]);
+        const auto &S_Pos     = lBonsaiSafeCast<Pos   >(data[7]);
+        const auto &S_Vel     = lBonsaiSafeCast<Vel   >(data[8]);
+        const auto &S_RhoH    = lBonsaiSafeCast<RhoH  >(data[9]);
+        const auto &S_Hydro   = lBonsaiSafeCast<Hydro >(data[10]);
+        const auto &S_Drvt    = lBonsaiSafeCast<Drvt  >(data[11]);
 
         const size_t nDM = DM_IDType.size();
         assert(nDM == DM_Pos.size());
@@ -540,6 +574,9 @@ void octree::dumpData()
         bodyPositions.resize(nDM+nS);
         bodyVelocities.resize(nDM+nS);
         bodyIDs.resize(nDM+nS);
+        bodyDensity.resize(nDM+nS);
+        bodyHydro.resize(nDM+nS);
+        bodyDrv.resize(nDM+nS);
 
         /* store DM */
 
@@ -549,13 +586,21 @@ void octree::dumpData()
         for (int i = 0; i < nDM; i++)
         {
             ntypeloc[0]++;
-            auto &pos = bodyPositions[i];
-            auto &vel = bodyVelocities[i];
-            auto &ID  = bodyIDs[i];
-            pos = DM_Pos[i];
-            pos.w *= reduceFactor;
-            vel = make_float4(DM_Vel[i][0], DM_Vel[i][1], DM_Vel[i][2],0.0f);
-            ID  = DM_IDType[i].getID() + DARKMATTERID;
+            auto &pos  = bodyPositions[i];
+            auto &vel  = bodyVelocities[i];
+            auto &ID   = bodyIDs[i];
+            auto &RhoH = bodyDensity[i];
+            auto &Hydr = bodyHydro[i];
+            auto &Drvt = bodyDrv[i];
+
+            pos       = DM_Pos[i];
+            pos.w    *= reduceFactor;
+            vel       = make_float4(DM_Vel[i][0], DM_Vel[i][1], DM_Vel[i][2],0.0f);
+            ID        = DM_IDType[i].getID() + DARKMATTERID;
+
+            RhoH      = make_float2(DM_RhoH[i][0], DM_RhoH[i][1]);
+            Hydr      = DM_Hydro[i];
+            Drvt      = DM_Drvt[i];
         }
 
         for (int i = 0; i < nS; i++)
@@ -563,10 +608,19 @@ void octree::dumpData()
             auto &pos = bodyPositions[nDM+i];
             auto &vel = bodyVelocities[nDM+i];
             auto &ID  = bodyIDs[nDM+i];
-            pos = S_Pos[i];
+            auto &RhoH = bodyDensity[nDM+i];
+            auto &Hydr = bodyHydro[nDM+i];
+            auto &Drvt = bodyDrv[nDM+i];
+
+            pos    = S_Pos[i];
             pos.w *= reduceFactor;
-            vel = make_float4(S_Vel[i][0], S_Vel[i][1], S_Vel[i][2],0.0f);
-            ID  = S_IDType[i].getID();
+            vel    = make_float4(S_Vel[i][0], S_Vel[i][1], S_Vel[i][2],0.0f);
+
+            RhoH   = make_float2(S_RhoH[i][0],S_RhoH[i][1]);
+            Hydr   = S_Hydro[i];
+            Drvt   = S_Drvt[i];
+
+            ID     = S_IDType[i].getID();
             switch (S_IDType[i].getType())
             {
             case 1:  /*  Bulge */

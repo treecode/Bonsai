@@ -25,7 +25,13 @@ struct BonsaiSharedData
   float x,y,z,mass;
   float vx,vy,vz,vw;
   float rho,h;
+
+  float hydrox,hydroy,hydroz,hydrow;
+  float drvx,drvy,drvz,drvw;
+
 };
+
+char BonsaiSharedNameBuffer[1024];
 
 struct BonsaiSharedQuickHeader : public BonsaiSharedHeader
 {
@@ -41,16 +47,20 @@ struct BonsaiSharedQuickData : public BonsaiSharedData
   static const char* sharedFile(const int rank, const int pid)
   {
     const std::string fn = "/BonsaiQuickData-"+jb_to_string(pid)+"-"+jb_to_string(rank);
-    return fn.c_str();
+    strcpy(BonsaiSharedNameBuffer, fn.c_str());
+    return BonsaiSharedNameBuffer;
   }
 };
 
 struct BonsaiSharedSnapHeader : public BonsaiSharedHeader
 {
+  std::string fn;
   static const char* sharedFile(const int rank, const int pid)
   {
     const std::string fn = "/BonsaiSnapHeader-"+jb_to_string(pid)+"-"+jb_to_string(rank);
-    return fn.c_str();
+    strcpy(BonsaiSharedNameBuffer, fn.c_str());
+    return BonsaiSharedNameBuffer;
+    //return fn.c_str();
   }
 };
 
@@ -59,6 +69,7 @@ struct BonsaiSharedSnapData : public BonsaiSharedData
   static const char* sharedFile(const int rank, const int pid)
   {
     const std::string fn = "/BonsaiSnapData-"+jb_to_string(pid)+"-"+jb_to_string(rank);
-    return fn.c_str();
+    strcpy(BonsaiSharedNameBuffer, fn.c_str());
+    return BonsaiSharedNameBuffer;
   }
 };

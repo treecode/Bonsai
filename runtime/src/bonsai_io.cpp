@@ -34,6 +34,7 @@ static double write(
     MPI_Allreduce(&nLoc, &nGlb, 1, MPI_DOUBLE, MPI_SUM, comm);
     if (nGlb > 0)
       assert(out.write(*type));
+    fprintf(stderr,"Items: %d \n", nGlb);
     dtWrite += MPI_Wtime() - t0;
   }
 
@@ -134,12 +135,18 @@ bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank
       BonsaiIO::DataType<float4> DM_pos("DM:POS:real4",     nDM);
       BonsaiIO::DataType<float3> DM_vel("DM:VEL:float[3]",  nDM);
       BonsaiIO::DataType<float2> DM_rhoh("DM:RHOH:float[2]", nDM);
+      BonsaiIO::DataType<float4> DM_hydro("DM:HYDRO:float[4]", nDM);
+      BonsaiIO::DataType<float4> DM_drv("DM:DRVT:float[4]"   , nDM);
 
-      BonsaiIO::DataType<IDType> S_id ("Stars:IDType",        nS);
-      BonsaiIO::DataType<float4> S_pos("Stars:POS:real4",     nS);
-      BonsaiIO::DataType<float3> S_vel("Stars:VEL:float[3]",  nS);
-      BonsaiIO::DataType<float2> S_rhoh("Stars:RHOH:float[2]", nS);
 
+      BonsaiIO::DataType<IDType> S_id ("Stars:IDType",           nS);
+      BonsaiIO::DataType<float4> S_pos("Stars:POS:real4",        nS);
+      BonsaiIO::DataType<float3> S_vel("Stars:VEL:float[3]",     nS);
+      BonsaiIO::DataType<float2> S_rhoh("Stars:RHOH:float[2]",   nS);
+      BonsaiIO::DataType<float4> S_hydro("Stars:HYDRO:float[4]", nS);
+      BonsaiIO::DataType<float4> S_drv  ("Stars:DRVT:float[4]" , nS);
+
+      fprintf(stderr,"Records created\n");
 
       size_t iDM = 0, iS = 0;
       for (size_t i = 0; i < size; i++)
@@ -158,6 +165,17 @@ bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank
             DM_vel [iDM][2] = data[i].vz;
             DM_rhoh[iDM][0] = data[i].rho;
             DM_rhoh[iDM][1] = data[i].h;
+
+            DM_hydro[iDM][0] = data[i].hydrox;
+            DM_hydro[iDM][1] = data[i].hydroy;
+            DM_hydro[iDM][0] = data[i].hydroz;
+            DM_hydro[iDM][1] = data[i].hydrow;
+            DM_drv[iDM][0]   = data[i].drvx;
+            DM_drv[iDM][1]   = data[i].drvy;
+            DM_drv[iDM][0]   = data[i].drvz;
+            DM_drv[iDM][1]   = data[i].drvw;
+
+
             iDM++;
             assert(iDM <= nDM);
             break;
@@ -172,6 +190,16 @@ bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank
             S_vel [iS][2] = data[i].vz;
             S_rhoh[iS][0] = data[i].rho;
             S_rhoh[iS][1] = data[i].h;
+
+            S_hydro[iS][0] = data[i].hydrox;
+            S_hydro[iS][1] = data[i].hydroy;
+            S_hydro[iS][2] = data[i].hydroz;
+            S_hydro[iS][3] = data[i].hydrow;
+            S_drv[iS][0]   = data[i].drvx;
+            S_drv[iS][1]   = data[i].drvy;
+            S_drv[iS][2]   = data[i].drvz;
+            S_drv[iS][3]   = data[i].drvw;
+
             iS++;
             assert(iS <= nS);
         }
@@ -184,8 +212,8 @@ bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank
 
       const double dtWrite = write(rank, comm, 
           {
-            &DM_id, &DM_pos, &DM_vel, &DM_rhoh,  
-            &S_id, &S_pos, &S_vel, &S_rhoh
+            &DM_id, &DM_pos, &DM_vel, &DM_rhoh, &DM_hydro, &DM_drv,
+            &S_id, &S_pos, &S_vel, &S_rhoh, &S_hydro, &S_drv
           }, out);
 
       const double tClose = MPI_Wtime(); 
@@ -210,6 +238,7 @@ bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank
     data.releaseLock();
     header.releaseLock();
   }
+
 
 }
 

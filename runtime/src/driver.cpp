@@ -1,8 +1,9 @@
 #undef NDEBUG
+#include <iostream>
 #include <mpi.h>
 #include <dlfcn.h>
 #include <vector>
-#include <iostream>
+
 #include <string>
 #include <sstream>
 #include <cassert>
@@ -51,12 +52,13 @@ static std::vector<std::string> lSplitString(const std::string &s, const char de
   return elems;
 }
 
-static std::vector<std::vector<std::string>> lParseInput()
+static std::vector<std::vector<std::string>> lParseInput(const int rank)
 {
   std::string input;
   std::string tmp;
-  while(std::getline(std::cin, tmp)) 
-    input += tmp + "\n";
+  if(rank == 0)
+     while(std::getline(std::cin, tmp))
+         input += tmp + "\n";
 
   int size[2] = {static_cast<int>(input.size()), static_cast<int>(input.capacity())};
   MPI_Bcast(&size, 2, MPI_INT, 0, MPI_COMM_WORLD);
@@ -73,6 +75,7 @@ static std::vector<std::vector<std::string>> lParseInput()
 
 int main(int argc, char *argv[]) 
 {
+  std::cerr << "Loaded the driver program "<< std::endl;
 #ifdef _MPIMT
   int provided;
   MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
@@ -84,21 +87,21 @@ int main(int argc, char *argv[])
   int rank, nrank, pid;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &nrank);
+  
 
-  const auto &programs = lParseInput();
+  const auto &programs = lParseInput(rank);
 
   if (rank == 0)
   {
-    std::cerr << "Executing the following binaries: \n";
-    for (const auto &p  : programs)
-    {
-      for (const auto &arg : p)
-        std::cerr << arg << " ";
-      std::cerr << std::endl;
-    }
-
-    //Retrieve the process ID of the current process
-    pid =  getpid();
+     std::cerr << "Executing the following binaries: \n";
+     for (const auto &p  : programs)
+     {
+       for (const auto &arg : p)
+         std::cerr << arg << " ";
+       std::cerr << std::endl;
+     }
+     //Retrieve the process ID of the current process
+     pid =  getpid();
   }
 
   const int nprograms = programs.size();
@@ -109,7 +112,7 @@ int main(int argc, char *argv[])
     MPI_Finalize();
     ::exit(0);
   }
-
+  
   //For the SharedMemory it is important that a unique name is used.
   //This works within a single launch instance by using the ranks. However, when we use
   //multiple instances on a single node then this will result in naming clashes.
@@ -117,7 +120,8 @@ int main(int argc, char *argv[])
   //all the processes within this launch instance
   MPI_Bcast(&pid, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-  fprintf(stderr,"received pid: %d\t%d \n", rank,pid);
+//   fprintf(stderr,"received pid: %d\t%d \n", rank,pid);
+
 
 
   const int color = rank%nprograms;
@@ -136,6 +140,7 @@ int main(int argc, char *argv[])
   for (const auto &arg : arguments)
     argVec.push_back((char*)arg.c_str());
   argVec.push_back(NULL);
+  std::cerr << "Ready 2 launch \n" << std::endl; 
   program(static_cast<int>(argVec.size()-1), &argVec[0], comm, pid);
 
   if (rank == 0)

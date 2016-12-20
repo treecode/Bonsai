@@ -535,8 +535,10 @@ public:
   void dumpData();
   void dumpDataMPI();
   void lReadBonsaiFile(std::vector<real4 > &,std::vector<real4 > &, std::vector<ullong> &,
-                      float &tCurrent, const std::string &fileName, const int rank, const int nrank,
-                      const MPI_Comm &comm, const bool restart = true, const int reduceFactor = 1);
+                       std::vector<real2> &bodyDensity, std::vector<real4>       &bodyHydro,
+                       std::vector<real4> &bodyDrv,
+                       float &tCurrent, const std::string &fileName, const int rank, const int nrank,
+                       const MPI_Comm &comm, const bool restart = true, const int reduceFactor = 1);
 
   //Sub functions of iterate, should probably be private
   void   predict(tree_structure &tree);

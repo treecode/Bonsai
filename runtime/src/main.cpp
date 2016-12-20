@@ -23,6 +23,7 @@ http://github.com/treecode/Bonsai
  *
  */
 
+#include <iostream>
 
 #ifdef WIN32
   #define WIN32_LEAN_AND_MEAN
@@ -50,11 +51,12 @@ http://github.com/treecode/Bonsai
   #include <mpi.h>
 #endif
 
-#include <iostream>
+
 #include <stdlib.h>
 #include <vector>
 #include <fstream>
 #include <sstream>
+#include <string>
 #include <sys/time.h>
 #include <omp.h>
 #include "log.h"
@@ -140,11 +142,14 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   my_dev::base_mem::currentMemUsage = 0;
   my_dev::base_mem::maxMemUsage     = 0;
 
+
   vector<real4>   bodyPositions;
   vector<real4>   bodyVelocities;
   vector<ullong>  bodyIDs;
   vector<real2>   bodyDensity; //x=density, y=smoothing range
   vector<real4>   bodyHydro;   //x=pressure, y=soundspeed, z=Energy, w=Balsala Switch
+  vector<real4>   bodyDrv;     //
+
 
  
   float eps      = 0.05f;
@@ -155,9 +160,9 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   devID          = 0;
   renderDevID    = 0;
 
-  string fileName          =  "";
-  string logFileName       = "gpuLog.log";
-  string snapshotFile      = "snapshot_";
+  std::string fileName          =  "";
+  std::string logFileName       = "gpuLog.log";
+  std::string snapshotFile      = "snapshot_";
   std::string bonsaiFileName;
   float snapshotIter       = -1;
   float  remoDistance      = -1.0;
@@ -663,6 +668,9 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
         bodyPositions, 
         bodyVelocities,
         bodyIDs,
+        bodyDensity,
+        bodyHydro,
+        bodyDrv,
         tCurrent,
         bonsaiFileName,
         procId, nProcs, comm,
@@ -749,6 +757,12 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 
   tree->localTree.setN((int)bodyPositions.size());
   tree->allocateParticleMemory(tree->localTree);
+
+  //Incase we do not use SPH generator command
+  bodyDensity.resize(bodyPositions.size());
+  bodyHydro.resize(bodyPositions.size());
+
+
 
   //Load data onto the device
   for(uint i=0; i < bodyPositions.size(); i++)

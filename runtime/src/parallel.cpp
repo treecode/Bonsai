@@ -1908,7 +1908,7 @@ void octree::sendCurrentInfoGrpTree()
 
   //Now that we've found the limits of our searches, perform the actual searches
 
-  //TODO what do we do here? Count? Why not use same function as below
+  //TODO what do we do here? Count? Why not use same function as below (extractGroupsTreeFullCount)
   nGroupsSmallSet =  extractGroupsTreeFullCount2(
                         groupCentre, groupSize,
                         groupMulti, groupBody,
@@ -4918,6 +4918,21 @@ void octree::mergeAndLaunchLETStructures(
 }
 
 
+//Sum the number of particles on all processes
+void octree::mpiSumParticleCount(int numberOfParticles)
+{
+  nTotalFreq_ull = numberOfParticles;
+#ifdef USE_MPI
+  unsigned long long tmp  = 0;
+  unsigned long long tmp2 = numberOfParticles;
+  MPI_Allreduce(&tmp2,&tmp,1, MPI_UNSIGNED_LONG_LONG, MPI_SUM,mpiCommWorld);
+  nTotalFreq_ull = tmp;
+#endif
+
+  if(procId == 0) LOG("Total number of particles: %llu\n", nTotalFreq_ull);
+}
+
+
 
 #if 0
 void octree::ICSend(int destination, real4 *bodyPositions, real4 *bodyVelocities,  ullong *bodiesIDs, int toSend)
@@ -4954,21 +4969,6 @@ void octree::ICRecv(int recvFrom, vector<real4> &bodyPositions, vector<real4> &b
 #endif
 }
 #endif
-
-//Sum the number of particles on all processes
-void octree::mpiSumParticleCount(int numberOfParticles)
-{
-  nTotalFreq_ull = numberOfParticles;
-#ifdef USE_MPI
-  unsigned long long tmp  = 0;
-  unsigned long long tmp2 = numberOfParticles;
-  MPI_Allreduce(&tmp2,&tmp,1, MPI_UNSIGNED_LONG_LONG, MPI_SUM,mpiCommWorld);
-  nTotalFreq_ull = tmp;
-#endif
-
-  if(procId == 0) LOG("Total number of particles: %llu\n", nTotalFreq_ull);
-}
-
 
 
 #if 0

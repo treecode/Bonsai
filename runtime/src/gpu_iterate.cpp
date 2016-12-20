@@ -130,6 +130,7 @@ bool octree::iterate_once(IterationData &idata) {
 
     LOG("At the start of iterate:\n");
     
+
     bool forceTreeRebuild = false;
     bool needDomainUpdate = true;
 
@@ -381,6 +382,12 @@ bool octree::iterate_once(IterationData &idata) {
         localTree.bodies_pos.d2h(localTree.n, ioSharedData.Pos);
         localTree.bodies_vel.d2h(localTree.n, ioSharedData.Vel);
         localTree.bodies_ids.d2h(localTree.n, ioSharedData.IDs);
+
+        localTree.bodies_dens. d2h(localTree.n, ioSharedData.Den);
+        localTree.bodies_hydro.d2h(localTree.n, ioSharedData.Hyd);
+        localTree.bodies_grad. d2h(localTree.n, ioSharedData.Drv);
+
+
         ioSharedData.writingFinished = false;
         if(nProcs <= 16) while (!ioSharedData.writingFinished);
       }
@@ -748,7 +755,7 @@ void octree::approximate_gravity(tree_structure &tree)
    for(int i=0; i < tree.n; i++)
    {
 //       if(i < 32 || (tree.bodies_grad[i].y > 0 && i < 129))
-//       if(tree.bodies_ids[i] < 10)
+       if(tree.bodies_ids[i] < 10)
 //           if(i >=3839 && i < 3855)
        //if(i >=3839 && i < 3855)
 //       if(tree.bodies_ids[i] > 15455 && tree.bodies_ids[i] < 15465)
