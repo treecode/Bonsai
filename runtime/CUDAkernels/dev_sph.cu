@@ -517,6 +517,7 @@ bool treewalk_control(
    */
 
 
+
   float4 pos_i [2], vel_i [2], acc_i [2], hydro_i[2];
   SPH::density::data    dens_i[2];
   SPH::derivative::data derivative_i[2];
@@ -604,7 +605,7 @@ bool treewalk_control(
                         body_pos_j,
                         body_vel_j,
                         body_hydro_j,
-                        body_dens_out,    //TODO this should be a different pointer namely the J-particle density
+                        body_dens_j,
                         eps2,
                         node_begend,
                         shmem,
@@ -627,7 +628,7 @@ bool treewalk_control(
                         body_pos_j,
                         body_vel_j,
                         body_hydro_j,
-                        body_dens_out,    //TODO this should be a different pointer namely the J-particle density
+                        body_dens_j,
                         eps2,
                         node_begend,
                         shmem,
@@ -663,8 +664,8 @@ bool treewalk_control(
   if(directOp<1, true>::type == SPH::DENSITY)
   {
       dens_i[0].dens    = warpGroupReduce(dens_i[0].dens);
-      //              derivative_i[0].x = warpGroupReduce(derivative_i[0].x);
-      //              derivative_i[0].y = warpGroupReduce(derivative_i[0].y);
+      derivative_i[0].x = warpGroupReduce(derivative_i[0].x); //For stats
+      derivative_i[0].y = warpGroupReduce(derivative_i[0].y); //For stats
   }
   if(directOp<1, true>::type == SPH::HYDROFORCE)
   {
@@ -703,20 +704,18 @@ bool treewalk_control(
           if(directOp<1, true>::type == SPH::DENSITY)
           {
               //Density requires a bit more work as the smoothing range is based on it
-              //TODO not sure how this is going to work out in parallel version.
-              //Possibly we need a different kernel to update smoothing range after
-              //all remote data has been used
 
-              //No addition until we start working on multi-GPU calls
-              //dens_i[i].dens       += body_dens_out[addr].x;
-
+              //Combine current result with previous result and compute the updated smoothing
+              //depending on if this was the final call this does not have to be the final dens/smoothing value
+              dens_i[i].dens     += body_dens_out[addr].x;
               dens_i[i].finalize(group_body_pos[body_i[i]].w);
-              body_dens_out[addr].x = dens_i[i].dens;
-              body_dens_out[addr].y = dens_i[i].smth; //The sum has been scaled so we can assign
+              body_dens_out[addr] = make_float2(dens_i[i].dens,dens_i[i].smth);
 
-              //TODO remove
-//              body_grad_out[addr].x = derivative_i[i].x;
 
+//              //TODO remove
+               body_grad_out[addr].x += derivative_i[i].x;
+               body_grad_out[addr].y += derivative_i[i].y;
+//
 //              if(laneId == -1) body_grad_out[addr].y += endC-startC;
 //              else body_grad_out[addr].y = derivative_i[i].y;
 //              body_grad_out[addr].z = derivative_i[i].z;
@@ -1455,4 +1454,512 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
 #endif
 }
 
+/*
+ Function that extracts the identified boundary cells and particles.
+ Also modifies their offsets which have been computed during the
+ identification function.
+*/
+
+extern "C" __global__ void gpu_extractBoundaryTree(
+                                const bool       smthOnly,
+                                const float4    *nodeSize,
+                                const float4    *nodeCenter,
+                                const float     *nodeSmooth,
+                                const float4    *nodeMulti,
+                                const float4    *bodyPos,
+                                int4            *markedNodes2,
+                                float4          *boundaryTree)
+{
+  const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
+  const uint tid = threadIdx.x;
+//  const uint id  = bid * blockDim.x + tid;
+
+  int4* markedNodes = &markedNodes2[1];
+
+  const int laneIdx = threadIdx.x & (WARP_SIZE-1);
+
+  const int nNodes = markedNodes2[0].x;
+  const int nPart  = markedNodes2[0].y;
+
+
+
+  float4 description;
+  description.x = int_as_float(nPart);
+  description.y = int_as_float(nNodes);
+  description.z = int_as_float(markedNodes2[0].z);
+  description.w = int_as_float(markedNodes2[0].w);
+  if(laneId == 0) boundaryTree[0] = description;
+
+
+
+  int sizeIdx = 1 + nPart;
+  int cntrIdx = 1 + nPart + nNodes;
+  int smthIdx = 1 + nPart + nNodes*2;
+  int multIdx = 1 + nPart + nNodes*3;
+
+
+  for(int i=0; i < nNodes; i+= blockDim.x)
+  {
+      if(i + laneIdx < nNodes)
+      {
+        int4 idxInfo = markedNodes[i+laneIdx];
+        
+        if(smthOnly)
+        {
+            //Only interested in updated smoothing values
+            boundaryTree[smthIdx+i+laneIdx] = make_float4(nodeSmooth[idxInfo.x], 0,0,0);
+            boundaryTree[smthIdx+i+laneIdx] = make_float4(123, 0,0,0);
+        }
+        else
+        {
+            float4 size = nodeSize[idxInfo.x];
+            if(idxInfo.z == -2 || idxInfo.z >= 0)
+            {
+                size.w = int_as_float(idxInfo.y); //Normal node and leaf node requires new offset
+
+                if(idxInfo.z >= 0)
+                {
+                    //This is a single particle leaf that refers to a body, store body
+                    boundaryTree[1+idxInfo.w] = bodyPos[idxInfo.z];
+                }
+            }
+
+            //Copy the tree-cell information
+            boundaryTree[sizeIdx+i+laneIdx]         = size;
+            boundaryTree[cntrIdx+i+laneIdx]         = nodeCenter[idxInfo.x];
+            boundaryTree[smthIdx+i+laneIdx]         = make_float4(nodeSmooth[idxInfo.x], 0,0,0);
+            boundaryTree[multIdx+3*(i+laneIdx) + 0] = nodeMulti[idxInfo.x*3 + 0];
+            boundaryTree[multIdx+3*(i+laneIdx) + 1] = nodeMulti[idxInfo.x*3 + 1];
+            boundaryTree[multIdx+3*(i+laneIdx) + 2] = nodeMulti[idxInfo.x*3 + 2];
+
+            boundaryTree[smthIdx+i+laneIdx] = make_float4(-99, 0,0,0);
+        }
+      }
+  }//for nNodes
+}
+
+
+/*
+   Function to identify the boundary cells of a tree
+   The tree is walked and boundaries are identified, concurrently
+   we compute the offsets to where the children of the cells are written
+   for the extraction functions.
+*/
+
+
+extern "C" __global__ void gpu_boundaryTree(
+                                            const uint2      top_cells,     //Encode the start and end cells of our initial traverse
+                                            const  int       maxDepth,      //Number of levels we will traverse
+                                            int             *cellStack,     //Used for tree-traversal
+                                            const uint      *nodeBodies,    //Contains the info needed to walk the tree
+                                            const uint2     *leafBodies,    //To get indices of the particle information
+                                            const uint      *nodeValid,     //Used to determine if a cell is a node or a leaf
+                                            int4            *markedNodes2)  //The results
+{
+  int4 *markedNodes = &markedNodes2[1];
+
+
+  const int laneIdx = threadIdx.x & (WARP_SIZE-1);
+  const int SHIFT   = 0 ;
+
+  //Mark the top nodes
+  for (int root_cell = 0; root_cell < top_cells.x; root_cell += WARP_SIZE)
+    if (root_cell + laneIdx < top_cells.x){
+      markedNodes[root_cell + laneIdx] = make_int4(root_cell + laneIdx, 0, -1, -1); 
+    }
+      
+
+  //Fill initial stack
+  for (int root_cell = top_cells.x; root_cell < top_cells.y; root_cell += WARP_SIZE){
+    if (root_cell + laneIdx < top_cells.y)
+    {
+        cellStack[ringAddr<SHIFT>(root_cell - top_cells.x + laneIdx)] = root_cell + laneIdx;
+    }
+  }
+
+  int nCells = top_cells.y - top_cells.x;
+
+  int cellListBlock           = 0;
+  int nextLevelCellCounter    = 0;
+  unsigned int cellListOffset = 0;
+
+
+
+  int depth           = 0;
+  int nodeWriteOffset = top_cells.x;
+  int childOffset     = top_cells.y;
+  int partOffset      = 0;
+
+  /* process level with n_cells */
+#if 1
+  while (nCells > 0)
+  {
+    /* extract cell index from the current level cell list */
+    const int cellListIdx = cellListBlock + laneIdx;
+    const bool useCell    = cellListIdx < nCells;
+    const int cellIdx     = !useCell ? 0 : cellStack[ringAddr<SHIFT>(cellListOffset + cellListIdx)];
+    const int loopSize    = min(WARP_SIZE, nCells - cellListBlock);
+    cellListBlock        += loopSize;
+
+    //Get the number of children, firstchild and leaf/node info
+    uint firstChild =    nodeBodies[cellIdx] & 0x0FFFFFFF;
+    uint nChildren  =  ((nodeBodies[cellIdx] & 0xF0000000) >> 28);
+    const bool isNode     =  !(nodeValid [cellIdx] >> 31);    //Leafs have a 1 in bit 32
+
+    if(!isNode)
+    {
+        //For leafs we require reference and count to the actual particles, which is in a different array
+        uint2 bij    = leafBodies[cellIdx];
+        firstChild   = bij.x & ILEVELMASK;
+        nChildren    = (bij.y - firstChild)-1;  //-1 is historic reasons...
+    }
+
+    bool splitCell  = nChildren != 8;
+    bool splitNode  = isNode && splitCell && useCell && (depth < maxDepth); //Note the depth test
+   
+    //We have to do a prefix sum to get new child offsets, do this for nodes and leaves separate
+    const int2 childScatter     = warpIntExclusiveScan(nChildren & (-splitNode));
+    int input                   = useCell && nChildren == 0 && !isNode;
+    const int2 childScatterLeaf = warpIntExclusiveScan(input);
+
+
+    //Default value:  endpoint, without leaf particles
+    int4 output = make_int4(cellIdx, 0xFFFFFFFF, -2, 0);
+
+
+    if(isNode)
+    {
+      /* make sure we still have available stack space */
+      if (childScatter.y + nCells - cellListBlock + nextLevelCellCounter > (CELL_LIST_MEM_PER_WARP<<SHIFT))
+        //return make_uint2(0xFFFFFFFF,0xFFFFFFFF);
+         return; //TODO print error
+
+      /* if so populate next level stack in gmem */
+      if (splitNode)
+      {
+          {
+              const int scatterIdx = cellListOffset + nCells + nextLevelCellCounter + childScatter.x;
+              for (int i = 0; i < nChildren; i++)
+                  cellStack[ringAddr<SHIFT>(scatterIdx + i)] = firstChild + i;
+
+             //Compute the new references to the children
+             output.y = childOffset+childScatter.x | ((uint)(nChildren) << LEAFBIT);
+          }
+      }
+    }
+    else
+    {
+        //Leaf, if it has 1 child, save the index and new storage location
+        if(nChildren == 0)
+        {
+            output.y = partOffset + childScatterLeaf.x | ((uint)(nChildren) << LEAFBIT);
+            output.z = firstChild;
+            output.w = partOffset + childScatterLeaf.x; 
+        }
+    }
+      
+    childOffset += childScatter.y;
+    partOffset  += childScatterLeaf.y;
+      
+    nextLevelCellCounter += childScatter.y;  /* increment nextLevelCounter by total # of children */
+
+    if(useCell)
+    {
+        markedNodes[nodeWriteOffset+laneIdx] = output;
+    }
+    
+    nodeWriteOffset += loopSize; 
+
+
+    /* if the current level is processed, schedule the next level */
+    if (cellListBlock >= nCells)
+    {
+      cellListOffset += nCells;
+      nCells          = nextLevelCellCounter;
+      cellListBlock   = nextLevelCellCounter = 0;
+      depth++;
+    }
+  }  /* level completed */
+#endif
+
+  //Store the results
+  if(laneIdx == 0)
+  {
+      markedNodes2[0] = make_int4(childOffset, partOffset, top_cells.x, top_cells.y);
+  }
+
+  return;
+}
+
+
+/*
+   Function to identify the boundary cells of a tree
+   The tree is walked and boundaries are identified, concurrently
+   we compute the offsets to where the children of the cells are written
+   for the extraction functions.
+*/
+extern "C" __global__ void gpu_boundaryTree2(
+                        const uint2      top_cells,
+                        int             *cellList,
+                        const float4    *nodeSize,
+                        const float4    *nodeCenter,
+                        int4            *markedNodes2)
+{
+  int4 *markedNodes = &markedNodes2[1];
+
+
+  const int laneIdx = threadIdx.x & (WARP_SIZE-1);
+  const int SHIFT  = 0 ;
+
+  //Mark the top nodes
+  for (int root_cell = 0; root_cell < top_cells.x; root_cell += WARP_SIZE)
+    if (root_cell + laneIdx < top_cells.x){
+      markedNodes[root_cell + laneIdx] = make_int4(root_cell + laneIdx, 0, -1, -1);
+    }
+
+
+  //Fill initial stack
+  for (int root_cell = top_cells.x; root_cell < top_cells.y; root_cell += WARP_SIZE){
+    if (root_cell + laneIdx < top_cells.y)
+    {
+      cellList[ringAddr<SHIFT>(root_cell - top_cells.x + laneIdx)] = root_cell + laneIdx;
+    }
+  }
+
+  int nCells = top_cells.y - top_cells.x;
+
+  int cellListBlock           = 0;
+  int nextLevelCellCounter    = 0;
+  unsigned int cellListOffset = 0;
+
+  int depth          = 0;
+  const int maxDepth = 30;
+
+  int nodeWriteOffset = top_cells.x;
+
+  int childOffset = top_cells.y;
+  int partOffset  = 0;
+
+  /* process level with n_cells */
+#if 1
+  while (nCells > 0)
+  {
+    /* extract cell index from the current level cell list */
+    const int cellListIdx = cellListBlock + laneIdx;
+    const bool useCell    = cellListIdx < nCells;
+    const int cellIdx     = !useCell ? 0 : cellList[ringAddr<SHIFT>(cellListOffset + cellListIdx)];
+    const int loopSize    = min(WARP_SIZE, nCells - cellListBlock);
+    cellListBlock        += loopSize;
+
+    /* read from gmem cell's info */
+    const float4 cellSize = nodeSize[cellIdx];
+    const float4 cellPos  = nodeCenter[cellIdx];
+
+    /* compute first child, either a cell if node or a particle if leaf */
+    const int cellData   = __float_as_int(cellSize.w);
+    const int firstChild =  cellData & 0x0FFFFFFF;
+    const int nChildren  = (cellData & 0xF0000000) >> 28;
+    const bool isNode    = cellPos.w > 0.0f;
+
+
+    {
+        printf("ON DEV, %d => Use: %d First: %d nChild: %d node: %d depth: %d\t %lg\n", cellIdx, useCell, firstChild, nChildren, isNode, depth, cellPos.w);
+    }
+
+
+    bool splitCell                       =  nChildren != 8;
+    if(cellData == 0xFFFFFFFF) splitCell = false;
+    bool splitNode  = isNode && splitCell && useCell && (depth < maxDepth);
+
+    //We have to do a prefix sum to get new childoffsets, do this for nodes and leaves seperate
+    const int2 childScatter = warpIntExclusiveScan(nChildren & (-splitNode));
+
+    //Compute offset for possible particles
+    int input                   = useCell && nChildren == 0 && !isNode;
+    const int2 childScatterLeaf = warpIntExclusiveScan(input);
+
+
+    //Default endpoint, without leaf particles
+    int4 output = make_int4(cellIdx, 0xFFFFFFFF, -2, 0);
+
+
+    if(isNode)
+    {
+      /* make sure we still have available stack space */
+      if (childScatter.y + nCells - cellListBlock + nextLevelCellCounter > (CELL_LIST_MEM_PER_WARP<<SHIFT))
+        //return make_uint2(0xFFFFFFFF,0xFFFFFFFF);
+         return; //TODO print error
+
+      /* if so populate next level stack in gmem */
+      if (splitNode)
+      {
+          const int scatterIdx = cellListOffset + nCells + nextLevelCellCounter + childScatter.x;
+          for (int i = 0; i < nChildren; i++)
+              cellList[ringAddr<SHIFT>(scatterIdx + i)] = firstChild + i;
+
+         //Compute the new references to the children
+         output.y = childOffset+childScatter.x | ((uint)(nChildren) << LEAFBIT);
+      }
+    }
+    else
+    {
+        //Leaf, if it has 1 child, save the index and new storage location
+        if(nChildren == 0)
+        {
+            output.y = partOffset + childScatterLeaf.x | ((uint)(nChildren) << LEAFBIT);
+            output.z = firstChild;
+            output.w = partOffset + childScatterLeaf.x;
+        }
+    }
+
+    childOffset += childScatter.y;
+    partOffset  += childScatterLeaf.y;
+
+    nextLevelCellCounter += childScatter.y;  /* increment nextLevelCounter by total # of children */
+
+    if(useCell)
+    {
+        markedNodes[nodeWriteOffset+laneIdx] = output;
+    }
+
+    nodeWriteOffset += loopSize;
+
+
+    /* if the current level is processed, schedule the next level */
+    if (cellListBlock >= nCells)
+    {
+      cellListOffset += nCells;
+      nCells          = nextLevelCellCounter;
+      cellListBlock   = nextLevelCellCounter = 0;
+      depth++;
+    }
+  }  /* level completed */
+#endif
+
+
+  //Store the results
+  if(laneIdx == 0){
+        markedNodes2[0] = make_int4(childOffset, partOffset, top_cells.x, top_cells.y);
+    }
+
+    return;
+}
+
+
+#if 0
+extern "C" 
+__global__ void gpu_boundaryTree(
+                        const uint2      top_cells,
+                        int             *cellList,
+                        const float4    *nodeSize,
+                        const float4    *nodeCenter,
+                        uint            *markedNodes,
+                        uint            *markedParticles,
+                        uint            *levels)
+{
+  const int laneIdx = threadIdx.x & (WARP_SIZE-1);
+  const int SHIFT  = 0 ;
+
+  //Mark the top nodes
+  for (int root_cell = 0; root_cell < top_cells.x; root_cell += WARP_SIZE)
+    if (root_cell + laneIdx < top_cells.x)
+      markedNodes[root_cell + laneIdx] = (root_cell + laneIdx) | (uint)(1 << 31); 
+      
+
+  for (int root_cell = top_cells.x; root_cell < top_cells.y; root_cell += WARP_SIZE)
+    if (root_cell + laneIdx < top_cells.y)
+    {
+      markedNodes[root_cell + laneIdx] = (root_cell + laneIdx) | (uint)(1 << 31); 
+      cellList[ringAddr<SHIFT>(root_cell - top_cells.x + laneIdx)] = root_cell + laneIdx;
+    }
+
+  int nCells = top_cells.y - top_cells.x;
+
+
+  int cellListBlock           = 0;
+  int nextLevelCellCounter    = 0;
+  unsigned int cellListOffset = 0;
+
+  int depth          = 0;
+  const int maxDepth = 30;
+
+  levels[0] = top_cells.x;
+  levels[1] = nCells;
+  /* process level with n_cells */
+#if 1
+  while (nCells > 0)
+  {
+    /* extract cell index from the current level cell list */
+    const int cellListIdx = cellListBlock + laneIdx;
+    const bool useCell    = cellListIdx < nCells;
+    const int cellIdx     = !useCell ? 0 : cellList[ringAddr<SHIFT>(cellListOffset + cellListIdx)];
+    cellListBlock        += min(WARP_SIZE, nCells - cellListBlock);
+
+    /* read from gmem cell's info */
+    const float4 cellSize = nodeSize[cellIdx];
+    const float4 cellPos  = nodeCenter[cellIdx];
+
+    /* compute first child, either a cell if node or a particle if leaf */
+    const int cellData   = __float_as_int(cellSize.w);
+    const int firstChild =  cellData & 0x0FFFFFFF;
+    const int nChildren  = (cellData & 0xF0000000) >> 28;
+    
+    //We touched this node so mark it  
+    markedNodes[cellIdx] = (cellIdx) | (uint)(1 << 31); 
+
+    bool splitCell         =  nChildren != 8;
+    if(cellData == 0xFFFFFFFF) splitCell = false;
+
+    const bool isNode = cellPos.w > 0.0f;
+    
+
+    if(isNode)
+    {
+      bool splitNode  = isNode && splitCell && useCell && (depth < maxDepth);
+
+      /* use exclusive scan to compute scatter addresses for each of the child cells */
+      const int2 childScatter = warpIntExclusiveScan(nChildren & (-splitNode));
+
+      /* make sure we still have available stack space */
+      if (childScatter.y + nCells - cellListBlock + nextLevelCellCounter > (CELL_LIST_MEM_PER_WARP<<SHIFT))
+        //return make_uint2(0xFFFFFFFF,0xFFFFFFFF);
+         return; //TODO print error
+
+      /* if so populate next level stack in gmem */
+      if (splitNode)
+      {
+          const int scatterIdx = cellListOffset + nCells + nextLevelCellCounter + childScatter.x;
+          for (int i = 0; i < nChildren; i++)
+              cellList[ringAddr<SHIFT>(scatterIdx + i)] = firstChild + i;
+      }
+      nextLevelCellCounter += childScatter.y;  /* increment nextLevelCounter by total # of children */
+    }
+    else
+    {
+        //Leaf TODO do something with 1 particle leafs
+        if(nChildren == 0)
+        {
+            //1Child
+            printf("ON DEV, marking child: %d \n", firstChild);
+            markedParticles[firstChild] = firstChild |  (uint)(1 << 31); 
+        }
+    }
+
+
+    /* if the current level is processed, schedule the next level */
+    if (cellListBlock >= nCells)
+    {
+      cellListOffset += nCells;
+      nCells          = nextLevelCellCounter;
+      cellListBlock   = nextLevelCellCounter = 0;
+      depth++;
+      if(threadIdx.x == 0) levels[depth+1] = nCells;
+    }
+  }  /* level completed */
+#endif
+
+    return;
+}
+
+#endif
 

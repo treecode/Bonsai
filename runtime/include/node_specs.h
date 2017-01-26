@@ -39,6 +39,14 @@ typedef struct bodyStruct
   float2 time;
   unsigned long long id;
 
+  //SPH values
+  float2 rhoH;
+  float4 hydro;
+  float4 drvt;
+
+
+
+
 #ifdef DO_BLOCK_TIMESTEP_EXCHANGE_MPI
 
   uint4 key;
@@ -54,12 +62,15 @@ typedef struct bodyStruct
 
 //Tree-walk and stack configuration
 //#define LMEM_STACK_SIZE            3072         //Number of storage places PER thread, MUST be power 2 !!!!
-#define LMEM_STACK_SIZE             2048        //Number of storage places PER thread, MUST be power 2 !!!!
-#define LMEM_EXTRA_SIZE             2048
+//#define LMEM_STACK_SIZE             2048        //Number of storage places PER thread, MUST be power 2 !!!!
+
+#define LMEM_EXTRA_SIZE            512
+#define LMEM_STACK_SIZE            512         //Number of storage places PER thread, MUST be power 2 !!!!
 #define CELL_LIST_MEM_PER_WARP     (LMEM_STACK_SIZE*32)
 #if ((CELL_LIST_MEM_PER_WARP-1) & CELL_LIST_MEM_PER_WARP) != 0
 #error "CELL_LIST_MEM_PER_WARP must be power of 2"
 #endif
+
 //#define LMEM_STACK_SIZE            1024         //Number of storage places PER thread, MUST be power 2 !!!!
 //#define LMEM_STACK_SIZE            512         //Number of storage places PER thread, MUST be power 2 !!!!
 // #define TREE_WALK_BLOCKS_PER_SM    32           //Number of GPU thread-blocks used for tree-walk

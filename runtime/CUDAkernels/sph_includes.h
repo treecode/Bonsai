@@ -173,6 +173,7 @@ namespace density
       temp = (fabs(massj*kernel.W(r, pos.w)) > 0);
 
       dens += massj*kernel.W(r, pos.w);
+      //dens += 1;
       //Prevent adding ourself, TODO should make this 'if' more efficient, like multiply with something
       //Not needed for this SPH kernel?
       //if(r2 != 0) density +=tempD;
@@ -257,9 +258,20 @@ namespace density
               addDensity(pos_i[k], jmass, jpos, eps2, density_i[k].dens, temp, kernel);
 //              density_i[k].smth++;
 
-//
-//              gradient_i[k].x++;       //Number of operations
-//              gradient_i[k].y += temp; //Number of useful operations
+
+#if 0
+          //    if(pos_i[0].x == 0.0 && pos_i[0].y == 0 && (pos_i[0].z > 0.03124 && pos_i[0].z < 0.03126))
+       // if(((laneId + 1) % 8) == 0)
+        if(pos_i[0].x == 0.5 && pos_i[0].y == 0.5 && pos_i[0].z == 49.5)
+        {
+            if(temp > 0)
+            {
+                printf("%d Interaction with: %f %f %f  with  %f\t%f\t%f \n", laneId, pos_i[0].x,pos_i[0].y,pos_i[0].z, jpos.x, jpos.y, jpos.z);
+            }
+        } 
+#endif
+              gradient_i[k].x++;       //Number of operations
+              gradient_i[k].y += temp; //Number of useful operations
             }
           }
         }

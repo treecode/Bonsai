@@ -234,11 +234,12 @@ class tree_structure
     my_dev::dev_mem<real4>  bodies_Pvel;    //Predicted velocity
     
     //Density related buffers
-    my_dev::dev_mem<real2> bodies_dens;    //The particles density (x) and smoothing length (y)
-    my_dev::dev_mem<real4> bodies_grad;    //The density gradient
-    my_dev::dev_mem<real > bodies_h;       //Search radius, keep for compatability for now
-    my_dev::dev_mem<real4> bodies_hydro;   //The hydro properties: x = pressure, y = soundspeed, z = Energy , w = Balsala Switch
-    my_dev::dev_mem<real4> bodies_hydro_out;   //The hydro result array
+    my_dev::dev_mem<real2> bodies_dens;      //The particles density (x) and smoothing length (y)
+    my_dev::dev_mem<real2> bodies_dens_out;  //The particles density (x) and smoothing length (y) output computed during tree-walk
+    my_dev::dev_mem<real4> bodies_grad;      //The density gradient
+    my_dev::dev_mem<real > bodies_h;         //Search radius, keep for compatability for now
+    my_dev::dev_mem<real4> bodies_hydro;     //The hydro properties: x = pressure, y = soundspeed, z = Energy , w = Balsala Switch
+    my_dev::dev_mem<real4> bodies_hydro_out; //The hydro result array
 
 
     my_dev::dev_mem<uint>   oriParticleOrder;  //Used in the correct function to speedup reorder
@@ -267,11 +268,21 @@ class tree_structure
 
     //Properties of the tree-node boxes
     my_dev::dev_mem<float4> boxSizeInfo;
-    my_dev::dev_mem<float4> groupSizeInfo;
     my_dev::dev_mem<float4> boxCenterInfo;
+    my_dev::dev_mem<float > boxSmoothing;
+
+
+    my_dev::dev_mem<float4> groupSizeInfo;
     my_dev::dev_mem<float4> groupCenterInfo;
 
     my_dev::dev_mem<uint4> parallelBoundaries;
+
+    my_dev::dev_mem<int4> smallBoundaryTreeIndices;
+    my_dev::dev_mem<int4>  fullBoundaryTreeIndices;
+
+    my_dev::dev_mem<float4> smallBoundaryTree;
+    my_dev::dev_mem<float4>  fullBoundaryTree;
+
 
     //Combined buffers:
     /*
@@ -383,6 +394,8 @@ protected:
   my_dev::kernel  propsNonLeafD, propsLeafD, propsScalingD;
   my_dev::kernel  setPHGroupData;
   my_dev::kernel  setActiveGrps;
+  my_dev::kernel  gpuBoundaryTree;
+  my_dev::kernel  gpuBoundaryTreeExtract;
 
   //Time integration kernels
   my_dev::kernel getTNext;
@@ -567,8 +580,9 @@ public:
   uint *globalGrpTreeCount;
   uint *globalGrpTreeOffsets;
 
-  int  *fullGrpAndLETRequest;
   int2 *fullGrpAndLETRequestStatistics;
+
+  int2 boundaryTreeDimensions; //x info about smallTree, y info about fullTree
 
   std::vector<int> infoGrpTreeBuffer;
   std::vector<int> exchangePartBuffer;
@@ -663,7 +677,17 @@ public:
   void computeProps_GroupTree(real4 *grpCenter, real4 *grpSize, real4 *treeCnt,
                               real4 *treeSize,  uint2 *nodes,   uint  *node_levels, int    n_levels);
 
+  int  gpuDetermineBoundary(tree_structure &tree,
+                            const int maxDepth, const uint2 node_begend,
+                            my_dev::dev_mem<uint > &validList,
+                            my_dev::dev_mem<uint > &stackList,
+                            my_dev::dev_mem<int4> &newValid,
+                            my_dev::dev_mem<int4> &finalValid,
+                            my_dev::dev_mem<float4> &finalBuff);
+
+  int4 getSearchPropertiesBoundaryTrees();
   void sendCurrentInfoGrpTree();
+  void updateCurrentInfoGrpTree();
 
   void exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys,    int  nSamples,
                                            uint4 *globalSamples, int  *nReceiveCnts, int *nReceiveDpls,
@@ -791,7 +815,6 @@ public:
     //An initial guess for group broadcasted information
     //We set the statistics for our neighboring processes
     //to 1 and all remote ones to 0 for starters
-    fullGrpAndLETRequest           = new int[nProcs];
     fullGrpAndLETRequestStatistics = new int2[nProcs];
 
     for(int i=0; i < nProcs; i++)
@@ -830,7 +853,6 @@ public:
     if(globalGrpTreeCount)   delete[] globalGrpTreeCount;
     if(globalGrpTreeOffsets) delete[] globalGrpTreeOffsets;
 
-    if(fullGrpAndLETRequest)           delete[] fullGrpAndLETRequest;
     if(fullGrpAndLETRequestStatistics) delete[] fullGrpAndLETRequestStatistics;
   };
 };

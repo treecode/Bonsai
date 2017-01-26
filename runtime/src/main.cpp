@@ -21,6 +21,8 @@ http://github.com/treecode/Bonsai
  * Fix the block time stepping
  * Add block time-stepping to the multi-GPU code
  *
+ * Figure out of Smoothing info should be included with the particles that are part of the boundary tree
+ *
  */
 
 #include <iostream>
@@ -716,7 +718,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   }
   else if(nPlummer >= 0)
   {
-    generatePlummerModel(bodyPositions, bodyVelocities, bodyIDs, procId, nProcs, nPlummer);
+    generatePlummerModel(bodyPositions, bodyVelocities, bodyIDs, bodyDensity, procId, nProcs, nPlummer);
   }
   else if (nSphere >= 0)
   {
@@ -755,6 +757,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 
   double t0 = tree->get_time();
 
+
   tree->localTree.setN((int)bodyPositions.size());
   tree->allocateParticleMemory(tree->localTree);
 
@@ -768,6 +771,10 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   for(uint i=0; i < bodyPositions.size(); i++)
   {
     tree->localTree.bodies_pos[i]   = bodyPositions[i];
+
+    //tree->localTree.bodies_pos[i].x += double(rand())/RAND_MAX;
+
+
     tree->localTree.bodies_Ppos[i]  = bodyPositions[i];
     tree->localTree.bodies_vel[i]   = bodyVelocities[i];
     tree->localTree.bodies_Pvel[i]  = bodyVelocities[i];

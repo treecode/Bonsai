@@ -25,9 +25,10 @@ void octree::allocateParticleMemory(tree_structure &tree)
   tree.bodies_acc1.ccalloc(n_bodies, false);    //ccalloc -> init to 0
   tree.bodies_time.ccalloc(n_bodies, false);    //ccalloc -> init to 0
 
-  //SPH related
+  //SPH related, TODO check which one need pinnend and which do not
   tree.bodies_grad.     cmalloc(n_bodies, true);
   tree.bodies_dens.     cmalloc(n_bodies, true);
+  tree.bodies_dens_out. cmalloc(n_bodies, true);
   tree.bodies_h.        cmalloc(n_bodies, true);
   tree.bodies_hydro.    cmalloc(n_bodies, true);
   tree.bodies_hydro_out.cmalloc(n_bodies, true);
@@ -128,6 +129,7 @@ void octree::reallocateParticleMemory(tree_structure &tree)
   //SPH Related
   tree.bodies_grad.     cresize(n_bodies, reduce);
   tree.bodies_dens.     cresize(n_bodies, reduce);
+  tree.bodies_dens_out. cresize(n_bodies, reduce);
   tree.bodies_h.        cresize(n_bodies, reduce);
   tree.bodies_hydro.    cresize(n_bodies, reduce);
   tree.bodies_hydro_out.cresize(n_bodies, reduce);
@@ -176,6 +178,7 @@ void octree::allocateTreePropMemory(tree_structure &tree)
     tree.multipole.cresize_nocpy(3*n_nodes,     false);
     tree.boxSizeInfo.cresize_nocpy(n_nodes,     false); //host allocated
     tree.boxCenterInfo.cresize_nocpy(n_nodes,   false); //host allocated
+    tree.boxSmoothing.cresize_nocpy (n_nodes,   false); //host allocated
 
     int n_groups = tree.n_groups;
     if(tree.groupSizeInfo.get_size() <= n_groups)
@@ -195,9 +198,43 @@ void octree::allocateTreePropMemory(tree_structure &tree)
 
     tree.boxCenterInfo.cmalloc(n_nodes, true); //host allocated
     tree.groupCenterInfo.cmalloc(tree.n_groups,true);
+    tree.boxSmoothing.cmalloc (n_nodes,   true);
   }
   devContext->stopTiming("Memory", 11, execStream->s());
 }
+
+
+int octree::gpuDetermineBoundary(tree_structure &tree, int maxDepth, uint2 node_begend,
+                                  my_dev::dev_mem<uint >  &validList, my_dev::dev_mem<uint >  &stackList,
+                                  my_dev::dev_mem<int4>  &newValid,   my_dev::dev_mem<int4>  &finalValid,
+                                  my_dev::dev_mem<float4> &finalBuff)
+{
+  //Determine the boundaries of the tree-structure. This is used during multi-GPU execution.
+   gpuBoundaryTree.set_args(0, &node_begend,
+                               &maxDepth,
+                               stackList.p(),
+                               tree.n_children.p(),
+                               tree.node_bodies.p(),
+                               validList.p(),
+                               newValid.p());
+   gpuBoundaryTree.setWork(32, 32, 1);
+   gpuBoundaryTree.execute2(execStream->s());
+
+   newValid.d2h(1);
+
+   //Allocate the buffers to store in the boundary tree and the indices used to generate the boundary tree
+   finalValid.resizeOrAlloc(1+newValid[0].x, false, false);
+   finalValid.copy_devonly(newValid, 1+newValid[0].x);
+
+   int finalTreeSize = 1 + newValid[0].y + 6*newValid[0].x; //Header+nBody+nNode*6 (size/cnt/smth/multi123)
+
+   finalBuff.resizeOrAlloc(finalTreeSize, false, true);    //BoundaryTree goes to host so pinned memory
+
+   LOGF(stderr,"Boundary props from GPU extraction nNode: %d nBody: %d start: %d end: %d\n", newValid[0].x,newValid[0].y, newValid[0].z, newValid[0].w);
+
+   return finalTreeSize;
+}
+
 
 void octree::build (tree_structure &tree) {
 
@@ -259,9 +296,8 @@ void octree::build (tree_structure &tree) {
   this->devMemCountsx.waitForCopyEvent();
 //  devContext.startTiming(execStream->s());
 
-  if(nProcs > 1)
+ // if(nProcs > 1)
   {
-      LOGF(stderr,"Before copy ppos valid\n");
     //Start copying the particle positions to the host, will overlap with tree-construction
     localTree.bodies_Ppos.d2h(tree.n, false, LETDataToHostStream->s());
   }
@@ -338,6 +374,28 @@ void octree::build (tree_structure &tree) {
   gpuSplit(validList, tree.leafNodeIdx, tree.n_nodes, &tree.n_leafs);
 
   LOG("Total nodes: %d N_leafs: %d  non-leafs: %d \n", tree.n_nodes, tree.n_leafs, tree.n_nodes - tree.n_leafs);
+
+
+  //For multi-GPU execution we now determine the outer boundaries of this tree-structure
+//  if(nProcs > 1)
+  {
+      my_dev::dev_mem<int4>   newValid;
+      my_dev::dev_mem<uint>   stackList;
+
+      memBufOffset = stackList.cmalloc_copy(tree.generalBuffer1, 32*1024,      memBufOffsetValidList);
+      memBufOffset = newValid.cmalloc_copy (tree.generalBuffer1, tree.n_nodes, memBufOffset);
+
+      //First do this for the smallBoundary tree
+      int4 startEndDepth       = getSearchPropertiesBoundaryTrees();
+      uint2 node_begend        = make_uint2(startEndDepth.x, startEndDepth.y);
+      boundaryTreeDimensions.x = gpuDetermineBoundary(tree,startEndDepth.z, node_begend, validList, stackList, newValid, tree.smallBoundaryTreeIndices, tree.smallBoundaryTree);
+
+      //And now for the fullBoundary tree, which has no limitations on start and end
+      node_begend              = tree.level_list[tree.startLevelMin];
+      boundaryTreeDimensions.y = gpuDetermineBoundary(tree,99, node_begend, validList, stackList, newValid, tree.fullBoundaryTreeIndices, tree.fullBoundaryTree);
+  }
+
+
 
   //Build the level list based on the leafIdx list, required for easy
   //access during the compute node properties / multipole computation

@@ -69,6 +69,8 @@ void octree::load_kernels() {
   SPHDerivative.   create("dev_sph_derivative",      (const void*)&dev_sph_derivative);
   SPHHydro.        create("dev_sph_hydro",           (const void*)&dev_sph_hydro);
   setPressure.     create("set_pressure",            (const void*)&set_pressure);
+  gpuBoundaryTree. create("gpuBoundaryTree",         (const void*)&gpu_boundaryTree);
+  gpuBoundaryTreeExtract. create("gpuBoundaryTreeExtract",         (const void*)&gpu_extractBoundaryTree);
 
 
   //Parallel kernels

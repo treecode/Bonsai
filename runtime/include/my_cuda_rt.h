@@ -450,6 +450,19 @@ namespace my_dev {
       CU_SAFE_CALL(cudaEventCreate(&asyncCopyEvent));
       eventSet = true;
     }
+    
+    dev_mem(const int n): hDeviceMem(NULL), DeviceMemPtr(NULL), flags(0){
+      size              = 0;
+      pinned_mem        = false;
+      hDeviceMem_flag   = false;
+      host_ptr          = NULL;
+      childMemory       = false;
+
+      CU_SAFE_CALL(cudaEventCreate(&asyncCopyEvent));
+      eventSet = true;
+
+      cmalloc(n);
+    }
 
     void free_mem()
     {
@@ -563,6 +576,12 @@ namespace my_dev {
       hDeviceMem_flag = true;
     }
     
+    void resizeOrAlloc(int n, bool reduce, bool pinned)
+    {
+        if(size == 0) cmalloc(n, pinned);
+        cresize(n, reduce);
+    }
+
      //Set reduce to false to not reduce the size, to speed up pinned memory buffers
     void cresize(int n, bool reduce = true)     
     {
@@ -746,6 +765,27 @@ namespace my_dev {
       }
     }    
     
+    //D2h that only copies a certain number of items to the host from a startIdx position in the array
+    void d2h(int number, int startIdx, bool OCL_BLOCKING = true, cudaStream_t stream = 0)   {
+      assert(hDeviceMem_flag);
+
+      if(number == 0) return;
+
+      assert(size > 0);
+
+      if(OCL_BLOCKING)
+      {
+        CU_SAFE_CALL(cudaMemcpy(&host_ptr[startIdx], a(startIdx), number*sizeof(T),cudaMemcpyDeviceToHost));
+      }
+      else
+      {
+        //Async copy, ONLY works for page-locked memory therefore default parameter is blocking.
+        assert(pinned_mem);
+        CU_SAFE_CALL(cudaMemcpyAsync(&host_ptr[startIdx], a(startIdx), number*sizeof(T),cudaMemcpyDeviceToHost, stream));
+        CU_SAFE_CALL(cudaEventRecord(asyncCopyEvent, stream));
+      }
+    }
+
     //Copy to a specified buffer
     void d2h(int number, void* dst, bool OCL_BLOCKING = true, cudaStream_t stream = 0)   {
       assert(hDeviceMem_flag);

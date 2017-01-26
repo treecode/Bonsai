@@ -63,6 +63,12 @@ extern "C" void  (dev_sph_hydro)( const int n_active_groups, int    n_bodies, fl
 extern "C" void  (set_pressure)(const int     n_bodies, const float2 *density, float4       *hydro);
 
 
+extern "C" void  (gpu_boundaryTree)(const uint2, int *, const float4*, const float4*, uint*);
+
+
+extern "C" void  (gpu_extractBoundaryTree)();
+
+
 //Parallel.cu kernels
 extern "C" void  (gpu_internalMoveSFC2) (int       n_extract, int       n_bodies, uint4  lowBoundary, uint4  highBoundary, int2       *extractList, int       *indexList, real4     *Ppos, real4     *Pvel, real4     *pos, real4     *vel, real4     *acc0, real4     *acc1, float2    *time, unsigned long long        *body_id, uint4     *body_key);
 extern "C" void  (gpu_extractOutOfDomainParticlesAdvancedSFC2)(int offset, int n_extract, uint2 *extractList, real4 *Ppos, real4 *Pvel, real4 *pos, real4 *vel, real4 *acc0, real4 *acc1, float2 *time, unsigned long long *body_id, uint4 *body_key, bodyStruct *destination);

@@ -330,7 +330,10 @@ KERNEL_DECLARE(gpu_internalMoveSFC2) (int       n_extract,
                                   float2    *time,
                                   unsigned long long       *body_id,
                                   uint4     *body_key,
-                                  float *h)
+                                  float *h,
+                                  float2 *rhoH,
+                                  float4 *drvt,
+                                  float4 *hydro)
 {
   CUXTIMER("internalMoveSFC2");
   uint bid = blockIdx.y * gridDim.x + blockIdx.x;
@@ -363,6 +366,10 @@ KERNEL_DECLARE(gpu_internalMoveSFC2) (int       n_extract,
     body_key[dstIdx] = body_key[srcIdx];
     body_id[dstIdx]  = body_id[srcIdx];
     h[dstIdx]     = h[srcIdx];
+    rhoH[dstIdx]  = rhoH[srcIdx];
+    drvt[dstIdx]  = drvt[srcIdx];
+    hydro[dstIdx] = hydro[srcIdx];
+
   }//if inside
 
 }
@@ -383,6 +390,9 @@ KERNEL_DECLARE(gpu_extractOutOfDomainParticlesAdvancedSFC2)(
                                                        unsigned long long    *body_id,
                                                        uint4 *body_key,
                                                        float *h,
+                                                       float2 *rhoH,
+                                                       float4 *drvt,
+                                                       float4 *hydro,
                                                        bodyStruct *destination)
 {
   CUXTIMER("extractOutOfDomainParticlesAdvancedSFC2");
@@ -479,7 +489,11 @@ KERNEL_DECLARE(gpu_extractOutOfDomainParticlesAdvancedSFC2)(
     shmem[threadIdx.x].time  = time[extractList[offset+id].y];
 
     shmem[threadIdx.x].id     = body_id[extractList[offset+id].y];
-    shmem[threadIdx.x].Pvel.w = h[extractList[offset+id].y];
+//    shmem[threadIdx.x].Pvel.w = h[extractList[offset+id].y]; //TODO remove at some point when we are sure we dont use bodies_h anymore
+
+    shmem[threadIdx.x].rhoH  = rhoH[extractList[offset+id].y];
+    shmem[threadIdx.x].drvt  = drvt[extractList[offset+id].y];
+    shmem[threadIdx.x].hydro = hydro[extractList[offset+id].y];
 
 
 #ifdef DO_BLOCK_TIMESTEP_EXCHANGE_MPI
@@ -540,6 +554,9 @@ KERNEL_DECLARE(gpu_insertNewParticlesSFC)(int       	 n_extract,
 										  unsigned long long        *body_id,
 										  uint4     	*body_key,
 										  float     	*h,
+										  float2 *rhoH,
+										  float4 *drvt,
+										  float4 *hydro,
 										  bodyStruct 	*source)
 {
   CUXTIMER("insertNewParticlesSFC");
@@ -561,7 +578,11 @@ KERNEL_DECLARE(gpu_insertNewParticlesSFC)(int       	 n_extract,
   time[idx]     = source[id].time;
   body_id[idx]  = source[id].id;
 
-  h[idx]        = source[id].Pvel.w;
+  //h[idx]        = source[id].Pvel.w; //TODO remove once we dont use h anymore
+
+  rhoH[idx]  = source[id].rhoH;
+  drvt[idx]  = source[id].drvt;
+  hydro[idx] = source[id].hydro;
 
 
 #ifdef DO_BLOCK_TIMESTEP_EXCHANGE_MPI

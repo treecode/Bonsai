@@ -92,8 +92,100 @@ static __device__ void compute_bounds_node(float3 &r_min, float3 &r_max,
   r_max.z = fmaxf(r_max.z, node_max.z);
 }
 
+KERNEL_DECLARE(compute_leaf_sph)(
+                                 const int       n_leafs,
+                                 uint           *leafsIdxs,
+                                 uint2          *node_bodies,
+                                 real4          *body_pos,
+                                 double4        *multipole,
+                                 real4          *nodeLowerBounds,
+                                 real4          *nodeUpperBounds,
+                                 real4          *body_vel,
+                                 ulonglong1     *body_id,
+                                 real           *body_h, //TODO REMOVE, not used anymore
+                                 const float     h_min,  //TODO REMOVE, not used anymore
+                                 const float2   *body_dens) {
 
-KERNEL_DECLARE(compute_leaf)(const int         n_leafs,
+  CUXTIMER("compute_sph_leaf");
+  const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
+  const uint tid = threadIdx.x;
+  const uint id  = bid * blockDim.x + tid;
+
+  if (id >= n_leafs) return;
+
+
+  //Since nodes are intermixed with non-leafs in the node_bodies array
+  //we get a leaf-id from the leafsIdxs array
+  int nodeID = leafsIdxs[id];
+
+  const uint2 bij          =  node_bodies[nodeID];
+  const uint firstChild    =  bij.x & ILEVELMASK;
+  const uint lastChild     =  bij.y;  //TODO maybe have to increase it by 1
+
+  //Variables holding properties and intermediate answers
+  float4 p;
+
+  double mass, posx, posy, posz;
+  mass = posx = posy = posz = 0.0;
+
+  double oct_q11, oct_q22, oct_q33;
+  double oct_q12, oct_q13, oct_q23;
+  oct_q11 = oct_q22 = oct_q33 = 0.0;
+  oct_q12 = oct_q13 = oct_q23 = 0.0;
+
+  float3 r_min = make_float3(+1e10f, +1e10f, +1e10f);
+  float3 r_max = make_float3(-1e10f, -1e10f, -1e10f);
+
+  //Loop over the children=>particles=>bodys
+  //unroll increases register usage #pragma unroll 16
+  float maxEps  = -100.0f;
+  float maxSmth = -100.0f;
+  for(int i=firstChild; i < lastChild; i++)
+  {
+    p      = body_pos[i];
+
+    compute_monopole(mass, posx, posy, posz, p);
+    compute_quadropole(oct_q11, oct_q22, oct_q33, oct_q12, oct_q13, oct_q23, p);
+    //    compute_bounds(r_min, r_max, p);
+
+    maxSmth = fmaxf(body_dens[i].y, maxSmth);
+
+    //Change the particle into a box and use that as the boundaries
+    float  smth  = body_dens[i].y*SPH_KERNEL_SIZE;
+    compute_bounds_node(r_min, r_max,
+                        make_float4(p.x-smth, p.y-smth, p.z-smth, 0),
+                        make_float4(p.x+smth, p.y+smth, p.z+smth, 0));
+
+  }
+
+  double4 mon = {posx, posy, posz, mass};
+
+  double im = 1.0/mon.w;
+  if(mon.w == 0) im = 0;        //Allow tracer/massless particles
+  mon.x *= im;
+  mon.y *= im;
+  mon.z *= im;
+
+
+  double4 Q0, Q1;
+  Q0 = make_double4(oct_q11, oct_q22, oct_q33, maxEps); //Store max softening
+  Q1 = make_double4(oct_q12, oct_q13, oct_q23, 0.0f);
+
+  //Store the leaf properties
+  multipole[3*nodeID + 0] = mon;       //Monopole
+  multipole[3*nodeID + 1] = Q0;        //Quadropole
+  multipole[3*nodeID + 2] = Q1;        //Quadropole
+
+  //Store the node boundaries
+  nodeLowerBounds[nodeID] = make_float4(r_min.x, r_min.y, r_min.z, maxSmth); //4th parameter holds the maximum smoothing range of underlying particles
+  nodeUpperBounds[nodeID] = make_float4(r_max.x, r_max.y, r_max.z, 1.0f);    //4th parameter is set to 1 to indicate this is a leaf
+
+  return;
+}
+
+
+KERNEL_DECLARE(compute_leaf)
+                            (const int         n_leafs,
                                    uint       *leafsIdxs,
                                    uint2      *node_bodies,
                                    real4      *body_pos,
@@ -111,18 +203,8 @@ KERNEL_DECLARE(compute_leaf)(const int         n_leafs,
   const uint tid = threadIdx.x;
   const uint id  = bid * blockDim.x + tid;
 
-
-  volatile __shared__ float3 shmem[256];
-  volatile float3 *sh_rmin = (float3*)&shmem [ 0];
-  volatile float3 *sh_rmax = (float3*)&shmem[128];
-
   //Set the shared memory for these threads and exit the thread
-  if (id >= n_leafs)
-  {
-    sh_rmin[tid].x = +1e10f; sh_rmin[tid].y = +1e10f; sh_rmin[tid].z = +1e10f;
-    sh_rmax[tid].x = -1e10f; sh_rmax[tid].y = -1e10f; sh_rmax[tid].z = -1e10f;
-    return;
-  }
+  if (id >= n_leafs) return;
 
 
   //Since nodes are intermixes with non-leafs in the node_bodies array
@@ -144,9 +226,12 @@ KERNEL_DECLARE(compute_leaf)(const int         n_leafs,
 
   oct_q11 = oct_q22 = oct_q33 = 0.0;
   oct_q12 = oct_q13 = oct_q23 = 0.0;
-  float3 r_min, r_max;
-  r_min = make_float3(+1e10f, +1e10f, +1e10f);
-  r_max = make_float3(-1e10f, -1e10f, -1e10f);
+
+  float3  r_min = make_float3(+1e10f, +1e10f, +1e10f);
+  float3  r_max = make_float3(-1e10f, -1e10f, -1e10f);
+
+  float3 r_minSPH = make_float3(+1e10f, +1e10f, +1e10f);
+  float3 r_maxSPH = make_float3(-1e10f, -1e10f, -1e10f);
 
   //Loop over the children=>particles=>bodys
   //unroll increases register usage #pragma unroll 16
@@ -159,16 +244,28 @@ KERNEL_DECLARE(compute_leaf)(const int         n_leafs,
     maxEps = fmaxf(body_vel[i].w, maxEps);      //Determine the max softening within this leaf
     count++;
 
-    //SPH max smoothing value for the cell
-    //TODO this should be taken from the box-extends which makes
-    //the box tighter and hence more efficient. ( for example (boxEdge-particle.pos > smoothing)
-    maxSmth = fmaxf(body_dens[i].y, maxSmth);
-
-
     compute_monopole(mass, posx, posy, posz, p);
     compute_quadropole(oct_q11, oct_q22, oct_q33, oct_q12, oct_q13, oct_q23, p);
     compute_bounds(r_min, r_max, p);
+
+    maxSmth = fmaxf(body_dens[i].y, maxSmth);
+    //Change the particle into a box and use that as the boundaries
+    float  smth  = body_dens[i].y; //*SPH_KERNEL_SIZE;
+    compute_bounds_node(r_minSPH, r_maxSPH,
+                        make_float4(p.x-smth, p.y-smth, p.z-smth, 0),
+                        make_float4(p.x+smth, p.y+smth, p.z+smth, 0));
+
   }
+
+  //SPH max smoothing value for the cell
+  //Uses the box-extends which makes the box tighter and hence more efficient. ( for example if (boxEdge-particle.pos) > particle-smoothing)
+
+  //Compute the max smoothing range for this cell by determining the max distance between the tightbox and the smoothedbox
+  maxSmth     = fmaxf(fmaxf(fmaxf(fabs(r_min.x-r_minSPH.x), fabs(r_max.x-r_maxSPH.x)),
+                            fmaxf(fabs(r_min.y-r_minSPH.y), fabs(r_max.y-r_maxSPH.y))),
+                            fmaxf(fabs(r_min.z-r_minSPH.z), fabs(r_max.z-r_maxSPH.z)));
+
+
 
   double4 mon = {posx, posy, posz, mass};
 
@@ -191,90 +288,23 @@ KERNEL_DECLARE(compute_leaf)(const int         n_leafs,
   multipole[3*nodeID + 2] = Q1;        //Quadropole
 
   //Store the node boundaries
-  nodeLowerBounds[nodeID] = make_float4(r_min.x, r_min.y, r_min.z, maxSmth);  //4th parameter holds the maximum smoothing range of underlying particles
-  nodeUpperBounds[nodeID] = make_float4(r_max.x, r_max.y, r_max.z, 1.0f);  //4th parameter is set to 1 to indicate this is a leaf
+  nodeLowerBounds[nodeID] = make_float4(r_min.x, r_min.y, r_min.z, maxSmth); //4th parameter holds the maximum smoothing range of underlying particles
+  nodeUpperBounds[nodeID] = make_float4(r_max.x, r_max.y, r_max.z, 1.0f);    //4th parameter is set to 1 to indicate this is a leaf
+
+//Compute the box physical center and size
+//  float3 boxCenter,boxSize;
+//  boxCenter.x   = make_float3(0.5*(r_min.x + r_max.x),
+//                              0.5*(r_min.y + r_max.y),
+//                              0.5*(r_min.z + r_max.z));
+//  boxSize       = make_float3(fmaxf(fabs(boxCenter.x-r_min.x), fabs(boxCenter.x-r_max.x)),
+//                              fmaxf(fabs(boxCenter.y-r_min.y), fabs(boxCenter.y-r_max.y)),
+//                              fmaxf(fabs(boxCenter.z-r_min.z), fabs(boxCenter.z-r_max.z)));
+//Do the same thing for the smoothed size
 
 
 
-#if 0
-  //Addition for density computation, we require separate search radii
-  //for star particles and dark-matter particles. Note that we could 
-  //combine most of this with the loops above. But for clarity
-  //I kept them separate until it all is tested and functions correctly
 
-  ulonglong1 DARKMATTERID;
-  DARKMATTERID.x = 3000000000000000000ULL;
 
-  float3 r_minS, r_maxS, r_minD, r_maxD;
-  r_minS = make_float3(+1e10f, +1e10f, +1e10f);
-  r_maxS = make_float3(-1e10f, -1e10f, -1e10f);
-  r_minD = make_float3(+1e10f, +1e10f, +1e10f);
-  r_maxD = make_float3(-1e10f, -1e10f, -1e10f);
-
-  int nStar = 0;
-  int nDark = 0;
-  for(int i=firstChild; i < lastChild; i++)
-  {
-    p             = body_pos[i];
-    ulonglong1 id = body_id[i];
-
-    if(id.x >= DARKMATTERID.x)
-    {
-      compute_bounds(r_minD, r_maxD, p);
-      nDark++;
-    }
-    else
-    {
-
-	compute_bounds(r_minS, r_maxS, p);
-	nStar++;
-    }
-  }
-  
-  float fudgeFactor = 1;
-
-  r_maxS.x -= r_minS.x;  r_maxS.y -= r_minS.y;  r_maxS.z -= r_minS.z;
-  r_maxD.x -= r_minD.x;  r_maxD.y -= r_minD.y;  r_maxD.z -= r_minD.z;
-
-#if 0
-  float volumeS = fudgeFactor*cbrtf(r_maxS.x*r_maxS.y*r_maxS.z); //pow(x,1.0/3);
-  float volumeD = fudgeFactor*cbrtf(r_maxD.x*r_maxD.y*r_maxD.z); //, 1.0/3);
-#else
-  const float maxS = max(max(r_maxS.x, r_maxS.y), r_maxS.z);
-  const float maxD = max(max(r_maxD.x, r_maxD.y), r_maxD.z);
-  const float volS = maxS*maxS*maxS;
-  const float volD = maxD*maxD*maxD;
-  const int   npS  = lastChild - firstChild;
-  const int   npD  = npS;  /* must have correct count for npS & npD */
-  const int   nbS = 32;
-  const int   nbD = 64;
-  const float roS = float(npS) / volS;
-  const float roD = float(npD) / volD;
-  const float volumeS = cbrtf(nbS / roS);
-  const float volumeD = cbrtf(nbD / roD);
-//  assert(volumeS >= 0.0f);
-//  assert(volumeD >= 0.0f);
-#endif
-
-  for(int i=firstChild; i < lastChild; i++)
-  {
-    ulonglong1 id = body_id[i];
-    if(id.x >= DARKMATTERID.x)
-    {
-//	    assert(0);
-	    body_h[i] = volumeD;
-    }
-    else
-    {
-//	    if(i == 0) printf("STATD I goes from: %f  to %f gives: %f \n", body_h[i], volumeS, 0.5f*(volumeS + body_h[i]));
-	    if(body_h[i] >= 0) 
-	      body_h[i] = body_h[i]; // 0.5f*(volumeS + body_h[i]);
-	    else
-	      body_h[i] = max(h_min,volumeS);
-    }
-  }
-#else
-  {
 #if 1
     const float3 len = make_float3(r_max.x-r_min.x, r_max.y-r_min.y, r_max.z-r_min.z);
     const float  vol = cbrtf(len.x*len.y*len.z);
@@ -289,9 +319,6 @@ KERNEL_DECLARE(compute_leaf)(const int         n_leafs,
       if(body_h[i] < 0)
         body_h[i] = hp;
 #endif
-  }
-#endif
-
 
   return;
 }
@@ -300,12 +327,12 @@ KERNEL_DECLARE(compute_leaf)(const int         n_leafs,
 //Function goes level by level (starting from deepest) and computes
 //the properties of the non-leaf nodes
 KERNEL_DECLARE(compute_non_leaf)(const int curLevel,         //Level for which we calc
-                                            uint  *leafsIdxs,           //Conversion of ids
-                                            uint  *node_level_list,     //Contains the start nodes of each lvl
-                                            uint  *n_children,          //Reference from node to first child and number of childs
-                                            double4 *multipole,
-                                            real4 *nodeLowerBounds,
-                                            real4 *nodeUpperBounds){
+                                 uint  *leafsIdxs,           //Conversion of ids
+                                 uint  *node_level_list,     //Contains the start nodes of each lvl
+                                 uint  *n_children,          //Reference from node to first child and number of childs
+                                 double4 *multipole,
+                                 real4 *nodeLowerBounds,
+                                 real4 *nodeUpperBounds){
 
   CUXTIMER("compute_non_leaf");
   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
@@ -389,6 +416,7 @@ KERNEL_DECLARE(compute_scaling)(const int      node_count,
                                       float    theta,
                                       real4   *boxSizeInfo,
                                       real4   *boxCenterInfo,
+                                      float   *boxSmoothingInfo,
                                       uint2   *node_bodies){
 
   CUXTIMER("compute_scaling");
@@ -506,14 +534,20 @@ KERNEL_DECLARE(compute_scaling)(const int      node_count,
   /* For SPH we re-use boxCenterInfo[idx].w  to hold the max smoothing range
    * of the particles within this cell. TODO use a better variable to hold this?
    */
+
+  //Store the search length squared. This eases the distance comparisons
+  boxSmoothingInfo[idx] = (SPH_KERNEL_SIZE*r_min.w)*(SPH_KERNEL_SIZE*r_min.w);
+
   bool doSPH = true;
   if(doSPH)
   {
+      //Make sure that value is non-zero
+      if(r_min.w < 0.000001) r_min.w = 0.000001;
       if (r_max.w > 0){
           boxCenterInfo[idx].w = -(r_min.w*r_min.w);
       }
       else {
-          boxCenterInfo[idx].w =  (r_min.w*r_min.w);
+           boxCenterInfo[idx].w =  (r_min.w*r_min.w);
       }
   }
 
@@ -526,9 +560,10 @@ KERNEL_DECLARE(compute_scaling)(const int      node_count,
     boxSizeInfo[idx].w = __int_as_float(pfirst);
   }
 
-
   return;
 }
+
+
 
 //Compute the properties for the groups
 KERNEL_DECLARE(gpu_setPHGroupData)(const int n_groups,
