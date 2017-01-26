@@ -156,7 +156,7 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate, bool doFullS
   //The generalBuffer1 has size uint*4*N*3 = uint*12*N
   int genBufOffset2 = 0;
 
-  genBufOffset2 = srcValues.cmalloc_copy(tree.generalBuffer1, tree.n, 0);  //uint*N -uint5*N
+  genBufOffset2 = srcValues.cmalloc_copy(tree.generalBuffer1, tree.n, 0);             //uint*N -uint5*N
   genBufOffset2 = tempB    .cmalloc_copy(tree.generalBuffer1, tree.n, genBufOffset2); //uint5*N-uint6*N
   genBufOffset2 = tempC    .cmalloc_copy(tree.generalBuffer1, tree.n, genBufOffset2); //uint6*N-uint7*N
   genBufOffset2 = tempD    .cmalloc_copy(tree.generalBuffer1, tree.n, genBufOffset2); //uint7*N-uint8*N

@@ -66,6 +66,7 @@ option(CUDA_KEEP_INTERMEDIATE_FILES
 FIND_PACKAGE(CUDA REQUIRED)
 
 add_definitions(-std=c++11)
+#add_definitions(-D_GLIBCXX_DEBUG)
 set(EXTRA_MPI_LINK_FLAGS)
 if (USE_MPI)
   add_definitions(-DUSE_MPI)

@@ -86,20 +86,20 @@ struct ExtractBits: public thrust::unary_function<uint4, uint>
 	template <int keyIdx, typename KeyPtr, typename PermutationPtr, typename ExtractedPtr>
 	void update_permutation_thrust(KeyPtr& keys, PermutationPtr& permutation, ExtractedPtr& temp, int N)
 	{
-    // permute the keys with the current reordering
-    thrust::gather(permutation, permutation + N,
-             thrust::make_transform_iterator(keys, ExtractBits<keyIdx>()), temp);
-    // stable_sort the permuted keys and update the permutation
-    thrust::stable_sort_by_key(temp, temp + N, permutation);
+        // permute the keys with the current reordering
+        thrust::gather(permutation, permutation + N,
+                 thrust::make_transform_iterator(keys, ExtractBits<keyIdx>()), temp);
+        // stable_sort the permuted keys and update the permutation
+        thrust::stable_sort_by_key(temp, temp + N, permutation);
 	}
 
 	//Thrust does it's own memory allocation, hence fewer parameters. This increases the
 	//risk of the GPU running out of memory.
 	// TODO add our own allocator policy.
 	extern "C" void thrustSort(my_dev::dev_mem<uint4> &srcKeys,
-                             my_dev::dev_mem<uint>  &permutation_buffer,
-                             my_dev::dev_mem<uint>  &temp_buffer,
-                             int N)
+                               my_dev::dev_mem<uint>  &permutation_buffer,
+                               my_dev::dev_mem<uint>  &temp_buffer,
+                               int N)
 	{
 	  //Convert Bonsai ptr into thrst ptr
 	  thrust::device_ptr<uint4> keys        = srcKeys.thrustPtr();
@@ -108,7 +108,6 @@ struct ExtractBits: public thrust::unary_function<uint4, uint>
 
 	  // initialize permutation to [0, 1, 2, ... ,N-1]
 	  thrust::sequence(permutation, permutation + N);
-
 	  // sort z, y, x
 	  update_permutation_thrust<2>(keys, permutation, temp, N);
 	  update_permutation_thrust<1>(keys, permutation, temp, N);

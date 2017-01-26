@@ -260,6 +260,7 @@ struct DiskShuffle
   void generatePlummerModel(vector<real4>   &bodyPositions,
                             vector<real4>   &bodyVelocities,
                             vector<ullong>  &bodyIDs,
+                            vector<real2>   &bodyDens,
                             const int        procId,
                             const int        nProcs,
                             const int        nPlummer)
@@ -271,6 +272,7 @@ struct DiskShuffle
     bodyPositions.resize(nPlummer);
     bodyVelocities.resize(nPlummer);
     bodyIDs.resize(nPlummer);
+    bodyDens.resize(nPlummer);
     for (int i= 0; i < nPlummer; i++)
     {
       assert(!std::isnan(m.pos[i].x));
@@ -288,6 +290,10 @@ struct DiskShuffle
       bodyVelocities[i].y = m.vel[i].y;
       bodyVelocities[i].z = m.vel[i].z;
       bodyVelocities[i].w = 0;
+
+      //SPH
+      //bodyDens[i].x = 1;
+      //bodyDens[i].y = 1.0/nPlummer;
     }
   }
 
@@ -385,7 +391,7 @@ struct DiskShuffle
                        const int        nProcs,
                        const int        nSPH)
   {
-#if 0
+#if 1
     //Cube
     const int nSPH3 = nSPH*nSPH*nSPH;
     if (procId == 0) printf("Using SPH Cube model with n= %d per process \n", nSPH3);
@@ -393,6 +399,8 @@ struct DiskShuffle
     bodyPositions.resize(nSPH3);
     bodyVelocities.resize(nSPH3);
     bodyIDs.resize(nSPH3);
+    bodyDens.resize(nSPH3);
+    bodyHydro.resize(nSPH3);
 
     srand48(procId+19840501);
 
@@ -406,15 +414,27 @@ struct DiskShuffle
          {
             bodyIDs[i]   =  ((unsigned long long) nSPH3)*procId + i;
 
-            bodyPositions[i].x = x;
-            bodyPositions[i].y = y;
-            bodyPositions[i].z = z;
-            bodyPositions[i].w = (1.0/nSPH3) * 1.0/nSPH3;
+            bodyPositions[i].x = 0.5+x;
+            bodyPositions[i].y = 0.5+y;
+            bodyPositions[i].z = 0.5+z;
+            bodyPositions[i].w = 1; //(1.0/nSPH3);
 
             bodyVelocities[i].x = 0;
             bodyVelocities[i].y = 0;
             bodyVelocities[i].z = 0;
             bodyVelocities[i].w = 0;
+
+
+            bodyDens[i].x       = 1.0;                                                     //Density
+            bodyDens[i].y       = 1; //SMTH * pow(bodyPositions[i].w / bodyDens[i].x, 1.0/3.0); //Smoothing
+
+            //The hydro properties
+            bodyHydro[i].x      = 0;    //pressure
+            bodyHydro[i].y      = 0;    //Sound speed
+            bodyHydro[i].z      = 0;  //Energy
+            bodyHydro[i].w      = 0;    // Balsala Switch
+
+
             i++;
          }//z
       }//y

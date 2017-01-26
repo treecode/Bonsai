@@ -322,6 +322,7 @@ extern "C"  __global__ void compute_dt(const int n_bodies,
   if (active_list[idx] != 1) return;
 
   int j = ngb[idx];
+  j = -1;//TODO REMOVE, set fixed here to be able to continue since ngb is not set in SPH
 
   float4 ri, rj;
   float4 vi, vj;
@@ -332,6 +333,8 @@ extern "C"  __global__ void compute_dt(const int n_bodies,
   vi = vel[idx];
   ai = bodies_acc[idx];
   int j1, j2;
+
+
 
   if (j >= 0) {
     rj = bodies_pos[j];

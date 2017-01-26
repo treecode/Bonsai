@@ -487,15 +487,15 @@ KERNEL_DECLARE(cl_link_tree)(int n_nodes,
     if ((bj - bi) <= NLEAF)    
       valid = id | (uint)(1 << 31);   //Distinguish leaves and nodes
 
- valid_list[id] = valid; //If valid its a leaf otherwise a node
+  valid_list[id] = valid; //If valid its a leaf otherwise a node
 }
 
 //Determines which level of node starts at which offset
 KERNEL_DECLARE(gpu_build_level_list)(const int    n_nodes,
-                                 const int    n_leafs,
-                                       uint  *leafsIdxs,
-                                       uint2 *node_bodies,
-                                       uint  *valid_list)
+                                     const int    n_leafs,
+                                           uint  *leafsIdxs,
+                                           uint2 *node_bodies,
+                                           uint  *valid_list)
 {
   CUXTIMER("build_level_list");
   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
