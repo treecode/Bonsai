@@ -330,7 +330,9 @@ else(USE_GALACTICS OR USE_GALACTICS_IFORT)
   target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES})
 endif(USE_GALACTICS OR USE_GALACTICS_IFORT)
 
-#target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES} -lrt -pie -rdynamic)
+target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES} -L/usr/local/cuda/lib64/ -lnvToolsExt)
+
+
 target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES} -lrt ${EXTRA_MPI_LINK_FLAGS})
 if (USE_MPI)
     target_link_libraries(${BINARY_CLR_NAME}  -lrt ${EXTRA_MPI_LINK_FLAGS})

@@ -11,6 +11,10 @@
   #include <typeinfo.h>
 #endif
 
+#define DONVTX
+#ifdef DONVTX
+    #include "nvToolsExt.h"
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -237,6 +241,17 @@ namespace my_dev {
       ccMinor = deviceProp.minor;
 
       hContext_flag = true;
+    }
+
+
+    void pushNVTX(std::string text)
+    {
+        int id = nvtxRangePushA(text.c_str());
+    }
+
+    void popNVTX()
+    {
+        nvtxRangePop();
     }
 
     void startTiming(cudaStream_t stream=0)
