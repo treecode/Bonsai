@@ -177,9 +177,13 @@ void octree::compute_properties(tree_structure &tree) {
 
 
 #if 0
-   if(procId == 2){
+   if(procId == 0){
+
+   {
      FILE *f = fopen("grpNew.txt", "w");
 
+   int validParticles = host_float_as_int(localTree.smallBoundaryTree[0].x);
+   int validNodes     = host_float_as_int(localTree.smallBoundaryTree[0].y);
 
    int sizeStart  = 1+validParticles;
    int cntrStart  = sizeStart+validNodes;
@@ -215,7 +219,50 @@ void octree::compute_properties(tree_structure &tree) {
                tree.smallBoundaryTree[1 + i].z,
                tree.smallBoundaryTree[1 + i].w);
    fclose(f);
- }
+   }
+
+   {
+   FILE *f = fopen("grpNewF.txt", "w");
+
+   int validParticles = host_float_as_int(localTree.fullBoundaryTree[0].x);
+   int validNodes     = host_float_as_int(localTree.fullBoundaryTree[0].y);
+
+   int sizeStart  = 1+validParticles;
+   int cntrStart  = sizeStart+validNodes;
+   int smthStart  = sizeStart+validNodes*2;
+   int multiStart = sizeStart+validNodes*3;
+
+
+   for(int i=0; i < validNodes; i++)
+   {
+       fprintf(f,"Node: %d Size\t%f %f %f %d\t| Cntr\t%f %f %f %f Smth\t%f Mult\t%f %f %f\n",
+               i,
+               tree.fullBoundaryTree[sizeStart+i].x,
+               tree.fullBoundaryTree[sizeStart+i].y,
+               tree.fullBoundaryTree[sizeStart+i].z,
+               host_float_as_int(tree.fullBoundaryTree[sizeStart+i].w),
+
+               tree.fullBoundaryTree[cntrStart+i].x,
+               tree.fullBoundaryTree[cntrStart+i].y,
+               tree.fullBoundaryTree[cntrStart+i].z,
+               tree.fullBoundaryTree[cntrStart+i].w,
+
+               tree.fullBoundaryTree[smthStart+i].x,
+
+               tree.fullBoundaryTree[multiStart+(i*3)+0].x,
+               tree.fullBoundaryTree[multiStart+(i*3)+1].x,
+               tree.fullBoundaryTree[multiStart+(i*3)+2].x);
+   }
+   for(int i=0; i < validParticles; i++)
+       fprintf(f,"Body: %d Cntr\t%f %f %f %f\n",
+               i,
+               tree.fullBoundaryTree[1 + i].x,
+               tree.fullBoundaryTree[1 + i].y,
+               tree.fullBoundaryTree[1 + i].z,
+               tree.fullBoundaryTree[1 + i].w);
+   fclose(f);
+   }
+}
 
 #endif
 

@@ -569,23 +569,24 @@ bool treewalk_control(
 #endif
 
   //For periodic boundaries, mirror the group and body positions along the periodic axis
-  float3 domainSize = {1.0f, 0.125f, 0.125f};   //Hardcoded for our testing IC
+//  float3 domainSize = {1.0f, 0.125f, 0.125f};   //Hardcoded for our testing IC
+  float3 domainSize = {100.0f, 100.0f, 100.0f};   //Hardcoded for our testing IC
 
   long long int startC = clock64();
 
   //TODO use templates or parameterize this at some point
-//  for(int ix=-1; ix <= 1; ix++)     //Periodic around X
+  for(int ix=-1; ix <= 1; ix++)     //Periodic around X
   {
-//    for(int iy=-1; iy <= 1; iy++)   //Periodic around Y
+    for(int iy=-1; iy <= 1; iy++)   //Periodic around Y
     {
-//      for(int iz=-1; iz <= 1; iz++) //Periodic around Z
+      for(int iz=-1; iz <= 1; iz++) //Periodic around Z
       {
           float4 pGroupPos   = group_pos;
           float4 pBodyPos[2] = {pos_i[0], pos_i[1]};
 
-//          pGroupPos.x   += (domainSize.x*ix); pBodyPos[0].x += (domainSize.x*ix); pBodyPos[1].x += (domainSize.x*ix);
-//          pGroupPos.y   += (domainSize.y*iy); pBodyPos[0].y += (domainSize.y*iy); pBodyPos[1].y += (domainSize.y*iy);
-//          pGroupPos.z   += (domainSize.z*iz); pBodyPos[0].z += (domainSize.z*iz); pBodyPos[1].z += (domainSize.z*iz);
+          pGroupPos.x   += (domainSize.x*ix); pBodyPos[0].x += (domainSize.x*ix); pBodyPos[1].x += (domainSize.x*ix);
+          pGroupPos.y   += (domainSize.y*iy); pBodyPos[0].y += (domainSize.y*iy); pBodyPos[1].y += (domainSize.y*iy);
+          pGroupPos.z   += (domainSize.z*iz); pBodyPos[0].z += (domainSize.z*iz); pBodyPos[1].z += (domainSize.z*iz);
 
           uint2 curCounters = {0};
 
@@ -1508,7 +1509,7 @@ extern "C" __global__ void gpu_extractBoundaryTree(
         {
             //Only interested in updated smoothing values
             boundaryTree[smthIdx+i+laneIdx] = make_float4(nodeSmooth[idxInfo.x], 0,0,0);
-            boundaryTree[smthIdx+i+laneIdx] = make_float4(123, 0,0,0);
+//            boundaryTree[smthIdx+i+laneIdx] = make_float4(123, 0,0,0);
         }
         else
         {
@@ -1532,7 +1533,7 @@ extern "C" __global__ void gpu_extractBoundaryTree(
             boundaryTree[multIdx+3*(i+laneIdx) + 1] = nodeMulti[idxInfo.x*3 + 1];
             boundaryTree[multIdx+3*(i+laneIdx) + 2] = nodeMulti[idxInfo.x*3 + 2];
 
-            boundaryTree[smthIdx+i+laneIdx] = make_float4(-99, 0,0,0);
+//            boundaryTree[smthIdx+i+laneIdx] = make_float4(-99, 0,0,0);
         }
       }
   }//for nNodes

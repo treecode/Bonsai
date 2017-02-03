@@ -409,6 +409,7 @@ protected:
 
   //SPH kernels
   my_dev::kernel SPHDensity;
+  my_dev::kernel SPHDensityLET;
   my_dev::kernel SPHDerivative;
   my_dev::kernel SPHHydro;
   my_dev::kernel setPressure;
@@ -579,6 +580,7 @@ public:
 
   uint *globalGrpTreeCount;
   uint *globalGrpTreeOffsets;
+  int4 *globalGrpTreeStatistics;    //Used for updating only the smoothing information of the boundary tree
 
   int2 *fullGrpAndLETRequestStatistics;
 
@@ -619,6 +621,16 @@ public:
 
   void dumpTreeStructureToFile(tree_structure &tree);
 
+
+  //SPH related
+
+  void   approximate_density    (tree_structure &tree);
+  void   approximate_density_let(tree_structure &tree, tree_structure &remoteTree, int bufferSize, bool doActivePart);
+  void   distributeBoundaries(bool doOnlyUpdate);
+  void   makeDensityLET();
+
+
+
   //Main MPI functions
 
   //Functions for domain division
@@ -637,6 +649,7 @@ public:
                                                     int nToSend);
   void approximate_gravity_let(tree_structure &tree, tree_structure &remoteTree,
                                  int bufferSize, bool doActivePart);
+
 
 
 
@@ -849,9 +862,10 @@ public:
     delete logFileWriter;
     delete fileIO;
 
-    if(globalGrpTreeCntSize) delete[] globalGrpTreeCntSize;
-    if(globalGrpTreeCount)   delete[] globalGrpTreeCount;
-    if(globalGrpTreeOffsets) delete[] globalGrpTreeOffsets;
+    if(globalGrpTreeCntSize)    delete[] globalGrpTreeCntSize;
+    if(globalGrpTreeCount)      delete[] globalGrpTreeCount;
+    if(globalGrpTreeOffsets)    delete[] globalGrpTreeOffsets;
+    if(globalGrpTreeStatistics) delete[] globalGrpTreeStatistics;
 
     if(fullGrpAndLETRequestStatistics) delete[] fullGrpAndLETRequestStatistics;
   };

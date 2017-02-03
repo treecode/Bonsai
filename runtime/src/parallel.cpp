@@ -312,6 +312,83 @@ inline _v4sf split_node_sph_impbh_box4a( // takes 4 tree nodes and returns 4-bit
   return ret;
 }
 
+//Here each group has a different smoothing length, encoded in boxCenter.w
+//We want to know for each of the 4 groups if it needs an interaction
+//with this node. Therefore we have to test every possible combination
+//until either all combinations are exhausted or each group requires an interaction
+template<bool periodic>
+inline _v4sf split_node_sph_grp_impbh_box4a( // takes 4 tree nodes and returns 4-bit integer
+    const _v4sf  nodeCNTR,
+    const _v4sf  nodeSIZE,
+    const _v4sf  boxCenter[4],
+    const _v4sf  boxSize  [4],
+    const float3 periodicBoundaries,
+    int2 xP_, int2 yP_, int2 zP_)
+{
+  _v4sf ncx2  = __builtin_ia32_shufps(nodeCNTR, nodeCNTR, 0x00);
+  _v4sf ncy2  = __builtin_ia32_shufps(nodeCNTR, nodeCNTR, 0x55);
+  _v4sf ncz2  = __builtin_ia32_shufps(nodeCNTR, nodeCNTR, 0xaa);
+  _v4sf ncw   = __builtin_ia32_shufps(nodeCNTR, nodeCNTR, 0xff);
+
+  _v4sf ret  {0.0f, 0.0f, 0.0f, 0.0f};
+
+  int2 xP = {0,0}, yP = {0,0}, zP = {0,0};
+  if(periodic)
+  {
+      xP = xP_; yP = yP_; zP = zP_;
+  }
+
+  for(int ix=xP.x; ix <= xP.y; ix++)     //Periodic around X
+  {
+    for(int iy=yP.x; iy <= yP.y; iy++)   //Periodic around Y
+    {
+      for(int iz=zP.x; iz <= zP.y; iz++) //Periodic around Z
+      {
+           _v4sf ncx = __builtin_ia32_addps(ncx2,  _mm_set_ps1(periodicBoundaries.x*ix));
+           _v4sf ncy = __builtin_ia32_addps(ncy2,  _mm_set_ps1(periodicBoundaries.y*iy));
+           _v4sf ncz = __builtin_ia32_addps(ncz2,  _mm_set_ps1(periodicBoundaries.z*iz));
+
+          _v4sf nsx    = __builtin_ia32_shufps(nodeSIZE, nodeSIZE, 0x00);
+          _v4sf nsy    = __builtin_ia32_shufps(nodeSIZE, nodeSIZE, 0x55);
+          _v4sf nsz    = __builtin_ia32_shufps(nodeSIZE, nodeSIZE, 0xaa);
+
+          _v4sf bcx =  (boxCenter[0]);
+          _v4sf bcy =  (boxCenter[1]);
+          _v4sf bcz =  (boxCenter[2]);
+          _v4sf bcw =  (boxCenter[3]);
+          _v4sf_transpose(bcx, bcy, bcz, bcw);
+
+          _v4sf bsx =  (boxSize[0]);
+          _v4sf bsy =  (boxSize[1]);
+          _v4sf bsz =  (boxSize[2]);
+          _v4sf bsw =  (boxSize[3]);
+          _v4sf_transpose(bsx, bsy, bsz, bsw);
+
+          _v4sf dx = __abs(bcx - ncx) - (bsx+nsx);
+          _v4sf dy = __abs(bcy - ncy) - (bsy+nsy);
+          _v4sf dz = __abs(bcz - ncz) - (bsz+nsz);
+
+          const _v4sf zero = {0.0f, 0.0f, 0.0f, 0.0f};
+          dx = __builtin_ia32_maxps(dx, zero);
+          dy = __builtin_ia32_maxps(dy, zero);
+          dz = __builtin_ia32_maxps(dz, zero);
+
+          const _v4sf ds2 = dx*dx + dy*dy + dz*dz;
+
+          //Test all 4 distances against 4 smoothing lengths and or with previous result
+          ret =  _mm_or_ps (ret,__builtin_ia32_cmpleps(ds2, bcw));
+
+          //Test if all 4 bits are set (then all groups active ) this is 4 lower bits set to 1: 1+2+4+8=15
+          //Early out if this is the case since we won't learn anything new :)
+          if(__builtin_ia32_movmskps(ret) == 15) return ret;
+       }//iz
+     }//iy
+   }//ix
+
+
+  return ret;
+}
+
 //In the below version the smoothing is in the boxes so take the smoothing
 //value from the .w component of the boxCenter
 inline _v4sf split_node_sph_impbh_box4a_grp( // takes 4 tree nodes and returns 4-bit integer
@@ -1049,6 +1126,7 @@ void octree::mpiSetup()
   curSysState          = new sampleRadInfo[nProcs];
   globalGrpTreeCount   = new uint[nProcs];
   globalGrpTreeOffsets = new uint[nProcs];
+  globalGrpTreeStatistics = new int4[nProcs];
 }
 
 
@@ -2034,6 +2112,7 @@ int4 octree::getSearchPropertiesBoundaryTrees()
       }
     }
 
+    return make_int4(smallTreeStart, smallTreeEnd, 0, 0); //TODO remove, testing only, force a small Grp tree
     return make_int4(smallTreeStart, smallTreeEnd, searchDepthUsed, 0);
 }
 
@@ -2042,6 +2121,10 @@ void octree::updateCurrentInfoGrpTree()
 {
     //This function will send updated smoothing values in order to upgrade
     //the existing boundary trees.
+
+
+    //Launch GPU kernel to extract and copy updates values to host
+    //NOTE/TODO this should be moved to somewhere else such that it can be hidden behind local computations
     bool smoothingOnly = true; //We want the full tree at this point
     gpuBoundaryTreeExtract.set_args(0, &smoothingOnly,
                                    localTree.boxSizeInfo.p(), localTree.boxCenterInfo.p(), localTree.boxSmoothing.p(), localTree.multipole.p(),
@@ -2067,18 +2150,65 @@ void octree::updateCurrentInfoGrpTree()
     localTree.fullBoundaryTree.waitForCopyEvent();
     localTree.fullBoundaryTree.waitForCopyEvent();
 
-    //Launch GPU kernel to extract and copy updates values to host
-    //NOTE/TODO this should be moved to somewhere else such that it can be hidden behind local computations
+    //  uint4 grpBoundStats;
+    //x: Number of nodes to receive during the allGatherV
+    //y: The displacement (in bytes) to where the smoothing values will be stored (both for allgather and isend/irecv)
+    //z: The number of items we send to this process during iSend/iRecv
+    //w: The number of items we receive from this process during iSend/iRecv, offset is computed during the execution.
+    //[procId].w = onlyUseAllGather (so 1 if we only use the allGather option and 0 otherwise, to get proper arrays)
 
 
-    //Compute new offsets, we already have the current tree so we know what data will be
-    //incoming. Namely the amount of nodes, which is packed in the header, and where we
-    //have to store it relative to the header (1+nbody+2*nNode)
+    bool onlyUseAllGather = globalGrpTreeStatistics[procId].w;
+    std::vector<int> recvSizes          (nProcs,0);
+    std::vector<int> displacement       (nProcs,0);
+    for(int i=0; i < nProcs; i++)
+    {
+        recvSizes[i]    = globalGrpTreeStatistics[i].x;
+        displacement[i] = globalGrpTreeStatistics[i].y;
+    }
+
+    //MPI_Allgatherv for the small tree and Isend/IRecv for the fulltree
+    //When only all gather we send fullTree otherwise smallTree
+    if(onlyUseAllGather)
+    {
+        MPI_Allgatherv(&localTree.fullBoundaryTree[offsetFull], sizeof(real4)*nInfoFull.y,      MPI_BYTE,
+                        globalGrpTreeCntSize,          &recvSizes[0],   &displacement[0], MPI_BYTE, mpiCommWorld);
+    }
+    else
+    {
+        MPI_Allgatherv(&localTree.smallBoundaryTree[offsetSmall], sizeof(real4)*nInfoSmall.y,      MPI_BYTE,
+                       globalGrpTreeCntSize,            &recvSizes[0],   &displacement[0], MPI_BYTE, mpiCommWorld);
+    }
 
 
-    //This has to be done for the small and for the fullTree, so let's just repeat the
-    //steps as before; The allgatherv and the isend/irecv
+    //Send / receive loop like particle exchange, for the full boundary trees
+    static MPI_Status stat[NMAXPROC];
+    static MPI_Request req[NMAXPROC*2];
+    assert(nProcs < NMAXPROC);
 
+    int nreq = 0;
+    for (int dist = 1; dist < nProcs; dist++)
+    {
+      const int src    = (nProcs + procId - dist) % nProcs;
+      const int dst    = (nProcs + procId + dist) % nProcs;
+      const int scount = globalGrpTreeStatistics[dst].z * sizeof(float4);
+      const int rcount = globalGrpTreeStatistics[src].w * sizeof(float4);
+      const int offset = globalGrpTreeStatistics[src].y / sizeof(float4);
+
+      if (scount > 0)
+      {
+        fprintf(stderr,"Sending %d bytes to %d \n", scount, dst);
+        MPI_Isend(&localTree.fullBoundaryTree[offsetFull], scount, MPI_BYTE, dst, 1, mpiCommWorld, &req[nreq++]);
+      }
+      if(rcount > 0)
+      {
+        fprintf(stderr,"Receiving %d bytes from %d \n", rcount, src);
+        MPI_Irecv(&globalGrpTreeCntSize[offset], rcount, MPI_BYTE, src, 1, mpiCommWorld, &req[nreq++]);
+      }
+    }
+    MPI_Waitall(nreq, req, stat);
+
+    //Boundary trees have been updated, we can use them now :)
 }
 
 
@@ -2091,6 +2221,12 @@ void octree::sendCurrentInfoGrpTree()
   std::vector<int2> globalGroupSizeArray    (nProcs);  //x is fullGroup, y = smallGroup
   std::vector<int2> globalGroupSizeArrayRecv(nProcs);  //x is fullGroup, y = smallGroup
   globalGroupSizeArray[procId] = make_int2(0,0);       //Nothing to ourselves
+
+  for(int i=0; i < nProcs; i++)
+  {
+      globalGrpTreeStatistics[i] = make_int4(0,0,0,0); //Reset the array
+  }
+
 
   int nGroupsSmallSet = boundaryTreeDimensions.x;
   int nGroupsFullSet  = boundaryTreeDimensions.y;
@@ -2215,6 +2351,16 @@ void octree::sendCurrentInfoGrpTree()
                      globalGrpTreeCntSize,            &groupRecvSizesSmall[0],   &displacement[0], MPI_BYTE, mpiCommWorld);
   }
 
+
+
+  for(int i=0; i < nProcs; i++)
+  {
+      float4 header = globalGrpTreeCntSize[displacement[i]/sizeof(real4)];
+      //Store the number of nodes in bytes received during the allGatherV step
+      globalGrpTreeStatistics[i].x = host_float_as_int(header.y)*sizeof(float4);
+  }
+
+
   double t2 = get_time();
 
   //Send / receive loop like particle exchange, for the full boundary trees
@@ -2235,6 +2381,9 @@ void octree::sendCurrentInfoGrpTree()
     {
       MPI_Isend(&localTree.fullBoundaryTree[0], scount, MPI_BYTE, dst, 1, mpiCommWorld, &req[nreq++]);
       LOGF(stderr,"Sending to: %d size: %d \n", dst, (int)(scount / sizeof(real4)));
+
+      //Store the number of nodes we send to this process
+      globalGrpTreeStatistics[dst].z = host_float_as_int(localTree.fullBoundaryTree[0].y);
     }
     if(rcount > 0)
     {
@@ -2242,7 +2391,36 @@ void octree::sendCurrentInfoGrpTree()
       LOGF(stderr,"Receiving from: %d size: %d Offset: %d \n", src, globalGroupSizeArrayRecv[src].x, offset);
     }
   }
+  fprintf(stderr,"Full send, nreq: %d\n", nreq);
   MPI_Waitall(nreq, req, stat);
+
+  //Rerun the loop to build the list of receive properties
+  for (int dist = 0; dist < nProcs; dist++)
+  {
+    const int src    = (nProcs + procId - dist) % nProcs;
+    const int rcount = (globalGroupSizeArrayRecv[src].y <= 0) ? globalGroupSizeArrayRecv[src].x * sizeof(real4) : 0;
+
+    if(rcount > 0 && src != procId)
+    {
+      //Store the number of nodes we received from this process
+      globalGrpTreeStatistics[src].w = host_float_as_int(globalGrpTreeCntSize[this->globalGrpTreeOffsets[src]].y);
+      //We cannot store the offset, not enough items, but we can compute it during receive via the globalGrpTreeCntSize
+    }
+
+    //Compute the part where the smoothing starts. We need this to make sure the allGatherv does not overwrite other values
+    float4 header = globalGrpTreeCntSize[this->globalGrpTreeOffsets[src]];
+    int displacementSmooth         = (1+host_float_as_int(header.x)+2*host_float_as_int(header.y))*sizeof(float4);
+    globalGrpTreeStatistics[src].y = displacement[src] + displacementSmooth;
+  }
+
+  globalGrpTreeStatistics[procId].w = onlyUseAllGather;
+
+  //  uint4 grpBoundStats;
+  //x: Number of nodes to receive during the allGatherV
+  //y: The displacement (in bytes) to where the smoothing values will be stored in the allGatherV
+  //z: The number of items we send to this process during iSend/iRecv
+  //w: The number of items we receive from this process during iSend/iRecv, offset is computed during the execution.
+  //[procId].w = onlyUseAllGather (so 1 if we only use the allGather option and 0 otherwise, to get proper arrays)
 
 
   double tEndGrp = get_time();
@@ -2557,6 +2735,19 @@ inline int split_node_grav_impbh_box4simd1( // takes 4 tree nodes and returns 4-
   _v4sf bsz =  (boxSize[2]);
   _v4sf bsw =  (boxSize[3]);
 
+//  float3 domainSize = {100.0f, 100.0f, 100.0f};   //Hardcoded for our testing IC
+//    for(int ix=-1; ix <= 1; ix++)     //Periodic around X
+//    {
+//      for(int iy=-1; iy <= 1; iy++)   //Periodic around Y
+//      {
+//        for(int iz=-1; iz <= 1; iz++) //Periodic around Z
+//        {
+//            _v4sf bcx = __builtin_ia32_addss(bcx2,  _mm_set_ps1(domainSize.x*ix));
+//            _v4sf bcy = __builtin_ia32_addss(bcy2,  _mm_set_ps1(domainSize.y*iy));
+//            _v4sf bcz = __builtin_ia32_addss(bcz2,  _mm_set_ps1(domainSize.z*iz));
+
+
+
   if (TRANSPOSE)
   {
     _v4sf_transpose(bcx, bcy, bcz, bcw);
@@ -2586,6 +2777,10 @@ inline int split_node_grav_impbh_box4simd1( // takes 4 tree nodes and returns 4-
   const int ret = __builtin_ia32_movmskps(
       __builtin_ia32_cmpleps(ds2, boxSmooth));
 #endif
+//  if(ret) return ret;
+//        }
+//      }
+//    }
   return ret;
 }
 
@@ -2641,6 +2836,89 @@ inline int split_node_sph_impbh_box4simd1( // takes 4 tree nodes and returns 4-b
   const int ret = __builtin_ia32_movmskps(
       __builtin_ia32_cmpleps(ds2, size));
 #endif
+  return ret;
+}
+
+template<bool TRANSPOSE, bool periodic>
+inline int split_node_sph_impbh_box4simd1_periodic( // takes 4 tree nodes and returns 4-bit integer
+    const _v4sf  ncx,
+    const _v4sf  ncy,
+    const _v4sf  ncz,
+    const _v4sf  nsx,
+    const _v4sf  nsy,
+    const _v4sf  nsz,
+    const _v4sf  size,
+    const _v4sf  boxCenter[4],
+    const _v4sf  boxSize  [4],
+    const float3 periodicBoundaries,
+    int2 xP_, int2 yP_, int2 zP_)
+{
+
+  _v4sf bcx2 =  (boxCenter[0]);
+  _v4sf bcy2 =  (boxCenter[1]);
+  _v4sf bcz2 =  (boxCenter[2]);
+  _v4sf bcw =  (boxCenter[3]);
+
+  _v4sf bsx =  (boxSize[0]);
+  _v4sf bsy =  (boxSize[1]);
+  _v4sf bsz =  (boxSize[2]);
+  _v4sf bsw =  (boxSize[3]);
+
+  int ret = 0;
+
+  int2 xP = {0,0}, yP = {0,0}, zP = {0,0};
+  if(periodic)
+  {
+      xP = xP_; yP = yP_; zP = zP_;
+  }
+
+  for(int ix=xP.x; ix <= xP.y; ix++)     //Periodic around X
+  {
+    for(int iy=yP.x; iy <= yP.y; iy++)   //Periodic around Y
+    {
+      for(int iz=zP.x; iz <= zP.y; iz++) //Periodic around Z
+      {
+          _v4sf bcx = __builtin_ia32_addps(bcx2,  _mm_set_ps1(periodicBoundaries.x*ix));
+          _v4sf bcy = __builtin_ia32_addps(bcy2,  _mm_set_ps1(periodicBoundaries.y*iy));
+          _v4sf bcz = __builtin_ia32_addps(bcz2,  _mm_set_ps1(periodicBoundaries.z*iz));
+
+          if (TRANSPOSE)
+          {
+            _v4sf_transpose(bcx, bcy, bcz, bcw);
+            _v4sf_transpose(bsx, bsy, bsz, bsw);
+          }
+
+          const _v4sf zero = {0.0, 0.0, 0.0, 0.0};
+
+          _v4sf dx = __abs(bcx - ncx) - (bsx+nsx);
+          _v4sf dy = __abs(bcy - ncy) - (bsy+nsy);
+          _v4sf dz = __abs(bcz - ncz) - (bsz+nsz);
+
+          dx = __builtin_ia32_maxps(dx, zero);
+          dy = __builtin_ia32_maxps(dy, zero);
+          dz = __builtin_ia32_maxps(dz, zero);
+
+          const _v4sf ds2 = dx*dx + dy*dy + dz*dz;
+        #if 0
+          const float c = 10e-4;
+          const int ret = __builtin_ia32_movmskps(
+              __builtin_ia32_orps(
+                __builtin_ia32_cmpleps(ds2,  size),
+                __builtin_ia32_cmpltps(ds2 - size, (_v4sf){c,c,c,c})
+                )
+              );
+        #else
+         // const int ret = __builtin_ia32_movmskps(
+          ret = __builtin_ia32_movmskps(
+              __builtin_ia32_cmpleps(ds2, size));
+        #endif
+
+          if(ret) return ret;
+
+      }//iz
+    }//iy
+  }//ix
+
   return ret;
 }
 
@@ -2838,7 +3116,9 @@ int3 getLET1(
     const real4 *groupSmoothInfo,
     const int nGroups,
     const int nNodes,
-    unsigned long long &nflops)
+    unsigned long long &nflops,
+    const float3 periodicDomainSize,
+    const int    periodicMethod)
 {
   bufferStruct.LETBuffer_node.clear();
   bufferStruct.LETBuffer_ptcl.clear();
@@ -2889,6 +3169,12 @@ int3 getLET1(
   bufferStruct.groupSmoothSIMDSwap.resize(nGroups4);
 
   bufferStruct.groupSIMDkeys.resize((int)(1.10*(nGroups4/SIMDW)));
+
+  bool usePeriodic = false;
+  int2 xP = {0,0}, yP = {0,0}, zP = {0,0};
+  if(periodicMethod & 1) { xP = {-1,1}; usePeriodic = true;}
+  if(periodicMethod & 2) { yP = {-1,1}; usePeriodic = true;}
+  if(periodicMethod & 4) { zP = {-1,1}; usePeriodic = true;}
 
 
 #if 1
@@ -2994,55 +3280,33 @@ int3 getLET1(
       const _v4sf vncntrz = __builtin_ia32_shufps(nodeCNTR, nodeCNTR, 0xaa);
 
 
-      //float4 vSPHSizeTemp{13.5,13.5,13.5,13.5};
-      //float4 vSPHSizeTemp{15,15,15,15};
-//      float4 vSPHSizeTemp{0.00171,0.00171,0.00171,0.00171};
-      //_v4sf vsizeSPH      = *(const _v4sf*)&vSPHSizeTemp;
-
       nflops += nGroups*20;  /* effective flops, can be less */
       for (int ib = 0; ib < nGroups4 && !split; ib += SIMDW)
       {
           //Gravity test
           split |= split_node_grav_impbh_box4simd1<TRANSPOSE_SPLIT>(vncx,vncy,vncz,vsize, (_v4sf*)&bufferStruct.groupCentreSIMD[ib], (_v4sf*)&bufferStruct.groupSizeSIMD[ib]);
+          if(split) break;
 
           //SPH test if distance between boxes is smaller than the smoothing range
-
           _v4sf vsizeSPH =  bufferStruct.groupSmoothSIMD[ib];
-          split |= split_node_sph_impbh_box4simd1<TRANSPOSE_SPLIT>(vncntrx,vncntry,vncntrz,vnsx,vnsy,vnsz,
-                                                                   vsizeSPH, (_v4sf*)&bufferStruct.groupCentreSIMD[ib], (_v4sf*)&bufferStruct.groupSizeSIMD[ib]);
+          if(usePeriodic)
+          {
+              split |= split_node_sph_impbh_box4simd1_periodic<TRANSPOSE_SPLIT, true>(vncntrx,vncntry,vncntrz,vnsx,vnsy,vnsz,
+                                                                   vsizeSPH, (_v4sf*)&bufferStruct.groupCentreSIMD[ib],
+                                                                   (_v4sf*)&bufferStruct.groupSizeSIMD[ib],
+                                                                   periodicDomainSize,
+                                                                   xP,yP,zP);
+          }
+          else
+          {
+              split |= split_node_sph_impbh_box4simd1_periodic<TRANSPOSE_SPLIT, false>(vncntrx,vncntry,vncntrz,vnsx,vnsy,vnsz,
+                                                                   vsizeSPH, (_v4sf*)&bufferStruct.groupCentreSIMD[ib],
+                                                                   (_v4sf*)&bufferStruct.groupSizeSIMD[ib],
+                                                                   periodicDomainSize,
+                                                                   xP,yP,zP);
 
-
-//          float4 nSize = nodeSize[nodeIdx];
-//          float4 nCntr = nodeCentre[nodeIdx];
-//          for(int i=0; i < SIMDW; i++)
-//          {
-//              float4 grpCntr = groupCentreInfo[ib+i];
-//              float4 grpSize = groupSizeInfo[ib+i];
-//              {
-//                //Compute the distance between the group and the cell
-//                float3 dr = {fabs(grpCntr.x - nCntr.x) - (grpSize.x + nSize.x),
-//                             fabs(grpCntr.y - nCntr.y) - (grpSize.y + nSize.y),
-//                             fabs(grpCntr.z - nCntr.z) - (grpSize.z + nSize.z)};
-//
-//                dr.x += fabs(dr.x); dr.x *= 0.5f;
-//                dr.y += fabs(dr.y); dr.y *= 0.5f;
-//                dr.z += fabs(dr.z); dr.z *= 0.5f;
-//
-//                //Distance squared, no need to do sqrt since opening criteria has been squared
-//                float ds2    = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
-//
-////                if(ds2 < 0.00171 && split == false)
-//                {
-////                    fprintf(stderr,"INCORRECT: Node: %d  Grp: %d ||  %f \n", nodeIdx, ib+i);
-//                }
-//
-//
-//                if(ds2 < 25) split = true;
-//
-//                //if(ds2 < 0.00171) split = true;
-//                //0.041341*0.041341 =  0.0017090782810000001
-//              }
-//          }
+          }
+          if(split) break;
       }
 
       /**************/
@@ -3088,10 +3352,10 @@ int3 getLET1(
   {
     //LETBuffer.resize(nExportPtcl + 5*nExportCell);
 #pragma omp critical //Malloc seems to be not so thread safe..
-    *LETBuffer_ptr = (real4*)malloc(sizeof(real4)*(1+ nExportPtcl + 5*nExportCell));
-    real4 *LETBuffer = *LETBuffer_ptr;
-    _v4sf *vLETBuffer      = (_v4sf*)(&LETBuffer[1]);
-    //_v4sf *vLETBuffer      = (_v4sf*)&LETBuffer     [0];
+    *LETBuffer_ptr     = (real4*)malloc(sizeof(real4)*(1+ nExportPtcl + 5*nExportCell));
+    real4 *LETBuffer   = *LETBuffer_ptr;
+    _v4sf *vLETBuffer  = (_v4sf*)(&LETBuffer[1]); //Start at 1, since 0 contains the header
+
 
     int nStoreIdx = nExportPtcl;
     int multiStoreIdx = nStoreIdx + 2*nExportCell;
@@ -3107,8 +3371,6 @@ int3 getLET1(
       const float sizew = host_int_as_float(packed_idx.y);
       const _v4sf size = __builtin_ia32_vec_set_v4sf(nodeSizeV[idx], sizew, 3);
 
-      //       vLETBuffer[nStoreIdx            ] = nodeCentreV[idx];     /* centre */
-      //       vLETBuffer[nStoreIdx+nExportCell] = size;                 /*  size  */
 
       vLETBuffer[nStoreIdx+nExportCell] = nodeCentreV[idx];     /* centre */
       vLETBuffer[nStoreIdx            ] = size;                 /*  size  */
@@ -3665,6 +3927,13 @@ time = get_time2()-t0;
   return  1 + nExportPtcl + 5*nExportCell;
 }
 
+
+/*
+ * Create the LET structure for the remote process using the full tree-layout of the remote boundaries
+ * where as getLET1 uses only the boundaries and not the tree-structure that comes with it
+ *
+ */
+
 int3 getLEToptFullTree(
     GETLETBUFFERS &bufferStruct,
     real4 **LETBuffer_ptr,
@@ -3870,8 +4139,270 @@ int3 getLEToptFullTree(
       const float sizew = host_int_as_float(packed_idx.y);
       const _v4sf size = __builtin_ia32_vec_set_v4sf(nodeSizeV[idx], sizew, 3);
 
-      //       vLETBuffer[nStoreIdx            ] = nodeCentreV[idx];     /* centre */
-      //       vLETBuffer[nStoreIdx+nExportCell] = size;                 /*  size  */
+      vLETBuffer[nStoreIdx+nExportCell] = nodeCentreV[idx];     /* centre */
+      vLETBuffer[nStoreIdx            ] = size;                 /*  size  */
+
+      vLETBuffer[multiStoreIdx++      ] = multipoleV[3*idx+0];  /* multipole.x */
+      vLETBuffer[multiStoreIdx++      ] = multipoleV[3*idx+1];  /* multipole.x */
+      vLETBuffer[multiStoreIdx++      ] = multipoleV[3*idx+2];  /* multipole.x */
+      nStoreIdx++;
+    }
+  }
+
+  return (int3){nExportCell, nExportPtcl, depth};
+}
+
+
+/*
+ * Create the LET structure for the remote process using the full tree-layout of the remote boundaries
+ * where as getLET1 uses only the boundaries and not the tree-structure that comes with it
+ *
+ * SPH version does additional boundary checks because of smoothing range
+ */
+
+
+int3 getLEToptFullTree_sph(
+    GETLETBUFFERS &bufferStruct,
+    real4 **LETBuffer_ptr,
+    const real4 *nodeCentre,
+    const real4 *nodeSize,
+    const real4 *multipole,
+    const int cellBeg,
+    const int cellEnd,
+    const real4 *bodies,
+    const int nParticles,
+    const real4 *groupSizeInfo,
+    const real4 *groupCentreInfo,
+    const real4 *groupSmoothInfo,
+    const int groupBeg,
+    const int groupEnd,
+    const int nNodes,
+    unsigned long long &nflops,
+    const float3 periodicDomainSize,
+    const int    periodicMethod)
+{
+  bufferStruct.LETBuffer_node.clear();
+  bufferStruct.LETBuffer_ptcl.clear();
+  bufferStruct.currLevelVecUI4.clear();
+  bufferStruct.nextLevelVecUI4.clear();
+  bufferStruct.currGroupLevelVec.clear();
+  bufferStruct.nextGroupLevelVec.clear();
+  bufferStruct.groupSplitFlag.clear();
+
+  nflops = 0;
+
+  int nExportCell = 0;
+  int nExportPtcl = 0;
+  int nExportCellOffset = cellEnd;
+
+  const _v4sf*            bodiesV = (const _v4sf*)bodies;
+  const _v4sf*          nodeSizeV = (const _v4sf*)nodeSize;
+  const _v4sf*        nodeCentreV = (const _v4sf*)nodeCentre;
+  const _v4sf*         multipoleV = (const _v4sf*)multipole;
+  const _v4sf*   grpNodeSizeInfoV = (const _v4sf*)groupSizeInfo;
+  const _v4sf* grpNodeCenterInfoV = (const _v4sf*)groupCentreInfo;
+  const _v4sf* grpNodeSmoothInfoV = (const _v4sf*)groupSmoothInfo;
+
+#if 0 /* AVX */
+#ifndef __AVX__
+#error "AVX is not defined"
+#endif
+  const int SIMDW  = 8;
+#define AVXIMBH
+#else
+  const int SIMDW  = 4;
+#define SSEIMBH
+#endif
+
+
+  bool usePeriodic = false;
+  int2 xP = {0,0}, yP = {0,0}, zP = {0,0};
+  if(periodicMethod & 1) { xP = {-1,1}; usePeriodic = true;}
+  if(periodicMethod & 2) { yP = {-1,1}; usePeriodic = true;}
+  if(periodicMethod & 4) { zP = {-1,1}; usePeriodic = true;}
+
+
+  Swap<std::vector<uint4> > levelList(bufferStruct.currLevelVecUI4, bufferStruct.nextLevelVecUI4);
+  Swap<std::vector<int> > levelGroups(bufferStruct.currGroupLevelVec, bufferStruct.nextGroupLevelVec);
+
+  nExportCell += cellBeg;
+  for (int node = 0; node < cellBeg; node++)
+    bufferStruct.LETBuffer_node.push_back((int2){node, host_float_as_int(nodeSize[node].w)});
+
+
+
+  /* copy group info into current level buffer */
+  for (int group = groupBeg; group < groupEnd; group++)
+    levelGroups.first().push_back(group);
+
+  for (int cell = cellBeg; cell < cellEnd; cell++)
+    levelList.first().push_back((uint4){(uint)cell, 0, (uint)levelGroups.first().size(),0});
+
+  int depth = 0;
+  while (!levelList.first().empty())
+  {
+    const int csize = levelList.first().size();
+    for (int i = 0; i < csize; i++)
+    {
+      const uint4       nodePacked = levelList.first()[i];
+
+      const uint  nodeIdx  = nodePacked.x;
+      const float nodeInfo_x = nodeCentre[nodeIdx].w;
+      const uint  nodeInfo_y = host_float_as_int(nodeSize[nodeIdx].w);
+
+      const _v4sf nodeCOM  = __builtin_ia32_vec_set_v4sf(multipoleV[nodeIdx*3], nodeInfo_x, 3);
+      const bool lleaf     = nodeInfo_x <= 0.0f;
+
+
+      //SPH uses physical center and size of the box to test overlap and distance
+       const _v4sf nodeSIZE = nodeSizeV[nodeIdx];
+       const _v4sf nodeCNTR = nodeCentreV[nodeIdx];
+
+      const int groupBeg = nodePacked.y;
+      const int groupEnd = nodePacked.z;
+      nflops += 20*((groupEnd - groupBeg-1)/SIMDW+1)*SIMDW;
+
+      bufferStruct.groupSplitFlag.clear();
+      for (int ib = groupBeg; ib < groupEnd; ib += SIMDW)
+      {
+        _v4sf centre[SIMDW], size[SIMDW];
+        for (int laneIdx = 0; laneIdx < SIMDW; laneIdx++)
+        {
+          const int group = levelGroups.first()[std::min(ib+laneIdx, groupEnd-1)];
+          centre[laneIdx] = grpNodeCenterInfoV[group];
+          size  [laneIdx] =   grpNodeSizeInfoV[group];
+          const float smth = groupSmoothInfo[group].x;
+          centre[laneIdx] = __builtin_ia32_vec_set_v4sf(centre[laneIdx], smth, 3); //Move smoothing to the .w of cntr
+        }
+#ifdef AVXIMBH
+        bufferStruct.groupSplitFlag.push_back(split_node_grav_impbh_box8a(nodeCOM, centre, size));
+#else
+//        bufferStruct.groupSplitFlag.push_back(split_node_grav_impbh_box4a(nodeCOM, centre, size));
+        _v4sf resGrav = split_node_grav_impbh_box4a(nodeCOM, centre, size);
+        if(__builtin_ia32_movmskps(resGrav))
+         {
+            //Gravity already decides we have to split it so no need for further testing
+            bufferStruct.groupSplitFlag.push_back(resGrav);
+         }
+         else
+         {
+            //No need for grav, but maybe SPH needs a split
+
+            if(usePeriodic)
+            {
+
+                bufferStruct.groupSplitFlag.push_back(split_node_sph_grp_impbh_box4a<true>(nodeCNTR, nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP));
+            }
+            else
+            {
+                bufferStruct.groupSplitFlag.push_back(split_node_sph_grp_impbh_box4a<false>(nodeCNTR, nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP));
+            }
+         }
+#endif
+      }
+
+      const int groupNextBeg = levelGroups.second().size();
+      int split = false;
+      for (int idx = groupBeg; idx < groupEnd; idx++)
+      {
+        const bool gsplit = ((uint*)&bufferStruct.groupSplitFlag[0])[idx - groupBeg];
+        if (gsplit)
+        {
+          split = true;
+          const int group = levelGroups.first()[idx];
+          if (!lleaf)
+          {
+            //Test on if its a leaf and on if it's and end-point
+            bool gleaf = groupCentreInfo[group].w <= 0.0f;
+            if(!gleaf)
+            {
+              gleaf = (host_float_as_int(groupSizeInfo[group].w) == 0xFFFFFFFF);
+            }
+
+            if (!gleaf)
+            {
+              const int childinfoGrp  = ((uint4*)groupSizeInfo)[group].w;
+              const int gchild  =   childinfoGrp & 0x0FFFFFFF;
+              const int gnchild = ((childinfoGrp & 0xF0000000) >> 28) ;
+
+              //for (int i = gchild; i <= gchild+gnchild; i++)
+              for (int i = gchild; i < gchild+gnchild; i++)
+              {
+                levelGroups.second().push_back(i);
+              }
+            }
+            else
+              levelGroups.second().push_back(group);
+          }
+          else
+            break;
+        }
+      }
+
+      real4 size  = nodeSize[nodeIdx];
+      int sizew = 0xFFFFFFFF;
+
+      if (split)
+      {
+        if (!lleaf)
+        {
+          const int lchild  =    nodeInfo_y & 0x0FFFFFFF;            //Index to the first child of the node
+          const int lnchild = (((nodeInfo_y & 0xF0000000) >> 28)) ;  //The number of children this node has
+          sizew = (nExportCellOffset | (lnchild << LEAFBIT));
+          nExportCellOffset += lnchild;
+          for (int i = lchild; i < lchild + lnchild; i++)
+            levelList.second().push_back((uint4){(uint)i,(uint)groupNextBeg,(uint)levelGroups.second().size()});
+        }
+        else
+        {
+          const int pfirst =    nodeInfo_y & BODYMASK;
+          const int np     = (((nodeInfo_y & INVBMASK) >> LEAFBIT)+1);
+          sizew = (nExportPtcl | ((np-1) << LEAFBIT));
+          for (int i = pfirst; i < pfirst+np; i++)
+            bufferStruct.LETBuffer_ptcl.push_back(i);
+          nExportPtcl += np;
+        }
+      }
+
+      bufferStruct.LETBuffer_node.push_back((int2){(int)nodeIdx, sizew});
+      nExportCell++;
+    }
+
+    depth++;
+
+    levelList.swap();
+    levelList.second().clear();
+
+    levelGroups.swap();
+    levelGroups.second().clear();
+  }
+
+  assert((int)bufferStruct.LETBuffer_ptcl.size() == nExportPtcl);
+  assert((int)bufferStruct.LETBuffer_node.size() == nExportCell);
+
+  /* now copy data into LETBuffer */
+  {
+    //LETBuffer.resize(nExportPtcl + 5*nExportCell);
+#pragma omp critical //Malloc seems to be not so thread safe..
+    *LETBuffer_ptr      = (real4*)malloc(sizeof(real4)*(1+ nExportPtcl + 5*nExportCell));
+    real4 *LETBuffer    = *LETBuffer_ptr;
+    _v4sf *vLETBuffer   = (_v4sf*)(&LETBuffer[1]);
+
+
+    int nStoreIdx     = nExportPtcl;
+    int multiStoreIdx = nStoreIdx + 2*nExportCell;
+    for (int i = 0; i < nExportPtcl; i++)
+    {
+      const int idx = bufferStruct.LETBuffer_ptcl[i];
+      vLETBuffer[i] = bodiesV[idx];
+    }
+    for (int i = 0; i < nExportCell; i++)
+    {
+      const int2 packed_idx = bufferStruct.LETBuffer_node[i];
+      const int idx         = packed_idx.x;
+      const float sizew     = host_int_as_float(packed_idx.y);
+      const _v4sf size      = __builtin_ia32_vec_set_v4sf(nodeSizeV[idx], sizew, 3);
+
 
       vLETBuffer[nStoreIdx+nExportCell] = nodeCentreV[idx];     /* centre */
       vLETBuffer[nStoreIdx            ] = size;                 /*  size  */
@@ -3885,6 +4416,11 @@ int3 getLEToptFullTree(
 
   return (int3){nExportCell, nExportPtcl, depth};
 }
+
+
+
+
+
 #endif //USE MPI
 
 
@@ -3990,7 +4526,8 @@ void octree::checkGPUAndStartLETComputation(tree_structure &tree,
                                             real4         **treeBuffers)
 {
   //This determines if we interrupt the LET computation by starting a gravity kernel on the GPU
-  if(gravStream->isFinished())
+  //if(gravStream->isFinished())
+    if(gravStream->isFinished() || (nReceived == nProcs -1))
   {
     //Only start if there actually is new data
     if((nReceived - procTrees) > 0)
@@ -4031,6 +4568,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                        int             nTopLevelTrees)
 {
 #ifdef USE_MPI
+
+  devContext->pushNVTX("essential_tree_exchangeV2");
 
 
   //This should be moved to where we actually need it
@@ -4205,6 +4744,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       getLETBuffers[tid].groupSplitFlag.reserve(allocSize);
 
 
+      if(tid == 0) devContext->pushNVTX("StartCheckingTheBoundaries");
+
       while(true) //Continue until everything is computed
       {
         int currentTicket = 0;
@@ -4260,6 +4801,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             //If the tree becomes too big or too deep then we will do direct LET for sure, otherwise
             //it depends on what the other side tells us.
 
+            //TODO extend below two functions with Periodic Boundaries
 
             //Test if we have to send data to the remote process?
             //Returns -1 if there is not enough data, otherwise all is ok?
@@ -4285,7 +4827,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                             procId, ibox,
                                             nflops, bla3);
 
-            fprintf(stderr,"SIZE TREE: %d  -> %d \n",ibox, sizeTree);
+            fprintf(stderr,"TODO PERIODIC SIZE TREE: %d  -> %d \n",ibox, sizeTree);
 
             //Test if the boundary tree sent by the remote tree is sufficient for us
             double tBoundaryCheck;
@@ -4370,6 +4912,12 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       }
       if(tid == 2) tStatsEndQuickCheck = get_time();
 
+      if(tid == 0)
+      {
+          devContext->popNVTX();
+          devContext->pushNVTX("StartLETExtraction");
+      }
+
       while(1)
       {
         if(tid == 0)
@@ -4431,6 +4979,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
         double tStartEx = get_time();
 
+        devContext->pushNVTX("CreatingLetForProcP1");
+
         //Extract the boundaries from the tree-structure. This reduces the boundaries from a tree to a list of boxes
         #ifdef USE_GROUP_TREE
           std::vector<float4> boundaryCentres;
@@ -4455,6 +5005,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             //Two tests, if its a  leaf, and/or if its a node and marked as end-point
             if((host_float_as_int(grpSize[startSearch].w) == 0xFFFFFFFF) || grpCenter[startSearch].w <= 0) //Tree extract
             {
+              //TODO ? Test if we actually need to use this boundary or that we can skip it from the start
+              //This is mainly for periodic boundaries where the number of groups to test becomes much larger
               boundarySizes.    push_back(grpSize  [startSearch]);
               boundaryCentres.  push_back(grpCenter[startSearch]);
               boundarySmoothing.push_back(grpSmooth[startSearch]);
@@ -4467,13 +5019,27 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
           grpSmooth = &boundarySmoothing[0];
         #endif
 
+
+       //float3 periodicDomainSize = {1.0f, 0.125f, 0.125f};   //Hardcoded for our testing IC
+       const float3 periodicDomainSize = {100.0f, 100.0f, 100.0f};   //Hardcoded for our testing IC
+       const int    periodicMethod = 4; //1+2+4; //X+Y+Z;
+
+       //Optionally extend the list of boundaries, use: extendGroupsWithPeriodicGroups()
+
         double tEndEx = get_time();
+
+        devContext->popNVTX();
+        devContext->pushNVTX("CreatingLetForProcP2");
 
         int2 usedStartEndNode = {(int)node_begend.x, (int)node_begend.y};
 
+        int bufferSize;
+
+
+#if 0
+        tz = get_time();
         assert(startGrp == 0);
-        int3  nExport = getLET1(
-                                getLETBuffers[tid],
+        int3  nExport = getLET1(getLETBuffers[tid],
                                 &LETDataBuffer,
                                 &nodeCenterInfo[0],
                                 &nodeSizeInfo[0],
@@ -4483,11 +5049,47 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                 tree.n,
                                 grpSize, grpCenter, grpSmooth,
                                 endGrp,
-                                tree.n_nodes, nflops);
+                                tree.n_nodes, nflops,
+                                periodicDomainSize, periodicMethod);
+
+
+#endif
+
+
+#if 1
+        real4 *grpCenter2    =  &globalGrpTreeCntSize[globalGrpTreeOffsets[ibox]];
+        int start            = host_float_as_int(grpCenter2[0].z);
+        int end              = host_float_as_int(grpCenter2[0].w);
+            nbody            = host_float_as_int(grpCenter2[0].x);
+            nnode            = host_float_as_int(grpCenter2[0].y);
+
+        double tJB = get_time();
+
+        tz = get_time();
+        assert(startGrp == 0);
+
+
+        grpSize    = &grpCenter2[1+nbody];
+        grpSmooth  = &grpCenter2[1+nbody+nnode*2];
+        grpCenter2 = &grpCenter2[1+nbody+nnode];
+
+        int3 nExport = getLEToptFullTree_sph(getLETBuffers[tid],
+                                             &LETDataBuffer,
+                                             &nodeCenterInfo[0],
+                                             &nodeSizeInfo[0],
+                                             &multipole[0],
+                                             usedStartEndNode.x, usedStartEndNode.y,
+                                             &bodies[0],
+                                             tree.n,
+                                             grpSize, grpCenter2,grpSmooth,
+                                             start, end, tree.n_nodes, nflops,
+                                             periodicDomainSize, periodicMethod);
+#endif
+
 
         countParticles  = nExport.y;
         countNodes      = nExport.x;
-        int bufferSize  = 1 + 1*countParticles + 5*countNodes;
+            bufferSize  = 1 + 1*countParticles + 5*countNodes;
         //Use count of exported particles and nodes, but let particles count more heavy.
         //Used during particle exchange / domain update to speedup particle-box assignment
 //        this->fullGrpAndLETRequestStatistics[ibox] = make_uint2(countParticles*10 + countNodes, ibox);
@@ -4504,6 +5106,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         LETDataBuffer[0].z = host_int_as_float(usedStartEndNode.x);     //First node on the level that indicates the start of the tree walk
         LETDataBuffer[0].w = host_int_as_float(usedStartEndNode.y);     //last  node on the level that indicates the start of the tree walk
 
+
         //In a critical section to prevent multiple threads writing to the same location
         #pragma omp critical
         {
@@ -4512,6 +5115,10 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
           computedLETs[nComputedLETs].size        = sizeof(real4)*bufferSize;
           nComputedLETs++;
         }
+
+
+
+        devContext->popNVTX();
 
         if(tid == 0)
         {
@@ -4526,9 +5133,13 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
       if(tid != 0) tStatsEndGetLET = get_time(); //TODO delete
 
+      if(tid == 0) devContext->popNVTX();
+
+
       //All data that has to be send out is computed
       if(tid == 0)
       {
+        devContext->pushNVTX("WaitOnAndProcessIncommingData");
         //Thread 0 starts the GPU work so it stays alive until that is complete
         while(procTrees != nProcs-1) //Exit when everything is processed
         {
@@ -4550,6 +5161,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             usleep(10);
           }//if startGrav
         }//while 1
+
+        devContext->popNVTX(); //WaitOnAndProcessIncommingData
       }//if tid==0
 
     }//if tid != 1
@@ -4802,6 +5415,7 @@ tAlltoAll: %lg tGetLETSend: %lg tTotal: %lg mbSize-a2a: %f nA2AQsend: %d nA2AQre
   delete[] treeBuffers;
   LOGF(stderr,"LET Creation and Exchanging time [%d] curStep: %g\t   Total: %g  Full-step: %lg  since last start: %lg\n", procId, thisPartLETExTime, totalLETExTime, get_time()-t0, get_time()-tStart);
 
+  devContext->popNVTX();
 
 #endif
 }//essential tree-exchange
@@ -4814,6 +5428,8 @@ void octree::mergeAndLaunchLETStructures(
     int &recvTree, bool &mergeOwntree, int &procTrees, double &tStart)
 {
   //Now we have to merge the separate tree-structures into one big-tree
+
+   devContext->pushNVTX("mergeAndLaunchLETStructures");
 
   int PROCS  = recvTree-procTrees;
 
@@ -5337,7 +5953,8 @@ void octree::mergeAndLaunchLETStructures(
   //only done during the last approximate_gravity_let call
   bool doActivePart = (procTrees == mpiGetNProcs() -1);
 
-  approximate_gravity_let(this->localTree, this->remoteTree, bufferSize, doActivePart);
+  //approximate_gravity_let(this->localTree, this->remoteTree, bufferSize, doActivePart);
+  approximate_density_let(this->localTree, this->remoteTree, bufferSize, doActivePart);
 
   double t4 = get_time();
   //Statistics about the tree-merging
@@ -5345,6 +5962,8 @@ void octree::mergeAndLaunchLETStructures(
   sprintf(buff5, "LETXTIME-%d Iter: %d Processed: %d topTree: %lg Alloc: %lg  Copy/Update: %lg TotalC: %lg Wait: %lg TotalRun: %lg \n",
                   procId, iter, procTrees, t1-t0, t2-t1,t3-t2,t3-t0, t4-t3, t4-t0);
   devContext->writeLogEvent(buff5); //TODO DELETE
+
+  devContext->popNVTX();
 }
 
 
@@ -5644,4 +6263,347 @@ void octree::computeSampleRateSFC(float lastExecTime, int &nSamples, float &samp
 
 #endif
 }
+
+
+/*
+ * Code for testing performance of getLet1 and getlETOptFullTree_sph
+ */
+
+#if 0
+  //Expand the groups when using periodic boundaries, this might or might not be the most
+  //efficient method as we increase the total number of checks significantly
+
+  //For periodic boundaries, mirror the group and body positions along the periodic axis
+  //float3 domainSize = {1.0f, 0.125f, 0.125f};   //Hardcoded for our testing IC
+  float3 domainSize = {100.0f, 100.0f, 100.0f};   //Hardcoded for our testing IC
+
+  for(int ix=-1; ix <= 1; ix++)     //Periodic around X
+  {
+      for(int iy=-1; iy <= 1; iy++)   //Periodic around Y
+      {
+          for(int iz=-1; iz <= 1; iz++) //Periodic around Z
+          {
+              for(int grp=0; grp < endGrp; grp++)
+              {
+
+                    float4 boundaryPos = boundaryCentres[grp];
+
+                    boundaryPos.x   += (domainSize.x*ix);
+                    boundaryPos.y   += (domainSize.y*iy);
+                    boundaryPos.z   += (domainSize.z*iz);
+
+                    if(ix == 1 && iy == 1 && iz == 1)
+                    {
+                        fprintf(stderr,"Current values: %f %f %f \n", boundaryPos.x,boundaryPos.y,boundaryPos.z);
+                    }
+
+                    boundaryCentres.  push_back(boundaryPos);
+                    boundarySizes.    push_back(boundarySizes  [grp]);
+                    boundarySmoothing.push_back(boundarySmoothing[grp]);
+              }//grp
+          }//iz
+      }//iy
+  }//ix
+  //Update the group count
+  endGrp    = boundarySizes.size();
+  grpCenter = &boundaryCentres  [0];
+  grpSize   = &boundarySizes    [0];
+  grpSmooth = &boundarySmoothing[0];
+#endif
+
+
+#if 1
+void extendGroupsWithPeriodicGroups(){
+
+//Filter the boundaries while creating a list of periodic boundary groups.
+std::vector<float4> boundaryCentresFiltered;
+std::vector<float4> boundarySizesFiltered;
+std::vector<float4> boundarySmoothingFiltered;
+
+boundarySizesFiltered.reserve(endGrp*4);
+boundaryCentresFiltered.reserve(endGrp*4);
+boundarySmoothingFiltered.reserve(endGrp*4);
+boundarySizesFiltered.clear();
+boundaryCentresFiltered.clear();
+boundarySmoothingFiltered.clear();
+
+
+for(int ix=-1; ix <= 1; ix++)             //Periodic around X
+{
+   for(int iy=-1; iy <= 1; iy++)         //Periodic around Y
+   {
+       for(int iz=-1; iz <= 1; iz++)     //Periodic around Z
+       {
+           for(int grp=0; grp < endGrp; grp++)
+           {
+                 float4 boundaryPos = boundaryCentres[grp];
+                 float4 groupSize   = boundarySizes  [grp];
+                 float  grpSmooth   = boundarySmoothing[grp].x;
+
+                 boundaryPos.x   += (periodicDomainSize.x*ix);
+                 boundaryPos.y   += (periodicDomainSize.y*iy);
+                 boundaryPos.z   += (periodicDomainSize.z*iz);
+
+                 //Test this group against the top node of our tree
+                 float4 nCenter = nodeCenterInfo[0];
+                 float4 nSize   = nodeSizeInfo[0];
+                 float4 nCOM    = multipole[0];
+
+                 //Compute the distance between the group and the cell
+                 float3 dr = {fabs(boundaryPos.x - nCenter.x) - (groupSize.x + nSize.x),
+                              fabs(boundaryPos.y - nCenter.y) - (groupSize.y + nSize.y),
+                              fabs(boundaryPos.z - nCenter.z) - (groupSize.z + nSize.z)};
+
+                 dr.x += fabs(dr.x); dr.x *= 0.5f;
+                 dr.y += fabs(dr.y); dr.y *= 0.5f;
+                 dr.z += fabs(dr.z); dr.z *= 0.5f;
+
+                 //Distance squared, no need to do sqrt since opening criteria has been squared
+                 float ds2    = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
+                 if(ds2 <= grpSmooth)
+                 {
+                     boundaryCentresFiltered.  push_back(boundaryPos);
+                     boundarySizesFiltered.    push_back(boundarySizes  [grp]);
+                     boundarySmoothingFiltered.push_back(boundarySmoothing[grp]);
+                 }
+                 else
+                 {
+                     //Test if we need it for gravity
+
+                     //Compute the distance between the group and the cell
+                       float3 dr = make_float3(
+                           fabsf(boundaryPos.x - nCOM.x) - (groupSize.x),
+                           fabsf(boundaryPos.y - nCOM.y) - (groupSize.y),
+                           fabsf(boundaryPos.z - nCOM.z) - (groupSize.z)
+                           );
+
+                       dr.x += fabsf(dr.x); dr.x *= 0.5f;
+                       dr.y += fabsf(dr.y); dr.y *= 0.5f;
+                       dr.z += fabsf(dr.z); dr.z *= 0.5f;
+
+                       //Distance squared, no need to do sqrt since opening criteria has been squared
+                       const float ds2    = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
+
+                       if(ds2 <= fabsf(nCOM.w))
+                       {
+                           boundaryCentresFiltered.  push_back(boundaryPos);
+                           boundarySizesFiltered.    push_back(boundarySizes  [grp]);
+                           boundarySmoothingFiltered.push_back(boundarySmoothing[grp]);
+                       }
+                 }
+           }//grp
+       }//iz
+   }//iy
+}//ix
+
+//Update the group count
+endGrp    = boundarySizesFiltered.size();
+grpCenter = &boundaryCentresFiltered  [0];
+grpSize   = &boundarySizesFiltered    [0];
+grpSmooth = &boundarySmoothingFiltered[0];
+}
+#endif
+
+
+#if 1
+#define SLEEP 5
+
+
+        if(procId == 0)
+        {
+            fprintf(stderr,"Smoothing: %f %f %f %f \n", grpSmooth[0].x,grpSmooth[1].x,grpSmooth[2].x,grpSmooth[3].x);
+            double tJB = get_time();
+            for(int i=0; i < 10; i++){
+            tz = get_time();
+             assert(startGrp == 0);
+             int3  nExport = getLET1(
+                                     getLETBuffers[tid],
+                                     &LETDataBuffer,
+                                     &nodeCenterInfo[0],
+                                     &nodeSizeInfo[0],
+                                     &multipole[0],
+                                     usedStartEndNode.x, usedStartEndNode.y,
+                                     &bodies[0],
+                                     tree.n,
+                                     grpSize, grpCenter, grpSmooth,
+                                     endGrp,
+                                     tree.n_nodes, nflops,
+                                     periodicDomainSize, periodicMethod);
+
+
+             //int3 getLEToptFullTree;
+
+
+
+             countParticles  = nExport.y;
+             countNodes      = nExport.x;
+             bufferSize  = 1 + 1*countParticles + 5*countNodes;
+             //Use count of exported particles and nodes, but let particles count more heavy.
+             //Used during particle exchange / domain update to speedup particle-box assignment
+     //        this->fullGrpAndLETRequestStatistics[ibox] = make_uint2(countParticles*10 + countNodes, ibox);
+             if (ENABLE_RUNTIME_LOG)
+             {
+               fprintf(stderr,"Proc: %d LET getLetOp count&fill [%d,%d]: Depth: %d Dest: %d Total : %lg (#P: %d \t#N: %d) nNodes= %d  nGroups= %d \tsince start: %lg \n",
+                               procId, procId, tid, nExport.z, ibox, get_time()-tz,countParticles,
+                               countNodes, tree.n_nodes, endGrp, get_time()-t0);
+             }
+            }
+            fprintf(stderr,"Proc: %d Total: %lg AVG: %lg \n", procId, get_time()-tJB, (get_time()-tJB) / 10);
+        }
+        else{sleep(SLEEP);}
+
+        if(procId == 1){
+            double tJB = get_time();
+            for(int i=0; i < 10; i++){
+        tz = get_time();
+             assert(startGrp == 0);
+             int3  nExport = getLET1(
+                                     getLETBuffers[tid],
+                                     &LETDataBuffer,
+                                     &nodeCenterInfo[0],
+                                     &nodeSizeInfo[0],
+                                     &multipole[0],
+                                     usedStartEndNode.x, usedStartEndNode.y,
+                                     &bodies[0],
+                                     tree.n,
+                                     grpSize, grpCenter, grpSmooth,
+                                     endGrp,
+                                     tree.n_nodes, nflops,
+                                     periodicDomainSize, periodicMethod);
+
+
+             countParticles  = nExport.y;
+             countNodes      = nExport.x;
+             bufferSize  = 1 + 1*countParticles + 5*countNodes;
+             //Use count of exported particles and nodes, but let particles count more heavy.
+             //Used during particle exchange / domain update to speedup particle-box assignment
+     //        this->fullGrpAndLETRequestStatistics[ibox] = make_uint2(countParticles*10 + countNodes, ibox);
+             if (ENABLE_RUNTIME_LOG)
+             {
+               fprintf(stderr,"Proc: %d LET getLetOp count&fill [%d,%d]: Depth: %d Dest: %d Total : %lg (#P: %d \t#N: %d) nNodes= %d  nGroups= %d \tsince start: %lg \n",
+                               procId, procId, tid, nExport.z, ibox, get_time()-tz,countParticles,
+                               countNodes, tree.n_nodes, endGrp, get_time()-t0);
+             }
+        }
+            fprintf(stderr,"Proc: %d Total: %lg AVG: %lg \n", procId, get_time()-tJB, (get_time()-tJB) / 10);
+        }
+        else{sleep(SLEEP);}
+
+#endif
+
+        sleep(1);
+#if 1
+        {
+        int idx          =   globalGrpTreeOffsets[ibox];
+        real4 *grpCenter =  &globalGrpTreeCntSize[idx];
+        int start = host_float_as_int(grpCenter[0].z);
+        int end = host_float_as_int(grpCenter[0].w);
+
+        int nbody = host_float_as_int(grpCenter[0].x);
+        int nnode = host_float_as_int(grpCenter[0].y);
+
+#define SLEEP 5
+        int bufferSize;
+
+
+        if(procId == 0)
+        {
+            double tJB = get_time();
+            for(int i=0; i < 10; i++){
+            tz = get_time();
+             assert(startGrp == 0);
+
+
+             real4 * grpSize    = &grpCenter[1+nbody];
+             real4 * grpSmooth  = &grpCenter[1+nbody+nnode*2];
+             real4 * grpCenter2 = &grpCenter[1+nbody+nnode];
+
+             int3  nExport = getLEToptFullTree_sph(
+                                     getLETBuffers[tid],
+                                     &LETDataBuffer,
+                                     &nodeCenterInfo[0],
+                                     &nodeSizeInfo[0],
+                                     &multipole[0],
+                                     usedStartEndNode.x, usedStartEndNode.y,
+                                     &bodies[0],
+                                     tree.n,
+                                     grpSize, grpCenter2,grpSmooth,
+                                     start,
+                                     end,
+                                     tree.n_nodes, nflops);
+
+
+             //int3 ;
+
+
+
+             countParticles  = nExport.y;
+             countNodes      = nExport.x;
+             bufferSize  = 1 + 1*countParticles + 5*countNodes;
+             //Use count of exported particles and nodes, but let particles count more heavy.
+             //Used during particle exchange / domain update to speedup particle-box assignment
+     //        this->fullGrpAndLETRequestStatistics[ibox] = make_uint2(countParticles*10 + countNodes, ibox);
+             if (ENABLE_RUNTIME_LOG)
+             {
+               fprintf(stderr,"Proc: %d LET getLetOp count&fill [%d,%d]: Depth: %d Dest: %d Total : %lg (#P: %d \t#N: %d) nNodes= %d  nGroups= %d \tsince start: %lg \n",
+                               procId, procId, tid, nExport.z, ibox, get_time()-tz,countParticles,
+                               countNodes, tree.n_nodes, endGrp, get_time()-t0);
+             }
+            }
+            fprintf(stderr,"Proc: %d Total: %lg AVG: %lg \n", procId, get_time()-tJB, (get_time()-tJB) / 10);
+        }
+        else{sleep(SLEEP);}
+
+        if(procId == 1){
+            double tJB = get_time();
+            for(int i=0; i < 10; i++){
+        tz = get_time();
+             assert(startGrp == 0);
+             real4 * grpSize    = &grpCenter[1+nbody];
+             real4 * grpSmooth  = &grpCenter[1+nbody+nnode*2];
+             real4 * grpCenter2 = &grpCenter[1+nbody+nnode];
+
+             int3  nExport = getLEToptFullTree_sph(
+                                     getLETBuffers[tid],
+                                     &LETDataBuffer,
+                                     &nodeCenterInfo[0],
+                                     &nodeSizeInfo[0],
+                                     &multipole[0],
+                                     usedStartEndNode.x, usedStartEndNode.y,
+                                     &bodies[0],
+                                     tree.n,
+                                     grpSize, grpCenter2,grpSmooth,
+                                     start,
+                                     end,
+                                     tree.n_nodes, nflops);
+
+
+             countParticles  = nExport.y;
+             countNodes      = nExport.x;
+             bufferSize  = 1 + 1*countParticles + 5*countNodes;
+             //Use count of exported particles and nodes, but let particles count more heavy.
+             //Used during particle exchange / domain update to speedup particle-box assignment
+     //        this->fullGrpAndLETRequestStatistics[ibox] = make_uint2(countParticles*10 + countNodes, ibox);
+             if (ENABLE_RUNTIME_LOG)
+             {
+               fprintf(stderr,"Proc: %d LET getLetOp count&fill [%d,%d]: Depth: %d Dest: %d Total : %lg (#P: %d \t#N: %d) nNodes= %d  nGroups= %d \tsince start: %lg \n",
+                               procId, procId, tid, nExport.z, ibox, get_time()-tz,countParticles,
+                               countNodes, tree.n_nodes, endGrp, get_time()-t0);
+             }
+        }
+            fprintf(stderr,"Proc: %d Total: %lg AVG: %lg \n", procId, get_time()-tJB, (get_time()-tJB) / 10);
+        }
+        else{sleep(SLEEP);}
+
+}
+#endif
+
+
+
+
+
+
+
+
+
 #endif

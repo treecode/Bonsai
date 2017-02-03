@@ -18,7 +18,63 @@ cudaEvent_t endRemoteGrav;
 
 float runningLETTimeSum, lastTotal, lastLocal;
 
+inline int host_float_as_int(float val)
+{
+  union{float f; int i;} u; //__float_as_int
+  u.f           = val;
+  return u.i;
+}
 
+
+void octree::distributeBoundaries(bool doOnlyUpdate)
+{
+    devContext->pushNVTX("distributeBoundaries");
+
+    localTree.boxSizeInfo.d2h  (  localTree.n_nodes, false, LETDataToHostStream->s());
+    localTree.boxCenterInfo.d2h(  localTree.n_nodes, false, LETDataToHostStream->s());
+    localTree.boxSmoothing.d2h (  localTree.n_nodes, false, LETDataToHostStream->s());
+    localTree.multipole.d2h    (3*localTree.n_nodes, false, LETDataToHostStream->s());
+
+    double t10 = get_time();
+
+    //The below functions block until the MPI send and receive has been completed,
+    //the GPU->Host data copies happen async
+    LOGF(stderr,"distributeBoundaries updateOnly: %d \n", doOnlyUpdate);
+    if(doOnlyUpdate)
+    {
+        this->updateCurrentInfoGrpTree();
+    }
+    else
+    {
+        this->sendCurrentInfoGrpTree();
+    }
+
+    double t20 = get_time();
+
+    LOGF(stderr,"distributeBoundaries took: %lg  updateOnly: %d \n", t20-t10, doOnlyUpdate);
+    devContext->popNVTX();
+}
+
+void octree::makeDensityLET()
+{
+    //Before we start making LET structures we need to wait till the data is available to the CPU
+    localTree.boxSizeInfo.waitForCopyEvent();
+    localTree.boxCenterInfo.waitForCopyEvent();
+    localTree.boxSmoothing.waitForCopyEvent();
+    localTree.multipole.waitForCopyEvent();
+
+    std::vector<real4> topLevelsBuffer;
+    std::vector<uint2> treeSizeAndOffset;
+    int copyTreeUpToLevel = 0;
+    //Start LET kernels
+    essential_tree_exchangeV2(localTree,
+                              remoteTree,
+                              topLevelsBuffer,
+                              treeSizeAndOffset,
+                              copyTreeUpToLevel);
+
+    letRunning = false;
+}
 
 
 void octree::makeLET()
@@ -27,10 +83,13 @@ void octree::makeLET()
   double t00 = get_time();
 
 
-//  Dit verder opschonen en functies maken om de boundary tree te updaten. Eventueel alleen
-//  de smoothing waarden en deze doorsturen, zouden dan eigenlijk op plek
-//  van originele smoothing moeten komen. Dat moet uit te rekenenn zijn omdat we
-//  de headers al hebben
+  double t10 = get_time();
+  //Exchange domain grpTrees, while memory copies take place
+  this->sendCurrentInfoGrpTree();
+
+  //this->updateCurrentInfoGrpTree();
+
+  double t20 = get_time();
 
 
 
@@ -42,15 +101,8 @@ void octree::makeLET()
   localTree.boxSizeInfo.waitForCopyEvent();
   localTree.boxCenterInfo.waitForCopyEvent();
   localTree.boxSmoothing.waitForCopyEvent();
-  
-  double t10 = get_time();
-  //Exchange domain grpTrees, while memory copies take place
-  this->sendCurrentInfoGrpTree();
-
-  double t20 = get_time();
-
-
   localTree.multipole.waitForCopyEvent();
+
   double t40 = get_time();
   LOGF(stderr,"MakeLET Preparing data-copy: %lg  sendGroups: %lg Total: %lg \n",
                t10-t00, t20-t10, t40-t00);
@@ -235,7 +287,8 @@ bool octree::iterate_once(IterationData &idata) {
       //Approximate gravity
       t1 = get_time();
       //devContext.startTiming(gravStream->s());
-      approximate_gravity(this->localTree);
+      //approximate_gravity(this->localTree);
+      approximate_density(this->localTree);
 //      devContext.stopTiming("Approximation", 4, gravStream->s());
 
       runningLETTimeSum = 0;
@@ -546,6 +599,264 @@ void octree::direct_gravity(tree_structure &tree)
     directGrav.setWork(globalWork, localWork);
     directGrav.execute2(gravStream->s());
 }
+
+void countInteractions(tree_structure &tree, MPI_Comm mpiCommWorld, int procId)
+{
+
+#if 1
+  //Count the number of tree-opening tests
+  tree.interactions.d2h();
+  tree.bodies_grad.d2h();
+  long long openingTestSum  = 0;
+  long long distanceTestSum = 0;
+  int minOps = 10e6, maxOps = 0;
+  long long int interactionUsefull = 0;
+  long long int interactionTotal   = 0;
+  for(int i=0; i < tree.n; i++) {
+      openingTestSum     += tree.interactions[i].x; distanceTestSum     += tree.interactions[i].y;
+      minOps = min(minOps, tree.interactions[i].y); maxOps = max(maxOps, tree.interactions[i].y);
+      interactionTotal   += (int) tree.bodies_grad[i].x;  interactionUsefull   += (int)tree.bodies_grad[i].y;
+//      fprintf(stderr,"Body: %d\t\t%d\t%d\n", i, tree.interactions[i].x, tree.interactions[i].y);
+  }
+  fprintf(stderr,"Number of opening angle checks: %lld [ %lld ] distance test: %lld [ Avg: %lld Min: %d Max: %d ] Interactions: avg-total: %lld avg-useful: %lld Total useful: %lld\n",
+          openingTestSum,  openingTestSum  / tree.n,
+          distanceTestSum, distanceTestSum / tree.n, minOps, maxOps,
+          interactionTotal / tree.n, interactionUsefull / tree.n,
+          interactionUsefull);
+
+  unsigned long long tmp  = 0;
+  unsigned long long tmp2 = interactionUsefull;
+  MPI_Allreduce(&tmp2,&tmp,1, MPI_UNSIGNED_LONG_LONG, MPI_SUM,mpiCommWorld);
+  if(procId == 0) fprintf(stderr,"Global useful count: %lld \n", tmp);
+
+
+  MPI_Barrier(mpiCommWorld);
+#endif
+}
+
+void octree::approximate_density    (tree_structure &tree)
+{
+    uint2 node_begend;
+    int level_start = tree.startLevelMin;
+    node_begend.x   = tree.level_list[level_start].x;
+    node_begend.y   = tree.level_list[level_start].y;
+
+
+
+    LOG("node begend: %d %d iter-> %d\n", node_begend.x, node_begend.y, iter);
+
+
+    SPHDensity.set_args(0, &tree.n_active_groups,
+                           &tree.n,
+                           &(this->eps2),
+                           &node_begend,
+                           tree.active_group_list.p(),
+                           //i particle properties
+                           tree.bodies_Ppos.p(),
+                           tree.bodies_Pvel.p(),
+                           tree.bodies_dens.p(),
+                           tree.bodies_grad.p(),
+                           tree.bodies_hydro.p(),
+                           tree.activePartlist.p(),
+                           tree.interactions.p(),
+                           tree.boxSizeInfo.p(),
+                           tree.groupSizeInfo.p(),
+                           tree.boxCenterInfo.p(),
+                           tree.groupCenterInfo.p(),
+                           tree.multipole.p(),
+                           tree.generalBuffer1.p(),  //The buffer to store the tree walks
+                           //j particle properties
+                           tree.bodies_Ppos.p(),
+                           tree.bodies_Pvel.p(),
+                           tree.bodies_dens.p(),     //Per particle density (x) and nnb (y)
+                           tree.bodies_grad.p(),
+                           tree.bodies_hydro.p(),
+                           //Result buffers
+                           tree.bodies_acc1.p(),
+                           tree.bodies_dens_out.p(),
+                           tree.bodies_hydro_out.p(),
+                           tree.bodies_grad.p());
+    SPHDensity.set_texture<real4>(0,  tree.boxSizeInfo,    "texNodeSize");
+    SPHDensity.set_texture<real4>(1,  tree.boxCenterInfo,  "texNodeCenter");
+    SPHDensity.set_texture<real4>(2,  tree.multipole,      "texMultipole");
+    SPHDensity.set_texture<real4>(3,  tree.bodies_Ppos,    "texBody");
+
+    SPHDensity.setWork(-1, NTHREAD, nBlocksForTreeWalk);
+
+//    Dit testen op correctheid, en dan verder met toevoegen van
+//    periodic boundaries in alle LET dingen
+
+
+    for(int i=0; i < 1; i++)
+    {
+        tree.interactions.zeroMemGPUAsync(gravStream->s());
+        tree.activePartlist.zeroMemGPUAsync(gravStream->s());
+        tree.bodies_grad.zeroMemGPUAsync(gravStream->s());
+        tree.bodies_dens_out.zeroMemGPUAsync(gravStream->s());
+
+
+        cudaEventRecord(startLocalGrav, gravStream->s());
+        double tStart = get_time();
+        SPHDensity.execute2(gravStream->s());  //First iteration
+        cudaEventRecord(endLocalGrav, gravStream->s());
+
+        cudaDeviceSynchronize();
+        countInteractions(tree, mpiCommWorld, procId);
+    //    double tEnd = get_time();
+    //
+    //    float ms;
+    //    CU_SAFE_CALL(cudaEventElapsedTime(&ms, startLocalGrav, endLocalGrav));
+    //    fprintf(stderr,"SPH GPU step took: %f ms\t%lg sec\n", ms,  tEnd-tStart);
+
+        if(nProcs > 1)
+        {
+            distributeBoundaries(false); //Always full update for now
+            makeDensityLET();
+        }
+
+        //Update the current density and smoothing radius based on that density
+        tree.bodies_dens.copy_devonly_async(tree.bodies_dens_out, tree.n, 0,gravStream->s());
+
+        //TODO should we update the tree? No as we only update and use particle search radii
+        mpiSync();
+       // compute_properties(tree);
+
+        cudaDeviceSynchronize();
+    //wait on the LET to finish before we start the interaction computations
+    gravStream->sync();
+
+    countInteractions(tree, mpiCommWorld, procId);
+
+
+    }
+
+
+    tree.bodies_dens_out.d2h();
+    tree.bodies_grad.d2h();
+    tree.bodies_hydro.d2h();
+    tree.bodies_acc1.d2h();
+    tree.bodies_ids.d2h();
+
+
+  //   char fileName[128];  sprintf(fileName, "interact-%d.txt", procId); FILE* outFile = fopen(fileName, "w");
+     for(int i=0; i < tree.n; i++)
+     {
+
+  //       if(i % 1000 == 0)
+  //       if(i < 32 || (tree.bodies_grad[i].y > 0 && i < 129))
+         if(tree.bodies_ids[i] < 10)
+  //           if(i >=3839 && i < 3855)
+         //if(i >=3839 && i < 3855)
+  //       if(tree.bodies_ids[i] > 15455 && tree.bodies_ids[i] < 15465)
+         fprintf(stderr,"Output: %d %lld || Pos: %f %f %f %lg\t || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
+  //       fprintf(outFile,"Output: %d %lld || Pos: %f %f %f %lg\t || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
+                 i,
+                 tree.bodies_ids[i],
+                 tree.bodies_Ppos[i].x,
+                 tree.bodies_Ppos[i].y,
+                 tree.bodies_Ppos[i].z,
+                 tree.bodies_Ppos[i].w,
+                 tree.bodies_dens_out[i].x,
+                 tree.bodies_dens_out[i].y,
+                 tree.bodies_grad[i].w,
+                 tree.bodies_grad[i].x,
+                 tree.bodies_grad[i].y,
+                 tree.bodies_grad[i].z,
+                 tree.bodies_hydro[i].x,
+                 tree.bodies_hydro[i].y,
+                 tree.bodies_hydro[i].z,
+                 tree.bodies_hydro[i].w,
+                 tree.bodies_acc1[i].x,
+                 tree.bodies_acc1[i].y,
+                 tree.bodies_acc1[i].z,
+                 tree.bodies_acc1[i].w);
+     }
+
+
+ exit(0);
+
+
+
+}
+void octree::approximate_density_let(tree_structure &tree, tree_structure &remoteTree, int bufferSize, bool doActivePart)
+{
+    //Start and end node of the remote tree structure
+      uint2 node_begend;
+      node_begend.x =  0;
+      node_begend.y =  remoteTree.remoteTreeStruct.w;
+
+      //The texture offset used:
+      int nodeTexOffset     = remoteTree.remoteTreeStruct.z ;
+
+      //The start and end of the top nodes:
+      node_begend.x = (remoteTree.remoteTreeStruct.w >> 16);
+      node_begend.y = (remoteTree.remoteTreeStruct.w & 0xFFFF);
+
+      //Number of particles and number of nodes in the remote tree
+      int remoteP = remoteTree.remoteTreeStruct.x;
+      int remoteN = remoteTree.remoteTreeStruct.y;
+
+      LOG("LET node begend [%d]: %d %d iter-> %d\n", procId, node_begend.x, node_begend.y, iter);
+
+      void *multiLoc = remoteTree.fullRemoteTree.a(1*(remoteP) + 2*(remoteN+nodeTexOffset));
+      void *boxSILoc = remoteTree.fullRemoteTree.a(1*(remoteP));
+      void *boxCILoc = remoteTree.fullRemoteTree.a(1*(remoteP) + remoteN + nodeTexOffset);
+
+
+      SPHDensityLET.set_args(0, &tree.n_active_groups,
+                             &tree.n,
+                             &(this->eps2),
+                             &node_begend,
+                             tree.active_group_list.p(),
+                             //i particle properties
+                             tree.bodies_Ppos.p(),
+                             tree.bodies_Pvel.p(),
+                             tree.bodies_dens.p(),
+                             tree.bodies_grad.p(),
+                             tree.bodies_hydro.p(),
+                             tree.activePartlist.p(),
+                             tree.interactions.p(),
+                             &boxSILoc,
+                             tree.groupSizeInfo.p(),
+                             &boxCILoc,
+                             tree.groupCenterInfo.p(),
+                             &multiLoc,
+                             tree.generalBuffer1.p(),  //The buffer to store the tree walks
+                             //j particle properties
+                             remoteTree.fullRemoteTree.p(),
+                             tree.bodies_Pvel.p(),
+                             tree.bodies_dens.p(),     //Per particle density (x) and nnb (y)
+                             tree.bodies_grad.p(),
+                             tree.bodies_hydro.p(),
+                             //Result buffers
+                             tree.bodies_acc1.p(),
+                             tree.bodies_dens_out.p(),
+                             tree.bodies_hydro_out.p(),
+                             tree.bodies_grad.p());
+      SPHDensityLET.set_texture<real4>(0,  remoteTree.fullRemoteTree, "texNodeSize",  1*(remoteP), remoteN);
+      SPHDensityLET.set_texture<real4>(1,  remoteTree.fullRemoteTree, "texNodeCenter",1*(remoteP) + (remoteN + nodeTexOffset),     remoteN);
+      SPHDensityLET.set_texture<real4>(2,  remoteTree.fullRemoteTree, "texMultipole", 1*(remoteP) + 2*(remoteN + nodeTexOffset), 3*remoteN);
+      SPHDensityLET.set_texture<real4>(3,  remoteTree.fullRemoteTree, "texBody"      ,0,                                           remoteP);
+
+      SPHDensityLET.setWork(-1, NTHREAD, nBlocksForTreeWalk);
+    //  SPHDensity.setWork(-1, 32, 1);
+
+      remoteTree.fullRemoteTree.h2d(bufferSize); //Only copy required data
+      tree.activePartlist.zeroMemGPUAsync(gravStream->s()); //Resets atomics
+
+      CU_SAFE_CALL(cudaEventRecord(startRemoteGrav, gravStream->s()));
+      SPHDensityLET.execute2(gravStream->s());
+      CU_SAFE_CALL(cudaEventRecord(endRemoteGrav, gravStream->s()));
+      letRunning = true;
+
+
+      return;
+
+
+}
+
+
+
 
 void octree::approximate_gravity(tree_structure &tree)
 { 
