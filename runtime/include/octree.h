@@ -89,6 +89,14 @@ typedef unsigned long long ullong; //ulonglong1
 #define DISKID        0
 #define BULGEID       2000000000000000000
 
+#define PERIODIC_X 1
+#define PERIODIC_Y 2
+#define PERIODIC_Z 4
+#define PERIODIC_XYZ  (PERIODIC_X+PERIODIC_Y+PERIODIC_Z)
+
+#define SELECT_GRAV 1
+#define SELECT_SPH  2
+#define SELECT_SPHGRAV (SELECT_GRAV+SELECT_SPH)
 
 
 
