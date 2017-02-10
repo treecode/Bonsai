@@ -1,6 +1,8 @@
 #include "octree.h"
 
 #define USE_MPI
+//#define USE_AVX
+
 
 #ifdef USE_MPI
 #include <xmmintrin.h>
@@ -69,15 +71,14 @@ struct GETLETBUFFERS
 
   std::vector<int>  groupSIMDkeys;
 
-#if 0 /* AVX */
-#ifndef __AVX__
-#error "AVX is not defined"
-#endif
-  std::vector< std::pair<v4sf,v4sf> > groupSplitFlag;
-#define AVXIMBH
-#else
-  std::vector<v4sf> groupSplitFlag; //#define SSEIMBH
 
+#ifdef USE_AVX /* AVX */
+    #ifndef __AVX__
+        #error "AVX is not defined"
+    #endif
+    std::vector< std::pair<v4sf,v4sf> > groupSplitFlag;
+#else
+  std::vector<v4sf> groupSplitFlag;
 #endif
 
 
@@ -193,29 +194,28 @@ inline void _v4sf_transpose(_v4sf &a, _v4sf &b, _v4sf &c, _v4sf &d){
 }
 
 #ifdef __AVX__
-static inline _v8sf pack_2xmm(const _v4sf a, const _v4sf b){
-  // v8sf p;
-  _v8sf p = {0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f}; // just avoid warning
-  p = __builtin_ia32_vinsertf128_ps256(p, a, 0);
-  p = __builtin_ia32_vinsertf128_ps256(p, b, 1);
-  return p;
-}
-inline void _v8sf_transpose(_v8sf &a, _v8sf &b, _v8sf &c, _v8sf &d){
-  _v8sf t0 = __builtin_ia32_unpcklps256(a, c); // |c1|a1|c0|a0|
-  _v8sf t1 = __builtin_ia32_unpckhps256(a, c); // |c3|a3|c2|a2|
-  _v8sf t2 = __builtin_ia32_unpcklps256(b, d); // |d1|b1|d0|b0|
-  _v8sf t3 = __builtin_ia32_unpckhps256(b, d); // |d3|b3|d2|b2|
+    static inline _v8sf pack_2xmm(const _v4sf a, const _v4sf b){
+      // v8sf p;
+      _v8sf p = {0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f}; // just avoid warning
+      p = __builtin_ia32_vinsertf128_ps256(p, a, 0);
+      p = __builtin_ia32_vinsertf128_ps256(p, b, 1);
+      return p;
+    }
+    inline void _v8sf_transpose(_v8sf &a, _v8sf &b, _v8sf &c, _v8sf &d){
+      _v8sf t0 = __builtin_ia32_unpcklps256(a, c); // |c1|a1|c0|a0|
+      _v8sf t1 = __builtin_ia32_unpckhps256(a, c); // |c3|a3|c2|a2|
+      _v8sf t2 = __builtin_ia32_unpcklps256(b, d); // |d1|b1|d0|b0|
+      _v8sf t3 = __builtin_ia32_unpckhps256(b, d); // |d3|b3|d2|b2|
 
-  a = __builtin_ia32_unpcklps256(t0, t2);
-  b = __builtin_ia32_unpckhps256(t0, t2);
-  c = __builtin_ia32_unpcklps256(t1, t3);
-  d = __builtin_ia32_unpckhps256(t1, t3);
-}
+      a = __builtin_ia32_unpcklps256(t0, t2);
+      b = __builtin_ia32_unpckhps256(t0, t2);
+      c = __builtin_ia32_unpcklps256(t1, t3);
+      d = __builtin_ia32_unpckhps256(t1, t3);
+    }
 #endif
 
 
 
-//Here each group has a different smoothing length, encoded in boxCenter.w
 //We want to know for each of the 4 groups if it needs an interaction
 //with this node. Therefore we have to test every possible combination
 //until either all combinations are exhausted or each group requires an interaction
@@ -295,6 +295,80 @@ inline _v4sf split_node_grav_sph_impbh_box4a( // takes 4 tree nodes and returns 
 
     return ret;
 }
+
+
+#ifdef USE_AVX
+template<bool SPHCheck>
+inline _v8sf split_node_grav_sph_impbh_box8a( // takes 4 tree nodes and returns 4-bit integer
+                _v8sf  ret,
+          const _v8sf  checkValue,
+          const _v4sf  nodeCNTRorCOM,
+          const _v4sf  nodeSIZE,
+          const _v4sf  boxCenter[8],
+          const _v4sf  boxSize  [8],
+          const float3 periodicBoundaries,
+          int2 xP, int2 yP, int2 zP)
+{
+  _v8sf com = pack_2xmm(nodeCNTRorCOM, nodeCNTRorCOM);
+  _v8sf ncx2 = __builtin_ia32_shufps256(com, com, 0x00);
+  _v8sf ncy2 = __builtin_ia32_shufps256(com, com, 0x55);
+  _v8sf ncz2 = __builtin_ia32_shufps256(com, com, 0xaa);
+
+  _v8sf bcx = pack_2xmm(boxCenter[0], boxCenter[4]);
+  _v8sf bcy = pack_2xmm(boxCenter[1], boxCenter[5]);
+  _v8sf bcz = pack_2xmm(boxCenter[2], boxCenter[6]);
+  _v8sf bcw = pack_2xmm(boxCenter[3], boxCenter[7]);
+  _v8sf_transpose(bcx, bcy, bcz, bcw);
+
+  _v8sf bsx = pack_2xmm(boxSize[0], boxSize[4]);
+  _v8sf bsy = pack_2xmm(boxSize[1], boxSize[5]);
+  _v8sf bsz = pack_2xmm(boxSize[2], boxSize[6]);
+  _v8sf bsw = pack_2xmm(boxSize[3], boxSize[7]);
+  _v8sf_transpose(bsx, bsy, bsz, bsw);
+
+  if(SPHCheck)
+  {
+      _v8sf size   = pack_2xmm(nodeSIZE, nodeSIZE);
+      _v8sf nsx    = __builtin_ia32_shufps256(size, size, 0x00);
+      _v8sf nsy    = __builtin_ia32_shufps256(size, size, 0x55);
+      _v8sf nsz    = __builtin_ia32_shufps256(size, size, 0xaa);
+
+      bsx += nsx;
+      bsy += nsy;
+      bsz += nsz;
+  }
+
+  for(int ix=xP.x; ix <= xP.y; ix++)       //Periodic around X
+  {
+    for(int iy=yP.x; iy <= yP.y; iy++)     //Periodic around Y
+    {
+        for(int iz=zP.x; iz <= zP.y; iz++) //Periodic around Z
+        {
+            _v8sf ncx = __builtin_ia32_addps256(ncx2,  _mm256_set1_ps(periodicBoundaries.x*ix));
+            _v8sf ncy = __builtin_ia32_addps256(ncy2,  _mm256_set1_ps(periodicBoundaries.y*iy));
+            _v8sf ncz = __builtin_ia32_addps256(ncz2,  _mm256_set1_ps(periodicBoundaries.z*iz));
+
+            _v8sf dx = __abs8(bcx - ncx) - bsx;
+            _v8sf dy = __abs8(bcy - ncy) - bsy;
+            _v8sf dz = __abs8(bcz - ncz) - bsz;
+
+            const _v8sf zero = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f,0.0f,0.0f,0.0f};
+            dx = __builtin_ia32_maxps256(dx, zero);
+            dy = __builtin_ia32_maxps256(dy, zero);
+            dz = __builtin_ia32_maxps256(dz, zero);
+
+            const _v8sf ds2 = dx*dx + dy*dy + dz*dz;
+            ret = _mm256_or_ps(ret,__builtin_ia32_cmpps256(ds2, checkValue, 18)); //18 indicates is Less or Equal OP
+
+            //Test if all 8 mask bits are set (then all groups active ) this is 8 lower bits set to 1: 0xFF
+            //Early out if this is the case since we won't learn anything new :)
+            if(_mm256_movemask_ps(ret) ==  0xFF)    return ret;
+        }//iz
+    }//iy
+  }//ix
+  return ret;
+}
+#endif
 
 
 #ifdef __AVX__
@@ -2031,14 +2105,14 @@ int getLEToptQuickTreevsTree(
   const _v4sf* grpNodeCenterInfoV = (const _v4sf*)groupCentreInfo;
 
 
-#if 0 /* AVX */
-#ifndef __AVX__
-#error "AVX is not defined"
-#endif
-  const int SIMDW  = 8;
-#define AVXIMBH
-#else
-  const int SIMDW  = 4; //#define SSEIMBH
+#ifdef USE_AVX  /* AVX */
+    #ifndef __AVX__
+        #error "AVX is not defined"
+    #endif
+      const int SIMDW  = 8;
+      #define AVXIMBH
+    #else
+      const int SIMDW  = 4; //#define SSEIMBH
 #endif
 
   bool usePeriodic = false;
@@ -2083,9 +2157,16 @@ int getLEToptQuickTreevsTree(
       const _v4sf nodeSIZE = nodeSizeV  [nodeIdx];
       const _v4sf nodeCNTR = __builtin_ia32_vec_set_v4sf(nodeCentreV[nodeIdx], nodeSmooth[nodeIdx].x, 3); //Move smoothing to the .w of cntr
 
+#ifdef USE_AVX
+      _v8sf checkValueGrav = {nodeInfo_x, nodeInfo_x, nodeInfo_x, nodeInfo_x,nodeInfo_x, nodeInfo_x, nodeInfo_x, nodeInfo_x};
+            checkValueGrav = __abs8(checkValueGrav);
+      _v8sf checkValueSPH  = {nodeSmooth[nodeIdx].x, nodeSmooth[nodeIdx].x, nodeSmooth[nodeIdx].x, nodeSmooth[nodeIdx].x,
+                              nodeSmooth[nodeIdx].x, nodeSmooth[nodeIdx].x, nodeSmooth[nodeIdx].x, nodeSmooth[nodeIdx].x};
+#else
       _v4sf checkValueGrav = {nodeInfo_x, nodeInfo_x, nodeInfo_x, nodeInfo_x};
             checkValueGrav = __abs(checkValueGrav);
       _v4sf checkValueSPH  = {nodeSmooth[nodeIdx].x, nodeSmooth[nodeIdx].x, nodeSmooth[nodeIdx].x, nodeSmooth[nodeIdx].x};
+#endif
 
       const bool lleaf   = nodeInfo_x <= 0.0f;
       const int groupBeg = nodePacked.y;
@@ -2102,8 +2183,16 @@ int getLEToptQuickTreevsTree(
           centre[laneIdx] = grpNodeCenterInfoV[group];
           size  [laneIdx] =   grpNodeSizeInfoV[group];
         }
+
 #ifdef AVXIMBH
-        bufferStruct.groupSplitFlag.push_back(split_node_grav_impbh_box8a(nodeCOM, centre, size));
+        _v8sf resGrav = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+
+        if(selectionMethod & SELECT_GRAV) resGrav = split_node_grav_sph_impbh_box8a<false>(resGrav,checkValueGrav, nodeCOM,  nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
+        if(selectionMethod & SELECT_SPH)  resGrav = split_node_grav_sph_impbh_box8a<true >(resGrav,checkValueSPH,  nodeCNTR, nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
+
+        const _v4sf ret1 = __builtin_ia32_vextractf128_ps256(resGrav, 0);
+        const _v4sf ret2 = __builtin_ia32_vextractf128_ps256(resGrav, 1);
+        bufferStruct.groupSplitFlag.push_back(std::make_pair(ret1,ret2));
 #else
 
        _v4sf resGrav = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -2255,6 +2344,8 @@ int3 getLET1(
   if(periodicMethod & 1) { xP = {-1,1}; usePeriodic = true;}
   if(periodicMethod & 2) { yP = {-1,1}; usePeriodic = true;}
   if(periodicMethod & 4) { zP = {-1,1}; usePeriodic = true;}
+
+  fprintf(stderr,"PERIODIC: %d %d %d %d %d %d  select: %d \n", xP.x, xP.y, yP.x, yP.y, zP.x, zP.y, selectionMethod);
 
 
 #if 1
@@ -2517,14 +2608,13 @@ int getLEToptQuickFullTree(
   const _v4sf* grpNodeSmoothInfoV = (const _v4sf*)groupSmoothInfo;
 
 
-#if 0 /* AVX */
-#ifndef __AVX__
-#error "AVX is not defined"
-#endif
-  const int SIMDW  = 8;
-#define AVXIMBH
-#else
-  const int SIMDW  = 4; //#define SSEIMBH
+#ifdef USE_AVX
+    #ifndef __AVX__
+    #error "AVX is not defined"
+    #endif
+      const int SIMDW  = 8;
+    #else
+      const int SIMDW  = 4;
 #endif
 
   bool usePeriodic = false;
@@ -2582,11 +2672,18 @@ int getLEToptQuickFullTree(
       const _v4sf nodeSIZE         = nodeSizeV  [nodeIdx];
       const _v4sf nodeCNTR         = nodeCentreV[nodeIdx]; //Move smoothing to the .w of cntr
 
+      _v4sf checkValueSPH0  = {0,0,0,0};
+      #ifdef USE_AVX
+          _v8sf checkValueSPH  = {0,0,0,0,0,0,0,0};
+          _v8sf checkValueGrav = {nodeInfo_x, nodeInfo_x, nodeInfo_x, nodeInfo_x,nodeInfo_x, nodeInfo_x, nodeInfo_x, nodeInfo_x};
+          checkValueGrav       = __abs8(checkValueGrav);
 
-      _v4sf checkValueSPH  = {0,0,0,0};
-      _v4sf checkValueGrav = {nodeInfo_x, nodeInfo_x, nodeInfo_x, nodeInfo_x};
-      checkValueGrav       = __abs(checkValueGrav);
-
+          _v8sf checkValueSPH01  = {0,0,0,0,0,0,0,0};
+          _v4sf checkValueSPH1   = {0,0,0,0};
+      #else
+          _v4sf checkValueGrav = {nodeInfo_x, nodeInfo_x, nodeInfo_x, nodeInfo_x};
+          checkValueGrav       = __abs(checkValueGrav);
+      #endif
 
 
       const int groupBeg = nodePacked.y;
@@ -2605,21 +2702,35 @@ int getLEToptQuickFullTree(
           if(selectionMethod & SELECT_SPH)
           {
               const float grpSmth = groupSmoothInfo[group].x;
-//              centre[laneIdx]     = __builtin_ia32_vec_set_v4sf(centre[laneIdx], grpSmth, 3);
-              if(laneIdx == 0) checkValueSPH = __builtin_ia32_vec_set_v4sf(checkValueSPH, grpSmth, 0); //Set smoothing distance
-              if(laneIdx == 1) checkValueSPH = __builtin_ia32_vec_set_v4sf(checkValueSPH, grpSmth, 1); //Set smoothing distance
-              if(laneIdx == 2) checkValueSPH = __builtin_ia32_vec_set_v4sf(checkValueSPH, grpSmth, 2); //Set smoothing distance
-              if(laneIdx == 3) checkValueSPH = __builtin_ia32_vec_set_v4sf(checkValueSPH, grpSmth, 3); //Set smoothing distance
+
+              if(laneIdx == 0) checkValueSPH0 = __builtin_ia32_vec_set_v4sf(checkValueSPH0, grpSmth, 0); //Set smoothing distance
+              if(laneIdx == 1) checkValueSPH0 = __builtin_ia32_vec_set_v4sf(checkValueSPH0, grpSmth, 1); //Set smoothing distance
+              if(laneIdx == 2) checkValueSPH0 = __builtin_ia32_vec_set_v4sf(checkValueSPH0, grpSmth, 2); //Set smoothing distance
+              if(laneIdx == 3) checkValueSPH0 = __builtin_ia32_vec_set_v4sf(checkValueSPH0, grpSmth, 3); //Set smoothing distance
+#ifdef USE_AVX
+              if(laneIdx == 4) checkValueSPH1 = __builtin_ia32_vec_set_v4sf(checkValueSPH1, grpSmth, 0); //Set smoothing distance
+              if(laneIdx == 5) checkValueSPH1 = __builtin_ia32_vec_set_v4sf(checkValueSPH1, grpSmth, 1); //Set smoothing distance
+              if(laneIdx == 6) checkValueSPH1 = __builtin_ia32_vec_set_v4sf(checkValueSPH1, grpSmth, 2); //Set smoothing distance
+              if(laneIdx == 7) checkValueSPH1 = __builtin_ia32_vec_set_v4sf(checkValueSPH1, grpSmth, 3); //Set smoothing distance
+#endif
           }
 
         }
 
-#ifdef AVXIMBH
-        bufferStruct.groupSplitFlag.push_back(split_node_grav_impbh_box8a(nodeCOM, centre, size));
+#ifdef USE_AVX
+        checkValueSPH01 = pack_2xmm(checkValueSPH0,checkValueSPH1);
+        _v8sf resGrav   = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+
+        if(selectionMethod & SELECT_GRAV) resGrav = split_node_grav_sph_impbh_box8a<false>(resGrav,checkValueGrav,   nodeCOM,  nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
+        if(selectionMethod & SELECT_SPH)  resGrav = split_node_grav_sph_impbh_box8a<true >(resGrav,checkValueSPH01,  nodeCNTR, nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
+
+        const _v4sf ret1 = __builtin_ia32_vextractf128_ps256(resGrav, 0);
+        const _v4sf ret2 = __builtin_ia32_vextractf128_ps256(resGrav, 1);
+        bufferStruct.groupSplitFlag.push_back(std::make_pair(ret1,ret2));
 #else
         _v4sf resGrav = {0.0f, 0.0f, 0.0f, 0.0f};
        if(selectionMethod & SELECT_GRAV) resGrav = split_node_grav_sph_impbh_box4a<false>(resGrav, checkValueGrav, nodeCOM,  nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
-       if(selectionMethod & SELECT_SPH)  resGrav = split_node_grav_sph_impbh_box4a<true >(resGrav, checkValueSPH,  nodeCNTR, nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
+       if(selectionMethod & SELECT_SPH)  resGrav = split_node_grav_sph_impbh_box4a<true >(resGrav, checkValueSPH0, nodeCNTR, nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
         bufferStruct.groupSplitFlag.push_back(resGrav);
 #endif
       }
@@ -2815,14 +2926,14 @@ int3 getLEToptFullTree(
   const _v4sf* grpNodeCenterInfoV = (const _v4sf*)groupCentreInfo;
 //  const _v4sf* grpNodeSmoothInfoV = (const _v4sf*)groupSmoothInfo;
 
-#if 0 /* AVX */
-#ifndef __AVX__
-#error "AVX is not defined"
-#endif
-  const int SIMDW  = 8;
-#define AVXIMBH
+#ifdef USE_AVX  /* AVX */
+    #ifndef __AVX__
+        #error "AVX is not defined"
+    #endif
+    const int SIMDW  = 8;
+    _v8sf checkValueSPH01;
 #else
-  const int SIMDW  = 4; //#define SSEIMBH
+    const int SIMDW  = 4; //#define SSEIMBH
 #endif
 
 
@@ -2869,7 +2980,9 @@ int3 getLEToptFullTree(
       const _v4sf nodeCNTR   = nodeCentreV[nodeIdx];
 
       _v4sf checkValueGrav = {nodeInfo_x, nodeInfo_x, nodeInfo_x, nodeInfo_x};
-      _v4sf checkValueSPH  = {0,0,0,0};
+            checkValueGrav = __abs(checkValueGrav);
+      _v4sf checkValueSPH0  = {0,0,0,0};
+      _v4sf checkValueSPH1;
 
       const int groupBeg = nodePacked.y;
       const int groupEnd = nodePacked.z;
@@ -2889,24 +3002,37 @@ int3 getLEToptFullTree(
               const float smth =    groupSmoothInfo[group].x;
               centre[laneIdx]  = __builtin_ia32_vec_set_v4sf(centre[laneIdx], smth, 3); //Move smoothing to the .w of cntr
 
-              if(laneIdx == 0) checkValueSPH = __builtin_ia32_vec_set_v4sf(checkValueSPH, smth, 0); //Set smoothing distance
-              if(laneIdx == 1) checkValueSPH = __builtin_ia32_vec_set_v4sf(checkValueSPH, smth, 1); //Set smoothing distance
-              if(laneIdx == 2) checkValueSPH = __builtin_ia32_vec_set_v4sf(checkValueSPH, smth, 2); //Set smoothing distance
-              if(laneIdx == 3) checkValueSPH = __builtin_ia32_vec_set_v4sf(checkValueSPH, smth, 3); //Set smoothing distance
+
+              if(laneIdx == 0) checkValueSPH0 = __builtin_ia32_vec_set_v4sf(checkValueSPH0, smth, 0); //Set smoothing distance
+              if(laneIdx == 1) checkValueSPH0 = __builtin_ia32_vec_set_v4sf(checkValueSPH0, smth, 1); //Set smoothing distance
+              if(laneIdx == 2) checkValueSPH0 = __builtin_ia32_vec_set_v4sf(checkValueSPH0, smth, 2); //Set smoothing distance
+              if(laneIdx == 3) checkValueSPH0 = __builtin_ia32_vec_set_v4sf(checkValueSPH0, smth, 3); //Set smoothing distance
+#ifdef USE_AVX
+              if(laneIdx == 4) checkValueSPH1 = __builtin_ia32_vec_set_v4sf(checkValueSPH1, smth, 0); //Set smoothing distance
+              if(laneIdx == 5) checkValueSPH1 = __builtin_ia32_vec_set_v4sf(checkValueSPH1, smth, 1); //Set smoothing distance
+              if(laneIdx == 6) checkValueSPH1 = __builtin_ia32_vec_set_v4sf(checkValueSPH1, smth, 2); //Set smoothing distance
+              if(laneIdx == 7) checkValueSPH1 = __builtin_ia32_vec_set_v4sf(checkValueSPH1, smth, 3); //Set smoothing distance
+              checkValueSPH01 = pack_2xmm(checkValueSPH0,checkValueSPH1);
+#endif
           }
         }
-#ifdef AVXIMBH
-        assert(0); //This has not been fixed for SPH usage
-        bufferStruct.groupSplitFlag.push_back(split_node_grav_impbh_box8a(nodeCOM, centre, size));
+
+
+#ifdef USE_AVX
+        _v8sf resGrav = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+        _v8sf check2 = pack_2xmm(checkValueGrav,checkValueGrav);
+
+        if(selectionMethod & SELECT_GRAV) resGrav = split_node_grav_sph_impbh_box8a<false>(resGrav,check2, nodeCOM,  nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
+        if(selectionMethod & SELECT_SPH)  resGrav = split_node_grav_sph_impbh_box8a<true >(resGrav,checkValueSPH01,  nodeCNTR, nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
+
+        const _v4sf ret1 = __builtin_ia32_vextractf128_ps256(resGrav, 0);
+        const _v4sf ret2 = __builtin_ia32_vextractf128_ps256(resGrav, 1);
+        bufferStruct.groupSplitFlag.push_back(std::make_pair(ret1,ret2));
 #else
           _v4sf resGrav = {0.0f, 0.0f, 0.0f, 0.0f};
-
-          checkValueGrav = __abs(checkValueGrav);
-
           if(selectionMethod & SELECT_GRAV) resGrav = split_node_grav_sph_impbh_box4a<false>(resGrav,checkValueGrav, nodeCOM,  nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
-          if(selectionMethod & SELECT_SPH)  resGrav = split_node_grav_sph_impbh_box4a<true >(resGrav,checkValueSPH,  nodeCNTR, nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
+          if(selectionMethod & SELECT_SPH)  resGrav = split_node_grav_sph_impbh_box4a<true >(resGrav,checkValueSPH0,  nodeCNTR, nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
           bufferStruct.groupSplitFlag.push_back(resGrav);
-
 #endif
       }
 
@@ -3375,6 +3501,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                               periodicDomainSize, periodicMethod,
                                               selectionMethod);
 
+//            const int resultTree = -1;
 
             if(resultTree == 0)
             {

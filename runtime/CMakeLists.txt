@@ -285,7 +285,7 @@ if(WIN32)
   add_definitions( "/arch:SSE4")
  else (WIN32)
    #  add_definitions( "-msse4 -std=gnu++0x")
-     add_definitions( "-msse4")
+     add_definitions( "-msse4 -march=native")
 endif (WIN32)
 
 #if (USE_MPI)
