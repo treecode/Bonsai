@@ -84,6 +84,8 @@ KERNEL_DECLARE(dev_direct_gravity)(float4 *accel, float4 *i_positions, float4 *j
 
     int index = blockIdx.x * blockDim.x + threadIdx.x;
 
+    sharedPos[threadIdx.x] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+
     if (index >= numBodies_i)
     {
         return;
@@ -93,9 +95,10 @@ KERNEL_DECLARE(dev_direct_gravity)(float4 *accel, float4 *i_positions, float4 *j
 
     float3 acc = {0.0f, 0.0f, 0.0f};
 
-    int p = blockDim.x;
-    int n = numBodies_j;
-    int numTiles = n / p;
+    int p        = blockDim.x;
+    int n        = numBodies_j;
+    int numTiles = (n + p - 1) / p;
+
 
     for (int tile = blockIdx.y; tile < numTiles + blockIdx.y; tile++)
     {
