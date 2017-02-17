@@ -569,8 +569,9 @@ bool treewalk_control(
 #endif
 
   //For periodic boundaries, mirror the group and body positions along the periodic axis
-//  float3 domainSize = {1.0f, 0.125f, 0.125f};   //Hardcoded for our testing IC
-  float3 domainSize = {100.0f, 100.0f, 100.0f};   //Hardcoded for our testing IC
+  float3 domainSize = {1.0f, 0.125f, 0.125f};   //Hardcoded for our testing IC
+//  float3 domainSize = {100.0f, 100.0f, 100.0f};   //Hardcoded for our testing IC
+
 
   long long int startC = clock64();
 
@@ -581,6 +582,10 @@ bool treewalk_control(
     {
       for(int iz=-1; iz <= 1; iz++) //Periodic around Z
       {
+//          int ix =0; int iz=0; //, iy = 0;// iz = 0;
+//          if(iy == 1) continue;
+//          if(iy == 0 && (directOp<1, true>::type == SPH::DERIVATIVE)) continue;
+//          int iy = 1;
           float4 pGroupPos   = group_pos;
           float4 pBodyPos[2] = {pos_i[0], pos_i[1]};
 
@@ -684,21 +689,25 @@ bool treewalk_control(
         {
           if(directOp<1, true>::type == SPH::DERIVATIVE)
           {
-              derivative_i[i].finalize(body_dens_out[addr].x);
-              body_grad_out[addr].x += derivative_i[i].x;
-              body_grad_out[addr].y += derivative_i[i].y;
-              body_grad_out[addr].z += derivative_i[i].z;
-              body_grad_out[addr].w += derivative_i[i].w;
+            derivative_i[i].x += body_grad_out[addr].x;
+            derivative_i[i].y += body_grad_out[addr].y;
+            derivative_i[i].z += body_grad_out[addr].z;
+            derivative_i[i].w += body_grad_out[addr].w;
+            //                  derivative_i[i].finalize(body_dens_out[addr].x);
+            body_grad_out[addr].x = derivative_i[i].x;
+            body_grad_out[addr].y = derivative_i[i].y;
+            body_grad_out[addr].z = derivative_i[i].z;
+            body_grad_out[addr].w = derivative_i[i].w;
 
-              //Compute Balsala switch
-              float temp  = fabs(body_grad_out[addr].w);
-              float temp2 = body_grad_out[addr].x*body_grad_out[addr].x +
-                            body_grad_out[addr].y*body_grad_out[addr].y +
-                            body_grad_out[addr].z*body_grad_out[addr].z;
-              float temp3 = 1.0e-4 * body_hydro_out[addr].y / body_dens_out[addr].y;
+            //Compute Balsala switch
+            float temp  = fabs(body_grad_out[addr].w);
+            float temp2 = body_grad_out[addr].x*body_grad_out[addr].x +
+                        body_grad_out[addr].y*body_grad_out[addr].y +
+                        body_grad_out[addr].z*body_grad_out[addr].z;
+            float temp3 = 1.0e-4 * body_hydro_out[addr].y / body_dens_out[addr].y;
 
-              //Note using group_body_hydro here instead of body_hydro_out to store Balsala Switch
-              group_body_hydro[addr].w = temp / (temp + sqrtf(temp2) + temp3);
+            //Note using group_body_hydro here instead of body_hydro_out to store Balsala Switch
+            group_body_hydro[addr].w = temp / (temp + sqrtf(temp2) + temp3);
           }
 
 
@@ -1468,6 +1477,7 @@ extern "C" __global__ void gpu_extractBoundaryTree(
                                 const float     *nodeSmooth,
                                 const float4    *nodeMulti,
                                 const float4    *bodyPos,
+                                const float4    *bodyVel,
                                 int4            *markedNodes2,
                                 float4          *boundaryTree)
 {
@@ -1492,11 +1502,11 @@ extern "C" __global__ void gpu_extractBoundaryTree(
   if(laneId == 0) boundaryTree[0] = description;
 
 
-
-  int sizeIdx = 1 + nPart;
-  int cntrIdx = 1 + nPart + nNodes;
-  int smthIdx = 1 + nPart + nNodes*2;
-  int multIdx = 1 + nPart + nNodes*3;
+  const int nBodyProps = 2;
+  int sizeIdx = 1 + nBodyProps*nPart;
+  int cntrIdx = 1 + nBodyProps*nPart + nNodes;
+  int smthIdx = 1 + nBodyProps*nPart + nNodes*2;
+  int multIdx = 1 + nBodyProps*nPart + nNodes*3;
 
 
   for(int i=0; i < nNodes; i+= blockDim.x)
@@ -1521,7 +1531,8 @@ extern "C" __global__ void gpu_extractBoundaryTree(
                 if(idxInfo.z >= 0)
                 {
                     //This is a single particle leaf that refers to a body, store body
-                    boundaryTree[1+idxInfo.w] = bodyPos[idxInfo.z];
+                    boundaryTree[1+idxInfo.w      ] = bodyPos[idxInfo.z];
+                    boundaryTree[1+idxInfo.w+nPart] = bodyVel[idxInfo.z];
                 }
             }
 

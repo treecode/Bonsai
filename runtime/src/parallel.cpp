@@ -1648,12 +1648,13 @@ void octree::updateCurrentInfoGrpTree()
     int2 nInfoSmall = make_int2(host_float_as_int(localTree.smallBoundaryTree[0].x), host_float_as_int(localTree.smallBoundaryTree[0].y));
     int2 nInfoFull  = make_int2(host_float_as_int(localTree.fullBoundaryTree[0].x),  host_float_as_int(localTree.fullBoundaryTree[0].y));
 
-    int offsetSmall = 1+nInfoSmall.x+2*nInfoSmall.y;
-    int offsetFull  = 1+nInfoFull.x +2*nInfoFull.y;
+    const int nBodyProps = 2;
+    int offsetSmall = 1+nBodyProps*nInfoSmall.x+2*nInfoSmall.y;
+    int offsetFull  = 1+nBodyProps*nInfoFull.x +2*nInfoFull.y;
 
     //Only start the copy after the execStream has been completed, otherwise the buffers aint filled yet
     localTree.smallBoundaryTree.d2h(nInfoSmall.y, offsetSmall, false, LETDataToHostStream->s());
-    localTree.fullBoundaryTree. d2h(nInfoFull.y, offsetFull  , false, LETDataToHostStream->s());
+    localTree.fullBoundaryTree. d2h(nInfoFull.y,  offsetFull , false, LETDataToHostStream->s());
     localTree.fullBoundaryTree.waitForCopyEvent();
     localTree.fullBoundaryTree.waitForCopyEvent();
 
@@ -1915,8 +1916,9 @@ void octree::sendCurrentInfoGrpTree()
     }
 
     //Compute the part where the smoothing starts. We need this to make sure the allGatherv does not overwrite other values
+    const int nBodyProps = 2;
     float4 header = globalGrpTreeCntSize[this->globalGrpTreeOffsets[src]];
-    int displacementSmooth         = (1+host_float_as_int(header.x)+2*host_float_as_int(header.y))*sizeof(float4);
+    int displacementSmooth         = (1+nBodyProps*host_float_as_int(header.x)+2*host_float_as_int(header.y))*sizeof(float4);
     globalGrpTreeStatistics[src].y = displacement[src] + displacementSmooth;
   }
 
@@ -2141,24 +2143,26 @@ int getLEToptQuickTreevsTree(
   return 0;
 }
 int3 getLET1(
-    GETLETBUFFERS &bufferStruct,
-    real4 **LETBuffer_ptr,
-    const real4 *nodeCentre,
-    const real4 *nodeSize,
-    const real4 *multipole,
-    const int cellBeg,
-    const int cellEnd,
-    const real4 *bodies,
-    const int nParticles,
-    const real4 *groupSizeInfo,
-    const real4 *groupCentreInfo,
-    const real4 *groupSmoothInfo,
-    const int nGroups,
-    const int nNodes,
-    unsigned long long &nflops,
-    const float3 periodicDomainSize,
-    const int    periodicMethod,
-    const int    selectionMethod)
+          GETLETBUFFERS     &bufferStruct,
+          real4            **LETBuffer_ptr,
+    const real4             *nodeCentre,
+    const real4             *nodeSize,
+    const real4             *multipole,
+    const int                cellBeg,
+    const int                cellEnd,
+    const real4             *bodies_pos,
+    const real4             *bodies_vel,
+    const int                nParticles,
+    const real4             *groupSizeInfo,
+    const real4             *groupCentreInfo,
+    const real4             *groupSmoothInfo,
+    const int                nGroups,
+    const int                nNodes,
+          unsigned long long &nflops,
+    const float3             periodicDomainSize,
+    const int                periodicMethod,
+    const int                selectionMethod,
+    const int                LETMethod)
 {
   bufferStruct.LETBuffer_node.clear();
   bufferStruct.LETBuffer_ptcl.clear();
@@ -2185,7 +2189,8 @@ int3 getLET1(
   #endif
 
 
-  const _v4sf*      bodiesV         = (const _v4sf*)bodies;
+  const _v4sf*      bodies_posV     = (const _v4sf*)bodies_pos;
+  const _v4sf*      bodies_velV     = (const _v4sf*)bodies_vel;
   const _v4sf*      nodeSizeV       = (const _v4sf*)nodeSize;
   const _v4sf*      nodeCentreV     = (const _v4sf*)nodeCentre;
   const _v4sf*      multipoleV      = (const _v4sf*)multipole;
@@ -2362,6 +2367,8 @@ int3 getLET1(
           }
       } //for nGroupsV
 
+
+
       /**************/
 
       real4 size  = nodeSize[nodeIdx];
@@ -2401,28 +2408,40 @@ int3 getLET1(
   assert((int)bufferStruct.LETBuffer_ptcl.size() == nExportPtcl);
   assert((int)bufferStruct.LETBuffer_node.size() == nExportCell);
 
+  int bodyPropsCount = 1;                             //Position
+  if(LETMethod == LET_METHOD_DRVT) bodyPropsCount++;  //Position and Velocity
+
   /* now copy data into LETBuffer */
   {
     //LETBuffer.resize(nExportPtcl + 5*nExportCell);
 #pragma omp critical //Malloc seems to be not so thread safe..
-    *LETBuffer_ptr     = (real4*)malloc(sizeof(real4)*(1+ nExportPtcl + 5*nExportCell));
+    *LETBuffer_ptr     = (real4*)malloc(sizeof(real4)*(1+ bodyPropsCount*nExportPtcl + 5*nExportCell));
     real4 *LETBuffer   = *LETBuffer_ptr;
     _v4sf *vLETBuffer  = (_v4sf*)(&LETBuffer[1]); //Start at 1, since 0 contains the header
 
 
-    int nStoreIdx = nExportPtcl;
-    int multiStoreIdx = nStoreIdx + 2*nExportCell;
     for (int i = 0; i < nExportPtcl; i++)
     {
       const int idx = bufferStruct.LETBuffer_ptcl[i];
-      vLETBuffer[i] = bodiesV[idx];
+      vLETBuffer[i] = bodies_posV[idx];
     }
+    if(LETMethod == LET_METHOD_DRVT)
+    {
+        for (int i = 0; i < nExportPtcl; i++)
+        {
+          const int idx = bufferStruct.LETBuffer_ptcl[i];
+          vLETBuffer[nExportPtcl+i] = bodies_velV[idx];
+        }
+    }
+
+    int nStoreIdx     = nExportPtcl*bodyPropsCount;
+    int multiStoreIdx = nStoreIdx + 2*nExportCell;
     for (int i = 0; i < nExportCell; i++)
     {
       const int2 packed_idx = bufferStruct.LETBuffer_node[i];
-      const int idx = packed_idx.x;
-      const float sizew = host_int_as_float(packed_idx.y);
-      const _v4sf size = __builtin_ia32_vec_set_v4sf(nodeSizeV[idx], sizew, 3);
+      const int idx         = packed_idx.x;
+      const float sizew     = host_int_as_float(packed_idx.y);
+      const _v4sf size      = __builtin_ia32_vec_set_v4sf(nodeSizeV[idx], sizew, 3);
 
 
       vLETBuffer[nStoreIdx+nExportCell] = nodeCentreV[idx];     /* centre */
@@ -2475,7 +2494,7 @@ int getLEToptQuickFullTree(
   int nExportPtcl = 0;
   int nExportCellOffset = cellEnd;
 
-  const _v4sf*            bodiesV = (const _v4sf*)bodies;
+//  const _v4sf*            bodiesV = (const _v4sf*)bodies;
   const _v4sf*          nodeSizeV = (const _v4sf*)nodeSize;
   const _v4sf*        nodeCentreV = (const _v4sf*)nodeCentre;
   const _v4sf*         multipoleV = (const _v4sf*)multipole;
@@ -2767,7 +2786,8 @@ int3 getLEToptFullTree(
     const real4     *multipole,
     const int        cellBeg,
     const int        cellEnd,
-    const real4     *bodies,
+    const real4     *bodies_pos,
+    const real4     *bodies_vel,
     const int        nParticles,
     const real4     *groupSizeInfo,
     const real4     *groupCentreInfo,
@@ -2778,7 +2798,8 @@ int3 getLEToptFullTree(
     unsigned long long &nflops,
     const float3     periodicDomainSize,
     const int        periodicMethod,
-    const int        selectionMethod)
+    const int        selectionMethod,
+    const int        LETMethod)
 {
   bufferStruct.LETBuffer_node.clear();
   bufferStruct.LETBuffer_ptcl.clear();
@@ -2794,7 +2815,8 @@ int3 getLEToptFullTree(
   int nExportPtcl       = 0;
   int nExportCellOffset = cellEnd;
 
-  const _v4sf*            bodiesV = (const _v4sf*)bodies;
+  const _v4sf*         bodiesPosV = (const _v4sf*)bodies_pos;
+  const _v4sf*         bodiesVelV = (const _v4sf*)bodies_vel;
   const _v4sf*          nodeSizeV = (const _v4sf*)nodeSize;
   const _v4sf*        nodeCentreV = (const _v4sf*)nodeCentre;
   const _v4sf*         multipoleV = (const _v4sf*)multipole;
@@ -2992,20 +3014,34 @@ int3 getLEToptFullTree(
 
   /* now copy data into LETBuffer */
   {
+
+      int bodyPropsCount = 1;                             //Position
+      if(LETMethod == LET_METHOD_DRVT) bodyPropsCount++;  //Position and Velocity
+
     //LETBuffer.resize(nExportPtcl + 5*nExportCell);
 #pragma omp critical //Malloc seems to be not so thread safe..
-    *LETBuffer_ptr      = (real4*)malloc(sizeof(real4)*(1+ nExportPtcl + 5*nExportCell));
+    *LETBuffer_ptr      = (real4*)malloc(sizeof(real4)*(1+ bodyPropsCount*nExportPtcl + 5*nExportCell));
     real4 *LETBuffer    = *LETBuffer_ptr;
     _v4sf *vLETBuffer   = (_v4sf*)(&LETBuffer[1]);
 
 
-    int nStoreIdx     = nExportPtcl;
+    int nStoreIdx     = bodyPropsCount*nExportPtcl;
     int multiStoreIdx = nStoreIdx + 2*nExportCell;
     for (int i = 0; i < nExportPtcl; i++)
     {
       const int idx = bufferStruct.LETBuffer_ptcl[i];
-      vLETBuffer[i] = bodiesV[idx];
+      vLETBuffer[i] = bodiesPosV[idx];
     }
+    if(LETMethod == LET_METHOD_DRVT)
+    {
+        for (int i = 0; i < nExportPtcl; i++)
+        {
+          const int idx = bufferStruct.LETBuffer_ptcl[i];
+          vLETBuffer[nExportPtcl+i] = bodiesVelV[idx];
+        }
+    }
+
+
     for (int i = 0; i < nExportCell; i++)
     {
       const int2 packed_idx = bufferStruct.LETBuffer_node[i];
@@ -3041,7 +3077,8 @@ void octree::checkGPUAndStartLETComputation(tree_structure &tree,
                                             double         &totalLETExTime,
                                             bool            mergeOwntree,
                                             int            *treeBuffersSource,
-                                            real4         **treeBuffers)
+                                            real4         **treeBuffers,
+                                            const  int      LETMethod)
 {
   //This determines if we interrupt the LET computation by starting a gravity kernel on the GPU
   //if(gravStream->isFinished())
@@ -3063,7 +3100,7 @@ void octree::checkGPUAndStartLETComputation(tree_structure &tree,
 
       double t000 = get_time();
       mergeAndLaunchLETStructures(tree, remote, treeBuffers, treeBuffersSource,
-          topNodeCount, recvTree, mergeOwntree, procTrees, tStart);
+          topNodeCount, recvTree, mergeOwntree, procTrees, tStart, LETMethod);
       LOGF(stderr, "Merging and launchingA iter: %d took: %lg \n", iter, get_time()-t000);
 
       //Correct the topNodeOnTheFlyCounter
@@ -3095,7 +3132,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                        tree_structure &remote,
                                        vector<real4>  &topLevelTrees,
                                        vector<uint2>  &topLevelTreesSizeOffset,
-                                       int             nTopLevelTrees)
+                                       int             nTopLevelTrees,
+                                       const    int   LETMethod)
 {
 #ifdef USE_MPI
 
@@ -3109,10 +3147,11 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
   localTree.multipole.waitForCopyEvent();
 
 
-  //float3 periodicDomainSize = {1.0f, 0.125f, 0.125f};   //Hardcoded for our testing IC
-  const float3 periodicDomainSize = {100.0f, 100.0f, 100.0f};   //Hardcoded for our testing IC
+  const float3 periodicDomainSize = {1.0f, 0.125f, 0.125f};   //Hardcoded for our testing IC
+//  const float3 periodicDomainSize = {100.0f, 100.0f, 100.0f};   //Hardcoded for our testing IC
   const int    periodicMethod     = PERIODIC_X | PERIODIC_Y | PERIODIC_Z;
   const int    selectionMethod    = SELECT_SPH;//GRAV;
+  const int    nBodyProps         = 2; //Position and velocity per particle
 
   double t0         = get_time();
 
@@ -3121,8 +3160,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
   bool mergeOwntree = false;              //Default do not include our own tree-structure, thats mainly used for testing
   int procTrees     = 0;                  //Number of trees that we've received and processed
 
-  real4  *bodies              = &tree.bodies_Ppos[0];
-  real4  *velocities          = &tree.bodies_Pvel[0];
+  real4  *bodies_pos          = &tree.bodies_Ppos[0];
+  real4  *bodies_vel          = &tree.bodies_Pvel[0];
   real4  *multipole           = &tree.multipole[0];
   real4  *nodeSizeInfo        = &tree.boxSizeInfo[0];
   real4  *nodeCenterInfo      = &tree.boxCenterInfo[0];
@@ -3284,7 +3323,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
           {
             checkGPUAndStartLETComputation(tree, remote, topNodeOnTheFlyCount,
                                            nReceived, procTrees,  tStart, totalLETExTime,
-                                           mergeOwntree,  treeBuffersSource, treeBuffers);
+                                           mergeOwntree,  treeBuffersSource, treeBuffers, LETMethod);
           }
         }//tid == 0
 
@@ -3310,12 +3349,13 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         {
             unsigned long long nflops;
 
+
             int nbody = host_float_as_int(grpCenter[0].x);
             int nnode = host_float_as_int(grpCenter[0].y);
 
-            real4 *grpSize2   = &grpCenter[1+nbody];
-            real4 *grpCenter2 = &grpCenter[1+nbody+nnode];
-            real4 *grpSmth    = &grpCenter[1+nbody+nnode+nnode];
+            real4 *grpSize2   = &grpCenter[1+nBodyProps*nbody];
+            real4 *grpCenter2 = &grpCenter[1+nBodyProps*nbody+nnode];
+            real4 *grpSmth    = &grpCenter[1+nBodyProps*nbody+nnode+nnode];
 
 
             //The return value sizeTree is used to determine for which processes we have to make
@@ -3335,7 +3375,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                             &multipole[0],
                                             0,                //Cell begin
                                             1,                //Cell end
-                                            &bodies[0],
+                                            &bodies_pos[0],
                                             tree.n,
                                             grpSize2,         //size
                                             grpCenter2,       //center
@@ -3353,10 +3393,10 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             int depthSearch = 0;
             const int resultTree = getLEToptQuickTreevsTree(
                                               getLETBuffers[tid],
-                                              &grpCenter[1+nbody+nnode],    //center
-                                              &grpCenter[1+nbody],          //size
-                                              &grpCenter[1+nbody+nnode*2],  //Smoothing
-                                              &grpCenter[1+nbody+nnode*3],  //multipole
+                                              &grpCenter[1+nBodyProps*nbody+nnode],    //center
+                                              &grpCenter[1+nBodyProps*nbody],          //size
+                                              &grpCenter[1+nBodyProps*nbody+nnode*2],  //Smoothing
+                                              &grpCenter[1+nBodyProps*nbody+nnode*3],  //multipole
                                               0, 1,                         //Start at the root of remote boundary tree
                                               &nodeSizeInfo[0],             //Local tree-sizes
                                               &nodeCenterInfo[0],           //Local tree-centers
@@ -3367,6 +3407,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                               tBoundaryCheck, depthSearch,
                                               periodicDomainSize, periodicMethod,
                                               selectionMethod);
+//            int resultTree = 1; //TODO remove once we updated the boundary tree to contain velocity information
 
             if(resultTree == 0)
             {
@@ -3440,7 +3481,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         {
           checkGPUAndStartLETComputation(tree, remote, topNodeOnTheFlyCount,
                                          nReceived, procTrees,  tStart, totalLETExTime,
-                                         mergeOwntree,  treeBuffersSource, treeBuffers);
+                                         mergeOwntree,  treeBuffersSource, treeBuffers,
+                                         LETMethod);
         }//tid == 0
 
         bool breakOutOfFullLoop = false;
@@ -3512,9 +3554,9 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
           int nbody = host_float_as_int(grpCenter[0].x);
           int nnode = host_float_as_int(grpCenter[0].y);
 
-          real4 * grpSize   = &grpCenter[1+nbody];
-          real4 * grpSmooth = &grpCenter[1+nbody+nnode*2];
-          grpCenter         = &grpCenter[1+nbody+nnode];
+          real4 * grpSize   = &grpCenter[1+nBodyProps*nbody];
+          real4 * grpSmooth = &grpCenter[1+nBodyProps*nbody+nnode*2];
+          grpCenter         = &grpCenter[1+nBodyProps*nbody+nnode];
 
           for(int startSearch=0; startSearch < nnode; startSearch++)
           {
@@ -3563,6 +3605,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
           grpSmooth = &boundarySmoothing[0];
         #endif
 
+
        //Optionally extend the list of boundaries, use: extendGroupsWithPeriodicGroups()
 
         double tEndEx = get_time();
@@ -3571,7 +3614,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
         int2 usedStartEndNode = {(int)node_begend.x, (int)node_begend.y};
 
-#if 1
+#if 0
         tz = get_time();
         assert(startGrp == 0);
         int3  nExport = getLET1(getLETBuffers[tid],
@@ -3580,19 +3623,21 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                 &nodeSizeInfo[0],
                                 &multipole[0],
                                 usedStartEndNode.x, usedStartEndNode.y,
-                                &bodies[0],
+                                &bodies_pos[0],
+                                &bodies_vel[0],
                                 tree.n,
                                 grpSize, grpCenter, grpSmooth,
                                 endGrp,
                                 tree.n_nodes, nflops,
                                 periodicDomainSize, periodicMethod,
-                                selectionMethod);
+                                selectionMethod,
+                                LETMethod);
 
 
 #endif
 
 
-#if 0
+#if 1
         real4 *grpCenter2    =  &globalGrpTreeCntSize[globalGrpTreeOffsets[ibox]];
         int start            = host_float_as_int(grpCenter2[0].z);
         int end              = host_float_as_int(grpCenter2[0].w);
@@ -3605,9 +3650,9 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         assert(startGrp == 0);
 
 
-        grpSize    = &grpCenter2[1+nbody];
-        grpSmooth  = &grpCenter2[1+nbody+nnode*2];
-        grpCenter2 = &grpCenter2[1+nbody+nnode];
+        grpSize    = &grpCenter2[1+nBodyProps*nbody];
+        grpSmooth  = &grpCenter2[1+nBodyProps*nbody+nnode*2];
+        grpCenter2 = &grpCenter2[1+nBodyProps*nbody+nnode];
 
         int3 nExport = getLEToptFullTree(getLETBuffers[tid],
                                          &LETDataBuffer,
@@ -3615,26 +3660,31 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                          &nodeSizeInfo[0],
                                          &multipole[0],
                                          usedStartEndNode.x, usedStartEndNode.y,
-                                         &bodies[0],
+                                         &bodies_pos[0],
+                                         &bodies_vel[0],
                                          tree.n,
                                          grpSize, grpCenter2,grpSmooth,
                                          start, end, tree.n_nodes, nflops,
                                          periodicDomainSize, periodicMethod,
-                                         selectionMethod);
+                                         selectionMethod,
+                                         LETMethod);
 #endif
 
 
+        int bodyPropsCount = 1;
+        if(LETMethod == LET_METHOD_DRVT) bodyPropsCount++;  //Velocity included
+
         countParticles  = nExport.y;
         countNodes      = nExport.x;
-        int bufferSize  = 1 + 1*countParticles + 5*countNodes;
+        int bufferSize  = 1 + bodyPropsCount*countParticles + 5*countNodes;
         //Use count of exported particles and nodes, but let particles count more heavy.
         //Used during particle exchange / domain update to speedup particle-box assignment
 //        this->fullGrpAndLETRequestStatistics[ibox] = make_uint2(countParticles*10 + countNodes, ibox);
         if (ENABLE_RUNTIME_LOG)
         {
-          fprintf(stderr,"Proc: %d LET getLetOp count&fill [%d,%d]: Depth: %d Dest: %d Total : %lg (#P: %d \t#N: %d) nNodes= %d  nGroups= %d \tsince start: %lg \n",
+          fprintf(stderr,"Proc: %d LET getLetOp count&fill [%d,%d]: Depth: %d Dest: %d Total : %lg (#P: %d \t#N: %d) nNodes= %d  nGroups= %d \tsince start: %lg size: %d\n",
                           procId, procId, tid, nExport.z, ibox, get_time()-tz,countParticles,
-                          countNodes, tree.n_nodes, endGrp, get_time()-t0);
+                          countNodes, tree.n_nodes, endGrp, get_time()-t0, bufferSize);
         }
 
         //Set the tree properties, before we exchange the data
@@ -3661,7 +3711,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         {
           checkGPUAndStartLETComputation(tree, remote, topNodeOnTheFlyCount,
                                          nReceived, procTrees,  tStart, totalLETExTime,
-                                         mergeOwntree,  treeBuffersSource, treeBuffers);
+                                         mergeOwntree,  treeBuffersSource, treeBuffers,
+                                         LETMethod);
         }//tid == 0
       }//end while that surrounds LET computations
 
@@ -3691,7 +3742,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
           {
             checkGPUAndStartLETComputation(tree, remote, topNodeOnTheFlyCount,
                                            nReceived, procTrees,  tStart, totalLETExTime,
-                                           mergeOwntree,  treeBuffersSource, treeBuffers);
+                                           mergeOwntree,  treeBuffersSource, treeBuffers,
+                                           LETMethod);
           }
           else //if startGrav
           {
@@ -3857,7 +3909,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             }
             else
             {
-              treeBuffers[nReceived] = recvDataBuffer;
+              treeBuffers[nReceived]       = recvDataBuffer;
               treeBuffersSource[nReceived] = 0; //0 indicates point to point source
 
               //Increase the top-node count
@@ -4034,7 +4086,8 @@ void octree::mergeAndLaunchLETStructures(
     tree_structure &tree, tree_structure &remote,
     real4 **treeBuffers, int *treeBuffersSource,
     int &topNodeOnTheFlyCount,
-    int &recvTree, bool &mergeOwntree, int &procTrees, double &tStart)
+    int &recvTree, bool &mergeOwntree, int &procTrees, double &tStart,
+    const int METHOD)
 {
   //Now we have to merge the separate tree-structures into one big-tree
 
@@ -4093,6 +4146,10 @@ void octree::mergeAndLaunchLETStructures(
   }
 #endif
 
+  int bodyPropsCount = 1;                          //Position
+  if(METHOD == LET_METHOD_DRVT) bodyPropsCount++;  //Position and Velocity
+
+
   //Arrays to store and compute the offsets
   int *particleSumOffsets  = new int[mpiGetNProcs()+1];
   int *nodeSumOffsets      = new int[mpiGetNProcs()+1];
@@ -4133,8 +4190,8 @@ void octree::mergeAndLaunchLETStructures(
     // - Process this one anyway and hope we have enough memory, do this if nProcsProcessed == 0
     //   otherwise we would make no progress
 
-    int localLimit   =  tree.n            + 5*tree.n_nodes;
-    int currentCount =  nParticlesCounted + 5*nNodesCounted;
+    int localLimit   =  tree.n                           + 5*tree.n_nodes; //TODO should this include the bodyPropsCount factor?
+    int currentCount =  bodyPropsCount*nParticlesCounted + 5*nNodesCounted;
 
     if(currentCount > localLimit)
     {
@@ -4161,13 +4218,15 @@ void octree::mergeAndLaunchLETStructures(
     startNodeSumOffsets[i+1]    = startNodeSumOffsets[i] + nodesBegEnd[i].y-nodesBegEnd[i].x;
 
     //Copy the properties for the top-nodes
-    int nTop = nodesBegEnd[i].y-nodesBegEnd[i].x;
+    int nTop      = nodesBegEnd[i].y-nodesBegEnd[i].x;
+    int startTree = 1+bodyPropsCount*particles;
+
     memcpy(&topBoxSizes[totalTopNodes],
-        &treeBuffers[procTrees+i][1+1*particles+nodesBegEnd[i].x],             sizeof(real4)*nTop);
+           &treeBuffers[procTrees+i][startTree+nodesBegEnd[i].x],             sizeof(real4)*nTop);
     memcpy(&topBoxCenters[totalTopNodes],
-        &treeBuffers[procTrees+i][1+1*particles+nodes+nodesBegEnd[i].x],       sizeof(real4)*nTop);
+           &treeBuffers[procTrees+i][startTree+nodes+nodesBegEnd[i].x],       sizeof(real4)*nTop);
     memcpy(&topMultiPoles[3*totalTopNodes],
-        &treeBuffers[procTrees+i][1+1*particles+2*nodes+3*nodesBegEnd[i].x], 3*sizeof(real4)*nTop);
+           &treeBuffers[procTrees+i][startTree+2*nodes+3*nodesBegEnd[i].x], 3*sizeof(real4)*nTop);
     topSourceProc.insert(topSourceProc.end(), nTop, i ); //Assign source process id
 
     totalTopNodes += nodesBegEnd[i].y-nodesBegEnd[i].x;
@@ -4243,9 +4302,9 @@ void octree::mergeAndLaunchLETStructures(
   int topTree_startNode;
   int topTree_endNode;
   int topTree_n_nodes;
-  build_NewTopLevels(topNodeOnTheFlyCount,   &keys[0],          nodes,
-      nodeKeys,        node_levels,       topTree_n_levels,
-      topTree_n_nodes, topTree_startNode, topTree_endNode);
+  build_NewTopLevels(topNodeOnTheFlyCount,  &keys[0],          nodes,
+                     nodeKeys,              node_levels,       topTree_n_levels,
+                     topTree_n_nodes,       topTree_startNode, topTree_endNode);
 
   LOGF(stderr, "Start %d end: %d Number of Original nodes: %d \n", topTree_startNode, topTree_endNode, topNodeOnTheFlyCount);
 
@@ -4273,7 +4332,7 @@ void octree::mergeAndLaunchLETStructures(
   int topTree_n_nodes = 0;
 #endif //DO_NOT_USE_TOP_TREE
 
-  //Modify the offsets of the children to fix the index references to their childs
+  //Modify the offsets of the children to fix the index references to their children
   for(int i=0; i < topNodeOnTheFlyCount; i++)
   {
     real4 center  = topBoxCenters[i];
@@ -4306,10 +4365,10 @@ void octree::mergeAndLaunchLETStructures(
       }//if !leaf
       else
       { //Leaf
-        child   =   childinfo & BODYMASK;                      //the first body in the leaf
+        child   =    childinfo & BODYMASK;                      //the first body in the leaf
         nchild  = (((childinfo & INVBMASK) >> LEAFBIT)+1);     //number of bodies in the leaf masked with the flag
 
-        child   =  child + particleSumOffsets[srcProc];        //Increasing offset
+        child   = child + particleSumOffsets[srcProc];         //Increasing offset
         child   = child | ((nchild-1) << LEAFBIT);             //Merging back to one integer
       }//end !leaf
     }//if endpoint
@@ -4333,10 +4392,11 @@ void octree::mergeAndLaunchLETStructures(
   totalParticles    += partTextOffset;
 
   //Compute the total size of the buffer
-  int bufferSize     = 1*(totalParticles) + 5*(totalNodes+totalTopNodes+topTree_n_nodes + nodeTextOffset);
+  int bufferSize     = bodyPropsCount*(totalParticles) + 5*(totalNodes+totalTopNodes+topTree_n_nodes + nodeTextOffset);
 
 
   double t1 = get_time();
+
 
   thisPartLETExTime += get_time() - tStart;
   //Allocate memory on host and device to store the merged tree-structure
@@ -4360,13 +4420,13 @@ void octree::mergeAndLaunchLETStructures(
 #ifndef DO_NOT_USE_TOP_TREE
   //The top-tree node properties
   //Sizes
-  memcpy(&combinedRemoteTree[1*(totalParticles)],
+  memcpy(&combinedRemoteTree[bodyPropsCount*(totalParticles)],
       topTreeSizes, sizeof(real4)*topTree_n_nodes);
   //Centers
-  memcpy(&combinedRemoteTree[1*(totalParticles) + (totalNodes + totalTopNodes + topTree_n_nodes + nodeTextOffset)],
+  memcpy(&combinedRemoteTree[bodyPropsCount*(totalParticles) + (totalNodes + totalTopNodes + topTree_n_nodes + nodeTextOffset)],
       topTreeCenters, sizeof(real4)*topTree_n_nodes);
   //Multipoles
-  memcpy(&combinedRemoteTree[1*(totalParticles) +
+  memcpy(&combinedRemoteTree[bodyPropsCount*(totalParticles) +
       2*(totalNodes+totalTopNodes+topTree_n_nodes+nodeTextOffset)],
       topTreeMultipole, sizeof(real4)*topTree_n_nodes*3);
 
@@ -4382,13 +4442,13 @@ void octree::mergeAndLaunchLETStructures(
 
   //The top-boxes properties
   //sizes
-  memcpy(&combinedRemoteTree[1*(totalParticles) + topTree_n_nodes],
+  memcpy(&combinedRemoteTree[bodyPropsCount*(totalParticles) + topTree_n_nodes],
       &topBoxSizes[0], sizeof(real4)*topNodeOnTheFlyCount);
   //Node center information
-  memcpy(&combinedRemoteTree[1*(totalParticles) + (totalNodes + totalTopNodes + topTree_n_nodes + nodeTextOffset) + topTree_n_nodes],
+  memcpy(&combinedRemoteTree[bodyPropsCount*(totalParticles) + (totalNodes + totalTopNodes + topTree_n_nodes + nodeTextOffset) + topTree_n_nodes],
       &topBoxCenters[0], sizeof(real4)*topNodeOnTheFlyCount);
   //Multipole information
-  memcpy(&combinedRemoteTree[1*(totalParticles) +
+  memcpy(&combinedRemoteTree[bodyPropsCount*(totalParticles) +
       2*(totalNodes+totalTopNodes+topTree_n_nodes+nodeTextOffset)+3*topTree_n_nodes],
       &topMultiPoles[0], sizeof(real4)*topNodeOnTheFlyCount*3);
 
@@ -4405,21 +4465,27 @@ void octree::mergeAndLaunchLETStructures(
     //Particles
     memcpy(&combinedRemoteTree[particleSumOffsets[i]],   &treeBuffers[i+procTrees][1], sizeof(real4)*remoteP);
 
+    if(METHOD == LET_METHOD_DRVT) //Insert the velocity
+    {
+        memcpy(&combinedRemoteTree[totalParticles+particleSumOffsets[i]],           //Write after the positions
+               &treeBuffers[i+procTrees][1+1*remoteP], sizeof(real4)*remoteP);      //Read after the positions
+    }
+
     //Non start nodes, nodeSizeInfo
-    memcpy(&combinedRemoteTree[1*(totalParticles) +  totalTopNodes + topTree_n_nodes + nodeSumOffsets[i]],
-        &treeBuffers[i+procTrees][1+1*remoteP+remoteE], //From the last start node onwards
+    memcpy(&combinedRemoteTree[bodyPropsCount*(totalParticles) +  totalTopNodes + topTree_n_nodes + nodeSumOffsets[i]],
+        &treeBuffers[i+procTrees][1+bodyPropsCount*remoteP+remoteE], //From the last start node onwards
         sizeof(real4)*(remoteN-remoteE));
 
     //Non start nodes, nodeCenterInfo
-    memcpy(&combinedRemoteTree[1*(totalParticles) + totalTopNodes + topTree_n_nodes + nodeSumOffsets[i] +
+    memcpy(&combinedRemoteTree[bodyPropsCount*(totalParticles) + totalTopNodes + topTree_n_nodes + nodeSumOffsets[i] +
         (totalNodes + totalTopNodes + topTree_n_nodes + nodeTextOffset)],
-        &treeBuffers[i+procTrees][1+1*remoteP+remoteE + remoteN], //From the last start node onwards
+        &treeBuffers[i+procTrees][1+bodyPropsCount*remoteP+remoteE + remoteN], //From the last start node onwards
         sizeof(real4)*(remoteN-remoteE));
 
     //Non start nodes, multipole
-    memcpy(&combinedRemoteTree[1*(totalParticles) +  3*(totalTopNodes+topTree_n_nodes) +
+    memcpy(&combinedRemoteTree[bodyPropsCount*(totalParticles) +  3*(totalTopNodes+topTree_n_nodes) +
         3*nodeSumOffsets[i] + 2*(totalNodes+totalTopNodes+topTree_n_nodes+nodeTextOffset)],
-        &treeBuffers[i+procTrees][1+1*remoteP+remoteE*3 + 2*remoteN], //From the last start node onwards
+        &treeBuffers[i+procTrees][1+bodyPropsCount*remoteP+remoteE*3 + 2*remoteN], //From the last start node onwards
         sizeof(real4)*(remoteN-remoteE)*3);
 
     /*
@@ -4440,7 +4506,7 @@ void octree::mergeAndLaunchLETStructures(
        */
 
     //Modify the non-top nodes for this process
-    int modStart =  totalTopNodes + topTree_n_nodes + nodeSumOffsets[i] + 1*(totalParticles);
+    int modStart =  totalTopNodes + topTree_n_nodes + nodeSumOffsets[i] + bodyPropsCount*(totalParticles);
     int modEnd   =  modStart      + remoteN-remoteE;
 
     for(int j=modStart; j < modEnd; j++)
@@ -4562,8 +4628,24 @@ void octree::mergeAndLaunchLETStructures(
   //only done during the last approximate_gravity_let call
   bool doActivePart = (procTrees == mpiGetNProcs() -1);
 
-  //approximate_gravity_let(this->localTree, this->remoteTree, bufferSize, doActivePart);
-  approximate_density_let(this->localTree, this->remoteTree, bufferSize, doActivePart);
+  switch(METHOD)
+  {
+      case LET_METHOD_GRAV:
+          approximate_gravity_let(this->localTree, this->remoteTree, bufferSize, doActivePart);
+          break;
+      case LET_METHOD_DENS:
+          approximate_density_let(this->localTree, this->remoteTree, bufferSize, doActivePart);
+          break;
+      case LET_METHOD_DRVT:
+          approximate_derivative_let(this->localTree, this->remoteTree, bufferSize, doActivePart);
+          break;
+      case LET_METHOD_HYDR:
+          assert(0);
+          //approximate_gravity_let(this->localTree, this->remoteTree, bufferSize, doActivePart);
+          break;
+      default:
+          assert(0);
+  }
 
   double t4 = get_time();
   //Statistics about the tree-merging

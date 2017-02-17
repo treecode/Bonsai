@@ -222,11 +222,13 @@ int octree::gpuDetermineBoundary(tree_structure &tree, int maxDepth, uint2 node_
 
    newValid.d2h(1);
 
+   const int nBodyProps = 2;
+
    //Allocate the buffers to store in the boundary tree and the indices used to generate the boundary tree
    finalValid.resizeOrAlloc(1+newValid[0].x, false, false);
    finalValid.copy_devonly(newValid, 1+newValid[0].x);
 
-   int finalTreeSize = 1 + newValid[0].y + 6*newValid[0].x; //Header+nBody+nNode*6 (size/cnt/smth/multi123)
+   int finalTreeSize = 1 + nBodyProps*newValid[0].y + 6*newValid[0].x; //Header+nBody(pos,vel)+nNode*6 (size/cnt/smth/multi123)
 
    finalBuff.resizeOrAlloc(finalTreeSize, false, true);    //BoundaryTree goes to host so pinned memory
 

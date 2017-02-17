@@ -610,11 +610,22 @@ namespace derivative
 
                 const float3 jvel  = make_float3(__shfl(MV.x, j), __shfl(MV.y, j), __shfl(MV.z, j));
                 const float3 dv    = make_float3(jvel.x - vel_i[0].x, jvel.y - vel_i[0].y, jvel.z - vel_i[0].z);
-                gradient_i[0].x -= jM0.w* (dv.y * gradW.z - dv.z * gradW.y);
-                gradient_i[0].y -= jM0.w* (dv.z * gradW.x - dv.x * gradW.z);
+//                gradient_i[0].x -= jM0.w* (dv.y * gradW.z - dv.z * gradW.y);
+//                gradient_i[0].y -= jM0.w* (dv.z * gradW.x - dv.x * gradW.z);
                 gradient_i[0].z -= jM0.w* (dv.x * gradW.y - dv.y * gradW.x);
                 gradient_i[0].w -= jM0.w* (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z);
+
+                gradient_i[0].x++;       //Number of operations
+                gradient_i[0].y += (jM0.w*fabs(abs_gradW)) > 0; //Number of useful operations
           }
+
+//          bool isZero =  (pos_i[0].x == 0.0f && (pos_i[0].x == pos_i[0].y) && (pos_i[0].x == pos_i[0].z));
+//            if(isZero)
+//            {
+//                printf("ON DEV [%d %d] , Partial sum: %f\n", threadIdx.x, blockIdx.x,  gradient_i[0].z);
+//            }
+
+
         }
 
 #endif

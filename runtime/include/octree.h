@@ -98,6 +98,11 @@ typedef unsigned long long ullong; //ulonglong1
 #define SELECT_SPH  2
 #define SELECT_SPHGRAV (SELECT_GRAV+SELECT_SPH)
 
+#define LET_METHOD_GRAV 1
+#define LET_METHOD_DENS 2
+#define LET_METHOD_DRVT 3
+#define LET_METHOD_HYDR 4
+
 
 
 typedef struct setupParams {
@@ -419,7 +424,9 @@ protected:
   my_dev::kernel SPHDensity;
   my_dev::kernel SPHDensityLET;
   my_dev::kernel SPHDerivative;
+  my_dev::kernel SPHDerivativeLET;
   my_dev::kernel SPHHydro;
+  my_dev::kernel SPHHydroLET;
   my_dev::kernel setPressure;
 
   //Other
@@ -462,7 +469,7 @@ public:
 
    double get_time();
    void resetEnergy() {store_energy_flag = true;}
-   void set_src_directory(string src_dir);
+   void set_src_directory(std::string src_dir);
 
    void writeLogData(std::string &str){ devContext->writeLogEvent(str.c_str());}
    void writeLogToFile(){ this->logFileWriter->updateLogData(devContext->getLogData());}
@@ -634,8 +641,13 @@ public:
 
   void   approximate_density    (tree_structure &tree);
   void   approximate_density_let(tree_structure &tree, tree_structure &remoteTree, int bufferSize, bool doActivePart);
+
+  void   approximate_derivative    (tree_structure &tree);
+  void   approximate_derivative_let(tree_structure &tree, tree_structure &remoteTree, int bufferSize, bool doActivePart);
+
   void   distributeBoundaries(bool doOnlyUpdate);
   void   makeDensityLET();
+  void   makeDerivativeLET();
 
 
 
@@ -719,11 +731,13 @@ public:
                                  tree_structure &remote,
                                  vector<real4> &topLevelTrees,
                                  vector<uint2> &topLevelTreesSizeOffset,
-                                 int     nTopLevelTrees);
+                                 int     nTopLevelTrees,
+                                 const int LETMethod);
 
   void mergeAndLaunchLETStructures(tree_structure &tree, tree_structure &remote,
                                    real4 **treeBuffers,  int* treeBuffersSource, int &topNodeOnTheFlyCount,
-                                   int &recvTree, bool &mergeOwntree, int &procTrees, double &tStart);
+                                   int &recvTree, bool &mergeOwntree, int &procTrees, double &tStart,
+                                   const int METHOD);
 
   void checkGPUAndStartLETComputation(tree_structure &tree,
                                       tree_structure &remote,
@@ -734,7 +748,8 @@ public:
                                       double         &totalLETExTime,
                                       bool            mergeOwntree,
                                       int            *treeBuffersSource,
-                                      real4         **treeBuffers);
+                                      real4         **treeBuffers,
+                                      const int       LETMethod);
 
 
   int recursiveTopLevelCheck(uint4 checkNode, real4* treeBoxSizes, real4* treeBoxCenters, real4* treeBoxMoments,

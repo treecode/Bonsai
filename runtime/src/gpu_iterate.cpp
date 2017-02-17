@@ -30,6 +30,9 @@ void octree::distributeBoundaries(bool doOnlyUpdate)
 {
     devContext->pushNVTX("distributeBoundaries");
 
+    //TODO we only need this copy once right? Some values do not change
+    //when we do an intermediate update.
+
     localTree.boxSizeInfo.d2h  (  localTree.n_nodes, false, LETDataToHostStream->s());
     localTree.boxCenterInfo.d2h(  localTree.n_nodes, false, LETDataToHostStream->s());
     localTree.boxSmoothing.d2h (  localTree.n_nodes, false, LETDataToHostStream->s());
@@ -71,10 +74,36 @@ void octree::makeDensityLET()
                               remoteTree,
                               topLevelsBuffer,
                               treeSizeAndOffset,
-                              copyTreeUpToLevel);
+                              copyTreeUpToLevel,
+                              LET_METHOD_DENS);
 
     letRunning = false;
 }
+
+void octree::makeDerivativeLET()
+{
+    //TODO this copy should be moved to the group exchange, we need velocities
+    //during boundary test for derivative. So we can do the d2h copy somewhere earlier
+    //and then make a function to update the group data, with the actual velocities
+
+    localTree.bodies_Pvel.d2h(localTree.n, false, LETDataToHostStream->s());
+    localTree.bodies_Pvel.waitForCopyEvent();
+
+    std::vector<real4> topLevelsBuffer;
+    std::vector<uint2> treeSizeAndOffset;
+    int copyTreeUpToLevel = 0;
+    //Start LET kernels
+    essential_tree_exchangeV2(localTree,
+                              remoteTree,
+                              topLevelsBuffer,
+                              treeSizeAndOffset,
+                              copyTreeUpToLevel,
+                              LET_METHOD_DRVT);
+
+    letRunning = false;
+}
+
+//#define LET_METHOD_HYDR 4
 
 
 void octree::makeLET()
@@ -115,7 +144,8 @@ void octree::makeLET()
                             remoteTree,
                             topLevelsBuffer,
                             treeSizeAndOffset,
-                            copyTreeUpToLevel);
+                            copyTreeUpToLevel,
+                            LET_METHOD_GRAV);
 
   letRunning = false;
 }
@@ -683,11 +713,7 @@ void octree::approximate_density    (tree_structure &tree)
 
     SPHDensity.setWork(-1, NTHREAD, nBlocksForTreeWalk);
 
-//    Dit testen op correctheid, en dan verder met toevoegen van
-//    periodic boundaries in alle LET dingen
-
-
-    for(int i=0; i < 1; i++)
+    for(int i=0; i < 3; i++)
     {
         tree.interactions.zeroMemGPUAsync(gravStream->s());
         tree.activePartlist.zeroMemGPUAsync(gravStream->s());
@@ -717,17 +743,16 @@ void octree::approximate_density    (tree_structure &tree)
         //Update the current density and smoothing radius based on that density
         tree.bodies_dens.copy_devonly_async(tree.bodies_dens_out, tree.n, 0,gravStream->s());
 
-        //TODO should we update the tree? No as we only update and use particle search radii
+        //TODO should we update the tree? No as we only update and use particle search radii.
+        //Actually yes, since we need proper tree-node smoothing values after the iterations
         mpiSync();
-       // compute_properties(tree);
+        compute_properties(tree);
 
         cudaDeviceSynchronize();
     //wait on the LET to finish before we start the interaction computations
     gravStream->sync();
 
     countInteractions(tree, mpiCommWorld, procId);
-
-
     }
 
 
@@ -772,12 +797,17 @@ void octree::approximate_density    (tree_structure &tree)
                  tree.bodies_acc1[i].w);
      }
 
+     approximate_derivative(tree);
+
+
+     countInteractions(tree, mpiCommWorld, procId);
 
  exit(0);
 
 
 
 }
+
 void octree::approximate_density_let(tree_structure &tree, tree_structure &remoteTree, int bufferSize, bool doActivePart)
 {
     //Start and end node of the remote tree structure
@@ -844,15 +874,248 @@ void octree::approximate_density_let(tree_structure &tree, tree_structure &remot
       remoteTree.fullRemoteTree.h2d(bufferSize); //Only copy required data
       tree.activePartlist.zeroMemGPUAsync(gravStream->s()); //Resets atomics
 
+
       CU_SAFE_CALL(cudaEventRecord(startRemoteGrav, gravStream->s()));
       SPHDensityLET.execute2(gravStream->s());
       CU_SAFE_CALL(cudaEventRecord(endRemoteGrav, gravStream->s()));
       letRunning = true;
 
+      return;
+}
+
+
+void octree::approximate_derivative  (tree_structure &tree)
+{
+    uint2 node_begend;
+    int level_start = tree.startLevelMin;
+    node_begend.x   = tree.level_list[level_start].x;
+    node_begend.y   = tree.level_list[level_start].y;
+    SPHDerivative.set_args(0,   &tree.n_active_groups,
+                                  &tree.n,
+                                  &(this->eps2),
+                                  &node_begend,
+                                  tree.active_group_list.p(),
+                                  //i particle properties
+                                  tree.bodies_Ppos.p(),
+                                  tree.bodies_Pvel.p(),
+                                  tree.bodies_dens.p(),
+                                  tree.bodies_grad.p(),
+                                  tree.bodies_hydro.p(),
+                                  tree.activePartlist.p(),
+                                  tree.interactions.p(),
+                                  tree.boxSizeInfo.p(),
+                                  tree.groupSizeInfo.p(),
+                                  tree.boxCenterInfo.p(),
+                                  tree.groupCenterInfo.p(),
+                                  tree.multipole.p(),
+                                  tree.generalBuffer1.p(),  //The buffer to store the tree walks
+                                  //j particle properties
+                                  tree.bodies_Ppos.p(),
+                                  tree.bodies_Pvel.p(),
+                                  tree.bodies_dens.p(),     //Per particle density (x) and nnb (y)
+                                  tree.bodies_grad.p(),
+                                  tree.bodies_hydro.p(),
+                                  //Result buffers
+                                  tree.bodies_acc1.p(),
+                                  tree.bodies_dens_out.p(),
+                                  tree.bodies_hydro_out.p(),
+                                  tree.bodies_grad.p());
+
+      SPHDerivative.set_texture<real4>(0,  tree.boxSizeInfo,    "texNodeSize");
+      SPHDerivative.set_texture<real4>(1,  tree.boxCenterInfo,  "texNodeCenter");
+      SPHDerivative.set_texture<real4>(2,  tree.multipole,      "texMultipole");
+      SPHDerivative.set_texture<real4>(3,  tree.bodies_Ppos,    "texBody");
+      SPHDerivative.setWork(-1, NTHREAD, nBlocksForTreeWalk);
+     //  SPHDerivative.setWork(-1, 32, 1);
+
+      setPressure.set_args(0, &tree.n, tree.bodies_dens.p(),  tree.bodies_grad.p(), tree.bodies_hydro.p());
+      setPressure.setWork(tree.n, 128);
+      setPressure.execute2(gravStream->s());
+
+      tree.bodies_grad.zeroMemGPUAsync(gravStream->s());
+
+      size_t sz = 1048576 * 25;
+      cudaDeviceSetLimit(cudaLimitPrintfFifoSize, sz);
+      tree.activePartlist.zeroMemGPUAsync(gravStream->s());
+      SPHDerivative.execute2(gravStream->s());  //Derivative
+
+
+
+      tree.bodies_dens_out.d2h();
+      tree.bodies_grad.d2h();
+      tree.bodies_hydro.d2h();
+      tree.bodies_acc1.d2h();
+      tree.bodies_ids.d2h();
+
+
+      //   char fileName[128];  sprintf(fileName, "interact-%d.txt", procId); FILE* outFile = fopen(fileName, "w");
+         for(int i=0; i < tree.n; i++)
+         {
+
+             if(tree.bodies_ids[i] < 10)
+//             if(tree.bodies_ids[i] == 244)
+      //           if(i >=3839 && i < 3855)
+             //if(i >=3839 && i < 3855)
+      //       if(tree.bodies_ids[i] > 15455 && tree.bodies_ids[i] < 15465)
+             fprintf(stderr,"Output: %d %lld || Pos: %f %f %f %lg\t || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
+      //       fprintf(outFile,"Output: %d %lld || Pos: %f %f %f %lg\t || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
+                     i,
+                     tree.bodies_ids[i],
+                     tree.bodies_Ppos[i].x,
+                     tree.bodies_Ppos[i].y,
+                     tree.bodies_Ppos[i].z,
+                     tree.bodies_Ppos[i].w,
+                     tree.bodies_dens_out[i].x,
+                     tree.bodies_dens_out[i].y,
+                     tree.bodies_grad[i].w,
+                     tree.bodies_grad[i].x,
+                     tree.bodies_grad[i].y,
+                     tree.bodies_grad[i].z,
+                     tree.bodies_hydro[i].x,
+                     tree.bodies_hydro[i].y,
+                     tree.bodies_hydro[i].z,
+                     tree.bodies_hydro[i].w,
+                     tree.bodies_acc1[i].x,
+                     tree.bodies_acc1[i].y,
+                     tree.bodies_acc1[i].z,
+                     tree.bodies_acc1[i].w);
+                        }
+
+         if(nProcs > 1)
+         {
+             distributeBoundaries(false); //Always full update for now
+             makeDerivativeLET();
+         }
+         else
+         {
+             setPressure.execute2(gravStream->s());
+         }
+
+
+         mpiSync();
+
+         tree.bodies_dens_out.d2h();
+         tree.bodies_grad.d2h();
+         tree.bodies_hydro.d2h();
+         tree.bodies_acc1.d2h();
+         tree.bodies_ids.d2h();
+
+
+//            char fileName[128];  sprintf(fileName, "interact-%d-%d.txt", procId, nProcs); FILE* outFile = fopen(fileName, "w");
+            for(int i=0; i < tree.n; i++)
+            {
+
+                if(tree.bodies_ids[i] < 10)
+//                if(tree.bodies_ids[i] == 244)
+         //           if(i >=3839 && i < 3855)
+                //if(i >=3839 && i < 3855)
+         //       if(tree.bodies_ids[i] > 15455 && tree.bodies_ids[i] < 15465)
+                fprintf(stderr,"Output: %d %lld || Pos: %f %f %f %lg\t || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
+//                fprintf(outFile,"Output: %d %lld || Pos: %f %f %f %lg\t || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
+                        i,
+                        tree.bodies_ids[i],
+                        tree.bodies_Ppos[i].x,
+                        tree.bodies_Ppos[i].y,
+                        tree.bodies_Ppos[i].z,
+                        tree.bodies_Ppos[i].w,
+                        tree.bodies_dens_out[i].x,
+                        tree.bodies_dens_out[i].y,
+                        tree.bodies_grad[i].w,
+                        tree.bodies_grad[i].x,
+                        tree.bodies_grad[i].y,
+                        tree.bodies_grad[i].z,
+                        tree.bodies_hydro[i].x,
+                        tree.bodies_hydro[i].y,
+                        tree.bodies_hydro[i].z,
+                        tree.bodies_hydro[i].w,
+                        tree.bodies_acc1[i].x,
+                        tree.bodies_acc1[i].y,
+                        tree.bodies_acc1[i].z,
+                        tree.bodies_acc1[i].w);
+                           }
+//            fclose(outFile);
+
+
+}
+
+void octree::approximate_derivative_let(tree_structure &tree, tree_structure &remoteTree, int bufferSize, bool doActivePart)
+{
+      //Start and end node of the remote tree structure
+      uint2 node_begend;
+      node_begend.x =  0;
+      node_begend.y =  remoteTree.remoteTreeStruct.w;
+
+      //The texture offset used:
+      int nodeTexOffset     = remoteTree.remoteTreeStruct.z ;
+
+      //The start and end of the top nodes:
+      node_begend.x = (remoteTree.remoteTreeStruct.w >> 16);
+      node_begend.y = (remoteTree.remoteTreeStruct.w & 0xFFFF);
+
+      //Number of particles and number of nodes in the remote tree
+      int remoteP = remoteTree.remoteTreeStruct.x;
+      int remoteN = remoteTree.remoteTreeStruct.y;
+
+      LOG("SPHDerivative LET node begend [%d]: %d %d iter-> %d\n", procId, node_begend.x, node_begend.y, iter);
+
+      void *multiLoc = remoteTree.fullRemoteTree.a(2*(remoteP) + 2*(remoteN+nodeTexOffset));
+      void *boxSILoc = remoteTree.fullRemoteTree.a(2*(remoteP));
+      void *boxCILoc = remoteTree.fullRemoteTree.a(2*(remoteP) + remoteN + nodeTexOffset);
+      void *velLoc   = remoteTree.fullRemoteTree.a(1*(remoteP));
+
+      SPHDerivativeLET.set_args(0, &tree.n_active_groups,
+                             &tree.n,
+                             &(this->eps2),
+                             &node_begend,
+                             tree.active_group_list.p(),
+                             //i particle properties
+                             tree.bodies_Ppos.p(),
+                             tree.bodies_Pvel.p(),
+                             tree.bodies_dens.p(),
+                             tree.bodies_grad.p(),
+                             tree.bodies_hydro.p(),
+                             tree.activePartlist.p(),
+                             tree.interactions.p(),
+                             &boxSILoc,
+                             tree.groupSizeInfo.p(),
+                             &boxCILoc,
+                             tree.groupCenterInfo.p(),
+                             &multiLoc,
+                             tree.generalBuffer1.p(),  //The buffer to store the tree walks
+                             //j particle properties
+                             remoteTree.fullRemoteTree.p(),
+                             &velLoc, //tree.bodies_Pvel.p(),
+                             tree.bodies_dens.p(),     //Per particle density (x) and nnb (y)
+                             tree.bodies_grad.p(),
+                             tree.bodies_hydro.p(),
+                             //Result buffers
+                             tree.bodies_acc1.p(),
+                             tree.bodies_dens_out.p(),
+                             tree.bodies_hydro_out.p(),
+                             tree.bodies_grad.p());
+      SPHDerivativeLET.set_texture<real4>(0,  remoteTree.fullRemoteTree, "texNodeSize",  1*(remoteP), remoteN);
+      SPHDerivativeLET.set_texture<real4>(1,  remoteTree.fullRemoteTree, "texNodeCenter",1*(remoteP) + (remoteN + nodeTexOffset),     remoteN);
+      SPHDerivativeLET.set_texture<real4>(2,  remoteTree.fullRemoteTree, "texMultipole", 1*(remoteP) + 2*(remoteN + nodeTexOffset), 3*remoteN);
+      SPHDerivativeLET.set_texture<real4>(3,  remoteTree.fullRemoteTree, "texBody"      ,0,                                           remoteP);
+
+      SPHDerivativeLET.setWork(-1, NTHREAD, nBlocksForTreeWalk);
+
+      remoteTree.fullRemoteTree.h2d(bufferSize); //Only copy required data
+      tree.activePartlist.zeroMemGPUAsync(gravStream->s()); //Resets atomics
+
+      CU_SAFE_CALL(cudaEventRecord(startRemoteGrav, gravStream->s()));
+      SPHDerivativeLET.execute2(gravStream->s());
+      CU_SAFE_CALL(cudaEventRecord(endRemoteGrav, gravStream->s()));
+      letRunning = true;
+
+      if(doActivePart)
+      {
+          setPressure.set_args(0, &tree.n, tree.bodies_dens.p(), tree.bodies_grad.p(), tree.bodies_hydro.p());
+          setPressure.setWork(tree.n, 128);
+          setPressure.execute2(gravStream->s());
+      }
 
       return;
-
-
 }
 
 
@@ -914,7 +1177,7 @@ void octree::approximate_gravity(tree_structure &tree)
 
   //TODO this should be checking for active particles and not just assuming
   //all particles
-  setPressure.set_args(0, &tree.n, tree.bodies_dens.p(), tree.bodies_hydro.p());
+  setPressure.set_args(0, &tree.n, tree.bodies_dens.p(), tree.bodies_grad.p(), tree.bodies_hydro.p());
   setPressure.setWork(tree.n, 128);
 
 
