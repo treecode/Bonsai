@@ -1,6 +1,6 @@
 #include "octree.h"
 
-#define USE_MPI
+//#define USE_MPI
 
 #ifdef USE_MPI
 #include <xmmintrin.h>
@@ -3587,7 +3587,8 @@ void octree::checkGPUAndStartLETComputation(tree_structure &tree,
                                             int            *treeBuffersSource,
                                             real4         **treeBuffers)
 {
-  //This determines if we interrupt the LET computation by starting a gravity kernel on the GPU
+#ifdef USE_MPI
+    //This determines if we interrupt the LET computation by starting a gravity kernel on the GPU
   if(gravStream->isFinished())
   {
     //Only start if there actually is new data
@@ -3619,6 +3620,7 @@ void octree::checkGPUAndStartLETComputation(tree_structure &tree,
       totalLETExTime += thisPartLETExTime;
     }// if (nReceived - procTrees) > 0)
   }// if isFinished
+#endif  
 }
 
 
