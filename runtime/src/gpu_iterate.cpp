@@ -58,19 +58,22 @@ void octree::makeLET()
 
 
 
-void octree::iterate_setup(IterationData &idata) {
+void octree::iterate_setup() {
 
-  if(execStream == NULL)          execStream          = new my_dev::dev_stream(0);
-  if(gravStream == NULL)          gravStream          = new my_dev::dev_stream(0);
-  if(copyStream == NULL)          copyStream          = new my_dev::dev_stream(0);
-  if(LETDataToHostStream == NULL) LETDataToHostStream = new my_dev::dev_stream(0);
+  if(execStream == NULL)
+  {
+      if(execStream == NULL)          execStream          = new my_dev::dev_stream(0);
+      if(gravStream == NULL)          gravStream          = new my_dev::dev_stream(0);
+      if(copyStream == NULL)          copyStream          = new my_dev::dev_stream(0);
+      if(LETDataToHostStream == NULL) LETDataToHostStream = new my_dev::dev_stream(0);
 
-  CU_SAFE_CALL(cudaEventCreate(&startLocalGrav));
-  CU_SAFE_CALL(cudaEventCreate(&endLocalGrav));
-  CU_SAFE_CALL(cudaEventCreate(&startRemoteGrav));
-  CU_SAFE_CALL(cudaEventCreate(&endRemoteGrav));
+      CU_SAFE_CALL(cudaEventCreate(&startLocalGrav));
+      CU_SAFE_CALL(cudaEventCreate(&endLocalGrav));
+      CU_SAFE_CALL(cudaEventCreate(&startRemoteGrav));
+      CU_SAFE_CALL(cudaEventCreate(&endRemoteGrav));
 
-  devContext->writeLogEvent("Start execution\n");
+      devContext->writeLogEvent("Start execution\n");
+  }
 
   //Setup of the multi-process particle distribution, initially it should be equal
   #ifdef USE_MPI
@@ -100,9 +103,7 @@ void octree::iterate_setup(IterationData &idata) {
   #endif
 
   sort_bodies(localTree, true, true); //Initial sort to get global boundaries to compute keys
-
   letRunning      = false;
-  idata.startTime = get_time();
 }
 
 // returns true if this iteration is the last (t_current >= t_end), false otherwise
@@ -426,9 +427,10 @@ void octree::iterate_teardown(IterationData &idata) {
   }
 }
 
-void octree::iterate() {
+void octree::iterate(bool amuse) {
   IterationData idata;
-  iterate_setup(idata);
+  if(!amuse) iterate_setup();
+  idata.startTime = get_time();
 
 
   while(true)
@@ -457,7 +459,7 @@ void octree::iterate() {
     if(stopRun) break;
   } //end while
   
-  iterate_teardown(idata);
+  if(!amuse) iterate_teardown(idata);
 } //end iterate
 
 
