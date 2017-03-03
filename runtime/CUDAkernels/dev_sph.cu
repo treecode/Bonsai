@@ -165,6 +165,31 @@ __device__ bool split_node_sph_md(const float4 nodeSize,
   return (ds2 <= (grpH+cellH));
 }
 
+__device__ bool split_node_sph_md_print(const float4 nodeSize,
+                                  const float4 nodeCenter,
+                                  const float4 groupCenter,
+                                  const float4 groupSize,
+                                  const float  grpH,
+                                  const float  cellH)
+{
+  //Compute the distance between the group and the cell
+  float3 dr = {fabs(groupCenter.x - nodeCenter.x) - (groupSize.x + nodeSize.x),
+               fabs(groupCenter.y - nodeCenter.y) - (groupSize.y + nodeSize.y),
+               fabs(groupCenter.z - nodeCenter.z) - (groupSize.z + nodeSize.z)};
+
+  dr.x += fabs(dr.x); dr.x *= 0.5f;
+  dr.y += fabs(dr.y); dr.y *= 0.5f;
+  dr.z += fabs(dr.z); dr.z *= 0.5f;
+
+  //Distance squared, no need to do sqrt since opening criteria has been squared
+  float ds2    = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
+
+  printf("ON DEV distance: %f %f %f | ds2: %f  grpH: %f cellH: %f \n", dr.x, dr.y, dr.z, ds2, grpH, cellH);
+
+  return (ds2 <= (grpH+cellH));
+}
+
+
 #else
 /*
  * TODO When using this pre-compute bHigh and bLow
@@ -285,14 +310,75 @@ uint2 approximate_sph(
     float cellH  = 0;
     if(directOP<1, true>::type == SPH::HYDROFORCE) cellH = fabs(cellPos.w);
 
+
     bool splitCell         = split_node_sph_md(cellSize, cellPos, groupPos, groupSize, grpH, cellH);
     interactionCounters.x += 1; //Keep track of number of opening tests
+
 
 
     /* compute first child, either a cell if node or a particle if leaf */
     const int cellData   = __float_as_int(cellSize.w);
     const int firstChild =  cellData & 0x0FFFFFFF;
     const int nChildren  = (cellData & 0xF0000000) >> 28;
+//
+
+//    if(directOP<1, true>::type == SPH::HYDROFORCE)
+//    {
+//        if(splitCell == 0  && cellIdx == 38)
+//        {
+//            printf("ON DEV, not opening cell: %d | %f %f %f | %f %f %f | %f  \n", cellIdx,
+//                    cellPos.x, cellPos.y, cellPos.z, cellSize.x, cellSize.y, cellSize.z, cellH);
+//            printf("ON DEV, not opening group    | %f %f %f | %f %f %f | %f  \n",
+//                    groupPos.x, groupPos.y, groupPos.z, groupSize.x, groupSize.y, groupSize.z, cellH);
+//            split_node_sph_md_print(cellSize, cellPos, groupPos, groupSize, grpH, cellH);
+//        }
+//        if(splitCell && cellIdx == 38)
+//        {
+//            printf("ON DEV, opening cell: %d | %f %f %f | %f %f %f | %f  \n", cellIdx,
+//                     cellPos.x, cellPos.y, cellPos.z, cellSize.x, cellSize.y, cellSize.z, cellH);
+//            printf("ON DEV,  opening group    | %f %f %f | %f %f %f | %f  \n",
+//                    groupPos.x, groupPos.y, groupPos.z, groupSize.x, groupSize.y, groupSize.z, cellH);
+//            split_node_sph_md_print(cellSize, cellPos, groupPos, groupSize, grpH, cellH);
+//        }
+//    }
+
+
+//    if(directOP<1, true>::type == SPH::HYDROFORCE)
+//    if(cellIdx == 492) {
+//            printf("ON DEV cell 492, print status: %d | %d %d || %f %f %f  %f %f %f | %f \n",
+//                    splitCell, firstChild, nChildren, cellPos.x, cellPos.y, cellPos.z, cellSize.x, cellSize.y, cellSize.z, cellH);
+//            {
+//                const int firstBody =   cellData & BODYMASK;
+//                const int     nBody = ((cellData & INVBMASK) >> LEAFBIT)+1;
+//                for(int z=firstBody; z < firstBody+nBody; z++)
+//                {
+//                    float4 bodyj  = body_pos_j[z];
+//                    float2 bodyjd = body_dens_j[z];
+//                    {
+//                        printf("ON DEVFOUNDX: %f %f %f %.16f %d Leaf: %d  | dens: %f %f \n",
+//                                bodyj.x, bodyj.y, bodyj.z, bodyj.w, bodyj.w > 0, cellIdx,
+//                                bodyjd.x, bodyjd.y);
+//                    }
+//                }
+//            }
+//        }
+//    if(directOP<1, true>::type == SPH::HYDROFORCE)
+//    if(cellIdx  == 16) {
+//            printf("ON DEV cell %d, print status: %d | %d %d  || %f %f %f  %f %f %f | %f \n",
+//                    cellIdx, splitCell, firstChild, nChildren,
+//                    cellPos.x, cellPos.y, cellPos.z, cellSize.x, cellSize.y, cellSize.z, cellH);
+//        }
+//    if(directOP<1, true>::type == SPH::HYDROFORCE)
+//        if(firstChild  <= 16 && firstChild+nChildren > 16) {
+//                printf("ON DEV cell %d, print status: %d | %d %d  || %f %f %f  %f %f %f | %f \n",
+//                        cellIdx, splitCell, firstChild, nChildren,
+//                        cellPos.x, cellPos.y, cellPos.z, cellSize.x, cellSize.y, cellSize.z, cellH);
+//            }
+
+
+
+//    if(directOP<1, true>::type == SPH::HYDROFORCE) splitCell = true;
+
 
     if(cellData == 0xFFFFFFFF) splitCell = false;
 
@@ -336,6 +422,31 @@ uint2 approximate_sph(
 
       const int firstBody =   cellData & BODYMASK;
       const int     nBody = ((cellData & INVBMASK) >> LEAFBIT)+1;
+
+//      if(directOP<1, true>::type == SPH::HYDROFORCE)
+//      {
+////          if(((pos_i[0].x > 0.968 && pos_i[0].x < 0.969) &&
+////                       (pos_i[0].y > 0.093 && pos_i[0].y < 0.094) &&
+////                       (pos_i[0].z > 0.078 && pos_i[0].z < 0.079)))
+//          {
+//              for(int jb=firstBody; jb < firstBody+nBody; jb++)
+//              {
+//                  float4 bodyj  = body_pos_j[jb];
+//                  float2 bodyjd = body_dens_j[jb];
+//                  if(((bodyj.x > 0.98 && bodyj.x < 0.99) &&
+//                      (bodyj.y > 0.054 && bodyj.y < 0.055) &&
+//                      (bodyj.z > 0.07 && bodyj.z < 0.071)))
+//                  {
+//                      printf("ON DEVFOUND: %f %f %f %.16f %d Leaf: %d  | dens: %f %f \n",
+//                              bodyj.x, bodyj.y, bodyj.z, bodyj.w, bodyj.w > 0, cellIdx,
+//                              bodyjd.x, bodyjd.y);
+//                  }
+//
+//              }
+//
+//          }
+//      }
+
 
       const int2 childScatter = warpIntExclusiveScan(nBody & (-isDirect));
       int nParticle  = childScatter.y;
@@ -510,12 +621,36 @@ bool treewalk_control(
   body_i[1]    = body_addr + WARP_SIZE + laneId%(nb_i - WARP_SIZE);
 
   body_i[0]    = body_addr + laneId%NCRIT; //This ensures that the thread groups work on independent particles.
+  if(laneId%NCRIT > nb_i) body_i[0] = body_addr;
 
   /*
    * TODO Also consider removing all the [2] sized arrays as 64 particles per group is significantly slower and hence will
    * probably not be used in the SPH kernels
    */
+//  if(body_i[0] == 3813)
+//  {
+//      printf("BOdy is part of grp: %d  group props: %d %d \n", bid,body_addr, nb_i);
+//  }
 
+  //3813 BOdy is part of grp: 476
+  //20726 BOdy is part of grp: 2590
+
+//  if(directOp<1, true>::type == SPH::HYDROFORCE)
+//  {
+//      if(bid != 93) return;
+//      if(body_addr != 372) return;
+//
+//      float4 bla = group_body_pos[375];
+//
+//      bool stop = true;
+//      if(((bla.x > 0.968 && bla.x < 0.969) &&
+//          (bla.y > 0.093 && bla.y < 0.094) &&
+//          (bla.z > 0.078 && bla.z < 0.079)))
+//              {
+//          stop = false;
+//              }
+//      if(stop) return;
+//  }
 
 
   float4 pos_i [2], vel_i [2], acc_i [2], hydro_i[2];
@@ -538,6 +673,15 @@ bool treewalk_control(
     dens_i[1].smth = group_body_dens[body_i[1]].y;
 
   }
+
+//  if(((pos_i[0].x > 0.968 && pos_i[0].x < 0.969) &&
+//            (pos_i[0].y > 0.093 && pos_i[0].y < 0.094) &&
+//            (pos_i[0].z > 0.078 && pos_i[0].z < 0.079)))
+//          {
+//      printf("ON DEV: [ %d %d ] Body is part of grp: %d  addr: %d \t %d %d\n",
+//              threadIdx.x, blockIdx.x, bid, body_i[0], body_addr, nb_i);
+//          }
+
 
   //For the hydro force we need the current density value
   if(directOp<1, true>::type == SPH::HYDROFORCE) {
@@ -582,7 +726,7 @@ bool treewalk_control(
     {
       for(int iz=-1; iz <= 1; iz++) //Periodic around Z
       {
-//          int ix =0; int iz=0; //, iy = 0;// iz = 0;
+//          int ix =0; int iz=0; int iy = 0;// iz = 0;
 //          if(iy == 1) continue;
 //          if(iy == 0 && (directOp<1, true>::type == SPH::DERIVATIVE)) continue;
 //          int iy = 1;
@@ -679,6 +823,19 @@ bool treewalk_control(
       acc_i[0].y = warpGroupReduce(acc_i[0].y);
       acc_i[0].z = warpGroupReduce(acc_i[0].z);
       acc_i[0].w = warpGroupReduce(acc_i[0].w);
+
+      float temp = derivative_i[0].y;
+      derivative_i[0].x = warpGroupReduce(derivative_i[0].x); //For stats
+      derivative_i[0].y = warpGroupReduce(derivative_i[0].y); //For stats
+
+//      if(((pos_i[0].x > 0.968 && pos_i[0].x < 0.969) &&
+//                (pos_i[0].y > 0.093 && pos_i[0].y < 0.094) &&
+//                (pos_i[0].z > 0.078 && pos_i[0].z < 0.079)))
+//              {
+//          printf("ON DEV: [ %d %d ] Body is part of grp: %d  addr: %d \tSum: %f %f \n",
+//                  threadIdx.x, blockIdx.x, bid, body_i[0], derivative_i[0].y, temp);
+//              }
+
   }
 
   if (laneId < nb_i)
@@ -700,14 +857,14 @@ bool treewalk_control(
             body_grad_out[addr].w = derivative_i[i].w;
 
             //Compute Balsala switch
-            float temp  = fabs(body_grad_out[addr].w);
-            float temp2 = body_grad_out[addr].x*body_grad_out[addr].x +
-                        body_grad_out[addr].y*body_grad_out[addr].y +
-                        body_grad_out[addr].z*body_grad_out[addr].z;
-            float temp3 = 1.0e-4 * body_hydro_out[addr].y / body_dens_out[addr].y;
-
-            //Note using group_body_hydro here instead of body_hydro_out to store Balsala Switch
-            group_body_hydro[addr].w = temp / (temp + sqrtf(temp2) + temp3);
+//            float temp  = fabs(body_grad_out[addr].w);
+//            float temp2 = body_grad_out[addr].x*body_grad_out[addr].x +
+//                        body_grad_out[addr].y*body_grad_out[addr].y +
+//                        body_grad_out[addr].z*body_grad_out[addr].z;
+//            float temp3 = 1.0e-4 * body_hydro_out[addr].y / body_dens_out[addr].y;
+//
+//            //Note using group_body_hydro here instead of body_hydro_out to store Balsala Switch
+//            group_body_hydro[addr].w = temp / (temp + sqrtf(temp2) + temp3);
           }
 
 
@@ -738,6 +895,10 @@ bool treewalk_control(
               body_acc_out      [addr].y += acc_i[0].y;
               body_acc_out      [addr].z += acc_i[0].z;
               body_acc_out      [addr].w += acc_i[0].w;
+
+              //              //TODO remove
+              body_grad_out[addr].x += derivative_i[i].x;
+              body_grad_out[addr].y += derivative_i[i].y;
           }
         }
         active_inout[addr] = 1;
@@ -1478,11 +1639,13 @@ extern "C" __global__ void gpu_extractBoundaryTree(
                                 const float4    *nodeMulti,
                                 const float4    *bodyPos,
                                 const float4    *bodyVel,
+                                const float2    *bodyDens,
+                                const float4    *bodyHydro,
                                 int4            *markedNodes2,
                                 float4          *boundaryTree)
 {
-  const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
-  const uint tid = threadIdx.x;
+//  const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
+//  const uint tid = threadIdx.x;
 //  const uint id  = bid * blockDim.x + tid;
 
   int4* markedNodes = &markedNodes2[1];
@@ -1502,7 +1665,14 @@ extern "C" __global__ void gpu_extractBoundaryTree(
   if(laneId == 0) boundaryTree[0] = description;
 
 
-  const int nBodyProps = 2;
+  const int nBodyProps = 4;
+
+  int bPosIdx = 1;
+  int bVelIdx = 1 + nPart*1;
+  int bRhoIdx = 1 + nPart*2;
+  int bHydIdx = 1 + nPart*3;
+
+  //CellProps
   int sizeIdx = 1 + nBodyProps*nPart;
   int cntrIdx = 1 + nBodyProps*nPart + nNodes;
   int smthIdx = 1 + nBodyProps*nPart + nNodes*2;
@@ -1519,7 +1689,6 @@ extern "C" __global__ void gpu_extractBoundaryTree(
         {
             //Only interested in updated smoothing values
             boundaryTree[smthIdx+i+laneIdx] = make_float4(nodeSmooth[idxInfo.x], 0,0,0);
-//            boundaryTree[smthIdx+i+laneIdx] = make_float4(123, 0,0,0);
         }
         else
         {
@@ -1531,8 +1700,10 @@ extern "C" __global__ void gpu_extractBoundaryTree(
                 if(idxInfo.z >= 0)
                 {
                     //This is a single particle leaf that refers to a body, store body
-                    boundaryTree[1+idxInfo.w      ] = bodyPos[idxInfo.z];
-                    boundaryTree[1+idxInfo.w+nPart] = bodyVel[idxInfo.z];
+                    boundaryTree[bPosIdx+idxInfo.w] = bodyPos[idxInfo.z];
+                    boundaryTree[bVelIdx+idxInfo.w] = bodyVel[idxInfo.z];
+                    boundaryTree[bRhoIdx+idxInfo.w] = make_float4(bodyDens[idxInfo.z].x, bodyDens[idxInfo.z].y, 0, 0);
+                    boundaryTree[bHydIdx+idxInfo.w] = bodyHydro[idxInfo.z];
                 }
             }
 
@@ -1543,8 +1714,6 @@ extern "C" __global__ void gpu_extractBoundaryTree(
             boundaryTree[multIdx+3*(i+laneIdx) + 0] = nodeMulti[idxInfo.x*3 + 0];
             boundaryTree[multIdx+3*(i+laneIdx) + 1] = nodeMulti[idxInfo.x*3 + 1];
             boundaryTree[multIdx+3*(i+laneIdx) + 2] = nodeMulti[idxInfo.x*3 + 2];
-
-//            boundaryTree[smthIdx+i+laneIdx] = make_float4(-99, 0,0,0);
         }
       }
   }//for nNodes

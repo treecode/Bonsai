@@ -572,6 +572,8 @@ void octree::computeProps_TopLevelTree(
         oct_q11 = oct_q22 = oct_q33 = 0.0;
         oct_q12 = oct_q13 = oct_q23 = 0.0;
 
+        float cellSmth = 0;
+
         for(int k=child; k < child+nchild; k++) //NOTE <= otherwise we miss the last child
         {
           double4 pos;
@@ -585,6 +587,7 @@ void octree::computeProps_TopLevelTree(
           double3 curRmax = {sourceCenter[k].x + sourceSize[k].x,
                              sourceCenter[k].y + sourceSize[k].y,
                              sourceCenter[k].z + sourceSize[k].z};
+          cellSmth = std::max(cellSmth , std::fabs(sourceCenter[k].w));
 
           //Compute the new min/max
           r_min.x = min(curRmin.x, r_min.x);
@@ -705,7 +708,10 @@ void octree::computeProps_TopLevelTree(
           float cellOp = (l/theta);
         #endif
 
-        boxCenterD.w       = cellOp*cellOp;
+        //GRAVITY boxCenterD.w       = cellOp*cellOp;
+
+        //SPH
+        boxCenterD.w = cellSmth;
         float4 boxCenter   = make_float4(boxCenterD.x,boxCenterD.y, boxCenterD.z, boxCenterD.w);
         topTreeCenters[j]  = boxCenter;
 

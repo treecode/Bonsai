@@ -103,7 +103,34 @@ void octree::makeDerivativeLET()
     letRunning = false;
 }
 
-//#define LET_METHOD_HYDR 4
+void octree::makeHydroLET()
+{
+    //TODO this copy should be moved to the group exchange, we need velocities
+    //during boundary test for derivative. So we can do the d2h copy somewhere earlier
+    //and then make a function to update the group data, with the actual velocities
+
+//    localTree.bodies_Pvel.d2h(localTree.n, false, LETDataToHostStream->s());
+//    localTree.bodies_Pvel.waitForCopyEvent();
+
+    localTree.bodies_dens.d2h(localTree.n, false, LETDataToHostStream->s());
+    localTree.bodies_dens.waitForCopyEvent();
+    localTree.bodies_hydro.d2h(localTree.n, false, LETDataToHostStream->s());
+    localTree.bodies_hydro.waitForCopyEvent();
+
+    std::vector<real4> topLevelsBuffer;
+    std::vector<uint2> treeSizeAndOffset;
+    int copyTreeUpToLevel = 0;
+    //Start LET kernels
+    essential_tree_exchangeV2(localTree,
+                              remoteTree,
+                              topLevelsBuffer,
+                              treeSizeAndOffset,
+                              copyTreeUpToLevel,
+                              LET_METHOD_HYDR);
+
+    letRunning = false;
+}
+
 
 
 void octree::makeLET()
@@ -202,7 +229,6 @@ void octree::iterate_setup(IterationData &idata) {
 // returns true if this iteration is the last (t_current >= t_end), false otherwise
 bool octree::iterate_once(IterationData &idata) {
     double t1 = 0;
-
     //if(t_current < 1) //Clear startup timings
     //if(0)
     if(iter < 32)
@@ -223,7 +249,7 @@ bool octree::iterate_once(IterationData &idata) {
 
 
     LOG("At the start of iterate:\n");
-   
+
     dumpData(); 
 
     bool forceTreeRebuild = false;
@@ -265,6 +291,8 @@ bool octree::iterate_once(IterationData &idata) {
         needDomainUpdate    = true; //TODO if I set it to false results degrade. Check why, for now just updte
       }
     }
+
+
 
     if (useDirectGravity)
     {
@@ -406,7 +434,7 @@ bool octree::iterate_once(IterationData &idata) {
       idata.totalWaitTime += idata.lastWaitTime;
       #endif
     }
-    
+
     idata.Nact_since_last_tree_rebuild += this->localTree.n_active_particles;
 
     //Compute energies
@@ -425,7 +453,8 @@ bool octree::iterate_once(IterationData &idata) {
         localTree.bodies_pos.d2h();
         localTree.bodies_vel.d2h();
         localTree.bodies_ids.d2h();
-
+#if 0
+        Disabled this part as it messes up our stack-size which makes debugging messy
         double tDens1 = get_time();
         const DENSITY dens(mpiCommWorld, procId, nProcs, localTree.n,
                            &localTree.bodies_pos[0],
@@ -435,6 +464,7 @@ bool octree::iterate_once(IterationData &idata) {
 
         double tDens2 = get_time();
         if(procId == 0) LOGF(stderr,"Density took: Copy: %lg Create: %lg \n", tDens1-tDens0, tDens2-tDens1);
+#endif
 
         double tDisk1 = get_time();
         const DISKSTATS diskstats(mpiCommWorld, procId, nProcs, localTree.n,
@@ -537,7 +567,6 @@ void octree::iterate() {
   while(true)
   {
     bool stopRun = iterate_once(idata);
-
     double totalTime = get_time() - idata.startTime;
 
     static char textBuff[16384];
@@ -550,11 +579,11 @@ void octree::iterate() {
 
     if (procId == 0)
     {
-      LOGF(stderr,"%s", textBuff);
-      LOGF(stdout,"%s", textBuff);
+//      LOGF(stderr,"%s", textBuff);
+//      LOGF(stdout,"%s", textBuff);
     }
 
-    devContext->writeLogEvent(textBuff);
+//    devContext->writeLogEvent(textBuff);
     this->writeLogToFile();     //Write the logdata to file
 
     if(stopRun) break;
@@ -654,10 +683,12 @@ void countInteractions(tree_structure &tree, MPI_Comm mpiCommWorld, int procId)
           interactionTotal / tree.n, interactionUsefull / tree.n,
           interactionUsefull);
 
-  unsigned long long tmp  = 0;
+  unsigned long long tmp  = 0, tmpb = 0;
   unsigned long long tmp2 = interactionUsefull;
+  unsigned long long tmp2b = interactionTotal;
   MPI_Allreduce(&tmp2,&tmp,1, MPI_UNSIGNED_LONG_LONG, MPI_SUM,mpiCommWorld);
-  if(procId == 0) fprintf(stderr,"Global useful count: %lld \n", tmp);
+  MPI_Allreduce(&tmp2b,&tmpb,1, MPI_UNSIGNED_LONG_LONG, MPI_SUM,mpiCommWorld);
+  if(procId == 0) fprintf(stderr,"Global useful count: %lld \t\tTotal: %lld\n", tmp, tmpb);
 
 
   MPI_Barrier(mpiCommWorld);
@@ -749,10 +780,10 @@ void octree::approximate_density    (tree_structure &tree)
         compute_properties(tree);
 
         cudaDeviceSynchronize();
-    //wait on the LET to finish before we start the interaction computations
-    gravStream->sync();
+        //wait on the LET to finish before we start the interaction computations
+        gravStream->sync();
 
-    countInteractions(tree, mpiCommWorld, procId);
+        countInteractions(tree, mpiCommWorld, procId);
     }
 
 
@@ -763,45 +794,58 @@ void octree::approximate_density    (tree_structure &tree)
     tree.bodies_ids.d2h();
 
 
-  //   char fileName[128];  sprintf(fileName, "interact-%d.txt", procId); FILE* outFile = fopen(fileName, "w");
-     for(int i=0; i < tree.n; i++)
-     {
-
-  //       if(i % 1000 == 0)
-  //       if(i < 32 || (tree.bodies_grad[i].y > 0 && i < 129))
-         if(tree.bodies_ids[i] < 10)
-  //           if(i >=3839 && i < 3855)
-         //if(i >=3839 && i < 3855)
-  //       if(tree.bodies_ids[i] > 15455 && tree.bodies_ids[i] < 15465)
-         fprintf(stderr,"Output: %d %lld || Pos: %f %f %f %lg\t || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
-  //       fprintf(outFile,"Output: %d %lld || Pos: %f %f %f %lg\t || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
-                 i,
-                 tree.bodies_ids[i],
-                 tree.bodies_Ppos[i].x,
-                 tree.bodies_Ppos[i].y,
-                 tree.bodies_Ppos[i].z,
-                 tree.bodies_Ppos[i].w,
-                 tree.bodies_dens_out[i].x,
-                 tree.bodies_dens_out[i].y,
-                 tree.bodies_grad[i].w,
-                 tree.bodies_grad[i].x,
-                 tree.bodies_grad[i].y,
-                 tree.bodies_grad[i].z,
-                 tree.bodies_hydro[i].x,
-                 tree.bodies_hydro[i].y,
-                 tree.bodies_hydro[i].z,
-                 tree.bodies_hydro[i].w,
-                 tree.bodies_acc1[i].x,
-                 tree.bodies_acc1[i].y,
-                 tree.bodies_acc1[i].z,
-                 tree.bodies_acc1[i].w);
-     }
-
      approximate_derivative(tree);
-
 
      countInteractions(tree, mpiCommWorld, procId);
 
+     approximate_hydro(tree);
+
+     mpiSync();
+     countInteractions(tree, mpiCommWorld, procId);
+     mpiSync();
+
+           tree.bodies_dens_out.d2h();
+           tree.bodies_grad.d2h();
+           tree.bodies_hydro.d2h();
+           tree.bodies_acc1.d2h();
+           tree.bodies_ids.d2h();
+
+
+//              char fileName[128];  sprintf(fileName, "interact-%d-%d.txt", procId, nProcs); FILE* outFile = fopen(fileName, "w");
+              for(int i=0; i < tree.n; i++)
+              {
+
+                  if(tree.bodies_ids[i] < 10)
+//                  if(tree.bodies_ids[i] == 24263 || tree.bodies_ids[i] == 24266)
+//                      if(tree.bodies_ids[i] >=35 && tree.bodies_ids[i] < 45)
+                  //if(i >=3839 && i < 3855)
+           //       if(tree.bodies_ids[i] > 15455 && tree.bodies_ids[i] < 15465)
+                  fprintf(stderr,"Output: %d %lld || Pos: %f %f %f %lg\t || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
+//                  fprintf(outFile,"Output: %d %lld || Pos: %f %f %f %lg\t || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
+                          i,
+                          tree.bodies_ids[i],
+                          tree.bodies_Ppos[i].x,
+                          tree.bodies_Ppos[i].y,
+                          tree.bodies_Ppos[i].z,
+                          tree.bodies_Ppos[i].w,
+                          tree.bodies_dens_out[i].x,
+                          tree.bodies_dens_out[i].y,
+                          tree.bodies_grad[i].w,
+                          tree.bodies_grad[i].x,
+                          tree.bodies_grad[i].y,
+                          tree.bodies_grad[i].z,
+                          tree.bodies_hydro[i].x,
+                          tree.bodies_hydro[i].y,
+                          tree.bodies_hydro[i].z,
+                          tree.bodies_hydro[i].w,
+                          tree.bodies_acc1[i].x,
+                          tree.bodies_acc1[i].y,
+                          tree.bodies_acc1[i].z,
+                          tree.bodies_acc1[i].w);
+                             }
+//              fclose(outFile);
+
+ mpiSync();
  exit(0);
 
 
@@ -930,7 +974,7 @@ void octree::approximate_derivative  (tree_structure &tree)
 
       setPressure.set_args(0, &tree.n, tree.bodies_dens.p(),  tree.bodies_grad.p(), tree.bodies_hydro.p());
       setPressure.setWork(tree.n, 128);
-      setPressure.execute2(gravStream->s());
+//      setPressure.execute2(gravStream->s());
 
       tree.bodies_grad.zeroMemGPUAsync(gravStream->s());
 
@@ -948,39 +992,6 @@ void octree::approximate_derivative  (tree_structure &tree)
       tree.bodies_ids.d2h();
 
 
-      //   char fileName[128];  sprintf(fileName, "interact-%d.txt", procId); FILE* outFile = fopen(fileName, "w");
-         for(int i=0; i < tree.n; i++)
-         {
-
-             if(tree.bodies_ids[i] < 10)
-//             if(tree.bodies_ids[i] == 244)
-      //           if(i >=3839 && i < 3855)
-             //if(i >=3839 && i < 3855)
-      //       if(tree.bodies_ids[i] > 15455 && tree.bodies_ids[i] < 15465)
-             fprintf(stderr,"Output: %d %lld || Pos: %f %f %f %lg\t || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
-      //       fprintf(outFile,"Output: %d %lld || Pos: %f %f %f %lg\t || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
-                     i,
-                     tree.bodies_ids[i],
-                     tree.bodies_Ppos[i].x,
-                     tree.bodies_Ppos[i].y,
-                     tree.bodies_Ppos[i].z,
-                     tree.bodies_Ppos[i].w,
-                     tree.bodies_dens_out[i].x,
-                     tree.bodies_dens_out[i].y,
-                     tree.bodies_grad[i].w,
-                     tree.bodies_grad[i].x,
-                     tree.bodies_grad[i].y,
-                     tree.bodies_grad[i].z,
-                     tree.bodies_hydro[i].x,
-                     tree.bodies_hydro[i].y,
-                     tree.bodies_hydro[i].z,
-                     tree.bodies_hydro[i].w,
-                     tree.bodies_acc1[i].x,
-                     tree.bodies_acc1[i].y,
-                     tree.bodies_acc1[i].z,
-                     tree.bodies_acc1[i].w);
-                        }
-
          if(nProcs > 1)
          {
              distributeBoundaries(false); //Always full update for now
@@ -992,48 +1003,7 @@ void octree::approximate_derivative  (tree_structure &tree)
          }
 
 
-         mpiSync();
 
-         tree.bodies_dens_out.d2h();
-         tree.bodies_grad.d2h();
-         tree.bodies_hydro.d2h();
-         tree.bodies_acc1.d2h();
-         tree.bodies_ids.d2h();
-
-
-//            char fileName[128];  sprintf(fileName, "interact-%d-%d.txt", procId, nProcs); FILE* outFile = fopen(fileName, "w");
-            for(int i=0; i < tree.n; i++)
-            {
-
-                if(tree.bodies_ids[i] < 10)
-//                if(tree.bodies_ids[i] == 244)
-         //           if(i >=3839 && i < 3855)
-                //if(i >=3839 && i < 3855)
-         //       if(tree.bodies_ids[i] > 15455 && tree.bodies_ids[i] < 15465)
-                fprintf(stderr,"Output: %d %lld || Pos: %f %f %f %lg\t || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
-//                fprintf(outFile,"Output: %d %lld || Pos: %f %f %f %lg\t || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
-                        i,
-                        tree.bodies_ids[i],
-                        tree.bodies_Ppos[i].x,
-                        tree.bodies_Ppos[i].y,
-                        tree.bodies_Ppos[i].z,
-                        tree.bodies_Ppos[i].w,
-                        tree.bodies_dens_out[i].x,
-                        tree.bodies_dens_out[i].y,
-                        tree.bodies_grad[i].w,
-                        tree.bodies_grad[i].x,
-                        tree.bodies_grad[i].y,
-                        tree.bodies_grad[i].z,
-                        tree.bodies_hydro[i].x,
-                        tree.bodies_hydro[i].y,
-                        tree.bodies_hydro[i].z,
-                        tree.bodies_hydro[i].w,
-                        tree.bodies_acc1[i].x,
-                        tree.bodies_acc1[i].y,
-                        tree.bodies_acc1[i].z,
-                        tree.bodies_acc1[i].w);
-                           }
-//            fclose(outFile);
 
 
 }
@@ -1119,7 +1089,162 @@ void octree::approximate_derivative_let(tree_structure &tree, tree_structure &re
 }
 
 
+void octree::approximate_hydro(tree_structure &tree)
+{
+    uint2 node_begend;
+    int level_start = tree.startLevelMin;
+    node_begend.x   = tree.level_list[level_start].x;
+    node_begend.y   = tree.level_list[level_start].y;
 
+    SPHHydro.set_args(0, &tree.n_active_groups,
+             &tree.n,
+             &(this->eps2),
+             &node_begend,
+             tree.active_group_list.p(),
+             //i particle properties
+             tree.bodies_Ppos.p(),
+             tree.bodies_Pvel.p(),
+             tree.bodies_dens.p(),
+             tree.bodies_grad.p(),
+             tree.bodies_hydro.p(),
+             tree.activePartlist.p(),
+             tree.interactions.p(),
+             tree.boxSizeInfo.p(),
+             tree.groupSizeInfo.p(),
+             tree.boxCenterInfo.p(),
+             tree.groupCenterInfo.p(),
+             tree.multipole.p(),
+             tree.generalBuffer1.p(),  //The buffer to store the tree walks
+             //j particle properties
+             tree.bodies_Ppos.p(),
+             tree.bodies_Pvel.p(),
+             tree.bodies_dens.p(),     //Per particle density (x) and nnb (y)
+             tree.bodies_grad.p(),
+             tree.bodies_hydro.p(),
+             //Result buffers
+             tree.bodies_acc1.p(),
+             tree.bodies_dens_out.p(),
+             tree.bodies_hydro_out.p(),
+             tree.bodies_grad.p());
+
+     SPHHydro.set_texture<real4>(0,  tree.boxSizeInfo,    "texNodeSize");
+     SPHHydro.set_texture<real4>(1,  tree.boxCenterInfo,  "texNodeCenter");
+     SPHHydro.set_texture<real4>(2,  tree.multipole,      "texMultipole");
+     SPHHydro.set_texture<real4>(3,  tree.bodies_Ppos,    "texBody");
+     SPHHydro.setWork(-1, NTHREAD, nBlocksForTreeWalk);
+    //  SPHDerivative.setWork(-1, 32, 1);
+
+     //Note, I abuse the compute_prop function/opening angle criteria, so you can not use
+     //this for computing gravity at this point.
+     compute_properties(tree); //TODO make this smarter as in only compute cells not groups. And switch between SPH and Gravity
+
+
+//     tree.bodies_grad.zeroMemGPUAsync(gravStream->s());
+
+//     tree.interactions.zeroMemGPUAsync(gravStream->s());
+     tree.activePartlist.zeroMemGPUAsync(gravStream->s());
+     SPHHydro.execute2(gravStream->s());  //Hydro force
+
+     gravStream->sync();
+     countInteractions(tree, mpiCommWorld, procId);
+
+
+     if(nProcs > 1)
+     {
+         distributeBoundaries(false); //Always full update for now
+         mpiSync();
+         makeHydroLET();
+     }
+
+}
+
+void octree::approximate_hydro_let(tree_structure &tree, tree_structure &remoteTree, int bufferSize, bool doActivePart)
+{
+      //Start and end node of the remote tree structure
+      uint2 node_begend;
+      node_begend.x =  0;
+      node_begend.y =  remoteTree.remoteTreeStruct.w;
+
+      //The texture offset used:
+      int nodeTexOffset     = remoteTree.remoteTreeStruct.z ;
+
+      //The start and end of the top nodes:
+      node_begend.x = (remoteTree.remoteTreeStruct.w >> 16);
+      node_begend.y = (remoteTree.remoteTreeStruct.w & 0xFFFF);
+
+      //Number of particles and number of nodes in the remote tree
+      int remoteP = remoteTree.remoteTreeStruct.x;
+      int remoteN = remoteTree.remoteTreeStruct.y;
+
+      LOG("SPHHydro LET node begend [%d]: %d %d iter-> %d\n", procId, node_begend.x, node_begend.y, iter);
+
+      void *multiLoc = remoteTree.fullRemoteTree.a(4*(remoteP) + 2*(remoteN+nodeTexOffset));
+      void *boxSILoc = remoteTree.fullRemoteTree.a(4*(remoteP));
+      void *boxCILoc = remoteTree.fullRemoteTree.a(4*(remoteP) + remoteN + nodeTexOffset);
+      void *velLoc   = remoteTree.fullRemoteTree.a(1*(remoteP));
+      void *densLoc  = remoteTree.fullRemoteTree.a(2*(remoteP));
+      void *hydroLoc = remoteTree.fullRemoteTree.a(3*(remoteP));
+
+      SPHHydro.set_args(0, &tree.n_active_groups,
+                             &tree.n,
+                             &(this->eps2),
+                             &node_begend,
+                             tree.active_group_list.p(),
+                             //i particle properties
+                             tree.bodies_Ppos.p(),
+                             tree.bodies_Pvel.p(),
+                             tree.bodies_dens.p(),
+                             tree.bodies_grad.p(),
+                             tree.bodies_hydro.p(),
+                             tree.activePartlist.p(),
+                             tree.interactions.p(),
+                             &boxSILoc,
+                             tree.groupSizeInfo.p(),
+                             &boxCILoc,
+                             tree.groupCenterInfo.p(),
+                             &multiLoc,
+                             tree.generalBuffer1.p(),  //The buffer to store the tree walks
+                             //j particle properties
+                             remoteTree.fullRemoteTree.p(),
+                             &velLoc,
+                             &densLoc,     //Per particle density (x) and nnb (y)
+                             tree.bodies_grad.p(),
+                             &hydroLoc,
+                             //Result buffers
+                             tree.bodies_acc1.p(),
+                             tree.bodies_dens_out.p(),
+                             tree.bodies_hydro_out.p(),
+                             tree.bodies_grad.p());
+      SPHHydro.set_texture<real4>(0,  remoteTree.fullRemoteTree, "texNodeSize",  3*(remoteP), remoteN);
+      SPHHydro.set_texture<real4>(1,  remoteTree.fullRemoteTree, "texNodeCenter",3*(remoteP) + (remoteN + nodeTexOffset),     remoteN);
+      SPHHydro.set_texture<real4>(2,  remoteTree.fullRemoteTree, "texMultipole", 3*(remoteP) + 2*(remoteN + nodeTexOffset), 3*remoteN);
+      SPHHydro.set_texture<real4>(3,  remoteTree.fullRemoteTree, "texBody"      ,0,                                           remoteP);
+
+      SPHHydro.setWork(-1, NTHREAD, nBlocksForTreeWalk);
+
+      remoteTree.fullRemoteTree.h2d(bufferSize); //Only copy required data
+      tree.activePartlist.zeroMemGPUAsync(gravStream->s()); //Resets atomics
+
+      CU_SAFE_CALL(cudaEventRecord(startRemoteGrav, gravStream->s()));
+      SPHHydro.execute2(gravStream->s());
+      CU_SAFE_CALL(cudaEventRecord(endRemoteGrav, gravStream->s()));
+      letRunning = true;
+
+      if(doActivePart)
+      {
+
+      }
+
+      float4 *bla = &remoteTree.fullRemoteTree[(2*(remoteP))];
+      real2 *bla2 = (real2*) bla;
+
+      for(int i=0; i < 5; i++)
+      {
+//          fprintf(stderr,"Received dens: %d\t%f %f \n", i, bla2[i].x,bla2[i].y);
+      }
+
+      return;
+}
 
 void octree::approximate_gravity(tree_structure &tree)
 { 

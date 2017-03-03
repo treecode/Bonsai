@@ -116,13 +116,13 @@ void octree::compute_properties(tree_structure &tree) {
     bool smoothingOnly = false; //We want the full tree at this point
     gpuBoundaryTreeExtract.set_args(0, &smoothingOnly,
                                    tree.boxSizeInfo.p(), tree.boxCenterInfo.p(), tree.boxSmoothing.p(), tree.multipole.p(),
-                                   tree.bodies_Ppos.p(), tree.bodies_Pvel.p(),
+                                   tree.bodies_Ppos.p(), tree.bodies_Pvel.p(), tree.bodies_dens.p(), tree.bodies_hydro.p(),
                                    tree.smallBoundaryTreeIndices.p(), tree.smallBoundaryTree.p());
     gpuBoundaryTreeExtract.setWork(32, 32, 1);
     gpuBoundaryTreeExtract.execute2(execStream->s());
     gpuBoundaryTreeExtract.set_args(0, &smoothingOnly,
                                    tree.boxSizeInfo.p(), tree.boxCenterInfo.p(), tree.boxSmoothing.p(), tree.multipole.p(),
-                                   tree.bodies_Ppos.p(), tree.bodies_Pvel.p(),
+                                   tree.bodies_Ppos.p(), tree.bodies_Pvel.p(), tree.bodies_dens.p(), tree.bodies_hydro.p(),
                                    tree.fullBoundaryTreeIndices.p(), tree.fullBoundaryTree.p());
     gpuBoundaryTreeExtract.execute2(execStream->s());
 

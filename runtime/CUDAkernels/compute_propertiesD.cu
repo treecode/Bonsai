@@ -250,11 +250,10 @@ KERNEL_DECLARE(compute_leaf)
 
     maxSmth = fmaxf(body_dens[i].y, maxSmth);
     //Change the particle into a box and use that as the boundaries
-    float  smth  = body_dens[i].y; //*SPH_KERNEL_SIZE;
+    float  smth  = body_dens[i].y*SPH_KERNEL_SIZE;
     compute_bounds_node(r_minSPH, r_maxSPH,
                         make_float4(p.x-smth, p.y-smth, p.z-smth, 0),
                         make_float4(p.x+smth, p.y+smth, p.z+smth, 0));
-
   }
 
   //SPH max smoothing value for the cell
@@ -264,7 +263,6 @@ KERNEL_DECLARE(compute_leaf)
   maxSmth     = fmaxf(fmaxf(fmaxf(fabs(r_min.x-r_minSPH.x), fabs(r_max.x-r_maxSPH.x)),
                             fmaxf(fabs(r_min.y-r_minSPH.y), fabs(r_max.y-r_maxSPH.y))),
                             fmaxf(fabs(r_min.z-r_minSPH.z), fabs(r_max.z-r_maxSPH.z)));
-
 
 
   double4 mon = {posx, posy, posz, mass};
@@ -366,6 +364,9 @@ KERNEL_DECLARE(compute_non_leaf)(const int curLevel,         //Level for which w
   r_min = make_float3(+1e10f, +1e10f, +1e10f);
   r_max = make_float3(-1e10f, -1e10f, -1e10f);
 
+  float3 r_minSPH = make_float3(+1e10f, +1e10f, +1e10f);
+  float3 r_maxSPH = make_float3(-1e10f, -1e10f, -1e10f);
+
   //Process the children (1 to 8)
   float maxEps  = -100.0f;
   float maxSmth = -100.0f;
@@ -382,7 +383,19 @@ KERNEL_DECLARE(compute_non_leaf)(const int curLevel,         //Level for which w
     compute_quadropole_node(oct_q11, oct_q22, oct_q33, oct_q12, oct_q13, oct_q23,
                             multipole[3*i + 1], multipole[3*i + 2]);
     compute_bounds_node(r_min, r_max, nodeLowerBounds[i], nodeUpperBounds[i]);
+
+
+    compute_bounds_node(r_minSPH, r_maxSPH,
+                        make_float4(nodeLowerBounds[i].x-maxSmth, nodeLowerBounds[i].y-maxSmth, nodeLowerBounds[i].z-maxSmth, 0),
+                        make_float4(nodeLowerBounds[i].x+maxSmth, nodeLowerBounds[i].y+maxSmth, nodeLowerBounds[i].z+maxSmth, 0));
+    compute_bounds_node(r_minSPH, r_maxSPH,
+                        make_float4(nodeUpperBounds[i].x-maxSmth, nodeUpperBounds[i].y-maxSmth, nodeUpperBounds[i].z-maxSmth, 0),
+                        make_float4(nodeUpperBounds[i].x+maxSmth, nodeUpperBounds[i].y+maxSmth, nodeUpperBounds[i].z+maxSmth, 0));
   }
+
+  maxSmth     = fmaxf(fmaxf(fmaxf(fabs(r_min.x-r_minSPH.x), fabs(r_max.x-r_maxSPH.x)),
+                            fmaxf(fabs(r_min.y-r_minSPH.y), fabs(r_max.y-r_maxSPH.y))),
+                            fmaxf(fabs(r_min.z-r_minSPH.z), fabs(r_max.z-r_maxSPH.z)));
 
   //Save the bounds
   nodeLowerBounds[nodeID] = make_float4(r_min.x, r_min.y, r_min.z, maxSmth);
@@ -544,10 +557,12 @@ KERNEL_DECLARE(compute_scaling)(const int      node_count,
       //Make sure that value is non-zero
       if(r_min.w < 0.000001) r_min.w = 0.000001;
       if (r_max.w > 0){
-          boxCenterInfo[idx].w = -(r_min.w*r_min.w);
+          boxCenterInfo[idx].w    = -(r_min.w*r_min.w);
+//          multipoleF[3*idx + 2].w =  (r_min.w*r_min.w);
       }
       else {
-           boxCenterInfo[idx].w =  (r_min.w*r_min.w);
+           boxCenterInfo[idx].w    =  (r_min.w*r_min.w);
+//           multipoleF[3*idx + 2].w =  (r_min.w*r_min.w);
       }
   }
 

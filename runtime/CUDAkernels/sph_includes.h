@@ -610,13 +610,13 @@ namespace derivative
 
                 const float3 jvel  = make_float3(__shfl(MV.x, j), __shfl(MV.y, j), __shfl(MV.z, j));
                 const float3 dv    = make_float3(jvel.x - vel_i[0].x, jvel.y - vel_i[0].y, jvel.z - vel_i[0].z);
-//                gradient_i[0].x -= jM0.w* (dv.y * gradW.z - dv.z * gradW.y);
-//                gradient_i[0].y -= jM0.w* (dv.z * gradW.x - dv.x * gradW.z);
+                gradient_i[0].x -= jM0.w* (dv.y * gradW.z - dv.z * gradW.y);
+                gradient_i[0].y -= jM0.w* (dv.z * gradW.x - dv.x * gradW.z);
                 gradient_i[0].z -= jM0.w* (dv.x * gradW.y - dv.y * gradW.x);
                 gradient_i[0].w -= jM0.w* (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z);
 
-                gradient_i[0].x++;       //Number of operations
-                gradient_i[0].y += (jM0.w*fabs(abs_gradW)) > 0; //Number of useful operations
+//                gradient_i[0].x++;       //Number of operations
+//                gradient_i[0].y += (jM0.w*fabs(abs_gradW)) > 0; //Number of useful operations
           }
 
 //          bool isZero =  (pos_i[0].x == 0.0f && (pos_i[0].x == pos_i[0].y) && (pos_i[0].x == pos_i[0].z));
@@ -771,7 +771,6 @@ namespace hydroforce
             const float3 jvel  = make_float3(__shfl(MV.x, j), __shfl(MV.y, j), __shfl(MV.z, j));
             const float3 dv    = make_float3(vel_i[0].x - jvel.x, vel_i[0].y - jvel.y, vel_i[0].z - jvel.z);
 
-
             //
             const float r        = sqrtf(dr.x*dr.x + dr.y*dr.y + dr.z*dr.z);
             const float xv_inner = dr.x * dv.x + dr.y * dv.y + dr.z * dv.z;
@@ -784,6 +783,9 @@ namespace hydroforce
             const float abs_gradW     = 0.5f * (ith_abs_gradW + jth_abs_gradW);
             const float4 gradW        = (r > 0) ? make_float4(abs_gradW * dr.x / r, abs_gradW * dr.y / r, abs_gradW * dr.z / r, 0.0f)
                                                 : make_float4(0.0f,0.0f,0.0f,0.0f);
+
+
+
             //AV
             const float3 jH       = make_float3(__shfl(MH.x, j), __shfl(MH.y, j), __shfl(MH.w,j)); //Note w in z location
 
@@ -801,6 +803,51 @@ namespace hydroforce
             acc_i[0].x           -= temp  * gradW.x;
             acc_i[0].y           -= temp  * gradW.y;
             acc_i[0].z           -= temp  * gradW.z;
+
+
+            gradient_i[0].x++; //Number of times we enter this function
+            gradient_i[0].y += (jM0.w*fabs(abs_gradW)) > 0; //Number of useful operations
+
+//            if(((pos_i[0].x > 0.968 && pos_i[0].x < 0.969) &&
+//                (pos_i[0].y > 0.093 && pos_i[0].y < 0.094) &&
+//                (pos_i[0].z > 0.078 && pos_i[0].z < 0.079) && (jM0.w*fabs(abs_gradW)) > 0))
+//            {
+////                   // if(jM0.x == jM0.y && jM0.x == 0 && (jM0.z > 0.07 && jM0.z < 0.071))
+////                    {
+//                        printf("ON DEV [ %d %d ], body props: %f %f %f %f || %f %f %f || r: %f smth: %f %f sum: %f\n",
+//                                threadIdx.x, blockIdx.x,
+//                                pos_i[0].x, pos_i[0].y, pos_i[0].z, pos_i[0].w,
+//                                jM0.x, jM0.y, jM0.z,
+//                                r, pos_i[0].w, jD.y,
+//                                gradient_i[0].y);
+////
+////                    }
+////
+//            }
+//            if((pos_i[0].x == 0 &&   (pos_i[0].y > 0.015 && pos_i[0].y < 0.0157) && (pos_i[0].z > 0.02 && pos_i[0].z < 0.024)) && (jM0.w*fabs(abs_gradW)) > 0)
+//            {
+////                   // if(jM0.x == jM0.y && jM0.x == 0 && (jM0.z > 0.07 && jM0.z < 0.071))
+////                    {
+//                        printf("ON DEV, body props: %f %f %f || %f %f %f || r: %f smth: %f %f\n",
+//                                pos_i[0].x, pos_i[0].y, pos_i[0].z,
+//                                jM0.x, jM0.y, jM0.z,
+//                                r, pos_i[0].w, jD.y);
+////
+////                    }
+////
+//            }
+
+//            if((pos_i[0].x == 0 && pos_i[0].y == 0 && (pos_i[0].z > 0.02 && pos_i[0].z < 0.024)) &&
+//               (jM0.x == 0 && (jM0.y > 0.0078 && jM0.y < 0.0079) && (jM0.z > 0.07 && jM0.z < 0.071)))
+//            {
+//                        printf("ON DEV2, body props: %f %f %f || %f %f %f || Rho: %f %f Vel: %f %f %f\n",
+//                                pos_i[0].x, pos_i[0].y, pos_i[0].z,
+//                                jM0.x, jM0.y, jM0.z,
+//                                jD.x, jD.y, jvel.x, jvel.y, jvel.z);
+//
+//            }
+
+
           }//for WARP_SIZE
 
           //force[id].dt = PARAM::C_CFL * 2.0 * ith.smth / v_sig_max;

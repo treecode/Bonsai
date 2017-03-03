@@ -645,9 +645,13 @@ public:
   void   approximate_derivative    (tree_structure &tree);
   void   approximate_derivative_let(tree_structure &tree, tree_structure &remoteTree, int bufferSize, bool doActivePart);
 
+  void   approximate_hydro    (tree_structure &tree);
+  void   approximate_hydro_let(tree_structure &tree, tree_structure &remoteTree, int bufferSize, bool doActivePart);
+
   void   distributeBoundaries(bool doOnlyUpdate);
   void   makeDensityLET();
   void   makeDerivativeLET();
+  void   makeHydroLET();
 
 
 

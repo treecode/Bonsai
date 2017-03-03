@@ -38,7 +38,8 @@ struct BonsaiSharedQuickHeader : public BonsaiSharedHeader
   static const char* sharedFile(const int rank, const int pid)
   {
     const std::string fn = "/BonsaiQuickHeader-"+jb_to_string(pid)+"-"+jb_to_string(rank);
-    return fn.c_str();
+    strcpy(BonsaiSharedNameBuffer, fn.c_str());
+    return BonsaiSharedNameBuffer;
   }
 };
 
@@ -60,7 +61,6 @@ struct BonsaiSharedSnapHeader : public BonsaiSharedHeader
     const std::string fn = "/BonsaiSnapHeader-"+jb_to_string(pid)+"-"+jb_to_string(rank);
     strcpy(BonsaiSharedNameBuffer, fn.c_str());
     return BonsaiSharedNameBuffer;
-    //return fn.c_str();
   }
 };
 

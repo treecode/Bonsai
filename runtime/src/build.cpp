@@ -222,7 +222,7 @@ int octree::gpuDetermineBoundary(tree_structure &tree, int maxDepth, uint2 node_
 
    newValid.d2h(1);
 
-   const int nBodyProps = 2;
+   const int nBodyProps = 4; //Pos, Vel, Dens+Smth, Hydro
 
    //Allocate the buffers to store in the boundary tree and the indices used to generate the boundary tree
    finalValid.resizeOrAlloc(1+newValid[0].x, false, false);
