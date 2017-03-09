@@ -282,8 +282,16 @@ endif (USE_OPENGL)
 if(WIN32)
   add_definitions( "/arch:SSE4")
  else (WIN32)
-   #  add_definitions( "-msse4 -std=gnu++0x")
-     add_definitions( "-msse4")
+
+	#For PPC we need different vector flags
+	if (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "ppc64le")
+	    #Set compiler flags for IBM vector instructions
+	elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "x86_64")
+	    #This should support sse instructions
+	    add_definitions( "-msse4  -march=native")
+	else()
+	    message(FATAL_ERROR "Unknown processor:" ${CMAKE_SYSTEM_PROCESSOR})
+	endif()
 endif (WIN32)
 
 #if (USE_MPI)

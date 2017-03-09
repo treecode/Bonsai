@@ -4385,6 +4385,7 @@ void octree::mergeAndLaunchLETStructures(
     int &topNodeOnTheFlyCount,
     int &recvTree, bool &mergeOwntree, int &procTrees, double &tStart)
 {
+#ifdef USE_MPI
   //Now we have to merge the separate tree-structures into one big-tree
 
   int PROCS  = recvTree-procTrees;
@@ -4917,6 +4918,7 @@ void octree::mergeAndLaunchLETStructures(
   sprintf(buff5, "LETXTIME-%d Iter: %d Processed: %d topTree: %lg Alloc: %lg  Copy/Update: %lg TotalC: %lg Wait: %lg TotalRun: %lg \n",
                   procId, iter, procTrees, t1-t0, t2-t1,t3-t2,t3-t0, t4-t3, t4-t0);
   devContext->writeLogEvent(buff5); //TODO DELETE
+#endif
 }
 
 
