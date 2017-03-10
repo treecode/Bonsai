@@ -1955,14 +1955,14 @@ void octree::sendCurrentInfoGrpTree()
 
 int getLEToptQuickTreevsTree(
     GETLETBUFFERS &bufferStruct,
-    const real4 *nodeCentre,
-    const real4 *nodeSize,
-    const real4 *nodeSmooth,
-    const real4 *multipole,
+    const real4 *nodeCentre,        //Remote
+    const real4 *nodeSize,          //Remote
+    const real4 *nodeSmooth,        //Remote
+    const real4 *multipole,         //Remote
     const int cellBeg,
     const int cellEnd,
-    const real4 *groupSizeInfo,
-    const real4 *groupCentreInfo,
+    const real4 *groupSizeInfo,     //Local
+    const real4 *groupCentreInfo,   //Local
     const int groupBeg,
     const int groupEnd,
     const int nNodes,
@@ -1971,7 +1971,8 @@ int getLEToptQuickTreevsTree(
     double &timeFunction, int &depth,
     const float3 periodicDomainSize,
     const int    periodicMethod,
-    const int    selectionMethod)
+    const int    selectionMethod,
+    const int    LETMethod)
 {
   double tStart = get_time2();
 
@@ -2061,7 +2062,29 @@ int getLEToptQuickTreevsTree(
           const int group = levelGroups.first()[std::min(ib+laneIdx, groupEnd-1)];
           centre[laneIdx] = grpNodeCenterInfoV[group];
           size  [laneIdx] =   grpNodeSizeInfoV[group];
+
+
+          //For hydro we need mutual forces so add the group and node smoothing
+          if(LETMethod == LET_METHOD_HYDR)
+          {
+              switch(laneIdx)
+              {
+                case 0: checkValueSPH = __builtin_ia32_vec_set_v4sf(checkValueSPH, nodeSmooth[nodeIdx].x+abs(groupCentreInfo[group].w), 0); break;
+                case 1: checkValueSPH = __builtin_ia32_vec_set_v4sf(checkValueSPH, nodeSmooth[nodeIdx].x+abs(groupCentreInfo[group].w), 1); break;
+                case 2: checkValueSPH = __builtin_ia32_vec_set_v4sf(checkValueSPH, nodeSmooth[nodeIdx].x+abs(groupCentreInfo[group].w), 2); break;
+                case 3: checkValueSPH = __builtin_ia32_vec_set_v4sf(checkValueSPH, nodeSmooth[nodeIdx].x+abs(groupCentreInfo[group].w), 3); break;
+#ifdef USE_AVX
+                case 4: checkValueSPH = __builtin_ia32_vec_set_v8sf(checkValueSPH, nodeSmooth[nodeIdx].x+abs(groupCentreInfo[group].w), 4); break;
+                case 5: checkValueSPH = __builtin_ia32_vec_set_v8sf(checkValueSPH, nodeSmooth[nodeIdx].x+abs(groupCentreInfo[group].w), 5); break;
+                case 6: checkValueSPH = __builtin_ia32_vec_set_v8sf(checkValueSPH, nodeSmooth[nodeIdx].x+abs(groupCentreInfo[group].w), 6); break;
+                case 7: checkValueSPH = __builtin_ia32_vec_set_v8sf(checkValueSPH, nodeSmooth[nodeIdx].x+abs(groupCentreInfo[group].w), 7); break;
+#endif
+              }
+          }
         }
+
+
+
 
 #ifdef AVXIMBH
         _v8sf resGrav = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
@@ -2487,7 +2510,8 @@ int getLEToptQuickFullTree(
     double &time,
     const float3 periodicDomainSize,
     const int    periodicMethod,
-    const int    selectionMethod)
+    const int    selectionMethod,
+    const int    LETMethod)
 {
   double tStart = get_time2();
 
@@ -2600,7 +2624,14 @@ int getLEToptQuickFullTree(
           centre[laneIdx]     = grpNodeCenterInfoV[group];
           if(selectionMethod & SELECT_SPH)
           {
-              const float grpSmth = groupSmoothInfo[group].x;
+              float grpSmth = groupSmoothInfo[group].x;
+
+              if(LETMethod == LET_METHOD_HYDR)
+              {
+                  //Hydro part requires mutual forces hence include the node smoothing in our test-criteria
+                  grpSmth += nodeInfo_x;
+              }
+
 
               if(laneIdx == 0) checkValueSPH0 = __builtin_ia32_vec_set_v4sf(checkValueSPH0, grpSmth, 0); //Set smoothing distance
               if(laneIdx == 1) checkValueSPH0 = __builtin_ia32_vec_set_v4sf(checkValueSPH0, grpSmth, 1); //Set smoothing distance
@@ -3168,7 +3199,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                        vector<real4>  &topLevelTrees,
                                        vector<uint2>  &topLevelTreesSizeOffset,
                                        int             nTopLevelTrees,
-                                       const    int   LETMethod)
+                                       const    int    LETMethod)
 {
 #ifdef USE_MPI
 
@@ -3336,8 +3367,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       const int allocSize = (int)(tree.n_nodes*1.10);
 
       //Resize the buffers
-      //      getLETBuffers[tid].LETBuffer_node.reserve(allocSize);
-      //      getLETBuffers[tid].LETBuffer_ptcl.reserve(allocSize);
       getLETBuffers[tid].currLevelVecI.reserve(allocSize);
       getLETBuffers[tid].nextLevelVecI.reserve(allocSize);
       getLETBuffers[tid].currLevelVecUI4.reserve(allocSize);
@@ -3394,9 +3423,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             real4 *grpCenter2 = &grpCenter[1+nBodyProps*nbody+nnode];
             real4 *grpSmth    = &grpCenter[1+nBodyProps*nbody+nnode+nnode];
 
-            //TODO This should become a mutual check which also involves the smoothing
-            //of our nodes
-
 
             //The return value sizeTree is used to determine for which processes we have to make
             //proper LETs without having to wait on communication.
@@ -3404,11 +3430,11 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             //it depends on what the other side tells us.
 
             //Test if we have to send data to the remote process?
-            //Returns -1 if there is not enough data, otherwise all is ok?
+            //Returns -1 if there is not enough data and we have to generate a LET, otherwise all is ok?
             double bla3;
-            const int sizeTree =  getLEToptQuickFullTree(
+            int sizeTree =  getLEToptQuickFullTree(
                                             getLETBuffers[tid],
-                                            NCELLMAX,
+                                            256, //NCELLMAX,
                                             NDEPTHMAX,
                                             &nodeCenterInfo[0],
                                             &nodeSizeInfo[0],
@@ -3426,7 +3452,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                             procId, ibox,
                                             nflops, bla3,
                                             periodicDomainSize, periodicMethod,
-                                            selectionMethod);
+                                            selectionMethod,
+                                            LETMethod);
 
             //Test if the boundary tree sent by the remote tree is sufficient for us
             double tBoundaryCheck;
@@ -3446,7 +3473,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                               ibox,
                                               tBoundaryCheck, depthSearch,
                                               periodicDomainSize, periodicMethod,
-                                              selectionMethod);
+                                              selectionMethod,
+                                              LETMethod);
 //            int resultTree = 1; //TODO remove once we updated the boundary tree to contain velocity information
 
             if(resultTree == 0)

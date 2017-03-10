@@ -4,7 +4,7 @@
 #include <sys/time.h>
 #endif
 
-//#ifdef USE_MPI
+#ifdef USE_MPI
 #include <xmmintrin.h>
 
 
@@ -1201,7 +1201,7 @@ public:
 
 };
 
-
+#endif
 
 #endif
 
