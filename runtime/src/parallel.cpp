@@ -1,6 +1,6 @@
 #include "octree.h"
 
-//#define USE_MPI
+#define USE_MPI
 
 #ifdef USE_MPI
 #include <xmmintrin.h>
@@ -9,6 +9,7 @@
 #include <map>
 #include "dd2d.h"
 
+//#define USE_AVX
 
 extern "C" uint2 thrust_partitionDomains( my_dev::dev_mem<uint2> &validList,
                                           my_dev::dev_mem<uint2> &validList2,
@@ -20,7 +21,7 @@ extern "C" uint2 thrust_partitionDomains( my_dev::dev_mem<uint2> &validList,
 
 
 #define USE_GROUP_TREE  //If this is defined we convert boundaries into a group
-
+#define NMAXPROC 32768
 
 
 
@@ -67,17 +68,14 @@ struct GETLETBUFFERS
 
   std::vector<int>  groupSIMDkeys;
 
-#if 0 /* AVX */
-#ifndef __AVX__
-#error "AVX is not defined"
-#endif
-  std::vector< std::pair<v4sf,v4sf> > groupSplitFlag;
-#define AVXIMBH
+#ifdef USE_AVX /* AVX */
+    #ifndef __AVX__
+        #error "AVX is not defined"
+    #endif
+    std::vector< std::pair<v4sf,v4sf> > groupSplitFlag;
 #else
   std::vector<v4sf> groupSplitFlag;
-#define SSEIMBH
 #endif
-
 
   char padding[512 -
                ( sizeof(LETBuffer_node) +
@@ -201,63 +199,18 @@ inline void _v8sf_transpose(_v8sf &a, _v8sf &b, _v8sf &c, _v8sf &d){
 }
 #endif
 
-inline int split_node_grav_impbh_box4( // takes 4 tree nodes and returns 4-bit integer
-    const _v4sf  nodeCOM,
-    const _v4sf  boxCenter[4],
-    const _v4sf  boxSize  [4])
-{
-  _v4sf ncx = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0x00);
-  _v4sf ncy = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0x55);
-  _v4sf ncz = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0xaa);
-  _v4sf ncw = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0xff);
-  _v4sf size = __abs(ncw);
 
-  _v4sf bcx =  (boxCenter[0]);
-  _v4sf bcy =  (boxCenter[1]);
-  _v4sf bcz =  (boxCenter[2]);
-  _v4sf bcw =  (boxCenter[3]);
-  _v4sf_transpose(bcx, bcy, bcz, bcw);
 
-  _v4sf bsx =  (boxSize[0]);
-  _v4sf bsy =  (boxSize[1]);
-  _v4sf bsz =  (boxSize[2]);
-  _v4sf bsw =  (boxSize[3]);
-  _v4sf_transpose(bsx, bsy, bsz, bsw);
-
-  _v4sf dx = __abs(bcx - ncx) - bsx;
-  _v4sf dy = __abs(bcy - ncy) - bsy;
-  _v4sf dz = __abs(bcz - ncz) - bsz;
-
-  _v4sf zero = {0.0, 0.0, 0.0, 0.0};
-  dx = __builtin_ia32_maxps(dx, zero);
-  dy = __builtin_ia32_maxps(dy, zero);
-  dz = __builtin_ia32_maxps(dz, zero);
-
-  _v4sf ds2 = dx*dx + dy*dy + dz*dz;
-#if 0
-  const float c = 10e-4f;
-  int ret = __builtin_ia32_movmskps(
-      __builtin_ia32_orps(
-        __builtin_ia32_cmpleps(ds2,  size),
-        __builtin_ia32_cmpltps(ds2 - size, (_v4sf){c,c,c,c})
-        )
-      );
-#else
-  int ret = __builtin_ia32_movmskps(
-      __builtin_ia32_cmpleps(ds2, size));
-#endif
-  return ret;
-}
 
 inline _v4sf split_node_grav_impbh_box4a( // takes 4 tree nodes and returns 4-bit integer
     const _v4sf  nodeCOM,
     const _v4sf  boxCenter[4],
     const _v4sf  boxSize  [4])
 {
-  _v4sf ncx = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0x00);
-  _v4sf ncy = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0x55);
-  _v4sf ncz = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0xaa);
-  _v4sf ncw = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0xff);
+  _v4sf ncx  = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0x00);
+  _v4sf ncy  = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0x55);
+  _v4sf ncz  = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0xaa);
+  _v4sf ncw  = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0xff);
   _v4sf size = __abs(ncw);
 
   _v4sf bcx =  (boxCenter[0]);
@@ -282,26 +235,9 @@ inline _v4sf split_node_grav_impbh_box4a( // takes 4 tree nodes and returns 4-bi
   dz = __builtin_ia32_maxps(dz, zero);
 
   const _v4sf ds2 = dx*dx + dy*dy + dz*dz;
-#if 0
-  const float c = 10e-4f;
-  _v4sf ret =
-    __builtin_ia32_orps(
-        __builtin_ia32_cmpleps(ds2,  size),
-        __builtin_ia32_cmpltps(ds2 - size, (_v4sf){c,c,c,c})
-        );
-#else
-  _v4sf ret =
-    __builtin_ia32_cmpleps(ds2, size);
-#endif
-#if 0
-  const _v4si mask1 = {1,1,1,1};
-  const _v4si mask2 = {2,2,2,2};
-  ret = __builtin_ia32_andps(ret, (_v4sf)mask1);
-  ret = __builtin_ia32_orps (ret,
-      __builtin_ia32_andps(
-        __builtin_ia32_cmpleps(bcw, (_v4sf){0.0f,0.0f,0.0f,0.0f}),
-        (_v4sf)mask2));
-#endif
+
+  _v4sf ret = __builtin_ia32_cmpleps(ds2, size);
+
   return ret;
 }
 
@@ -311,25 +247,12 @@ inline std::pair<v4sf,v4sf> split_node_grav_impbh_box8a( // takes 4 tree nodes a
     const _v4sf  boxCenter[8],
     const _v4sf  boxSize  [8])
 {
-#if 0
-  _v4sf ncx0 = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0x00);
-  _v4sf ncy0 = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0x55);
-  _v4sf ncz0 = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0xaa);
-  _v4sf ncw0 = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0xff);
-  _v4sf size0 = __abs(ncw0);
-
-  _v8sf ncx = pack_2xmm(ncx0, ncx0);
-  _v8sf ncy = pack_2xmm(ncy0, ncy0);
-  _v8sf ncz = pack_2xmm(ncz0, ncz0);
-  _v8sf size = pack_2xmm(size0, size0);
-
-#else
   _v8sf com = pack_2xmm(nodeCOM, nodeCOM);
   _v8sf ncx = __builtin_ia32_shufps256(com, com, 0x00);
   _v8sf ncy = __builtin_ia32_shufps256(com, com, 0x55);
   _v8sf ncz = __builtin_ia32_shufps256(com, com, 0xaa);
   _v8sf size = __abs8(__builtin_ia32_shufps256(com, com, 0xff));
-#endif
+
 
   _v8sf bcx = pack_2xmm(boxCenter[0], boxCenter[4]);
   _v8sf bcy = pack_2xmm(boxCenter[1], boxCenter[5]);
@@ -353,32 +276,121 @@ inline std::pair<v4sf,v4sf> split_node_grav_impbh_box8a( // takes 4 tree nodes a
   dz = __builtin_ia32_maxps256(dz, zero);
 
   const _v8sf ds2 = dx*dx + dy*dy + dz*dz;
-#if 0
-  const float c = 10e-4f;
-  _v8sf ret =
-    __builtin_ia32_orps256(
-        __builtin_ia32_cmpps256(ds2,  size, 18),  /* le */
-        __builtin_ia32_cmpps256(ds2 - size, (_v8sf){c,c,c,c,c,c,c,c}, 17)  /* lt */
-        );
-#else
-  _v8sf ret =
-    __builtin_ia32_cmpps256(ds2, size, 18);
-#endif
-#if 0
-  const _v4si mask1 = {1,1,1,1};
-  const _v4si mask2 = {2,2,2,2};
-  ret = __builtin_ia32_andps(ret, (_v4sf)mask1);
-  ret = __builtin_ia32_orps (ret,
-      __builtin_ia32_andps(
-        __builtin_ia32_cmpleps(bcw, (_v4sf){0.0f,0.0f,0.0f,0.0f}),
-        (_v4sf)mask2));
-#endif
+
+  _v8sf ret = __builtin_ia32_cmpps256(ds2, size, 18);
+
   const _v4sf ret1 = __builtin_ia32_vextractf128_ps256(ret, 0);
   const _v4sf ret2 = __builtin_ia32_vextractf128_ps256(ret, 1);
   return std::make_pair(ret1,ret2);
 }
 #endif
 
+
+
+template<bool TRANSPOSE>
+inline int split_node_grav_impbh_box4simd1( // takes 4 tree nodes and returns 4-bit integer
+    const _v4sf  ncx,
+    const _v4sf  ncy,
+    const _v4sf  ncz,
+    const _v4sf  size,
+    const _v4sf  boxCenter[4],
+    const _v4sf  boxSize  [4])
+{
+  _v4sf bcx =  (boxCenter[0]);
+  _v4sf bcy =  (boxCenter[1]);
+  _v4sf bcz =  (boxCenter[2]);
+  _v4sf bcw =  (boxCenter[3]);
+
+  _v4sf bsx =  (boxSize[0]);
+  _v4sf bsy =  (boxSize[1]);
+  _v4sf bsz =  (boxSize[2]);
+  _v4sf bsw =  (boxSize[3]);
+
+  if (TRANSPOSE)
+  {
+    _v4sf_transpose(bcx, bcy, bcz, bcw);
+    _v4sf_transpose(bsx, bsy, bsz, bsw);
+  }
+
+  const _v4sf zero = {0.0, 0.0, 0.0, 0.0};
+
+  _v4sf dx = __abs(bcx - ncx) - bsx;
+  _v4sf dy = __abs(bcy - ncy) - bsy;
+  _v4sf dz = __abs(bcz - ncz) - bsz;
+
+  dx = __builtin_ia32_maxps(dx, zero);
+  dy = __builtin_ia32_maxps(dy, zero);
+  dz = __builtin_ia32_maxps(dz, zero);
+
+  const _v4sf ds2 = dx*dx + dy*dy + dz*dz;
+
+  const int ret = __builtin_ia32_movmskps(__builtin_ia32_cmpleps(ds2, size));
+
+  return ret;
+}
+
+#ifdef __AVX__
+template<bool TRANSPOSE>
+inline int split_node_grav_impbh_box8simd1( // takes 4 tree nodes and returns 4-bit integer
+    const _v4sf  ncx1,
+    const _v4sf  ncy1,
+    const _v4sf  ncz1,
+    const _v4sf  size1,
+    const _v4sf  boxCenter[4],
+    const _v4sf  boxSize  [4])
+{
+    const _v8sf zero = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+
+    _v4sf bcx1 =  (boxCenter[0]);
+    _v4sf bcy1 =  (boxCenter[1]);
+    _v4sf bcz1 =  (boxCenter[2]);
+    _v4sf bcw1 =  (boxCenter[3]);
+
+    _v4sf bcx2 =  (boxCenter[4]);
+    _v4sf bcy2 =  (boxCenter[5]);
+    _v4sf bcz2 =  (boxCenter[6]);
+    _v4sf bcw2 =  (boxCenter[7]);
+
+    _v8sf bcx = pack_2xmm(bcx1, bcx2);
+    _v8sf bcy = pack_2xmm(bcy1, bcy2);
+    _v8sf bcz = pack_2xmm(bcz1, bcz2);
+    _v8sf bcw = pack_2xmm(bcw1, bcw2);
+
+    _v4sf bsx1 =  (boxSize[0]);
+    _v4sf bsy1 =  (boxSize[1]);
+    _v4sf bsz1 =  (boxSize[2]);
+    _v4sf bsw1 =  (boxSize[3]);
+
+    _v4sf bsx2 =  (boxSize[4]);
+    _v4sf bsy2 =  (boxSize[5]);
+    _v4sf bsz2 =  (boxSize[6]);
+    _v4sf bsw2 =  (boxSize[7]);
+
+    _v8sf bsx = pack_2xmm(bsx1, bsx2);
+    _v8sf bsy = pack_2xmm(bsy1, bsy2);
+    _v8sf bsz = pack_2xmm(bsz1, bsz2);
+    _v8sf bsw = pack_2xmm(bsw1, bsw2);
+
+    if (TRANSPOSE) assert(0); //Arrays should be set as v8sf to get this to work
+
+    _v8sf ncx  = pack_2xmm(ncx1, ncx1);
+    _v8sf ncy  = pack_2xmm(ncy1, ncy1);
+    _v8sf ncz  = pack_2xmm(ncz1, ncz1);
+    _v8sf size = pack_2xmm(size1, size1);
+
+    _v8sf dx = __abs8(bcx - ncx) - (bsx);
+    _v8sf dy = __abs8(bcy - ncy) - (bsy);
+    _v8sf dz = __abs8(bcz - ncz) - (bsz);
+
+
+    dx = __builtin_ia32_maxps256(dx, zero);
+    dy = __builtin_ia32_maxps256(dy, zero);
+    dz = __builtin_ia32_maxps256(dz, zero);
+
+    const _v8sf ds2 = dx*dx + dy*dy + dz*dz;
+    return  _mm256_movemask_ps( __builtin_ia32_cmpps256(ds2, size, 18)); //18 indicates is Less or Equal OP
+}
+#endif
 
 template<typename T>
 struct Swap
@@ -1582,7 +1594,7 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree
 
   int recvOffset = 0;
 
-  #define NMAXPROC 32768
+
   static MPI_Status stat[NMAXPROC];
   static MPI_Request req[NMAXPROC*2];
   assert(nProcs < NMAXPROC);
@@ -2164,7 +2176,6 @@ void octree::sendCurrentInfoGrpTree()
   double t2 = get_time();
 
   //Send / receive loop like particle exchange
-  #define NMAXPROC 32768
   static MPI_Status stat[NMAXPROC];
   static MPI_Request req[NMAXPROC*2];
   assert(nProcs < NMAXPROC);
@@ -2208,47 +2219,6 @@ void octree::sendCurrentInfoGrpTree()
 // ***** Local essential tree functions ************//
 //////////////////////////////////////////////////////
 #ifdef USE_MPI
-
-inline int split_node_grav_impbh(
-    const _v4sf nodeCOM1,
-    const _v4sf boxCenter1,
-    const _v4sf boxSize1)
-{
-  const int fullMask = static_cast<int>(0xFFFFFFFF);
-  const int zeroMask = static_cast<int>(0x0);
-  const _v4si mask = {fullMask, fullMask, fullMask, zeroMask};
-  const _v4sf size = __abs(__builtin_ia32_shufps(nodeCOM1, nodeCOM1, 0xFF));
-
-  //mask to prevent NaN signaling / Overflow ? Required to get good pre-SB performance
-  const _v4sf nodeCOM   = __builtin_ia32_andps(nodeCOM1,   (_v4sf)mask);
-  const _v4sf boxCenter = __builtin_ia32_andps(boxCenter1, (_v4sf)mask);
-  const _v4sf boxSize   = __builtin_ia32_andps(boxSize1,   (_v4sf)mask);
-
-
-  const _v4sf dr   = __abs(boxCenter - nodeCOM) - boxSize;
-  const _v4sf ds   = dr + __abs(dr);
-  const _v4sf dsq  = ds*ds;
-  const _v4sf t1   = __builtin_ia32_haddps(dsq, dsq);
-  const _v4sf t2   = __builtin_ia32_haddps(t1, t1);
-  const _v4sf ds2  = __builtin_ia32_shufps(t2, t2, 0x00)*(_v4sf){0.25f, 0.25f, 0.25f, 0.25f};
-
-
-#if 1
-  const float c = 10e-4f;
-  const int res = __builtin_ia32_movmskps(
-      __builtin_ia32_orps(
-        __builtin_ia32_cmpleps(ds2,  size),
-        __builtin_ia32_cmpltps(ds2 - size, (_v4sf){c,c,c,c})
-        )
-      );
-#else
-  const int res = __builtin_ia32_movmskps(
-      __builtin_ia32_cmpleps(ds2,  size));
-#endif
-
-  return res;
-}
-
 
 template<typename T, int STRIDE>
 void shuffle2vec(
@@ -2310,57 +2280,6 @@ void shuffle2vecAllocated(
   data2.swap(rdata2);
 }
 
-template<bool TRANSPOSE>
-inline int split_node_grav_impbh_box4simd1( // takes 4 tree nodes and returns 4-bit integer
-    const _v4sf  ncx,
-    const _v4sf  ncy,
-    const _v4sf  ncz,
-    const _v4sf  size,
-    const _v4sf  boxCenter[4],
-    const _v4sf  boxSize  [4])
-{
-
-  _v4sf bcx =  (boxCenter[0]);
-  _v4sf bcy =  (boxCenter[1]);
-  _v4sf bcz =  (boxCenter[2]);
-  _v4sf bcw =  (boxCenter[3]);
-
-  _v4sf bsx =  (boxSize[0]);
-  _v4sf bsy =  (boxSize[1]);
-  _v4sf bsz =  (boxSize[2]);
-  _v4sf bsw =  (boxSize[3]);
-
-  if (TRANSPOSE)
-  {
-    _v4sf_transpose(bcx, bcy, bcz, bcw);
-    _v4sf_transpose(bsx, bsy, bsz, bsw);
-  }
-
-  const _v4sf zero = {0.0, 0.0, 0.0, 0.0};
-
-  _v4sf dx = __abs(bcx - ncx) - bsx;
-  _v4sf dy = __abs(bcy - ncy) - bsy;
-  _v4sf dz = __abs(bcz - ncz) - bsz;
-
-  dx = __builtin_ia32_maxps(dx, zero);
-  dy = __builtin_ia32_maxps(dy, zero);
-  dz = __builtin_ia32_maxps(dz, zero);
-
-  const _v4sf ds2 = dx*dx + dy*dy + dz*dz;
-#if 0
-  const float c = 10e-4;
-  const int ret = __builtin_ia32_movmskps(
-      __builtin_ia32_orps(
-        __builtin_ia32_cmpleps(ds2,  size),
-        __builtin_ia32_cmpltps(ds2 - size, (_v4sf){c,c,c,c})
-        )
-      );
-#else
-  const int ret = __builtin_ia32_movmskps(
-      __builtin_ia32_cmpleps(ds2, size));
-#endif
-  return ret;
-}
 
 
 //template<typename T>
@@ -2382,7 +2301,6 @@ int getLEToptQuickTreevsTree(
 {
   double tStart = get_time2();
 
-  //int depth = 0;
   depth = 0;
 
   const _v4sf*          nodeSizeV = (const _v4sf*)nodeSize;
@@ -2392,15 +2310,14 @@ int getLEToptQuickTreevsTree(
   const _v4sf* grpNodeCenterInfoV = (const _v4sf*)groupCentreInfo;
 
 
-#if 0 /* AVX */
-#ifndef __AVX__
-#error "AVX is not defined"
-#endif
-  const int SIMDW  = 8;
-#define AVXIMBH
-#else
-  const int SIMDW  = 4;
-#define SSEIMBH
+#ifdef USE_AVX  /* AVX */
+    #ifndef __AVX__
+        #error "AVX is not defined"
+    #endif
+      const int SIMDW  = 8;
+      #define AVXIMBH
+    #else
+      const int SIMDW  = 4; //#define SSEIMBH
 #endif
 
   bufferStruct.LETBuffer_node.clear();
@@ -2565,9 +2482,16 @@ int3 getLET1(
 
   Swap<std::vector<int> > levelList(bufferStruct.currLevelVecI, bufferStruct.nextLevelVecI);
 
-  const int SIMDW  = 4;
+  const int SIMDW   = 4;
 
-  const int nGroups4 = ((nGroups-1)/SIMDW + 1)*SIMDW;
+  #ifdef USE_AVX
+      //We use a mix of 4 and 8 widths
+      const int SIMDW2  = 8;
+  #else
+      const int SIMDW2  = 4;
+  #endif
+
+  const int nGroups4 = ((nGroups-1)/SIMDW2 + 1)*SIMDW2;
 
   //We need a bunch of buffers to act as swap space
   const int allocSize = (int)(nGroups4*1.10);
@@ -2657,9 +2581,14 @@ int3 getLET1(
       const _v4sf vsize = __abs(vncw);
 
       nflops += nGroups*20;  /* effective flops, can be less */
-      for (int ib = 0; ib < nGroups4 && !split; ib += SIMDW)
-        split |= split_node_grav_impbh_box4simd1<TRANSPOSE_SPLIT>(vncx,vncy,vncz,vsize, (_v4sf*)&bufferStruct.groupCentreSIMD[ib], (_v4sf*)&bufferStruct.groupSizeSIMD[ib]);
-
+      for (int ib = 0; ib < nGroups4 && !split; ib += SIMDW2){
+#ifdef USE_AVX
+        split |= split_node_grav_impbh_box4simd1<TRANSPOSE_SPLIT>(
+#else
+        split |= split_node_grav_impbh_box4simd1<TRANSPOSE_SPLIT>(
+#endif
+                    vncx,vncy,vncz,vsize, (_v4sf*)&bufferStruct.groupCentreSIMD[ib], (_v4sf*)&bufferStruct.groupSizeSIMD[ib]);
+      }
       /**************/
 
       real4 size  = nodeSize[nodeIdx];
@@ -2722,9 +2651,6 @@ int3 getLET1(
       const float sizew = host_int_as_float(packed_idx.y);
       const _v4sf size = __builtin_ia32_vec_set_v4sf(nodeSizeV[idx], sizew, 3);
 
-      //       vLETBuffer[nStoreIdx            ] = nodeCentreV[idx];     /* centre */
-      //       vLETBuffer[nStoreIdx+nExportCell] = size;                 /*  size  */
-
       vLETBuffer[nStoreIdx+nExportCell] = nodeCentreV[idx];     /* centre */
       vLETBuffer[nStoreIdx            ] = size;                 /*  size  */
 
@@ -2774,7 +2700,6 @@ int getLEToptQuickFullTree(
   int nExportPtcl = 0;
   int nExportCellOffset = cellEnd;
 
-  const _v4sf*            bodiesV = (const _v4sf*)bodies;
   const _v4sf*          nodeSizeV = (const _v4sf*)nodeSize;
   const _v4sf*        nodeCentreV = (const _v4sf*)nodeCentre;
   const _v4sf*         multipoleV = (const _v4sf*)multipole;
@@ -2782,15 +2707,13 @@ int getLEToptQuickFullTree(
   const _v4sf* grpNodeCenterInfoV = (const _v4sf*)groupCentreInfo;
 
 
-#if 0 /* AVX */
-#ifndef __AVX__
-#error "AVX is not defined"
-#endif
-  const int SIMDW  = 8;
-#define AVXIMBH
-#else
-  const int SIMDW  = 4;
-#define SSEIMBH
+#ifdef USE_AVX
+    #ifndef __AVX__
+    #error "AVX is not defined"
+    #endif
+      const int SIMDW  = 8;
+    #else
+      const int SIMDW  = 4;
 #endif
 
   bufferStruct.LETBuffer_node.clear();
@@ -2923,15 +2846,11 @@ int getLEToptQuickFullTree(
           const int pfirst =    nodeInfo_y & BODYMASK;
           const int np     = (((nodeInfo_y & INVBMASK) >> LEAFBIT)+1);
           sizew = (nExportPtcl | ((np-1) << LEAFBIT));
-//          for (int i = pfirst; i < pfirst+np; i++)
-//            bufferStruct.LETBuffer_ptcl.push_back(i);
           nExportPtcl += np;
         }
       }
 
-//      bufferStruct.LETBuffer_node.push_back((int2){nodeIdx, sizew});
       nExportCell++;
-
     }
     depth++;
     levelList.swap();
@@ -2942,548 +2861,13 @@ int getLEToptQuickFullTree(
   }
 
   double tCalc = get_time2();
-#if 0 //Disabled tree-copy
-  assert((int)bufferStruct.LETBuffer_ptcl.size() == nExportPtcl);
-  assert((int)bufferStruct.LETBuffer_node.size() == nExportCell);
 
-  /* now copy data into LETBuffer */
-  {
-    _v4sf *vLETBuffer;
-    {
-      const size_t oldSize     = LETBuffer.size();
-      const size_t oldCapacity = LETBuffer.capacity();
-      LETBuffer.resize(oldSize + 1 + nExportPtcl + 5*nExportCell);
-      const size_t newCapacity = LETBuffer.capacity();
-      /* make sure memory is not reallocated */
-      assert(oldCapacity == newCapacity);
-
-      /* fill tree info */
-      real4 &data4 = *(real4*)(&LETBuffer[oldSize]);
-      data4.x      = host_int_as_float(nExportPtcl);
-      data4.y      = host_int_as_float(nExportCell);
-      data4.z      = host_int_as_float(cellBeg);
-      data4.w      = host_int_as_float(cellEnd);
-
-      //LOGF(stderr, "LET res for: %d  P: %d  N: %d old: %ld  Size in byte: %d\n",procId, nExportPtcl, nExportCell, oldSize, (int)(( 1 + nExportPtcl + 5*nExportCell)*sizeof(real4)));
-      vLETBuffer = (_v4sf*)(&LETBuffer[oldSize+1]);
-    }
-
-    int nStoreIdx     = nExportPtcl;
-    int multiStoreIdx = nStoreIdx + 2*nExportCell;
-    for (int i = 0; i < nExportPtcl; i++)
-    {
-      const int idx = bufferStruct.LETBuffer_ptcl[i];
-      vLETBuffer[i] = bodiesV[idx];
-    }
-    for (int i = 0; i < nExportCell; i++)
-    {
-      const int2 packed_idx = bufferStruct.LETBuffer_node[i];
-      const int idx = packed_idx.x;
-      const float sizew = host_int_as_float(packed_idx.y);
-      const _v4sf size = __builtin_ia32_vec_set_v4sf(nodeSizeV[idx], sizew, 3);
-
-      vLETBuffer[nStoreIdx+nExportCell] = nodeCentreV[idx];     /* centre */
-      vLETBuffer[nStoreIdx            ] = size;                 /*  size  */
-
-      vLETBuffer[multiStoreIdx++      ] = multipoleV[3*idx+0];  /* multipole com */
-      vLETBuffer[multiStoreIdx++      ] = multipoleV[3*idx+1];  /* multipole q0 */
-      vLETBuffer[multiStoreIdx++      ] = multipoleV[3*idx+2];  /* multipole q1 */
-      nStoreIdx++;
-    } //for
-  } //now copy data into LETBuffer
-
-  time = get_time2() - tStart;
-  double tEnd = get_time2();
-#endif
 // LOGF(stderr,"getLETOptQuick P: %d N: %d  Calc took: %lg Prepare: %lg Copy: %lg Total: %lg \n",nExportPtcl, nExportCell, tCalc-tStart, tPrep - tStart, tEnd-tCalc, tEnd-tStart);
 //  fprintf(stderr,"[Proc: %d ] getLETOptQuick P: %d N: %d  Calc took: %lg Prepare: %lg (calc: %lg ) Copy: %lg Total: %lg \n",
 //    procId, nExportPtcl, nExportCell, tCalc-tStart, tPrep - tStart, tCalc-tPrep,  tEnd-tCalc, tEnd-tStart);
 
   return  1 + nExportPtcl + 5*nExportCell;
 }
-
-
-
-
-
-template<typename T>
-int getLETquick(
-    GETLETBUFFERS &bufferStruct,
-    std::vector<T> &LETBuffer,
-    const int NCELLMAX,
-    const int NDEPTHMAX,
-    const real4 *nodeCentre,
-    const real4 *nodeSize,
-    const real4 *multipole,
-    const int cellBeg,
-    const int cellEnd,
-    const real4 *bodies,
-    const int nParticles,
-    const real4 *groupSizeInfo,
-    const real4 *groupCentreInfo,
-    const int nGroups,
-    const int nNodes, const int procId,
-    double &time)
-{
-  bufferStruct.LETBuffer_node.clear();
-  bufferStruct.LETBuffer_ptcl.clear();
-  bufferStruct.currLevelVecI.clear();
-  bufferStruct.nextLevelVecI.clear();
-
-  unsigned long long nflops = 0;
-  double t0 = get_time2();
-
-  int nExportPtcl = 0;
-  int nExportCell = 0;
-  int nExportCellOffset = cellEnd;
-
-  nExportCell += cellBeg;
-  for (int node = 0; node < cellBeg; node++)
-    bufferStruct.LETBuffer_node.push_back((int2){node, host_float_as_int(nodeSize[node].w)});
-
-
-  const _v4sf*            bodiesV = (const _v4sf*)bodies;
-  const _v4sf*          nodeSizeV = (const _v4sf*)nodeSize;
-  const _v4sf*        nodeCentreV = (const _v4sf*)nodeCentre;
-  const _v4sf*         multipoleV = (const _v4sf*)multipole;
-  const _v4sf*   groupSizeV = (const _v4sf*)groupSizeInfo;
-  const _v4sf* groupCenterV = (const _v4sf*)groupCentreInfo;
-
-
-  Swap<std::vector<int> > levelList(bufferStruct.currLevelVecI, bufferStruct.nextLevelVecI);
-
-  const int SIMDW  = 4;
-
-  //We need a bunch of buffers to act as swap space
-  const int nGroups4  = ((nGroups-1)/SIMDW + 1)*SIMDW;
-  const int allocSize = (int)(nGroups4*1.10);
-  bufferStruct.groupCentreSIMD.reserve(allocSize);
-  bufferStruct.groupSizeSIMD.  reserve(allocSize);
-  bufferStruct.groupCentreSIMD.resize(nGroups4);
-  bufferStruct.groupSizeSIMD.  resize(nGroups4);
-
-  bufferStruct.groupCentreSIMDSwap.reserve(allocSize);
-  bufferStruct.groupSizeSIMDSwap.  reserve(allocSize);
-  bufferStruct.groupCentreSIMDSwap.resize(nGroups4);
-  bufferStruct.groupSizeSIMDSwap.  resize(nGroups4);
-
-  bufferStruct.groupSIMDkeys.resize((int)(1.10*(nGroups4/SIMDW)));
-
-#if 1
-  const bool TRANSPOSE_SPLIT = false;
-#else
-  const bool TRANSPOSE_SPLIT = true;
-#endif
-  for (int ib = 0; ib < nGroups4; ib += SIMDW)
-  {
-    _v4sf bcx = groupCenterV[std::min(ib+0,nGroups-1)];
-    _v4sf bcy = groupCenterV[std::min(ib+1,nGroups-1)];
-    _v4sf bcz = groupCenterV[std::min(ib+2,nGroups-1)];
-    _v4sf bcw = groupCenterV[std::min(ib+3,nGroups-1)];
-
-    _v4sf bsx = groupSizeV[std::min(ib+0,nGroups-1)];
-    _v4sf bsy = groupSizeV[std::min(ib+1,nGroups-1)];
-    _v4sf bsz = groupSizeV[std::min(ib+2,nGroups-1)];
-    _v4sf bsw = groupSizeV[std::min(ib+3,nGroups-1)];
-
-    if (!TRANSPOSE_SPLIT)
-    {
-      _v4sf_transpose(bcx, bcy, bcz, bcw);
-      _v4sf_transpose(bsx, bsy, bsz, bsw);
-    }
-
-    bufferStruct.groupCentreSIMD[ib+0] = bcx;
-    bufferStruct.groupCentreSIMD[ib+1] = bcy;
-    bufferStruct.groupCentreSIMD[ib+2] = bcz;
-    bufferStruct.groupCentreSIMD[ib+3] = bcw;
-
-    bufferStruct.groupSizeSIMD[ib+0] = bsx;
-    bufferStruct.groupSizeSIMD[ib+1] = bsy;
-    bufferStruct.groupSizeSIMD[ib+2] = bsz;
-    bufferStruct.groupSizeSIMD[ib+3] = bsw;
-  }
-
-  for (int cell = cellBeg; cell < cellEnd; cell++)
-    levelList.first().push_back(cell);
-
-  int relativeDepth = 0;
-
-  while (!levelList.first().empty())
-  {
-    const int csize = levelList.first().size();
-#if 1
-    if (nGroups > 64)   /* randomizes algo, can give substantial speed-up */
-      shuffle2vecAllocated<v4sf,SIMDW>(bufferStruct.groupCentreSIMD,
-                                       bufferStruct.groupSizeSIMD,
-                                       bufferStruct.groupCentreSIMDSwap,
-                                       bufferStruct.groupSizeSIMDSwap,
-                                       bufferStruct.groupSIMDkeys);
-//      shuffle2vec<v4sf,SIMDW>(bufferStruct.groupCentreSIMD, bufferStruct.groupSizeSIMD);
-#endif
-    for (int i = 0; i < csize; i++)
-    {
-      /* play with criteria to fit what's best */
-      if (relativeDepth > NDEPTHMAX && nExportCell > NCELLMAX)
-      {
-        time = get_time2()-t0;
-        return -1;
-      }
-      if (nExportCell > NCELLMAX)
-      {
-        time = get_time2()-t0;
-        return -1;
-      }
-
-
-      const uint    nodeIdx  = levelList.first()[i];
-      const float nodeInfo_x = nodeCentre[nodeIdx].w;
-      const uint  nodeInfo_y = host_float_as_int(nodeSize[nodeIdx].w);
-
-      _v4sf nodeCOM = multipoleV[nodeIdx*3];
-      nodeCOM       = __builtin_ia32_vec_set_v4sf (nodeCOM, nodeInfo_x, 3);
-
-      int split = false;
-
-      /**************/
-
-
-      const _v4sf vncx = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0x00);
-      const _v4sf vncy = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0x55);
-      const _v4sf vncz = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0xaa);
-      const _v4sf vncw = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0xff);
-      const _v4sf vsize = __abs(vncw);
-
-      nflops += nGroups*20;  /* effective flops, can be less */
-      for (int ib = 0; ib < nGroups4 && !split; ib += SIMDW)
-      {
-        split |= split_node_grav_impbh_box4simd1<TRANSPOSE_SPLIT>(vncx,vncy,vncz,vsize, (_v4sf*)&bufferStruct.groupCentreSIMD[ib], (_v4sf*)&bufferStruct.groupSizeSIMD[ib]);
-      }
-
-      /**************/
-
-      real4 size  = nodeSize[nodeIdx];
-      int sizew = 0xFFFFFFFF;
-
-      if (split)
-      {
-        const bool lleaf = nodeInfo_x <= 0.0f;
-        if (!lleaf)
-        {
-          const int lchild  =    nodeInfo_y & 0x0FFFFFFF;            //Index to the first child of the node
-          const int lnchild = (((nodeInfo_y & 0xF0000000) >> 28)) ;  //The number of children this node has
-          sizew = (nExportCellOffset | (lnchild << LEAFBIT));
-          nExportCellOffset += lnchild;
-          for (int i = lchild; i < lchild + lnchild; i++)
-            levelList.second().push_back(i);
-        }
-        else
-        {
-          const int pfirst =    nodeInfo_y & BODYMASK;
-          const int np     = (((nodeInfo_y & INVBMASK) >> LEAFBIT)+1);
-          sizew = (nExportPtcl | ((np-1) << LEAFBIT));
-          for (int i = pfirst; i < pfirst+np; i++)
-            bufferStruct.LETBuffer_ptcl.push_back(i);
-          nExportPtcl += np;
-        }
-      }
-
-      bufferStruct.LETBuffer_node.push_back((int2){nodeIdx, sizew});
-      nExportCell++;
-    }
-
-    levelList.swap();
-    levelList.second().clear();
-    relativeDepth++;
-  }
-
-  double t1=get_time2();
-  assert((int)bufferStruct.LETBuffer_ptcl.size() == nExportPtcl);
-  assert((int)bufferStruct.LETBuffer_node.size() == nExportCell);
-
-  /* now copy data into LETBuffer */
-  {
-    //LETBuffer.resize(nExportPtcl + 5*nExportCell);
-    _v4sf *vLETBuffer;
-
-//#pragma omp critical //Malloc seems to be not so thread safe..
-    {
-      const size_t oldSize     = LETBuffer.size();
-      const size_t oldCapacity = LETBuffer.capacity();
-      LETBuffer.resize(oldSize + 1 + nExportPtcl + 5*nExportCell);
-      const size_t newCapacity = LETBuffer.capacity();
-      /* make sure memory is not reallocated */
-      assert(oldCapacity == newCapacity);
-
-      /* fill int tree info */
-      real4 &data4 = *(real4*)(&LETBuffer[oldSize]);
-      data4.x = host_int_as_float(nExportPtcl);
-      data4.y = host_int_as_float(nExportCell);
-      data4.z = host_int_as_float(cellBeg);
-      data4.w = host_int_as_float(cellEnd);
-
-      /* write info */
-
-//      LOGF(stderr, "LET res for: %d  P: %d  N: %d old: %ld  Size in byte: %d\n",procId, nExportPtcl, nExportCell, oldSize, (int)(( 1 + nExportPtcl + 5*nExportCell)*sizeof(real4)));
-      vLETBuffer = (_v4sf*)(&LETBuffer[oldSize+1]);
-    }
-
-
-
-    int nStoreIdx     = nExportPtcl;
-    int multiStoreIdx = nStoreIdx + 2*nExportCell;
-    for (int i = 0; i < nExportPtcl; i++)
-    {
-      const int idx = bufferStruct.LETBuffer_ptcl[i];
-      vLETBuffer[i] = bodiesV[idx];
-    }
-    for (int i = 0; i < nExportCell; i++)
-    {
-      const int2 packed_idx = bufferStruct.LETBuffer_node[i];
-      const int idx = packed_idx.x;
-      const float sizew = host_int_as_float(packed_idx.y);
-      const _v4sf size = __builtin_ia32_vec_set_v4sf(nodeSizeV[idx], sizew, 3);
-
-      //       vLETBuffer[nStoreIdx            ] = nodeCentreV[idx];     /* centre */
-      //       vLETBuffer[nStoreIdx+nExportCell] = size;                 /*  size  */
-
-      vLETBuffer[nStoreIdx+nExportCell] = nodeCentreV[idx];     /* centre */
-      vLETBuffer[nStoreIdx            ] = size;                 /*  size  */
-
-      vLETBuffer[multiStoreIdx++      ] = multipoleV[3*idx+0];  /* multipole.x */
-      vLETBuffer[multiStoreIdx++      ] = multipoleV[3*idx+1];  /* multipole.x */
-      vLETBuffer[multiStoreIdx++      ] = multipoleV[3*idx+2];  /* multipole.x */
-      nStoreIdx++;
-    }
-  }
-
-//double t2 = get_time2();
-time = get_time2()-t0;
-//LOGF(stderr,"LETQ proc: %d Took: %lg  Calc: %lg  Copy: %lg P: %d N: %d \n",procId, t2-t0, t1-t0, t2-t1, nExportPtcl, nExportCell);
-
-  return  1 + nExportPtcl + 5*nExportCell;
-}
-
-int3 getLEToptFullTree(
-    GETLETBUFFERS &bufferStruct,
-    real4 **LETBuffer_ptr,
-    const real4 *nodeCentre,
-    const real4 *nodeSize,
-    const real4 *multipole,
-    const int cellBeg,
-    const int cellEnd,
-    const real4 *bodies,
-    const int nParticles,
-    const real4 *groupSizeInfo,
-    const real4 *groupCentreInfo,
-    const int groupBeg,
-    const int groupEnd,
-    const int nNodes,
-    unsigned long long &nflops)
-{
-  bufferStruct.LETBuffer_node.clear();
-  bufferStruct.LETBuffer_ptcl.clear();
-  bufferStruct.currLevelVecUI4.clear();
-  bufferStruct.nextLevelVecUI4.clear();
-  bufferStruct.currGroupLevelVec.clear();
-  bufferStruct.nextGroupLevelVec.clear();
-  bufferStruct.groupSplitFlag.clear();
-
-  nflops = 0;
-
-  int nExportCell = 0;
-  int nExportPtcl = 0;
-  int nExportCellOffset = cellEnd;
-
-  const _v4sf*            bodiesV = (const _v4sf*)bodies;
-  const _v4sf*          nodeSizeV = (const _v4sf*)nodeSize;
-  const _v4sf*        nodeCentreV = (const _v4sf*)nodeCentre;
-  const _v4sf*         multipoleV = (const _v4sf*)multipole;
-  const _v4sf*   grpNodeSizeInfoV = (const _v4sf*)groupSizeInfo;
-  const _v4sf* grpNodeCenterInfoV = (const _v4sf*)groupCentreInfo;
-
-
-#if 0 /* AVX */
-#ifndef __AVX__
-#error "AVX is not defined"
-#endif
-  const int SIMDW  = 8;
-#define AVXIMBH
-#else
-  const int SIMDW  = 4;
-#define SSEIMBH
-#endif
-
-
-  Swap<std::vector<uint4> > levelList(bufferStruct.currLevelVecUI4, bufferStruct.nextLevelVecUI4);
-  Swap<std::vector<int> > levelGroups(bufferStruct.currGroupLevelVec, bufferStruct.nextGroupLevelVec);
-
-  nExportCell += cellBeg;
-  for (int node = 0; node < cellBeg; node++)
-    bufferStruct.LETBuffer_node.push_back((int2){node, host_float_as_int(nodeSize[node].w)});
-
-
-
-  /* copy group info into current level buffer */
-  for (int group = groupBeg; group < groupEnd; group++)
-    levelGroups.first().push_back(group);
-
-  for (int cell = cellBeg; cell < cellEnd; cell++)
-    levelList.first().push_back((uint4){(uint)cell, 0, (uint)levelGroups.first().size(),0});
-
-  int depth = 0;
-  while (!levelList.first().empty())
-  {
-    const int csize = levelList.first().size();
-    for (int i = 0; i < csize; i++)
-    {
-      const uint4       nodePacked = levelList.first()[i];
-
-      const uint  nodeIdx  = nodePacked.x;
-      const float nodeInfo_x = nodeCentre[nodeIdx].w;
-      const uint  nodeInfo_y = host_float_as_int(nodeSize[nodeIdx].w);
-
-      const _v4sf nodeCOM  = __builtin_ia32_vec_set_v4sf(multipoleV[nodeIdx*3], nodeInfo_x, 3);
-      const bool lleaf = nodeInfo_x <= 0.0f;
-
-      const int groupBeg = nodePacked.y;
-      const int groupEnd = nodePacked.z;
-      nflops += 20*((groupEnd - groupBeg-1)/SIMDW+1)*SIMDW;
-
-      bufferStruct.groupSplitFlag.clear();
-      for (int ib = groupBeg; ib < groupEnd; ib += SIMDW)
-      {
-        _v4sf centre[SIMDW], size[SIMDW];
-        for (int laneIdx = 0; laneIdx < SIMDW; laneIdx++)
-        {
-          const int group = levelGroups.first()[std::min(ib+laneIdx, groupEnd-1)];
-          centre[laneIdx] = grpNodeCenterInfoV[group];
-          size  [laneIdx] =   grpNodeSizeInfoV[group];
-        }
-#ifdef AVXIMBH
-        bufferStruct.groupSplitFlag.push_back(split_node_grav_impbh_box8a(nodeCOM, centre, size));
-#else
-        bufferStruct.groupSplitFlag.push_back(split_node_grav_impbh_box4a(nodeCOM, centre, size));
-#endif
-      }
-
-      const int groupNextBeg = levelGroups.second().size();
-      int split = false;
-      for (int idx = groupBeg; idx < groupEnd; idx++)
-      {
-        const bool gsplit = ((uint*)&bufferStruct.groupSplitFlag[0])[idx - groupBeg];
-        if (gsplit)
-        {
-          split = true;
-          const int group = levelGroups.first()[idx];
-          if (!lleaf)
-          {
-            //Test on if its a leaf and on if it's and end-point
-            bool gleaf = groupCentreInfo[group].w <= 0.0f;
-            if(!gleaf)
-            {
-              gleaf = (host_float_as_int(groupSizeInfo[group].w) == 0xFFFFFFFF);
-            }
-
-            if (!gleaf)
-            {
-              const int childinfoGrp  = ((uint4*)groupSizeInfo)[group].w;
-              const int gchild  =   childinfoGrp & 0x0FFFFFFF;
-              const int gnchild = ((childinfoGrp & 0xF0000000) >> 28) ;
-
-              //for (int i = gchild; i <= gchild+gnchild; i++)
-              for (int i = gchild; i < gchild+gnchild; i++)
-              {
-                levelGroups.second().push_back(i);
-              }
-            }
-            else
-              levelGroups.second().push_back(group);
-          }
-          else
-            break;
-        }
-      }
-
-      real4 size  = nodeSize[nodeIdx];
-      int sizew = 0xFFFFFFFF;
-
-      if (split)
-      {
-        if (!lleaf)
-        {
-          const int lchild  =    nodeInfo_y & 0x0FFFFFFF;            //Index to the first child of the node
-          const int lnchild = (((nodeInfo_y & 0xF0000000) >> 28)) ;  //The number of children this node has
-          sizew = (nExportCellOffset | (lnchild << LEAFBIT));
-          nExportCellOffset += lnchild;
-          for (int i = lchild; i < lchild + lnchild; i++)
-            levelList.second().push_back((uint4){(uint)i,(uint)groupNextBeg,(uint)levelGroups.second().size()});
-        }
-        else
-        {
-          const int pfirst =    nodeInfo_y & BODYMASK;
-          const int np     = (((nodeInfo_y & INVBMASK) >> LEAFBIT)+1);
-          sizew = (nExportPtcl | ((np-1) << LEAFBIT));
-          for (int i = pfirst; i < pfirst+np; i++)
-            bufferStruct.LETBuffer_ptcl.push_back(i);
-          nExportPtcl += np;
-        }
-      }
-
-      bufferStruct.LETBuffer_node.push_back((int2){(int)nodeIdx, sizew});
-      nExportCell++;
-    }
-
-    depth++;
-
-    levelList.swap();
-    levelList.second().clear();
-
-    levelGroups.swap();
-    levelGroups.second().clear();
-  }
-
-  assert((int)bufferStruct.LETBuffer_ptcl.size() == nExportPtcl);
-  assert((int)bufferStruct.LETBuffer_node.size() == nExportCell);
-
-  /* now copy data into LETBuffer */
-  {
-    //LETBuffer.resize(nExportPtcl + 5*nExportCell);
-#pragma omp critical //Malloc seems to be not so thread safe..
-    *LETBuffer_ptr = (real4*)malloc(sizeof(real4)*(1+ nExportPtcl + 5*nExportCell));
-    real4 *LETBuffer = *LETBuffer_ptr;
-    _v4sf *vLETBuffer      = (_v4sf*)(&LETBuffer[1]);
-    //_v4sf *vLETBuffer      = (_v4sf*)&LETBuffer     [0];
-
-    int nStoreIdx = nExportPtcl;
-    int multiStoreIdx = nStoreIdx + 2*nExportCell;
-    for (int i = 0; i < nExportPtcl; i++)
-    {
-      const int idx = bufferStruct.LETBuffer_ptcl[i];
-      vLETBuffer[i] = bodiesV[idx];
-    }
-    for (int i = 0; i < nExportCell; i++)
-    {
-      const int2 packed_idx = bufferStruct.LETBuffer_node[i];
-      const int idx = packed_idx.x;
-      const float sizew = host_int_as_float(packed_idx.y);
-      const _v4sf size = __builtin_ia32_vec_set_v4sf(nodeSizeV[idx], sizew, 3);
-
-      //       vLETBuffer[nStoreIdx            ] = nodeCentreV[idx];     /* centre */
-      //       vLETBuffer[nStoreIdx+nExportCell] = size;                 /*  size  */
-
-      vLETBuffer[nStoreIdx+nExportCell] = nodeCentreV[idx];     /* centre */
-      vLETBuffer[nStoreIdx            ] = size;                 /*  size  */
-
-      vLETBuffer[multiStoreIdx++      ] = multipoleV[3*idx+0];  /* multipole.x */
-      vLETBuffer[multiStoreIdx++      ] = multipoleV[3*idx+1];  /* multipole.x */
-      vLETBuffer[multiStoreIdx++      ] = multipoleV[3*idx+2];  /* multipole.x */
-      nStoreIdx++;
-    }
-  }
-
-  return (int3){nExportCell, nExportPtcl, depth};
-}
-#endif //USE MPI
 
 
 
@@ -3620,7 +3004,7 @@ void octree::checkGPUAndStartLETComputation(tree_structure &tree,
       totalLETExTime += thisPartLETExTime;
     }// if (nReceived - procTrees) > 0)
   }// if isFinished
-#endif  
+#endif
 }
 
 
@@ -3841,6 +3225,21 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             real4 *grpSize2   = &grpCenter[1+nbody];
             real4 *grpCenter2 = &grpCenter[1+nbody+nnode];
 
+            if(procId == 0)
+            {
+                FILE *out = fopen("dumpDataLocal.bin", "wb");
+                fwrite(&tree.n, sizeof(int), 1, out);
+                fwrite(&tree.n_nodes, sizeof(int), 1, out);
+                for(int i=0; i < tree.n_nodes; i++) fwrite(&nodeCenterInfo[i], sizeof(float4), 1, out);
+                for(int i=0; i < tree.n_nodes; i++) fwrite(&nodeSizeInfo[i],   sizeof(float4), 1, out);
+                for(int i=0; i < tree.n_nodes; i++) fwrite(&multipole[3*i],    sizeof(float4), 3, out);
+                for(int i=0; i < tree.n; i++)       fwrite(&bodies[i],         sizeof(float4), 1, out);
+
+                for(int i=0; i < (1+nbody+2*nnode); i++) fwrite(&grpCenter[i],sizeof(float4), 1, out);
+
+                fclose(out);
+            }
+
 
             //Build the tree we possibly have to send to the remote process
             double bla3;
@@ -3863,6 +3262,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                             tree.n_nodes,
                                             procId, ibox,
                                             nflops, bla3);
+
+            fprintf(stderr,"SizeTree: %d \n", sizeTree);
 
             //Test if the boundary tree sent by the remote tree is sufficient for us
             double tBoundaryCheck;
@@ -4923,41 +4324,6 @@ void octree::mergeAndLaunchLETStructures(
 
 
 
-#if 0
-void octree::ICSend(int destination, real4 *bodyPositions, real4 *bodyVelocities,  ullong *bodiesIDs, int toSend)
-{
-#ifdef USE_MPI
-  //First send the number of particles, then the actual sample data
-  MPI_Send(&toSend, 1, MPI_INT, destination, destination*2 , mpiCommWorld);
-
-  //Send the positions, velocities and ids
-  MPI_Send( bodyPositions,  toSend*sizeof(real)*4, MPI_BYTE, destination, destination*2+1, mpiCommWorld);
-  MPI_Send( bodyVelocities, toSend*sizeof(real)*4, MPI_BYTE, destination, destination*2+2, mpiCommWorld);
-  MPI_Send( bodiesIDs,      toSend*sizeof(ullong), MPI_BYTE, destination, destination*2+3, mpiCommWorld);
-#endif
-}
-
-
-void octree::ICRecv(int recvFrom, vector<real4> &bodyPositions, vector<real4> &bodyVelocities,  vector<ullong> &bodiesIDs)
-{
-#ifdef USE_MPI
-  MPI_Status status;
-  int nreceive;
-
-  //First receive the number of particles, then the actual sample data
-  MPI_Recv(&nreceive, 1, MPI_INT, recvFrom, procId*2, mpiCommWorld,&status);
-
-  bodyPositions.resize(nreceive);
-  bodyVelocities.resize(nreceive);
-  bodiesIDs.resize(nreceive);
-
-  //Receive the positions, velocities and ids
-  MPI_Recv( (real*  )&bodyPositions[0],  nreceive*sizeof(real)*4, MPI_BYTE, recvFrom, procId*2+1, mpiCommWorld,&status);
-  MPI_Recv( (real*  )&bodyVelocities[0], nreceive*sizeof(real)*4, MPI_BYTE, recvFrom, procId*2+2, mpiCommWorld,&status);
-  MPI_Recv( (ullong*)&bodiesIDs[0],      nreceive*sizeof(ullong), MPI_BYTE, recvFrom, procId*2+3, mpiCommWorld,&status);
-#endif
-}
-#endif
 
 //Sum the number of particles on all processes
 void octree::mpiSumParticleCount(int numberOfParticles)
@@ -4975,247 +4341,5 @@ void octree::mpiSumParticleCount(int numberOfParticles)
 
 
 
-#if 0
-//Uses one communication by storing data in one buffer and communicate required information,
-//such as box-sizes and number of sample particles on this process (Note that the number is only
-//used by process-0
-void octree::sendCurrentRadiusAndSampleInfo(real4 &rmin, real4 &rmax, int nsample, int *nSamples)
-{
-
-  sampleRadInfo curProcState;
-
-  curProcState.nsample      = nsample;
-  curProcState.rmin         = make_double4(rmin.x, rmin.y, rmin.z, rmin.w);
-  curProcState.rmax         = make_double4(rmax.x, rmax.y, rmax.z, rmax.w);
-#ifdef USE_MPI
-  //Get the number of sample particles and the domain size information
-  MPI_Allgather(&curProcState, sizeof(sampleRadInfo), MPI_BYTE,  curSysState,
-      sizeof(sampleRadInfo), MPI_BYTE, mpiCommWorld);
-#else
-  curSysState[0] = curProcState;
 #endif
 
-  rmin.x                 = (real)(currentRLow[0].x = curSysState[0].rmin.x);
-  rmin.y                 = (real)(currentRLow[0].y = curSysState[0].rmin.y);
-  rmin.z                 = (real)(currentRLow[0].z = curSysState[0].rmin.z);
-  currentRLow[0].w = curSysState[0].rmin.w;
-
-  rmax.x                 = (real)(currentRHigh[0].x = curSysState[0].rmax.x);
-  rmax.y                 = (real)(currentRHigh[0].y = curSysState[0].rmax.y);
-  rmax.z                 = (real)(currentRHigh[0].z = curSysState[0].rmax.z);
-  currentRHigh[0].w = curSysState[0].rmax.w;
-
-  nSamples[0] = curSysState[0].nsample;
-
-  for(int i=1; i < nProcs; i++)
-  {
-    rmin.x = std::min(rmin.x, (real)curSysState[i].rmin.x);
-    rmin.y = std::min(rmin.y, (real)curSysState[i].rmin.y);
-    rmin.z = std::min(rmin.z, (real)curSysState[i].rmin.z);
-
-    rmax.x = std::max(rmax.x, (real)curSysState[i].rmax.x);
-    rmax.y = std::max(rmax.y, (real)curSysState[i].rmax.y);
-    rmax.z = std::max(rmax.z, (real)curSysState[i].rmax.z);
-
-    currentRLow[i].x = curSysState[i].rmin.x;
-    currentRLow[i].y = curSysState[i].rmin.y;
-    currentRLow[i].z = curSysState[i].rmin.z;
-    currentRLow[i].w = curSysState[i].rmin.w;
-
-    currentRHigh[i].x = curSysState[i].rmax.x;
-    currentRHigh[i].y = curSysState[i].rmax.y;
-    currentRHigh[i].z = curSysState[i].rmax.z;
-    currentRHigh[i].w = curSysState[i].rmax.w;
-
-    nSamples[i] = curSysState[i].nsample;
-  }
-}
-#endif
-
-
-#if 0
-int octree::recursiveBasedTopLEvelsCheckStart(tree_structure &tree,
-    real4 *treeBuffer,
-    real4 *grpCenter,
-    real4 *grpSize,
-    int startGrp,
-    int endGrp,
-    int &DistanceCheck)
-{
-  //Tree info
-  const int nParticles = host_float_as_int(treeBuffer[0].x);
-  const int nNodes     = host_float_as_int(treeBuffer[0].y);
-
-  //  LOGF(stderr,"Working with %d and %d || %d %d\n", nParticles, nNodes, 1+nParticles+nNodes,nTopLevelTrees );
-
-  real4* treeBoxSizes   = &treeBuffer[1+nParticles];
-  real4* treeBoxCenters = &treeBuffer[1+nParticles+nNodes];
-  real4* treeBoxMoments = &treeBuffer[1+nParticles+2*nNodes];
-
-  const int nodeID = 0;
-  uint4 checkNode = make_uint4(nodeID, startGrp, endGrp, 0);
-
-  int DistanceCheckPP = 0;
-  int maxLevel = recursiveTopLevelCheck(checkNode, treeBoxSizes, treeBoxCenters, treeBoxMoments,
-      grpCenter, grpSize, DistanceCheck, DistanceCheckPP, 0);
-
-
-  //  LOGF(stderr, "Finally Max level found: %d Process : %d \n", maxLevel, ibox)
-  return maxLevel;
-}
-#endif
-
-#if 0
-int octree::recursiveTopLevelCheck(uint4 checkNode, real4* treeBoxSizes, real4* treeBoxCenters, real4* treeBoxMoments,
-    real4* grpCenter, real4* grpSize, int &DistanceCheck, int &DistanceCheckPP, int maxLevel)
-{
-  int nodeID = checkNode.x;
-  int grpID  = checkNode.y;
-  int endGrp = checkNode.z;
-
-  real4 nodeCOM  = treeBoxMoments[nodeID*3];
-  real4 nodeSize = treeBoxSizes  [nodeID];
-  real4 nodeCntr = treeBoxCenters[nodeID];
-
-  //     LOGF(stderr,"Checking node: %d grpID: %d endGrp: %d depth: %d \n",nodeID, grpID, endGrp, maxLevel);
-
-  int res = maxLevel;
-
-  nodeCOM.w = nodeCntr.w;
-  for(int grp=grpID; grp < endGrp; grp++)
-  {
-    real4 grpcntr = grpCenter[grp];
-    real4 grpsize = grpSize[grp];
-
-    bool split = false;
-    {
-      //Compute the distance between the group and the cell
-      float3 dr = make_float3(fabs((float)grpcntr.x - nodeCOM.x) - (float)grpsize.x,
-          fabs((float)grpcntr.y - nodeCOM.y) - (float)grpsize.y,
-          fabs((float)grpcntr.z - nodeCOM.z) - (float)grpsize.z);
-
-      dr.x += fabs(dr.x); dr.x *= 0.5f;
-      dr.y += fabs(dr.y); dr.y *= 0.5f;
-      dr.z += fabs(dr.z); dr.z *= 0.5f;
-
-      //Distance squared, no need to do sqrt since opening criteria has been squared
-      float ds2    = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
-
-      if (ds2     <= fabs(nodeCOM.w))           split = true;
-      if (fabs(ds2 - fabs(nodeCOM.w)) < 10e-04) split = true; //Limited precision can result in round of errors. Use this as extra safe guard
-
-      //         LOGF(stderr,"Node: %d grp: %d  split: %d || %f %f\n", nodeID, grp, split, ds2, nodeCOM.w);
-    }
-    //       LOGF(stderr,"Node: %d grp: %d  split: %d Leaf: %d \t %d %f \n",nodeID, grp, split, nodeCntr.w <= 0,(host_float_as_int(nodeSize.w) == 0xFFFFFFFF), nodeCntr.w);
-
-    if(split)
-    {
-      if(host_float_as_int(nodeSize.w) == 0xFFFFFFFF)
-      {
-        //We want to split, but then we go to deep. So we need a full tree-walk
-        return -1;
-      }
-
-      int child, nchild;
-      int childinfo = host_float_as_int(nodeSize.w);
-      bool leaf = nodeCntr.w <= 0;
-
-      if(!leaf)
-      {
-        //Node
-        child    =    childinfo & 0x0FFFFFFF;           //Index to the first child of the node
-        nchild   = (((childinfo & 0xF0000000) >> 28)) ; //The number of children this node has
-
-        //Process node children
-        for(int y=child; y < child+nchild; y++)
-        {
-          //Go one level deeper into the tree
-          //uint4 nextCheck = make_uint4(y, grp, endGrp, 0);
-          uint4 nextCheck = make_uint4(y, grpID, endGrp, 0);
-          int res2 = recursiveTopLevelCheck(nextCheck, treeBoxSizes, treeBoxCenters, treeBoxMoments,
-              grpCenter, grpSize, DistanceCheck, DistanceCheckPP, maxLevel+1);
-          if(res2 < 0) return -1;
-
-          res = max(res,res2); //Return max level reached
-        }
-      }//!leaf
-      else
-      {
-        //It is a leaf, no need to check any other groups
-        return res;
-      }
-      //No need to check further groups since this one already succeeded
-      grp = endGrp;
-    }//Split
-  }
-  return res;
-}
-#endif
-
-
-#if 0
-void octree::computeSampleRateSFC(float lastExecTime, int &nSamples, float &sampleRate)
-{
-#ifdef USE_MPI
-  double t00 = get_time();
-  //Compute the number of particles to sample.
-  //Average the previous and current execution time to make everything smoother
-  //results in much better load-balance
-  static double prevDurStep  = -1;
-  static int    prevSampFreq = -1;
-  prevDurStep                = (prevDurStep <= 0) ? lastExecTime : prevDurStep;
-  double timeLocal           = (lastExecTime + prevDurStep) / 2;
-
-#define LOAD_BALANCE 0
-#define LOAD_BALANCE_MEMORY 0
-
-  double nrate = 0;
-  if(LOAD_BALANCE) //Base load balancing on the computation time
-  {
-    double timeSum   = 0.0;
-
-    //Sum the execution times over all processes
-    MPI_Allreduce( &timeLocal, &timeSum, 1,MPI_DOUBLE, MPI_SUM, mpiCommWorld);
-
-    nrate = timeLocal / timeSum;
-
-    if(LOAD_BALANCE_MEMORY)       //Don't fluctuate particles too much
-    {
-#define SAMPLING_LOWER_LIMIT_FACTOR  (1.9)
-
-      double nrate2 = (double)localTree.n / (double) nTotalFreq_ull;
-      nrate2       /= SAMPLING_LOWER_LIMIT_FACTOR;
-
-      if(nrate < nrate2)
-      {
-        nrate = nrate2;
-      }
-
-      double nrate2_sum = 0.0;
-
-      MPI_Allreduce(&nrate, &nrate2_sum, 1, MPI_DOUBLE, MPI_SUM, mpiCommWorld);
-
-      nrate /= nrate2_sum;
-    }
-  }
-  else
-  {
-    nrate = (double)localTree.n / (double)nTotalFreq_ull; //Equal number of particles
-  }
-
-  int    nsamp  = (int)(nTotalFreq_ull*0.001f/4) + 1;  //Total number of sample particles, global
-  nSamples      = (int)(nsamp*nrate) + 1;
-  sampleRate    = localTree.n / (float)nSamples;
-
-  if (procId == 0)
-  fprintf(stderr, "NSAMP [%d]: sample: %d nrate: %f final sampleRate: %f localTree.n: %d\tprevious: %d timeLocal: %f prevTimeLocal: %f  Took: %lg\n",
-      procId, nSamples, nrate, sampleRate, localTree.n, prevSampFreq,
-      timeLocal, prevDurStep,get_time()-t00);
-  assert(sampleRate > 1);
-
-  prevDurStep  = timeLocal;
-  prevSampFreq = sampleRate;
-
-#endif
-}
-#endif
