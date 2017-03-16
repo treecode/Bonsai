@@ -1,15 +1,128 @@
 #include "octree.h"
 
-#define USE_MPI
+//#define USE_MPI
 
 #ifdef USE_MPI
-#include <xmmintrin.h>
+
 #include "radix.h"
 #include <parallel/algorithm>
 #include <map>
 #include "dd2d.h"
 
-//#define USE_AVX
+
+#ifdef __ALTIVEC__
+    #include <altivec.h>
+
+    #define VECLIB_ALIGNED8 __attribute__ ((__aligned__ (8)))
+    #define VECLIB_ALIGNED16 __attribute__ ((__aligned__ (16)))
+
+    //The below types and functions have been taken from the IBM vecLib
+    //https://www.ibm.com/developerworks/community/groups/community/powerveclib/
+    typedef
+      VECLIB_ALIGNED8
+      unsigned long long
+    __m64;
+
+    typedef
+      VECLIB_ALIGNED16
+      vector float
+    __m128;
+
+    typedef
+      VECLIB_ALIGNED16
+      vector unsigned char
+    __m128i;
+
+
+    typedef
+      VECLIB_ALIGNED16
+      union {
+        __m128i                   as_m128i;
+        __m64                     as_m64               [2];
+        vector signed   char      as_vector_signed_char;
+        vector unsigned char      as_vector_unsigned_char;
+        vector bool     char      as_vector_bool_char;
+        vector signed   short     as_vector_signed_short;
+        vector unsigned short     as_vector_unsigned_short;
+        vector bool     short     as_vector_bool_short;
+        vector signed   int       as_vector_signed_int;
+        vector unsigned int       as_vector_unsigned_int;
+        vector bool     int       as_vector_bool_int;
+        vector signed   long long as_vector_signed_long_long;
+        vector unsigned long long as_vector_unsigned_long_long;
+        vector bool     long long as_vector_bool_long_long;
+        char                      as_char              [16];
+        short                     as_short             [8];
+        int                       as_int               [4];
+        unsigned int              as_unsigned_int      [4];
+        long long                 as_long_long         [2];
+      } __m128i_union;
+
+
+
+    inline __m128 vec_shufflepermute4sp (__m128 left, __m128 right, unsigned int element_selectors)
+    {
+      unsigned long element_selector_10 =  element_selectors       & 0x03;
+      unsigned long element_selector_32 = (element_selectors >> 2) & 0x03;
+      unsigned long element_selector_54 = (element_selectors >> 4) & 0x03;
+      unsigned long element_selector_76 = (element_selectors >> 6) & 0x03;
+      #ifdef __LITTLE_ENDIAN__
+        const static unsigned int permute_selectors_from_left_operand  [4] = { 0x03020100, 0x07060504, 0x0B0A0908, 0x0F0E0D0C };
+        const static unsigned int permute_selectors_from_right_operand [4] = { 0x13121110, 0x17161514, 0x1B1A1918, 0x1F1E1D1C };
+      #elif __BIG_ENDIAN__
+        const static unsigned int permute_selectors_from_left_operand  [4] = { 0x00010203, 0x04050607, 0x08090A0B, 0x0C0D0E0F };
+        const static unsigned int permute_selectors_from_right_operand [4] = { 0x10111213, 0x14151617, 0x18191A1B, 0x1C1D1E1F };
+      #endif
+      __m128i_union permute_selectors;
+      #ifdef __LITTLE_ENDIAN__
+        permute_selectors.as_int[0] = permute_selectors_from_left_operand [element_selector_10];
+        permute_selectors.as_int[1] = permute_selectors_from_left_operand [element_selector_32];
+        permute_selectors.as_int[2] = permute_selectors_from_right_operand[element_selector_54];
+        permute_selectors.as_int[3] = permute_selectors_from_right_operand[element_selector_76];
+      #elif __BIG_ENDIAN__
+        permute_selectors.as_int[3] = permute_selectors_from_left_operand [element_selector_10];
+        permute_selectors.as_int[2] = permute_selectors_from_left_operand [element_selector_32];
+        permute_selectors.as_int[1] = permute_selectors_from_right_operand[element_selector_54];
+        permute_selectors.as_int[0] = permute_selectors_from_right_operand[element_selector_76];
+      #endif
+      return (vector float) vec_perm ((vector unsigned char) left, (vector unsigned char) right,
+                                      permute_selectors.as_vector_unsigned_char);
+    }
+
+    //Note that vmerge low and high map to reversed instructions.
+    //otherwise Intel and IBM results are different
+    #define VMERGELOW    vec_vmrghw
+    #define VMERGEHIGH   vec_vmrglw
+    #define VECPERMUTE   vec_shufflepermute4sp
+    #define VECMAX       vec_max
+    #define VECCMPLE     (_v4sf) vec_cmple
+    #define AND          vec_and
+    #define VECTEST      vec_any_nan
+
+    //Note that parameter order is different between x86_64 and PPC
+    #define VECINSERT(a,b,c) vec_insert(a,b,c);
+#else
+
+    //Uncomment the below to use 256 (AVX) bit instructions instead of 128 (SSE)
+    //#define USE_AVX
+
+    #include <xmmintrin.h>
+    #include <immintrin.h>
+
+    #define AND              __builtin_ia32_andps
+    #define VMERGELOW        __builtin_ia32_unpcklps
+    #define VMERGEHIGH       __builtin_ia32_unpckhps
+    #define VECPERMUTE       __builtin_ia32_shufps
+    #define VECMAX           __builtin_ia32_maxps
+    #define VECCMPLE         __builtin_ia32_cmpleps
+    #define VECTEST          __builtin_ia32_movmskps
+    #define VECINSERT(a,b,c) __builtin_ia32_vec_set_v4sf(b,a,c);
+#endif
+
+
+
+
+
 
 extern "C" uint2 thrust_partitionDomains( my_dev::dev_mem<uint2> &validList,
                                           my_dev::dev_mem<uint2> &validList2,
@@ -24,9 +137,16 @@ extern "C" uint2 thrust_partitionDomains( my_dev::dev_mem<uint2> &validList,
 #define NMAXPROC 32768
 
 
-
-typedef float  _v4sf  __attribute__((vector_size(16)));
-typedef int    _v4si  __attribute__((vector_size(16)));
+#ifdef __ALTIVEC__
+    #define   VECLIB_ALIGNED16 __attribute__ ((__aligned__ (16)))
+    typedef   VECLIB_ALIGNED16  vector float _v4sf;
+    typedef   VECLIB_ALIGNED16  vector int   _v4si;
+#else
+    typedef float  _v4sf  __attribute__((vector_size(16)));
+    typedef int    _v4si  __attribute__((vector_size(16)));
+    typedef float  _v8sf  __attribute__((vector_size(32)));
+    typedef int    _v8si  __attribute__((vector_size(32)));
+#endif
 
 struct v4sf
 {
@@ -144,15 +264,11 @@ inline float host_int_as_float(int val)
 //SSE stuff for local tree-walk
 #ifdef USE_MPI
 
-#ifdef __AVX__
-typedef float  _v8sf  __attribute__((vector_size(32)));
-typedef int    _v8si  __attribute__((vector_size(32)));
-#endif
 
 static inline _v4sf __abs(const _v4sf x)
 {
   const _v4si mask = {0x7fffffff, 0x7fffffff, 0x7fffffff, 0x7fffffff};
-  return __builtin_ia32_andps(x, (_v4sf)mask);
+  return AND(x, (_v4sf)mask);
 }
 
 #ifdef __AVX__
@@ -167,23 +283,23 @@ static inline _v8sf __abs8(const _v8sf x)
 
 
 inline void _v4sf_transpose(_v4sf &a, _v4sf &b, _v4sf &c, _v4sf &d){
-  _v4sf t0 = __builtin_ia32_unpcklps(a, c); // |c1|a1|c0|a0|
-  _v4sf t1 = __builtin_ia32_unpckhps(a, c); // |c3|a3|c2|a2|
-  _v4sf t2 = __builtin_ia32_unpcklps(b, d); // |d1|b1|d0|b0|
-  _v4sf t3 = __builtin_ia32_unpckhps(b, d); // |d3|b3|d2|b2|
+    _v4sf t0 = VMERGELOW (a, c); // |c1|a1|c0|a0|
+    _v4sf t1 = VMERGEHIGH(a, c); // |c3|a3|c2|a2|
+    _v4sf t2 = VMERGELOW (b, d); // |d1|b1|d0|b0|
+    _v4sf t3 = VMERGEHIGH(b, d); // |d3|b3|d2|b2|
 
-  a = __builtin_ia32_unpcklps(t0, t2);
-  b = __builtin_ia32_unpckhps(t0, t2);
-  c = __builtin_ia32_unpcklps(t1, t3);
-  d = __builtin_ia32_unpckhps(t1, t3);
+    a = VMERGELOW (t0, t2);
+    b = VMERGEHIGH(t0, t2);
+    c = VMERGELOW (t1, t3);
+    d = VMERGEHIGH(t1, t3);
 }
 
 #ifdef __AVX__
 static inline _v8sf pack_2xmm(const _v4sf a, const _v4sf b){
-  // v8sf p;
+
   _v8sf p = {0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f,0.0f}; // just avoid warning
-  p = __builtin_ia32_vinsertf128_ps256(p, a, 0);
-  p = __builtin_ia32_vinsertf128_ps256(p, b, 1);
+        p = __builtin_ia32_vinsertf128_ps256(p, a, 0);
+        p = __builtin_ia32_vinsertf128_ps256(p, b, 1);
   return p;
 }
 inline void _v8sf_transpose(_v8sf &a, _v8sf &b, _v8sf &c, _v8sf &d){
@@ -207,10 +323,10 @@ inline _v4sf split_node_grav_impbh_box4a( // takes 4 tree nodes and returns 4-bi
     const _v4sf  boxCenter[4],
     const _v4sf  boxSize  [4])
 {
-  _v4sf ncx  = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0x00);
-  _v4sf ncy  = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0x55);
-  _v4sf ncz  = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0xaa);
-  _v4sf ncw  = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0xff);
+  _v4sf ncx  =  VECPERMUTE(nodeCOM, nodeCOM, 0x00);
+  _v4sf ncy  =  VECPERMUTE(nodeCOM, nodeCOM, 0x55);
+  _v4sf ncz  =  VECPERMUTE(nodeCOM, nodeCOM, 0xaa);
+  _v4sf ncw  =  VECPERMUTE(nodeCOM, nodeCOM, 0xff);
   _v4sf size = __abs(ncw);
 
   _v4sf bcx =  (boxCenter[0]);
@@ -230,13 +346,13 @@ inline _v4sf split_node_grav_impbh_box4a( // takes 4 tree nodes and returns 4-bi
   _v4sf dz = __abs(bcz - ncz) - bsz;
 
   const _v4sf zero = {0.0f, 0.0f, 0.0f, 0.0f};
-  dx = __builtin_ia32_maxps(dx, zero);
-  dy = __builtin_ia32_maxps(dy, zero);
-  dz = __builtin_ia32_maxps(dz, zero);
+  dx = VECMAX(dx, zero);
+  dy = VECMAX(dy, zero);
+  dz = VECMAX(dz, zero);
 
   const _v4sf ds2 = dx*dx + dy*dy + dz*dz;
 
-  _v4sf ret = __builtin_ia32_cmpleps(ds2, size);
+  _v4sf ret = VECCMPLE(ds2, size);
 
   return ret;
 }
@@ -318,13 +434,13 @@ inline int split_node_grav_impbh_box4simd1( // takes 4 tree nodes and returns 4-
   _v4sf dy = __abs(bcy - ncy) - bsy;
   _v4sf dz = __abs(bcz - ncz) - bsz;
 
-  dx = __builtin_ia32_maxps(dx, zero);
-  dy = __builtin_ia32_maxps(dy, zero);
-  dz = __builtin_ia32_maxps(dz, zero);
+  dx = VECMAX(dx, zero);
+  dy = VECMAX(dy, zero);
+  dz = VECMAX(dz, zero);
 
   const _v4sf ds2 = dx*dx + dy*dy + dz*dz;
 
-  const int ret = __builtin_ia32_movmskps(__builtin_ia32_cmpleps(ds2, size));
+  const int ret   = VECTEST(VECCMPLE(ds2, size));
 
   return ret;
 }
@@ -2567,17 +2683,17 @@ int3 getLET1(
       const uint  nodeInfo_y = host_float_as_int(nodeSize[nodeIdx].w);
 
       _v4sf nodeCOM = multipoleV[nodeIdx*3];
-      nodeCOM       = __builtin_ia32_vec_set_v4sf (nodeCOM, nodeInfo_x, 3);
+      nodeCOM       = VECINSERT(nodeInfo_x, nodeCOM, 3);
 
       int split = false;
 
       /**************/
 
 
-      const _v4sf vncx = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0x00);
-      const _v4sf vncy = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0x55);
-      const _v4sf vncz = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0xaa);
-      const _v4sf vncw = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0xff);
+      const _v4sf vncx  = VECPERMUTE(nodeCOM, nodeCOM, 0x00);
+      const _v4sf vncy  = VECPERMUTE(nodeCOM, nodeCOM, 0x55);
+      const _v4sf vncz  = VECPERMUTE(nodeCOM, nodeCOM, 0xaa);
+      const _v4sf vncw  = VECPERMUTE(nodeCOM, nodeCOM, 0xff);
       const _v4sf vsize = __abs(vncw);
 
       nflops += nGroups*20;  /* effective flops, can be less */
@@ -2647,9 +2763,10 @@ int3 getLET1(
     for (int i = 0; i < nExportCell; i++)
     {
       const int2 packed_idx = bufferStruct.LETBuffer_node[i];
-      const int idx = packed_idx.x;
+      const int idx     = packed_idx.x;
       const float sizew = host_int_as_float(packed_idx.y);
-      const _v4sf size = __builtin_ia32_vec_set_v4sf(nodeSizeV[idx], sizew, 3);
+      const _v4sf size  = VECINSERT(sizew,nodeSizeV[idx], 3);
+
 
       vLETBuffer[nStoreIdx+nExportCell] = nodeCentreV[idx];     /* centre */
       vLETBuffer[nStoreIdx            ] = size;                 /*  size  */
@@ -2759,7 +2876,7 @@ int getLEToptQuickFullTree(
       const float nodeInfo_x       = nodeCentre[nodeIdx].w;
       const uint  nodeInfo_y       = host_float_as_int(nodeSize[nodeIdx].w);
 
-      const _v4sf nodeCOM          = __builtin_ia32_vec_set_v4sf(multipoleV[nodeIdx*3], nodeInfo_x, 3);
+      const _v4sf nodeCOM          = VECINSERT(nodeInfo_x, multipoleV[nodeIdx*3], 3);
       const bool lleaf             = nodeInfo_x <= 0.0f;
 
       const int groupBeg = nodePacked.y;
