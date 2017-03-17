@@ -13,8 +13,13 @@
 #ifdef __ALTIVEC__
     #include <altivec.h>
 
-    #define VECLIB_ALIGNED8 __attribute__ ((__aligned__ (8)))
+    #define VECLIB_ALIGNED8  __attribute__ ((__aligned__ (8)))
     #define VECLIB_ALIGNED16 __attribute__ ((__aligned__ (16)))
+
+
+    typedef   VECLIB_ALIGNED16  vector float _v4sf;
+    typedef   VECLIB_ALIGNED16  vector int   _v4si;
+
 
     //The below types and functions have been taken from the IBM vecLib
     //https://www.ibm.com/developerworks/community/groups/community/powerveclib/
@@ -101,6 +106,12 @@
 
     //Note that parameter order is different between x86_64 and PPC
     #define VECINSERT(a,b,c) vec_insert(a,b,c);
+
+
+    #undef vector
+    #undef bool
+    #undef pixel
+
 #else
 
     //Uncomment the below to use 256 (AVX) bit instructions instead of 128 (SSE)
@@ -108,6 +119,11 @@
 
     #include <xmmintrin.h>
     #include <immintrin.h>
+    typedef float  _v4sf  __attribute__((vector_size(16)));
+    typedef int    _v4si  __attribute__((vector_size(16)));
+    typedef float  _v8sf  __attribute__((vector_size(32)));
+    typedef int    _v8si  __attribute__((vector_size(32)));
+
 
     #define AND              __builtin_ia32_andps
     #define VMERGELOW        __builtin_ia32_unpcklps
@@ -119,6 +135,16 @@
     #define VECINSERT(a,b,c) __builtin_ia32_vec_set_v4sf(b,a,c);
 #endif
 
+
+struct v4sf
+{
+  _v4sf data;
+  v4sf() {}
+  v4sf(const _v4sf _data) : data(_data) {}
+  operator const _v4sf&() const {return data;}
+  operator       _v4sf&()       {return data;}
+
+};
 
 
 
@@ -135,28 +161,6 @@ extern "C" uint2 thrust_partitionDomains( my_dev::dev_mem<uint2> &validList,
 
 #define USE_GROUP_TREE  //If this is defined we convert boundaries into a group
 #define NMAXPROC 32768
-
-
-#ifdef __ALTIVEC__
-    #define   VECLIB_ALIGNED16 __attribute__ ((__aligned__ (16)))
-    typedef   VECLIB_ALIGNED16  vector float _v4sf;
-    typedef   VECLIB_ALIGNED16  vector int   _v4si;
-#else
-    typedef float  _v4sf  __attribute__((vector_size(16)));
-    typedef int    _v4si  __attribute__((vector_size(16)));
-    typedef float  _v8sf  __attribute__((vector_size(32)));
-    typedef int    _v8si  __attribute__((vector_size(32)));
-#endif
-
-struct v4sf
-{
-  _v4sf data;
-  v4sf() {}
-  v4sf(const _v4sf _data) : data(_data) {}
-  operator const _v4sf&() const {return data;}
-  operator       _v4sf&()       {return data;}
-
-};
 
 /*
  *
@@ -2466,7 +2470,7 @@ int getLEToptQuickTreevsTree(
       const float nodeInfo_x       = nodeCentre[nodeIdx].w;
       const uint  nodeInfo_y       = host_float_as_int(nodeSize[nodeIdx].w);
 
-      const _v4sf nodeCOM          = __builtin_ia32_vec_set_v4sf(multipoleV[nodeIdx*3], nodeInfo_x, 3);
+      const _v4sf nodeCOM          = VECINSERT(nodeInfo_x, multipoleV[nodeIdx*3], 3);
       const bool lleaf             = nodeInfo_x <= 0.0f;
 
       const int groupBeg = nodePacked.y;

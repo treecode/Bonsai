@@ -7,7 +7,7 @@
 #ifdef USE_MPI
 
 #ifdef __ALTIVEC__
-    #include <altivec.h>
+//    #include <altivec.h>
 #else
     #include <xmmintrin.h>
 #endif
