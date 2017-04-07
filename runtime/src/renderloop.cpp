@@ -353,7 +353,7 @@ public:
 	  float color[4] = { 1.0f, 1.0f, 1.0f, 1.0f};
     //m_renderer.setBaseColor(color);
     //m_renderer.setPointSize(0.00001f);
-    tree->iterate_setup(m_idata);
+    tree->iterate_setup();
 
    
     int arraySize = tree->localTree.n;
