@@ -243,7 +243,7 @@ void tipsyIO::readFile(const MPI_Comm &mpiCommWorld,
           //Force compatibility with older 32bit ID files by mapping the particle IDs
           if(fileFormatVersion == 0)
           {
-            idummy    = s.getID_V1() + DARKMATTERID;
+            idummy    = d.getID_V1() + DARKMATTERID;
           }
         }
         else
