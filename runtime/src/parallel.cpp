@@ -3384,7 +3384,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                             procId, ibox,
                                             nflops, bla3);
 
-            fprintf(stderr,"SizeTree: %d \n", sizeTree);
 
             //Test if the boundary tree sent by the remote tree is sufficient for us
             double tBoundaryCheck;
