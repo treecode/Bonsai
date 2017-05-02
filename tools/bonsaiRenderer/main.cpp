@@ -33,12 +33,12 @@ static ShmQData   *shmQData   = NULL;
 static bool terminateRenderer = false;
 
 bool fetchSharedData(const bool quickSync, RendererData &rData, const int rank, const int nrank, const MPI_Comm &comm,
-    const int reduceDM = 1, const int reduceS = 1)
+    const int reduceDM = 1, const int reduceS = 1, const int SharedPID = 0)
 {
   if (shmQHeader == NULL)
   {
-    shmQHeader = new ShmQHeader(ShmQHeader::type::sharedFile(rank));
-    shmQData   = new ShmQData  (ShmQData  ::type::sharedFile(rank));
+    shmQHeader = new ShmQHeader(ShmQHeader::type::sharedFile(rank, SharedPID));
+    shmQData   = new ShmQData  (ShmQData  ::type::sharedFile(rank, SharedPID));
   }
 
   auto &header = *shmQHeader;
@@ -201,7 +201,7 @@ bool fetchSharedData(const bool quickSync, RendererData &rData, const int rank, 
 }
 
 bool fetchSharedDataMPI(const bool quickSync, RendererData &rData, const int rank, const int nrank, const MPI_Comm &comm,
-    const int reduceDM = 1, const int reduceS = 1)
+    const int reduceDM = 1, const int reduceS = 1, const int SharedPID = 0)
 {
   static int worldRank = -1;
   if (worldRank == -1)
@@ -670,7 +670,7 @@ static T* readJamieSPH(
 
 
 
-int main(int argc, char * argv[], MPI_Comm commWorld)
+int main(int argc, char * argv[], MPI_Comm commWorld, int shrMemPID)
 {
 
   std::string fileName;
@@ -888,7 +888,7 @@ int main(int argc, char * argv[], MPI_Comm commWorld)
     std::function<decltype(fetchSharedData)> fetch = 
       mpiRenderMode ? fetchSharedDataMPI : fetchSharedData; 
 
-    if (inSitu && fetch(quickSync, *newDataPtr, rank, nranks, commAsync, reduceDM, reduceS))
+    if (inSitu && fetch(quickSync, *newDataPtr, rank, nranks, commAsync, reduceDM, reduceS, shrMemPID))
     {
       int nTotal, nLocal = newDataPtr->size();
       MPI_Allreduce(&nLocal, &nTotal, 1, MPI_INT, MPI_SUM, commAsync);

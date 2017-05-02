@@ -430,7 +430,7 @@ const char *texture2DPS = STRINGIFY(
     {                                                                  \n
     vec4 c = texture2D(tex, gl_TexCoord[0].xy);                    \n
     c.rgb *= scale;
-    c.rgb = pow(c.rgb, gamma);                                     \n
+    c.rgb = pow(c.rgb, vec4(gamma));                                     \n
     c.a = 1.0;
     gl_FragColor = c;                                              \n
     }                                                                  \n
@@ -630,7 +630,7 @@ const char *compositePS = STRINGIFY(
     float d = length(gl_TexCoord[0].xy*2.0-1.0);
     c.rgb *= 1.0 - smoothstep(0.9, 1.5, d);
 
-    c.rgb = pow(c.rgb, gamma);
+    c.rgb = pow(c.rgb, vec4(gamma));
     gl_FragColor = c;                                              \n
     }                                                                  \n
 );
@@ -765,7 +765,7 @@ const char *skyboxPS = STRINGIFY(
     void main()                                                 \n
     {                                                           \n
     vec4 c = textureCube(tex, gl_TexCoord[0].xyz) * gl_Color; \n
-    c.rgb = pow(c.rgb, 2.2);
+    c.rgb = pow(c.rgb, vec4(2.2));
     gl_FragColor = c;
     //gl_FragColor = textureCube(tex, gl_TexCoord[0].xyz) * gl_Color; \n
     }                                                           \n
@@ -783,12 +783,12 @@ STRINGIFY(
     {                                                                  \n
       vec4 c = texture2D(tex, gl_TexCoord[0].xy);                    \n
       c.rgb *= scale_pre;
-      c.rgb = pow(c.rgb, gamma_pre);          \n
+      c.rgb = pow(c.rgb, vec4(gamma_pre));          \n
       if (sorted == 0.0)  \n
       {
         c.rgb = 1.0 - exp(-c.rgb);          \n
         c.rgb *= scale_post;
-        c.rgb = pow(c.rgb, gamma_post);          \n
+        c.rgb = pow(c.rgb, vec4(gamma_post));          \n
       }  \n
       c.a = 1.0;          \n
       gl_FragColor = c;                                              \n
@@ -1183,7 +1183,7 @@ STRINGIFY(
 //      c.rgb *= 100;
       c.rgb = 1.0 - exp(-c.rgb);          \n
       c.rgb *= scale;
-      c.rgb = pow(c.rgb, gamma);          \n
+      c.rgb = pow(c.rgb, vec4(gamma));          \n
       c.a   = 1.0;
       gl_FragColor = c;                                              \n
     }                                                                  \n
@@ -1214,7 +1214,7 @@ STRINGIFY(
       // vignette
       float d = length(gl_TexCoord[0].xy*2.0-1.0);
       c.rgb *= 1.0 - smoothstep(0.9, 1.5, d);
-      c.rgb = pow(c.rgb, gamma);          \n
+      c.rgb = pow(c.rgb, vec4(gamma));          \n
       c.a   = 1.0;
       gl_FragColor = c;                                              \n
     }                                                                  \n
