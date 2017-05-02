@@ -331,15 +331,15 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, ulonglong1 *ids,
 	//Density hack, turn particles with density less than
 	//some limit into dark-matter (disables rendering)
 	//float tempDens = log10(density[tid].x);
-	float tempDens = density[tid].x;
+//	float tempDens = density[tid].x;
 //	tempDens /= maxDensity;
 //	int densTest = (int) tempDens* 100; //percentage
 //	if(tid == 0) printf("Limit: %d cur: %f  %f\n",	densLimit, density[tid].x, maxDensity);
 
-	if(log10(tempDens) < maxDensity)
-	{
-		colors[tid].w = 3.0f;
-	}
+//  if(log10(tempDens) < maxDensity)
+//	{
+//		colors[tid].w = 3.0f;
+//  }
 
 
 

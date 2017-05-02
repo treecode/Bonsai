@@ -36,6 +36,11 @@
 float TstartGlow;
 float dTstartGlow;
 
+#define WINDOWW 1920
+#define WINDOWH 1200
+
+//#define WINDOWW 1024
+//#define WINDOWH 768
 #define DEG2RAD(a) ((a)/57.295)
 //for stereo
 enum EYE
@@ -302,7 +307,7 @@ void glPrintf(float x, float y, const char* format, ...)
 }
 
 // reducing to improve perf
-#define MAX_PARTICLES 700000
+#define MAX_PARTICLES 5700000
 
 class BonsaiDemo
 {
@@ -342,7 +347,7 @@ public:
       m_enableStats(true),
       m_densityRange(100)
   {
-    m_windowDims = make_int2(1024, 768);
+    m_windowDims = make_int2(WINDOWW, WINDOWH);
     m_cameraTrans = make_float3(0, -2, -100);
     m_cameraTransLag = m_cameraTrans;
     m_cameraRot = make_float3(0, 0, 0);
@@ -1175,7 +1180,7 @@ public:
      float maxDensity = -1000;
      float minDensity = 1000;
 
-
+#if 0
      m_tree->localTree.bodies_dens.d2h();
      for(int i=0; i < m_tree->localTree.n; i++) 
      {
@@ -1194,7 +1199,7 @@ public:
      maxDensity += (range/100)*m_densityRange;
 
   //   maxDensity = log10(maxDensity);
-
+#endif
 
 	  float4 color2 = make_float4(starColor2.x*starColor2.w, starColor2.y*starColor2.w, starColor2.z*starColor2.w, 1.0f);
     float4 color3 = make_float4(starColor3.x*starColor3.w, starColor3.y*starColor3.w, starColor3.z*starColor3.w, 1.0f);
@@ -1389,7 +1394,7 @@ public:
     //dustColor = make_float4(0.0f, 0.0f, 0.0f, 0.0f);  // black
 
     darkMatterColor = make_float4(0.0f, 0.2f, 0.4f, 3.0f);      // blue
-    darkMatterColor = make_float4(0.0f, 0.2f, 0.4f, 0.0f);      // blue
+    //darkMatterColor = make_float4(0.0f, 0.2f, 0.4f, 0.0f);      // blue
 
     m_colorParams = new ParamListGL("colors");
 #if 0
@@ -1844,7 +1849,8 @@ void initGL(int argc, char** argv, const char *fullScreenMode, bool &stereo)
           exit(-1);
       }
   } else {
-    glutInitWindowSize(1024, 768);
+    //glutInitWindowSize(1024, 768);
+    glutInitWindowSize(WINDOWW, WINDOWH);
     glutCreateWindow("Bonsai Tree-code Gravitational N-body Simulation");
   }
 
