@@ -4446,6 +4446,9 @@ void octree::mergeAndLaunchLETStructures(
 
 
 
+#endif
+
+
 //Sum the number of particles on all processes
 void octree::mpiSumParticleCount(int numberOfParticles)
 {
@@ -4460,7 +4463,4 @@ void octree::mpiSumParticleCount(int numberOfParticles)
   if(procId == 0) LOG("Total number of particles: %llu\n", nTotalFreq_ull);
 }
 
-
-
-#endif
 

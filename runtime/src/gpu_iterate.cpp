@@ -21,6 +21,7 @@ float runningLETTimeSum, lastTotal, lastLocal;
 
 void octree::makeLET()
 {
+#ifdef USE_MPI
    //LET code test
   double t00 = get_time();
 
@@ -54,6 +55,7 @@ void octree::makeLET()
                             copyTreeUpToLevel);
 
   letRunning = false;
+#endif  
 }
 
 
