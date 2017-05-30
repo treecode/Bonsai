@@ -135,6 +135,7 @@ struct DiskShuffle
 
   void generateGalacticsModel(const int      procId,
                               const int      nProcs,
+                              const int      randomSeed,
                               const int      nMilkyWay,
                               const int      nMWfork,
                               const bool     scaleMass,
@@ -198,10 +199,10 @@ struct DiskShuffle
 
 
     if (procId == 0)
-      fprintf(stderr,"Requested numbers: ndisk= %d  nbulge= %d  nhalo= %d :: ntotal= %d\n",
-                      ndisk, nbulge, nhalo, ndisk+nbulge+nhalo);
+      fprintf(stderr,"Requested numbers: seed= %d  ndisk= %d  nbulge= %d  nhalo= %d :: ntotal= %d\n",
+                      randomSeed, ndisk, nbulge, nhalo, ndisk+nbulge+nhalo);
 
-    const Galactics g(procId, nProcs, ndisk, nbulge, nhalo, nMWfork);
+    const Galactics g(procId, nProcs, randomSeed, ndisk, nbulge, nhalo, nMWfork);
     if (procId == 0)
      printf("Generated numbers:  ndisk= %d  nbulge= %d  nhalo= %d :: ntotal= %d\n",
              g.get_ndisk(), g.get_nbulge(), g.get_nhalo(), g.get_ntot());

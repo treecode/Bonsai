@@ -55,6 +55,8 @@ http://github.com/treecode/Bonsai
 #include <vector>
 #include <fstream>
 #include <sstream>
+#include <thread>
+#include <chrono>
 #include <sys/time.h>
 #include <omp.h>
 #include "log.h"
@@ -99,6 +101,7 @@ extern void displayTimers()
 #ifndef CUXTIMER_DISABLE
   // Display all timing info on the way out
   build_tree_display();
+  
   compute_propertiesD_display();
   //dev_approximate_gravity_display();
   //parallel_display();
@@ -127,6 +130,34 @@ double get_time_main()
   gettimeofday(&Tvalue,&dummy);
   return ((double) Tvalue.tv_sec +1.e-6*((double) Tvalue.tv_usec));
 }
+
+
+/*
+ * This thread watches if the simulation progresses or if it 'hangs'
+ * this sometime happens (for unknown) reasons on large runs with file writing.
+ * To prevent usage of precious compute cycles this thread kills the program 
+ * after 360 seconds of no progress.
+ */
+void watchThread(octree *bonsai)
+{
+	double tCurrent = 0;
+	do 
+	{
+	  std::this_thread::sleep_for(std::chrono::seconds(360));
+	  double tNew = bonsai->getTime();
+	  if(tNew != tCurrent)
+	  {
+		tCurrent = tNew;
+	  }
+	  else
+	  {
+		fprintf(stderr,"No progress detected for 360 seconds, the program will now exit!\n");
+		::exit(0);
+	  }
+	}
+	while(true);
+}
+
 
 
 //Buffers and flags used for the IO thread
@@ -198,6 +229,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   int nCube     = -1;
   int nMilkyWay = -1;
   int nMWfork   =  4;
+  int galSeed   =  0;
   std::string taskVar;
 //#define TITAN_G
 //#define SLURM_G
@@ -256,6 +288,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 #ifdef GALACTICS
 		ADDUSAGE("     --milkyway #       use Milky Way model with # particles per proc");
 		ADDUSAGE("     --mwfork   #       fork Milky Way generator into # processes [" << nMWfork << "]");
+		ADDUSAGE("     --seed     #       seed to use for the Milky Way  [" << galSeed  << "]");
     ADDUSAGE("     --taskvar  #       variable name to obtain task id [for randoms seed] before MPI_Init. \n");
 #endif
     ADDUSAGE("     --plummer  #       use Plummer model with # particles per proc");
@@ -283,6 +316,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     opt.setOption( "milkyway");
     opt.setOption( "mwfork");
     opt.setOption( "taskvar");
+    opt.setOption( "seed");
 #endif
     opt.setOption( "sphere");
     opt.setOption( "cube");
@@ -339,6 +373,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     if ((optarg = opt.getValue("plummer")))      nPlummer           = atoi(optarg);
     if ((optarg = opt.getValue("milkyway")))     nMilkyWay          = atoi(optarg);
     if ((optarg = opt.getValue("mwfork")))       nMWfork            = atoi(optarg);
+    if ((optarg = opt.getValue("seed")))         galSeed            = atoi(optarg);
     if ((optarg = opt.getValue("taskvar")))      taskVar            = std::string(optarg);
     if ((optarg = opt.getValue("sphere")))       nSphere            = atoi(optarg);
     if ((optarg = opt.getValue("cube")))         nCube              = atoi(optarg);
@@ -400,7 +435,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
         tStartModel = get_time_main();
         //Use 32768*7 for nProcs to create independent seeds for all processes we use
         //do not scale until we know the number of processors
-        generateGalacticsModel(procId, 32768*7, nMilkyWay, nMWfork,
+        generateGalacticsModel(procId, 32768*7, galSeed, nMilkyWay, nMWfork,
                                false, bodyPositions, bodyVelocities,
                                bodyIDs);
         tEndModel   = get_time_main();
@@ -686,7 +721,8 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
         if (taskVar.empty())
         {
           tStartModel   = get_time_main();
-          generateGalacticsModel(procId, nProcs, nMilkyWay, nMWfork,
+
+          generateGalacticsModel(procId, nProcs, galSeed, nMilkyWay, nMWfork,
                                  true, bodyPositions, bodyVelocities, bodyIDs);
           tEndModel   = get_time_main();
         }
@@ -778,6 +814,12 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   bool simulationFinished = false;
   ioSharedData.writingFinished       = true;
 
+  //Uncomment this to have a monitor thread that can kill the 
+  //program when no activity is detected
+  //std::thread watcher(watchThread, tree);
+  //watcher.detach();
+
+
 
   /* w/o MPI-IO use async fwrite, so use 2 threads otherwise, use 1 threads
    */
@@ -821,8 +863,8 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 
           if(nProcs <= 16)
           {
-              distributed = false;
-              sprintf(&fileName[0], "%s_%010.4f", snapshotFile.c_str(), t_current);
+//              distributed = false;
+//              sprintf(&fileName[0], "%s_%010.4f", snapshotFile.c_str(), t_current);
           }
 
           tree->fileIO->writeFile(ioSharedData.Pos, ioSharedData.Vel,

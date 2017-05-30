@@ -159,7 +159,7 @@ class ReadTipsy
           idummy            = d.getID();
 #define DARKMATTERID  3000000000000000000
           if(fileFormatVersion == 0)
-            idummy = s.getID_V1() + DARKMATTERID;
+            idummy = d.getID_V1() + DARKMATTERID;
           
           firstCount++;
           whichOne = 1;

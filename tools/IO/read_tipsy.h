@@ -94,7 +94,7 @@ class ReadTipsy
       {
         if (rank == 0)
           fprintf(stderr, " reading domain %d [ %d %d ] \n", domain, domainsBegEnd[rank].first, domainsBegEnd[rank].second);
-	
+
 	std::string fullFileName = baseFileName;
 	if(_domains2read > 1)
 		fullFileName.assign( baseFileName + (domains2read>1 ? std::to_string(domain) : std::string()));
@@ -102,9 +102,26 @@ class ReadTipsy
         std::ifstream inputFile(fullFileName, std::ios::in | std::ios::binary);
         if(!inputFile.is_open())
         {
-          fprintf(stderr, " rank= %d  domain= %d :: %s input file is missing\n" ,
-              rank, domain, fullFileName.c_str());
-          ::exit(-1);
+            fprintf(stderr, " rank= %d  domain= %d :: %s input file is missing\n" ,
+          	    rank, domain, fullFileName.c_str());
+	    //File renaming does not work when using a single rank. If that is the case in this situation
+	    //than adding the 0 will work. If there is another reason the first open attempt fail then 
+	    //the program will fail after all.
+	    if(_domains2read == 1) 
+	    {
+		fullFileName.append(std::string("0"));
+		inputFile.open(fullFileName,  std::ios::in | std::ios::binary);
+        	if(!inputFile.is_open())
+		{
+          		fprintf(stderr, " rank= %d  domain= %d :: %s input file is missing\n" ,
+            			  rank, domain, fullFileName.c_str());
+          		::exit(-1);
+		}
+	    }
+	    else
+	    {
+		::exit(-1);
+	    }
         }
 
         readInputFile(inputFile, domain);
@@ -131,9 +148,11 @@ class ReadTipsy
       const int NFirst        = h.ndark;
       const int NSecond       = h.nstar;
       const int NThird        = h.nsph;
+      //fprintf(stderr, "Info about stars: %d %d %d \n", NTotal, NFirst, NSecond);
 
       assert(NThird == 0);
       assert(NTotal == NFirst + NSecond + NThird);
+	
 
       if (domain == 0)
       {
@@ -169,7 +188,7 @@ class ReadTipsy
           velocity.z        = d.vel[2];
           idummy            = d.getID();
           if(fileFormatVersion == 0)
-            idummy = s.getID_V1() + DARKMATTERID;
+            idummy = d.getID_V1() + DARKMATTERID;
           
           firstCount++;
           whichOne = 1;

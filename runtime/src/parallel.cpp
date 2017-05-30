@@ -3346,6 +3346,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             real4 *grpSize2   = &grpCenter[1+nbody];
             real4 *grpCenter2 = &grpCenter[1+nbody+nnode];
 
+#if 0
             if(procId == 0)
             {
                 FILE *out = fopen("dumpDataLocal.bin", "wb");
@@ -3360,7 +3361,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
                 fclose(out);
             }
-
+#endif
 
             //Build the tree we possibly have to send to the remote process
             double bla3;
@@ -3384,7 +3385,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                             procId, ibox,
                                             nflops, bla3);
 
-            fprintf(stderr,"SizeTree: %d \n", sizeTree);
 
             //Test if the boundary tree sent by the remote tree is sufficient for us
             double tBoundaryCheck;

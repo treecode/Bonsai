@@ -20,8 +20,11 @@ class DynamicLoader
     DynamicLoader(const std::string &filename) :
       m_handle(dlopen(filename.c_str(), RTLD_LAZY)) 
   {
-    if (!m_handle)
+    if (!m_handle){
+	    fprintf(stderr,"Error: %s \n", dlerror());
       throw std::logic_error("can't load library named \"" + filename + "\"");
+    }
+
   }
 
     template<class T> std::function<T> load(const std::string &functionName) const
