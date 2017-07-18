@@ -42,9 +42,10 @@ PROG6 = cvt_tipsy2bonsaiExtended
 PROG7 = readBonsaiExtended
 PROG8 = cvt_amuseASCII2bonsai
 PROG9 = cvt_bonsai2amuseASCII
+PROG10 = cvt_sphASCII2bonsai
 RM = /bin/rm
 
-all:	  $(PROG1) $(PROG2) $(PROG3) $(PROG4) $(PROG5) $(PROG6) $(PROG7) $(PROG8) $(PROG9)
+all:	  $(PROG1) $(PROG2) $(PROG3) $(PROG4) $(PROG5) $(PROG6) $(PROG7) $(PROG8) $(PROG9) $(PROG10)
 
 
 $(PROG1): $(OBJ1) 

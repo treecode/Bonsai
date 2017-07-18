@@ -5,7 +5,13 @@
 #endif
 
 #ifdef USE_MPI
-#include <xmmintrin.h>
+
+
+#ifdef __ALTIVEC__
+    #include <altivec.h>
+#else
+    #include <xmmintrin.h>
+#endif
 
 
 typedef float  _v4sf  __attribute__((vector_size(16)));

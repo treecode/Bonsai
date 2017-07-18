@@ -121,6 +121,15 @@ KERNEL_DECLARE(get_nactive)(const int n_bodies,
   get_nactiveD(n_bodies, valid, tnact, sdataInt);
 }
 
+
+__device__ bool posOutsideDomain(float3 low, float3 high, float4 pos)
+{
+    return ((pos.x < low.x) || (high.x <= pos.x)
+            || (pos.y < low.y) || (high.y <= pos.y)
+            || (pos.z < low.z) || (high.z <= pos.z));
+
+}
+
 KERNEL_DECLARE(predict_particles)(const int 	n_bodies,
 										float 	tc,
 										float 	tp,
@@ -129,13 +138,18 @@ KERNEL_DECLARE(predict_particles)(const int 	n_bodies,
 										real4 	*acc,
 										float2 	*time,
 										real4 	*pPos,
-										real4 	*pVel){
+										real4 	*pVel,
+										real4   *hydro){
   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   const uint tid = threadIdx.x;
   const uint idx = bid * blockDim.x + tid;
 
 
   if (idx >= n_bodies) return;
+
+  //TODO (jbedorf)
+  //This hack forces synchronous time-steps, used for testing SPH code
+  time[idx].y = tc;
 
   float4 p = pos [idx];
   float4 v = vel [idx];
@@ -158,6 +172,57 @@ KERNEL_DECLARE(predict_particles)(const int 	n_bodies,
   v.x += a.x*dt_cb;
   v.y += a.y*dt_cb;
   v.z += a.z*dt_cb;
+
+//  hydro[idx].z += 0.5f*dt_cb*a.w;
+  hydro[idx].z += dt_cb*a.w;
+
+
+  //Adjust the particle for periodic boundaries
+//  1.0f, 0.125f, 0.125f
+//  low: 0,0,0  max:
+//  JB, domain info: cntr: 1.000000 0.125000 0.125000  size: 0.000000 0.000000 0.234375
+//
+//  pos_root_domain_=0   0    0   1   0.125    0.125
+
+  //default tube
+//  float3 low  = {0,0,0};
+//  float3 high = {1, 0.125, 0.125};
+
+  //Phantom tube
+  float3 low  = {-2.453125,-0.020297,-0.019137};
+  float3 high = { 4.406250, 0.020297, 0.019137};
+
+  float3 len_root = {(high.x-low.x), (high.y-low.y), (high.z-low.z)};
+
+  if(posOutsideDomain(low, high, p) ){
+      while(p.x < low.x){
+          p.x += len_root.x;
+      }
+      while(p.x > high.x){
+          p.x -= len_root.x;
+      }
+      if(p.x == high.x){
+          p.x = low.x;
+      }
+      while(p.y < low.y){
+          p.y += len_root.y;
+      }
+      while(p.y >= high.y){
+          p.y -= len_root.y;
+      }
+      if(p.y == high.y){
+          p.y = low.y;
+      }
+      while(p.z < high.z){
+          p.z += len_root.z;
+      }
+      while(p.z >= high.z){
+          p.z -= len_root.z;
+      }
+      if(p.z == high.z){
+          p.z = low.z;
+      }
+  }
 
   pPos[idx] = p;
   pVel[idx] = v;
@@ -205,6 +270,7 @@ static __device__ __forceinline__ float adjustH(const float h_old, const float n
 //The hydro properties: x = pressure, y = soundspeed, z = Energy , w = Balsala Switch
 KERNEL_DECLARE(set_pressure)(const int     n_bodies,
                              const float2 *density,
+                             float4       *derivative,
                              float4       *hydro)
 {
     const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
@@ -217,11 +283,9 @@ KERNEL_DECLARE(set_pressure)(const int     n_bodies,
     float2 dens = density[idx];
     float4 hyd  = hydro[idx];
 
-    const float hcr = 1.4f;
-
-    hyd.x =       (hcr - 1.0f) * dens.x * hyd.z;    //Set pressure
-    hyd.y = sqrtf((hcr - 1.0f) * hcr    * hyd.z);    //Set sound speed
-
+    const float hcr = ADIABATIC_INDEX;
+    hyd.x      =       (hcr - 1.0f) * dens.x * hyd.z;     //Set pressure
+    hyd.y      = sqrtf((hcr - 1.0f) * hcr    * hyd.z);    //Set sound speed
     hydro[idx] = hyd;
 }
 
@@ -241,7 +305,8 @@ KERNEL_DECLARE(correct_particles)(const int n_bodies,
                                   /* 11 */   real4 *pVel,
                                   /* 12 */   uint  *unsorted,
                                   /* 13 */   real4 *acc0_new,
-                                  	  	  	 float2 *time_new)
+                                  	  	  	 float2 *time_new,
+                                  	  	  	 float4 *body_hydro)
 {
   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
   const int tid =  threadIdx.y * blockDim.x + threadIdx.x;
@@ -269,7 +334,8 @@ KERNEL_DECLARE(correct_particles)(const int n_bodies,
   float4 a0 = acc0[unsortedIdx];
   float4 a1 = acc1[idx];
   float  tb = time[unsortedIdx].x;
-  float4 v  = pVel[unsortedIdx];
+  //float4 v  = pVel[unsortedIdx];
+  float4 v  = pVel[idx];
 
 #endif
 
@@ -286,7 +352,7 @@ KERNEL_DECLARE(correct_particles)(const int n_bodies,
   v.z += (a1.z - a0.z)*dt_cb;
 
 
-  //Store the corrected velocity, accelaration and the new time step info
+  //Store the corrected velocity, acceleration and the new time step info
   vel     [idx] = v;
   acc0_new[idx] = a1;
   time_new[idx] = time[unsortedIdx];
@@ -295,6 +361,13 @@ KERNEL_DECLARE(correct_particles)(const int n_bodies,
   //Adjust the search radius for the next iteration to get closer to the
   //requested number of neighbours
   body_h[idx] = adjustH(body_h[idx], body_dens[idx].y);
+
+
+  //Correct the energy
+  //body_hydro[idx].z += 0.5f*dt_cb*a1.w;
+  //body_hydro[idx].z += (a1.w + a0.w)*dt_cb;
+
+  body_hydro[idx].z = (body_hydro[idx].z - dt_cb*a0.w) + dt_cb*a1.w;
 }
 
 
@@ -310,7 +383,9 @@ extern "C"  __global__ void compute_dt(const int n_bodies,
                                        real4    *bodies_pos,
                                        real4    *bodies_acc,
                                        uint     *active_list,
-                                       float    timeStep){
+                                       float    timeStep,
+                                       float4    *bodies_grad //x-coordinate contains dt
+                                      ){
   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
   const int tid =  threadIdx.y * blockDim.x + threadIdx.x;
   const int dim =  blockDim.x * blockDim.y;
@@ -321,6 +396,7 @@ extern "C"  __global__ void compute_dt(const int n_bodies,
   //Check if particle is set to active during approx grav
   if (active_list[idx] != 1) return;
 
+#if 0
   int j = ngb[idx];
   j = -1;//TODO REMOVE, set fixed here to be able to continue since ngb is not set in SPH
 
@@ -391,12 +467,21 @@ extern "C"  __global__ void compute_dt(const int n_bodies,
   while(fmodf(tc, dt) != 0.0f) dt *= 0.5f;      // could be slow!
 
 //  dt = 0.015625;
-  dt = 1.0f/(1 << 8);
-  dt = 1.0f/(1 << 6);
-  dt = 1.0f/(1 << 7);
+//  dt = 1.0f/(1 << 8);
+//  dt = 1.0f/(1 << 6);
+//  dt = 1.0f/(1 << 7);
   dt = timeStep;
   time[idx].x = tc;
   time[idx].y = tc + dt;
+#else
+  float dt    = time[idx].y;
+
+  dt = bodies_grad[idx].x;
+
+  time[idx].x = tc;
+  time[idx].y = tc + dt;
+
+#endif
 }
 
 

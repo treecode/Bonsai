@@ -575,6 +575,7 @@ bool treewalk_control(
     const int        bid,
     const float      eps2,
     const uint2      node_begend,
+    const bool       isFinalLaunch,
     const int       *active_groups,
     const real4     *group_body_pos,
     const real4     *group_body_vel,
@@ -601,7 +602,6 @@ bool treewalk_control(
     float4          *body_grad_out,
     float4          *body_hydro_out)
 {
-
   /*********** set necessary thread constants **********/
 #ifdef DO_BLOCK_TIMESTEP
   real4 group_pos       = groupCenterInfo[active_groups[bid]];
@@ -635,22 +635,6 @@ bool treewalk_control(
   //3813 BOdy is part of grp: 476
   //20726 BOdy is part of grp: 2590
 
-//  if(directOp<1, true>::type == SPH::HYDROFORCE)
-//  {
-//      if(bid != 93) return;
-//      if(body_addr != 372) return;
-//
-//      float4 bla = group_body_pos[375];
-//
-//      bool stop = true;
-//      if(((bla.x > 0.968 && bla.x < 0.969) &&
-//          (bla.y > 0.093 && bla.y < 0.094) &&
-//          (bla.z > 0.078 && bla.z < 0.079)))
-//              {
-//          stop = false;
-//              }
-//      if(stop) return;
-//  }
 
 
   float4 pos_i [2], vel_i [2], acc_i [2], hydro_i[2];
@@ -687,6 +671,8 @@ bool treewalk_control(
   if(directOp<1, true>::type == SPH::HYDROFORCE) {
                    dens_i[0].dens = group_body_dens[body_i[0]].x;
         if(ni > 1) dens_i[1].dens = group_body_dens[body_i[1]].x;
+
+        derivative_i[0].x = -10e10; //We are using 'min' on this variable to find minimal time-step
   }
 
   uint2 counters = {0};
@@ -713,14 +699,15 @@ bool treewalk_control(
 #endif
 
   //For periodic boundaries, mirror the group and body positions along the periodic axis
-  float3 domainSize = {1.0f, 0.125f, 0.125f};   //Hardcoded for our testing IC
+  //float3 domainSize = {1.0f, 0.125f, 0.125f};   //Hardcoded for our testing IC
 //  float3 domainSize = {100.0f, 100.0f, 100.0f};   //Hardcoded for our testing IC
+  float3 domainSize = {1.0f, 0.040594f, 0.038274f};   //Hardcoded for phantom tube
 
 
   long long int startC = clock64();
 
   //TODO use templates or parameterize this at some point
-  for(int ix=-1; ix <= 1; ix++)     //Periodic around X
+//  for(int ix=-1; ix <= 1; ix++)     //Periodic around X
   {
     for(int iy=-1; iy <= 1; iy++)   //Periodic around Y
     {
@@ -730,6 +717,9 @@ bool treewalk_control(
 //          if(iy == 1) continue;
 //          if(iy == 0 && (directOp<1, true>::type == SPH::DERIVATIVE)) continue;
 //          int iy = 1;
+
+          int ix = 0;
+
           float4 pGroupPos   = group_pos;
           float4 pBodyPos[2] = {pos_i[0], pos_i[1]};
 
@@ -824,9 +814,14 @@ bool treewalk_control(
       acc_i[0].z = warpGroupReduce(acc_i[0].z);
       acc_i[0].w = warpGroupReduce(acc_i[0].w);
 
-      float temp = derivative_i[0].y;
-      derivative_i[0].x = warpGroupReduce(derivative_i[0].x); //For stats
-      derivative_i[0].y = warpGroupReduce(derivative_i[0].y); //For stats
+      //Reduce the dt parameter
+      derivative_i[0].x = warpGroupReduceMax(derivative_i[0].x);
+
+
+//Below is for statistics
+//      float temp = derivative_i[0].y;
+//      derivative_i[0].x = warpGroupReduce(derivative_i[0].x); //For stats
+//      derivative_i[0].y = warpGroupReduce(derivative_i[0].y); //For stats
 
 //      if(((pos_i[0].x > 0.968 && pos_i[0].x < 0.969) &&
 //                (pos_i[0].y > 0.093 && pos_i[0].y < 0.094) &&
@@ -844,50 +839,76 @@ bool treewalk_control(
     {
         const int addr = body_i[i];
         {
+
+
+            if(directOp<1, true>::type == SPH::DENSITY)
+            {
+                //Density requires a bit more work as the smoothing range is based on it
+
+                //Combine current result with previous result and compute the updated smoothing
+                //depending on if this was the final call this does not have to be the final dens/smoothing value
+                dens_i[i].dens     += body_dens_out[addr].x;
+                dens_i[i].finalize(group_body_pos[body_i[i]].w);
+                body_dens_out[addr] = make_float2(dens_i[i].dens,dens_i[i].smth);
+
+//                body_grad_out[addr].x = derivative_i[i].x; //For Stats
+//                body_grad_out[addr].y = derivative_i[i].y; //For Stats
+
+//                if(addr == 10086)
+//                {
+//                    printf("ON DEV [ %f %f %f ] RHO OUT : %f %f \n",
+//                            pos_i[0].x, pos_i[0].y, pos_i[0].z,
+//                            dens_i[i].dens,dens_i[i].smth);
+//                }
+
+  //              //TODO remove, this records stats
+  //               body_grad_out[addr].x += derivative_i[i].x;
+  //               body_grad_out[addr].y += derivative_i[i].y;
+  //
+  //              if(laneId == -1) body_grad_out[addr].y += endC-startC;
+  //              else body_grad_out[addr].y = derivative_i[i].y;
+  //              body_grad_out[addr].z = derivative_i[i].z;
+  //              body_grad_out[addr].w = derivative_i[i].w;
+            }
+
           if(directOp<1, true>::type == SPH::DERIVATIVE)
           {
             derivative_i[i].x += body_grad_out[addr].x;
             derivative_i[i].y += body_grad_out[addr].y;
             derivative_i[i].z += body_grad_out[addr].z;
             derivative_i[i].w += body_grad_out[addr].w;
-            //                  derivative_i[i].finalize(body_dens_out[addr].x);
+
+            if(isFinalLaunch)
+            {
+                //Finalize the values as this launch contained the final required data
+               derivative_i[i].finalize(body_dens_out[addr].x);
+
+               //Need this printf to get non-nan results on GTX1080
+               if(addr == -3830)
+               {
+                   printf("TEST: %f %f %f %f \n",  body_grad_out[addr].x, derivative_i[i].x, body_dens_out[addr].x, derivative_i[i].y);
+               }
+
+               //Compute Balsala switch
+               float temp  = fabs(derivative_i[i].w);
+               float temp2 = derivative_i[i].x*derivative_i[i].x +
+                             derivative_i[i].y*derivative_i[i].y +
+                             derivative_i[i].z*derivative_i[i].z;
+               float temp3 = 1.0e-4 * group_body_hydro[addr].y / body_dens_out[addr].y;
+
+               //Note using group_body_hydro here instead of body_hydro_out to store Balsala Switch
+               group_body_hydro[addr].w = temp / (temp + sqrtf(temp2) + temp3);
+            }
+
+
             body_grad_out[addr].x = derivative_i[i].x;
             body_grad_out[addr].y = derivative_i[i].y;
             body_grad_out[addr].z = derivative_i[i].z;
             body_grad_out[addr].w = derivative_i[i].w;
-
-            //Compute Balsala switch
-//            float temp  = fabs(body_grad_out[addr].w);
-//            float temp2 = body_grad_out[addr].x*body_grad_out[addr].x +
-//                        body_grad_out[addr].y*body_grad_out[addr].y +
-//                        body_grad_out[addr].z*body_grad_out[addr].z;
-//            float temp3 = 1.0e-4 * body_hydro_out[addr].y / body_dens_out[addr].y;
-//
-//            //Note using group_body_hydro here instead of body_hydro_out to store Balsala Switch
-//            group_body_hydro[addr].w = temp / (temp + sqrtf(temp2) + temp3);
           }
 
 
-          if(directOp<1, true>::type == SPH::DENSITY)
-          {
-              //Density requires a bit more work as the smoothing range is based on it
 
-              //Combine current result with previous result and compute the updated smoothing
-              //depending on if this was the final call this does not have to be the final dens/smoothing value
-              dens_i[i].dens     += body_dens_out[addr].x;
-              dens_i[i].finalize(group_body_pos[body_i[i]].w);
-              body_dens_out[addr] = make_float2(dens_i[i].dens,dens_i[i].smth);
-
-
-//              //TODO remove
-               body_grad_out[addr].x += derivative_i[i].x;
-               body_grad_out[addr].y += derivative_i[i].y;
-//
-//              if(laneId == -1) body_grad_out[addr].y += endC-startC;
-//              else body_grad_out[addr].y = derivative_i[i].y;
-//              body_grad_out[addr].z = derivative_i[i].z;
-//              body_grad_out[addr].w = derivative_i[i].w;
-          }
 
           if(directOp<1, true>::type == SPH::HYDROFORCE)
           {
@@ -896,9 +917,19 @@ bool treewalk_control(
               body_acc_out      [addr].z += acc_i[0].z;
               body_acc_out      [addr].w += acc_i[0].w;
 
-              //              //TODO remove
-              body_grad_out[addr].x += derivative_i[i].x;
-              body_grad_out[addr].y += derivative_i[i].y;
+              body_grad_out[addr].x = max(body_grad_out[addr].x,  derivative_i[0].x);
+
+
+              if(isFinalLaunch)
+              {
+                  const float C_CFL = 0.3;
+                  float dt = C_CFL * 2.0 * dens_i[0].smth / body_grad_out[addr].x;
+                  body_grad_out[addr].x = dt;
+              }
+
+              //TODO remove, this records interaction stats
+              //body_grad_out[addr].x += derivative_i[i].x;
+              //body_grad_out[addr].y += derivative_i[i].y;
           }
         }
         active_inout[addr] = 1;
@@ -1003,6 +1034,7 @@ void approximate_SPH_main(
     int       n_bodies,
     float     eps2,
     uint2     node_begend,
+    bool      isFinalLaunch,
     int      *active_groups,
     real4    *group_body_pos,
     real4    *group_body_vel,
@@ -1087,6 +1119,7 @@ void approximate_SPH_main(
                                     bid,
                                     eps2,
                                     node_begend,
+                                    isFinalLaunch,
                                     active_groups,
                                     group_body_pos,
                                     group_body_vel,
@@ -1132,6 +1165,7 @@ void approximate_SPH_main(
               failedList[it], 
               eps2,
               node_begend,
+              isFinalLaunch,
               active_groups,
               group_body_pos,
               group_body_vel,
@@ -1149,6 +1183,7 @@ void approximate_SPH_main(
               active_inout
               body_dens,
               body_grad);
+          TODO(jbedorf) Update the above argument list
           assert(success);
         }
       }    
@@ -1181,6 +1216,7 @@ void approximate_SPH_main(
                                               bid,
                                               eps2,
                                               node_begend,
+                                              isFinalLaunch,
                                               active_groups,
                                               group_body_pos,
                                               group_body_vel,
@@ -1224,6 +1260,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
           int       n_bodies,
           float     eps2,
           uint2     node_begend,
+          bool      isFinalLaunch,
           int       *active_groups,
 
           real4     *group_body_pos,           //This can be different from body_pos
@@ -1257,6 +1294,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
            n_bodies,
            eps2,
            node_begend,
+           isFinalLaunch,
            active_groups,
            group_body_pos,           //This can be different from body_pos
            group_body_vel,           //This can be different from body_vel
@@ -1283,73 +1321,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
 }
 
 
-  extern "C"
-__launch_bounds__(NTHREAD,1024/NTHREAD)
-  __global__ void
-  dev_sph_density_let(
-          const int n_active_groups,
-          int       n_bodies,
-          float     eps2,
-          uint2     node_begend,
-          int       *active_groups,
 
-          real4     *group_body_pos,           //This can be different from body_pos
-          real4     *group_body_vel,
-          float2    *group_body_dens,
-          float4    *group_body_grad,
-          real4     *group_body_hydro,
-
-          int       *active_inout,
-          int2      *interactions,
-          float4    *boxSizeInfo,
-          float4    *groupSizeInfo,
-          float4    *boxCenterInfo,
-          float4    *groupCenterInfo,
-          real4     *multipole_data,
-          int       *MEM_BUF,
-
-          real4     *body_pos_j,
-          real4     *body_vel_j,
-          float2    *body_dens_j,
-          float4    *body_grad_j,
-          float4    *body_hydro_j,
-
-          real4     *body_acc_out,
-          float2    *body_dens_out,
-          float4    *body_hydro_out,
-          float4    *body_grad_out)
-    {
-#if 0
-      approximate_SPH_main<true, NTHREAD2, SPH::density::directOperator>(
-              n_active_groups,
-               n_bodies,
-               eps2,
-               node_begend,
-               active_groups,
-               group_body_pos,           //This can be different from body_pos
-               group_body_vel,           //This can be different from body_vel
-               group_body_dens,
-               group_body_grad,
-               group_body_hydro,
-               active_inout,
-               interactions,
-               boxSizeInfo,
-               groupSizeInfo,
-               boxCenterInfo,
-               groupCenterInfo,
-               multipole_data,
-               MEM_BUF,
-               body_pos_j,
-               body_vel_j,
-               body_dens_j,
-               body_grad_j,
-               body_hydro_j,
-               body_acc_out,
-               body_dens_out,
-               body_grad_out,
-               body_hydro_out);
-#endif
-}
 
   extern "C"
 __launch_bounds__(NTHREAD,1024/NTHREAD)
@@ -1359,6 +1331,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
           int       n_bodies,
           float     eps2,
           uint2     node_begend,
+          bool      isFinalLaunch,
           int       *active_groups,
 
           real4     *group_body_pos,           //This can be different from body_pos
@@ -1393,6 +1366,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
            n_bodies,
            eps2,
            node_begend,
+           isFinalLaunch,
            active_groups,
            group_body_pos,           //This can be different from body_pos
            group_body_vel,           //This can be different from body_vel
@@ -1420,73 +1394,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
 }
 
 
-  extern "C"
-__launch_bounds__(NTHREAD,1024/NTHREAD)
-  __global__ void
-  dev_sph_derivative_let(
-          const int n_active_groups,
-          int       n_bodies,
-          float     eps2,
-          uint2     node_begend,
-          int       *active_groups,
 
-          real4     *group_body_pos,           //This can be different from body_pos
-          real4     *group_body_vel,
-          float2    *group_body_dens,
-          float4    *group_body_grad,
-          real4     *group_body_hydro,
-
-          int       *active_inout,
-          int2      *interactions,
-          float4    *boxSizeInfo,
-          float4    *groupSizeInfo,
-          float4    *boxCenterInfo,
-          float4    *groupCenterInfo,
-          real4     *multipole_data,
-          int       *MEM_BUF,
-
-          real4     *body_pos_j,
-          real4     *body_vel_j,
-          float2    *body_dens_j,
-          float4    *body_grad_j,
-          float4    *body_hydro_j,
-
-          real4     *body_acc_out,
-          float2    *body_dens_out,
-          float4    *body_hydro_out,
-          float4    *body_grad_out)
-    {
-#if 0
-      approximate_SPH_main<true, NTHREAD2, SPH::derivative::directOperator>(
-              n_active_groups,
-               n_bodies,
-               eps2,
-               node_begend,
-               active_groups,
-               group_body_pos,           //This can be different from body_pos
-               group_body_vel,           //This can be different from body_vel
-               group_body_dens,
-               group_body_grad,
-               group_body_hydro,
-               active_inout,
-               interactions,
-               boxSizeInfo,
-               groupSizeInfo,
-               boxCenterInfo,
-               groupCenterInfo,
-               multipole_data,
-               MEM_BUF,
-               body_pos_j,
-               body_vel_j,
-               body_dens_j,
-               body_grad_j,
-               body_hydro_j,
-               body_acc_out,
-               body_dens_out,
-               body_grad_out,
-               body_hydro_out);
-#endif
-}
 
   extern "C"
 __launch_bounds__(NTHREAD,1024/NTHREAD)
@@ -1496,6 +1404,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
           int       n_bodies,
           float     eps2,
           uint2     node_begend,
+          bool      isFinalLaunch,
           int       *active_groups,
 
           real4     *group_body_pos,           //This can be different from body_pos
@@ -1530,6 +1439,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
           n_bodies,
           eps2,
           node_begend,
+          isFinalLaunch,
           active_groups,
           group_body_pos,           //This can be different from body_pos
           group_body_vel,           //This can be different from body_vel
@@ -1556,74 +1466,6 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
 #endif
     }
 
-
-  extern "C"
-__launch_bounds__(NTHREAD,1024/NTHREAD)
-  __global__ void
-  dev_sph_hydro_let(
-      const int n_active_groups,
-      int       n_bodies,
-      float     eps2,
-      uint2     node_begend,
-      int       *active_groups,
-
-      real4     *group_body_pos,           //This can be different from body_pos
-      real4     *group_body_vel,
-      float2    *group_body_dens,
-      float4    *group_body_grad,
-      real4     *group_body_hydro,
-
-      int       *active_inout,
-      int2      *interactions,
-      float4    *boxSizeInfo,
-      float4    *groupSizeInfo,
-      float4    *boxCenterInfo,
-      float4    *groupCenterInfo,
-      real4     *multipole_data,
-      int       *MEM_BUF,
-
-      real4     *body_pos_j,
-      real4     *body_vel_j,
-      float2    *body_dens_j,
-      float4    *body_grad_j,
-      float4    *body_hydro_j,
-
-      real4     *body_acc_out,
-      float2    *body_dens_out,
-      float4    *body_hydro_out,
-      float4    *body_grad_out)
-{
-#if 0
-      approximate_SPH_main<true, NTHREAD2, SPH::hydroforce::directOperator>(
-      n_active_groups,
-      n_bodies,
-      eps2,
-      node_begend,
-      active_groups,
-      group_body_pos,           //This can be different from body_pos
-      group_body_vel,           //This can be different from body_vel
-      group_body_dens,
-      group_body_grad,
-      group_body_hydro,
-      active_inout,
-      interactions,
-      boxSizeInfo,
-      groupSizeInfo,
-      boxCenterInfo,
-      groupCenterInfo,
-      multipole_data,
-      MEM_BUF,
-      body_pos_j,
-      body_vel_j,
-      body_dens_j,
-      body_grad_j,
-      body_hydro_j,
-      body_acc_out,
-      body_dens_out,
-      body_grad_out,
-      body_hydro_out);
-#endif
-}
 
 /*
  Function that extracts the identified boundary cells and particles.
@@ -2144,3 +1986,214 @@ __global__ void gpu_boundaryTree(
 
 #endif
 
+#if 0
+  extern "C"
+__launch_bounds__(NTHREAD,1024/NTHREAD)
+  __global__ void
+  dev_sph_density_let(
+          const int n_active_groups,
+          int       n_bodies,
+          float     eps2,
+          uint2     node_begend,
+          bool      isFinalLaunch,
+          int       *active_groups,
+
+          real4     *group_body_pos,           //This can be different from body_pos
+          real4     *group_body_vel,
+          float2    *group_body_dens,
+          float4    *group_body_grad,
+          real4     *group_body_hydro,
+
+          int       *active_inout,
+          int2      *interactions,
+          float4    *boxSizeInfo,
+          float4    *groupSizeInfo,
+          float4    *boxCenterInfo,
+          float4    *groupCenterInfo,
+          real4     *multipole_data,
+          int       *MEM_BUF,
+
+          real4     *body_pos_j,
+          real4     *body_vel_j,
+          float2    *body_dens_j,
+          float4    *body_grad_j,
+          float4    *body_hydro_j,
+
+          real4     *body_acc_out,
+          float2    *body_dens_out,
+          float4    *body_hydro_out,
+          float4    *body_grad_out)
+    {
+#if 0
+      approximate_SPH_main<true, NTHREAD2, SPH::density::directOperator>(
+              n_active_groups,
+               n_bodies,
+               eps2,
+               node_begend,
+               isFinalLaunch,
+               active_groups,
+               group_body_pos,           //This can be different from body_pos
+               group_body_vel,           //This can be different from body_vel
+               group_body_dens,
+               group_body_grad,
+               group_body_hydro,
+               active_inout,
+               interactions,
+               boxSizeInfo,
+               groupSizeInfo,
+               boxCenterInfo,
+               groupCenterInfo,
+               multipole_data,
+               MEM_BUF,
+               body_pos_j,
+               body_vel_j,
+               body_dens_j,
+               body_grad_j,
+               body_hydro_j,
+               body_acc_out,
+               body_dens_out,
+               body_grad_out,
+               body_hydro_out);
+#endif
+}
+#endif
+
+#if 0
+
+  extern "C"
+__launch_bounds__(NTHREAD,1024/NTHREAD)
+  __global__ void
+  dev_sph_hydro_let(
+      const int n_active_groups,
+      int       n_bodies,
+      float     eps2,
+      uint2     node_begend,
+      int       *active_groups,
+
+      real4     *group_body_pos,           //This can be different from body_pos
+      real4     *group_body_vel,
+      float2    *group_body_dens,
+      float4    *group_body_grad,
+      real4     *group_body_hydro,
+
+      int       *active_inout,
+      int2      *interactions,
+      float4    *boxSizeInfo,
+      float4    *groupSizeInfo,
+      float4    *boxCenterInfo,
+      float4    *groupCenterInfo,
+      real4     *multipole_data,
+      int       *MEM_BUF,
+
+      real4     *body_pos_j,
+      real4     *body_vel_j,
+      float2    *body_dens_j,
+      float4    *body_grad_j,
+      float4    *body_hydro_j,
+
+      real4     *body_acc_out,
+      float2    *body_dens_out,
+      float4    *body_hydro_out,
+      float4    *body_grad_out)
+{
+#if 0
+      approximate_SPH_main<true, NTHREAD2, SPH::hydroforce::directOperator>(
+      n_active_groups,
+      n_bodies,
+      eps2,
+      node_begend,
+      active_groups,
+      group_body_pos,           //This can be different from body_pos
+      group_body_vel,           //This can be different from body_vel
+      group_body_dens,
+      group_body_grad,
+      group_body_hydro,
+      active_inout,
+      interactions,
+      boxSizeInfo,
+      groupSizeInfo,
+      boxCenterInfo,
+      groupCenterInfo,
+      multipole_data,
+      MEM_BUF,
+      body_pos_j,
+      body_vel_j,
+      body_dens_j,
+      body_grad_j,
+      body_hydro_j,
+      body_acc_out,
+      body_dens_out,
+      body_grad_out,
+      body_hydro_out);
+#endif
+}
+#endif
+#if 0
+  extern "C"
+__launch_bounds__(NTHREAD,1024/NTHREAD)
+  __global__ void
+  dev_sph_derivative_let(
+          const int n_active_groups,
+          int       n_bodies,
+          float     eps2,
+          uint2     node_begend,
+          int       *active_groups,
+
+          real4     *group_body_pos,           //This can be different from body_pos
+          real4     *group_body_vel,
+          float2    *group_body_dens,
+          float4    *group_body_grad,
+          real4     *group_body_hydro,
+
+          int       *active_inout,
+          int2      *interactions,
+          float4    *boxSizeInfo,
+          float4    *groupSizeInfo,
+          float4    *boxCenterInfo,
+          float4    *groupCenterInfo,
+          real4     *multipole_data,
+          int       *MEM_BUF,
+
+          real4     *body_pos_j,
+          real4     *body_vel_j,
+          float2    *body_dens_j,
+          float4    *body_grad_j,
+          float4    *body_hydro_j,
+
+          real4     *body_acc_out,
+          float2    *body_dens_out,
+          float4    *body_hydro_out,
+          float4    *body_grad_out)
+    {
+#if 0
+      approximate_SPH_main<true, NTHREAD2, SPH::derivative::directOperator>(
+              n_active_groups,
+               n_bodies,
+               eps2,
+               node_begend,
+               active_groups,
+               group_body_pos,           //This can be different from body_pos
+               group_body_vel,           //This can be different from body_vel
+               group_body_dens,
+               group_body_grad,
+               group_body_hydro,
+               active_inout,
+               interactions,
+               boxSizeInfo,
+               groupSizeInfo,
+               boxCenterInfo,
+               groupCenterInfo,
+               multipole_data,
+               MEM_BUF,
+               body_pos_j,
+               body_vel_j,
+               body_dens_j,
+               body_grad_j,
+               body_hydro_j,
+               body_acc_out,
+               body_dens_out,
+               body_grad_out,
+               body_hydro_out);
+#endif
+}
+#endif

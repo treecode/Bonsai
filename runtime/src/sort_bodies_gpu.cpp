@@ -221,6 +221,7 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate, bool doFullS
     dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_grad, real4Buffer, true, true);
     dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_h,    realBuffer,  true, true);
     dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_hydro,real4Buffer, true, true);
+    dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_Pvel, real4Buffer, true, true);
   }
   else
   {

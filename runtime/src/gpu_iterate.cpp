@@ -177,6 +177,41 @@ void octree::makeLET()
   letRunning = false;
 }
 
+void countInteractions(tree_structure &tree, MPI_Comm mpiCommWorld, int procId)
+{
+
+#if 1
+  //Count the number of tree-opening tests
+  tree.interactions.d2h();
+  tree.bodies_grad.d2h();
+  long long openingTestSum  = 0;
+  long long distanceTestSum = 0;
+  int minOps = 10e6, maxOps = 0;
+  long long int interactionUsefull = 0;
+  long long int interactionTotal   = 0;
+  for(int i=0; i < tree.n; i++) {
+      openingTestSum     += tree.interactions[i].x; distanceTestSum     += tree.interactions[i].y;
+      minOps = min(minOps, tree.interactions[i].y); maxOps = max(maxOps, tree.interactions[i].y);
+      interactionTotal   += (int) tree.bodies_grad[i].x;  interactionUsefull   += (int)tree.bodies_grad[i].y;
+//      fprintf(stderr,"Body: %d\t\t%d\t%d\n", i, tree.interactions[i].x, tree.interactions[i].y);
+  }
+  fprintf(stderr,"Number of opening angle checks: %lld [ %lld ] distance test: %lld [ Avg: %lld Min: %d Max: %d ] Interactions: avg-total: %lld avg-useful: %lld Total useful: %lld\n",
+          openingTestSum,  openingTestSum  / tree.n,
+          distanceTestSum, distanceTestSum / tree.n, minOps, maxOps,
+          interactionTotal / tree.n, interactionUsefull / tree.n,
+          interactionUsefull);
+
+  unsigned long long tmp  = 0, tmpb = 0;
+  unsigned long long tmp2 = interactionUsefull;
+  unsigned long long tmp2b = interactionTotal;
+  MPI_Allreduce(&tmp2,&tmp,1, MPI_UNSIGNED_LONG_LONG, MPI_SUM,mpiCommWorld);
+  MPI_Allreduce(&tmp2b,&tmpb,1, MPI_UNSIGNED_LONG_LONG, MPI_SUM,mpiCommWorld);
+  if(procId == 0) fprintf(stderr,"Global useful count: %lld \t\tTotal: %lld\n", tmp, tmpb);
+
+
+  MPI_Barrier(mpiCommWorld);
+#endif
+}
 
 
 void octree::iterate_setup(IterationData &idata) {
@@ -262,6 +297,58 @@ bool octree::iterate_once(IterationData &idata) {
     predict(this->localTree);
     devContext->stopTiming("Predict", 9, execStream->s());
 
+
+    {
+        this->localTree.bodies_dens_out.d2h();
+        this->localTree.bodies_grad.d2h();
+        this->localTree.bodies_hydro.d2h();
+        this->localTree.bodies_acc1.d2h();
+        this->localTree.bodies_ids.d2h();
+        this->localTree.bodies_Ppos.d2h();
+        this->localTree.bodies_Pvel.d2h();
+
+        for(int i=0; i < this->localTree.n; i++)
+           {
+
+           if(this->localTree.bodies_ids[i] < 10)
+           //                  if(tree.bodies_ids[i] == 24263 || tree.bodies_ids[i] == 24266)
+           //                      if(tree.bodies_ids[i] >=35 && tree.bodies_ids[i] < 45)
+           //if(i >=3839 && i < 3855)
+           //       if(tree.bodies_ids[i] > 15455 && tree.bodies_ids[i] < 15465)
+           fprintf(stderr,"PPOS input: %d %lld || Pos: %f %f %f %lg\t || Vel: %f %f %f  || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
+           //                  fprintf(outFile,"Output: %d %lld || Pos: %f %f %f %lg\t || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
+                   i,
+                   this->localTree.bodies_ids[i],
+                   this->localTree.bodies_Ppos[i].x,
+                   this->localTree.bodies_Ppos[i].y,
+                   this->localTree.bodies_Ppos[i].z,
+                   this->localTree.bodies_Ppos[i].w,
+
+                   this->localTree.bodies_Pvel[i].x,
+                   this->localTree.bodies_Pvel[i].y,
+                   this->localTree.bodies_Pvel[i].z,
+
+                   this->localTree.bodies_dens_out[i].x,
+                   this->localTree.bodies_dens_out[i].y,
+                   this->localTree.bodies_grad[i].w,
+                   this->localTree.bodies_grad[i].x,
+                   this->localTree.bodies_grad[i].y,
+                   this->localTree.bodies_grad[i].z,
+                   this->localTree.bodies_hydro[i].x,
+                   this->localTree.bodies_hydro[i].y,
+                   this->localTree.bodies_hydro[i].z,
+                   this->localTree.bodies_hydro[i].w,
+                   this->localTree.bodies_acc1[i].x,
+                   this->localTree.bodies_acc1[i].y,
+                   this->localTree.bodies_acc1[i].z,
+                   this->localTree.bodies_acc1[i].w);
+           }
+    }
+
+
+
+
+
     idata.totalPredCor += get_time() - tTempTime;
 
     if(nProcs > 1)
@@ -291,7 +378,6 @@ bool octree::iterate_once(IterationData &idata) {
         needDomainUpdate    = true; //TODO if I set it to false results degrade. Check why, for now just updte
       }
     }
-
 
 
     if (useDirectGravity)
@@ -342,11 +428,120 @@ bool octree::iterate_once(IterationData &idata) {
 
       }//end rebuild tree
 
-      //Approximate gravity
-      t1 = get_time();
-      //devContext.startTiming(gravStream->s());
-      //approximate_gravity(this->localTree);
-      approximate_density(this->localTree);
+
+
+
+       //Approximate gravity
+       t1 = get_time();
+       //devContext.startTiming(gravStream->s());
+       //approximate_gravity(this->localTree);
+       approximate_density(this->localTree);
+
+        setPressure.set_args(0, &this->localTree.n, this->localTree.bodies_dens.p(), this->localTree.bodies_grad.p(), this->localTree.bodies_hydro.p());
+        setPressure.setWork(this->localTree.n, 128);
+        setPressure.execute2(gravStream->s());
+
+        approximate_derivative(this->localTree);
+
+//        countInteractions(this->localTree, mpiCommWorld, procId);
+
+        approximate_hydro(this->localTree);
+
+        mpiSync();
+        countInteractions(this->localTree, mpiCommWorld, procId);
+        mpiSync();
+
+        {
+         this->localTree.bodies_dens_out.d2h();
+         this->localTree.bodies_grad.d2h();
+         this->localTree.bodies_hydro.d2h();
+         this->localTree.bodies_acc1.d2h();
+         this->localTree.bodies_ids.d2h();
+         this->localTree.bodies_Pvel.d2h();
+
+         //char fileName[128];  sprintf(fileName, "interact-%d-%d.txt", procId, nProcs); FILE* outFile = fopen(fileName, "w");
+         for(int i=0; i < this->localTree.n; i++)
+         {
+             if(this->localTree.bodies_ids[i] < 10)
+                 fprintf(stderr,"Rho out: %d %lld || Pos: %f %f %f %lg\t || Vel: %f %f %f || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
+                     i,
+                     this->localTree.bodies_ids[i],
+                     this->localTree.bodies_Ppos[i].x,
+                     this->localTree.bodies_Ppos[i].y,
+                     this->localTree.bodies_Ppos[i].z,
+                     this->localTree.bodies_Ppos[i].w,
+                     this->localTree.bodies_Pvel[i].x,
+                     this->localTree.bodies_Pvel[i].y,
+                     this->localTree.bodies_Pvel[i].z,
+                     this->localTree.bodies_dens_out[i].x,
+                     this->localTree.bodies_dens_out[i].y,
+                     this->localTree.bodies_grad[i].w,
+                     this->localTree.bodies_grad[i].x,
+                     this->localTree.bodies_grad[i].y,
+                     this->localTree.bodies_grad[i].z,
+                     this->localTree.bodies_hydro[i].x,
+                     this->localTree.bodies_hydro[i].y,
+                     this->localTree.bodies_hydro[i].z,
+                     this->localTree.bodies_hydro[i].w,
+                     this->localTree.bodies_acc1[i].x,
+                     this->localTree.bodies_acc1[i].y,
+                     this->localTree.bodies_acc1[i].z,
+                     this->localTree.bodies_acc1[i].w);
+         }
+         if(t_current > 0)
+         {
+//             exit(0);
+         }
+        }
+
+
+
+
+
+       this->localTree.bodies_dens_out.d2h();
+       this->localTree.bodies_grad.d2h();
+       this->localTree.bodies_hydro.d2h();
+       this->localTree.bodies_acc1.d2h();
+       this->localTree.bodies_ids.d2h();
+
+
+    //char fileName[128];  sprintf(fileName, "interact-%d-%d.txt", procId, nProcs); FILE* outFile = fopen(fileName, "w");
+    for(int i=0; i < this->localTree.n; i++)
+    {
+        if(this->localTree.bodies_ids[i] < 10)
+            fprintf(stderr,"Output: %d %lld || Pos: %f %f %f %lg\t Vel: %f %f %f || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
+                i,
+                this->localTree.bodies_ids[i],
+                this->localTree.bodies_Ppos[i].x,
+                this->localTree.bodies_Ppos[i].y,
+                this->localTree.bodies_Ppos[i].z,
+                this->localTree.bodies_Ppos[i].w,
+                this->localTree.bodies_Pvel[i].x,
+                this->localTree.bodies_Pvel[i].y,
+                this->localTree.bodies_Pvel[i].z,
+                this->localTree.bodies_dens_out[i].x,
+                this->localTree.bodies_dens_out[i].y,
+                this->localTree.bodies_grad[i].w,
+                this->localTree.bodies_grad[i].x,
+                this->localTree.bodies_grad[i].y,
+                this->localTree.bodies_grad[i].z,
+                this->localTree.bodies_hydro[i].x,
+                this->localTree.bodies_hydro[i].y,
+                this->localTree.bodies_hydro[i].z,
+                this->localTree.bodies_hydro[i].w,
+                this->localTree.bodies_acc1[i].x,
+                this->localTree.bodies_acc1[i].y,
+                this->localTree.bodies_acc1[i].z,
+                this->localTree.bodies_acc1[i].w);
+    }
+    //fclose(outFile);
+
+//   mpiSync();
+//   exit(0);
+
+
+
+
 //      devContext.stopTiming("Approximation", 4, gravStream->s());
 
       runningLETTimeSum = 0;
@@ -528,6 +723,43 @@ bool octree::iterate_once(IterationData &idata) {
       double totalTime = get_time() - idata.startTime;
       LOG("Finished: %f > %f \tLoop alone took: %f\n", t_current, tEnd, totalTime);
       my_dev::base_mem::printMemUsage();
+
+
+      std::ofstream out("sphDUMP.txt", std::ofstream::out);
+      for(int i=0; i < this->localTree.n; i++)
+      {
+          char buff[2048];
+          sprintf(buff,"%d %lld || Pos: %f %f %f %lg\t Vel: %f %f %f || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
+              i,
+              this->localTree.bodies_ids[i],
+              this->localTree.bodies_Ppos[i].x,
+              this->localTree.bodies_Ppos[i].y,
+              this->localTree.bodies_Ppos[i].z,
+              this->localTree.bodies_Ppos[i].w,
+              this->localTree.bodies_Pvel[i].x,
+              this->localTree.bodies_Pvel[i].y,
+              this->localTree.bodies_Pvel[i].z,
+              this->localTree.bodies_dens_out[i].x,
+              this->localTree.bodies_dens_out[i].y,
+              this->localTree.bodies_grad[i].w,
+              this->localTree.bodies_grad[i].x,
+              this->localTree.bodies_grad[i].y,
+              this->localTree.bodies_grad[i].z,
+              this->localTree.bodies_hydro[i].x,
+              this->localTree.bodies_hydro[i].y,
+              this->localTree.bodies_hydro[i].z,
+              this->localTree.bodies_hydro[i].w,
+              this->localTree.bodies_acc1[i].x,
+              this->localTree.bodies_acc1[i].y,
+              this->localTree.bodies_acc1[i].z,
+              this->localTree.bodies_acc1[i].w);
+          out << buff;
+      }
+      out.close();
+
+
+
+
       return true;
     }
     iter++; 
@@ -636,7 +868,8 @@ void octree::predict(tree_structure &tree)
     //Set valid list to zero, TODO should we act on this comment?
 
     predictParticles.set_args(0, &tree.n, &t_current, &t_previous, tree.bodies_pos.p(), tree.bodies_vel.p(),
-                    tree.bodies_acc0.p(), tree.bodies_time.p(), tree.bodies_Ppos.p(), tree.bodies_Pvel.p());
+                    tree.bodies_acc0.p(), tree.bodies_time.p(), tree.bodies_Ppos.p(), tree.bodies_Pvel.p(),
+                    tree.bodies_hydro.p());
     predictParticles.setWork(tree.n, 128);
     predictParticles.execute2(execStream->s());
 
@@ -659,58 +892,21 @@ void octree::direct_gravity(tree_structure &tree)
     directGrav.execute2(gravStream->s());
 }
 
-void countInteractions(tree_structure &tree, MPI_Comm mpiCommWorld, int procId)
-{
-
-#if 1
-  //Count the number of tree-opening tests
-  tree.interactions.d2h();
-  tree.bodies_grad.d2h();
-  long long openingTestSum  = 0;
-  long long distanceTestSum = 0;
-  int minOps = 10e6, maxOps = 0;
-  long long int interactionUsefull = 0;
-  long long int interactionTotal   = 0;
-  for(int i=0; i < tree.n; i++) {
-      openingTestSum     += tree.interactions[i].x; distanceTestSum     += tree.interactions[i].y;
-      minOps = min(minOps, tree.interactions[i].y); maxOps = max(maxOps, tree.interactions[i].y);
-      interactionTotal   += (int) tree.bodies_grad[i].x;  interactionUsefull   += (int)tree.bodies_grad[i].y;
-//      fprintf(stderr,"Body: %d\t\t%d\t%d\n", i, tree.interactions[i].x, tree.interactions[i].y);
-  }
-  fprintf(stderr,"Number of opening angle checks: %lld [ %lld ] distance test: %lld [ Avg: %lld Min: %d Max: %d ] Interactions: avg-total: %lld avg-useful: %lld Total useful: %lld\n",
-          openingTestSum,  openingTestSum  / tree.n,
-          distanceTestSum, distanceTestSum / tree.n, minOps, maxOps,
-          interactionTotal / tree.n, interactionUsefull / tree.n,
-          interactionUsefull);
-
-  unsigned long long tmp  = 0, tmpb = 0;
-  unsigned long long tmp2 = interactionUsefull;
-  unsigned long long tmp2b = interactionTotal;
-  MPI_Allreduce(&tmp2,&tmp,1, MPI_UNSIGNED_LONG_LONG, MPI_SUM,mpiCommWorld);
-  MPI_Allreduce(&tmp2b,&tmpb,1, MPI_UNSIGNED_LONG_LONG, MPI_SUM,mpiCommWorld);
-  if(procId == 0) fprintf(stderr,"Global useful count: %lld \t\tTotal: %lld\n", tmp, tmpb);
-
-
-  MPI_Barrier(mpiCommWorld);
-#endif
-}
 
 void octree::approximate_density    (tree_structure &tree)
 {
-    uint2 node_begend;
-    int level_start = tree.startLevelMin;
-    node_begend.x   = tree.level_list[level_start].x;
-    node_begend.y   = tree.level_list[level_start].y;
-
-
+    uint2 node_begend = {tree.level_list[tree.startLevelMin].x,
+                         tree.level_list[tree.startLevelMin].y};
 
     LOG("node begend: %d %d iter-> %d\n", node_begend.x, node_begend.y, iter);
 
+    bool isFinalLaunch = (nProcs == 1);
 
     SPHDensity.set_args(0, &tree.n_active_groups,
                            &tree.n,
                            &(this->eps2),
                            &node_begend,
+                           &isFinalLaunch,
                            tree.active_group_list.p(),
                            //i particle properties
                            tree.bodies_Ppos.p(),
@@ -784,75 +980,63 @@ void octree::approximate_density    (tree_structure &tree)
         gravStream->sync();
 
         countInteractions(tree, mpiCommWorld, procId);
+
+        if(0)
+        {
+              this->localTree.bodies_dens_out.d2h();
+              this->localTree.bodies_grad.d2h();
+              this->localTree.bodies_hydro.d2h();
+              this->localTree.bodies_acc1.d2h();
+              this->localTree.bodies_ids.d2h();
+              this->localTree.bodies_Ppos.d2h();
+              this->localTree.bodies_Pvel.d2h();
+
+              for(int i=0; i < this->localTree.n; i++)
+                 {
+
+                 if(this->localTree.bodies_ids[i] < 10 || i < 10)
+                 //                  if(tree.bodies_ids[i] == 24263 || tree.bodies_ids[i] == 24266)
+                 //                      if(tree.bodies_ids[i] >=35 && tree.bodies_ids[i] < 45)
+                 //if(i >=3839 && i < 3855)
+                 //       if(tree.bodies_ids[i] > 15455 && tree.bodies_ids[i] < 15465)
+                 fprintf(stderr,"PPOS input: %d %lld || Pos: %f %f %f %lg\t || Vel: %f %f %f  || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
+                 //                  fprintf(outFile,"Output: %d %lld || Pos: %f %f %f %lg\t || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
+                         i,
+                         this->localTree.bodies_ids[i],
+                         this->localTree.bodies_Ppos[i].x,
+                         this->localTree.bodies_Ppos[i].y,
+                         this->localTree.bodies_Ppos[i].z,
+                         this->localTree.bodies_Ppos[i].w,
+
+                         this->localTree.bodies_Pvel[i].x,
+                         this->localTree.bodies_Pvel[i].y,
+                         this->localTree.bodies_Pvel[i].z,
+
+                         this->localTree.bodies_dens_out[i].x,
+                         this->localTree.bodies_dens_out[i].y,
+                         this->localTree.bodies_grad[i].w,
+                         this->localTree.bodies_grad[i].x,
+                         this->localTree.bodies_grad[i].y,
+                         this->localTree.bodies_grad[i].z,
+                         this->localTree.bodies_hydro[i].x,
+                         this->localTree.bodies_hydro[i].y,
+                         this->localTree.bodies_hydro[i].z,
+                         this->localTree.bodies_hydro[i].w,
+                         this->localTree.bodies_acc1[i].x,
+                         this->localTree.bodies_acc1[i].y,
+                         this->localTree.bodies_acc1[i].z,
+                         this->localTree.bodies_acc1[i].w);
+                 }
+              exit(0);
+          }//print section
+
     }
-
-
-    tree.bodies_dens_out.d2h();
-    tree.bodies_grad.d2h();
-    tree.bodies_hydro.d2h();
-    tree.bodies_acc1.d2h();
-    tree.bodies_ids.d2h();
-
-
-     approximate_derivative(tree);
-
-     countInteractions(tree, mpiCommWorld, procId);
-
-     approximate_hydro(tree);
-
-     mpiSync();
-     countInteractions(tree, mpiCommWorld, procId);
-     mpiSync();
-
-           tree.bodies_dens_out.d2h();
-           tree.bodies_grad.d2h();
-           tree.bodies_hydro.d2h();
-           tree.bodies_acc1.d2h();
-           tree.bodies_ids.d2h();
-
-
-//              char fileName[128];  sprintf(fileName, "interact-%d-%d.txt", procId, nProcs); FILE* outFile = fopen(fileName, "w");
-              for(int i=0; i < tree.n; i++)
-              {
-
-                  if(tree.bodies_ids[i] < 10)
-//                  if(tree.bodies_ids[i] == 24263 || tree.bodies_ids[i] == 24266)
-//                      if(tree.bodies_ids[i] >=35 && tree.bodies_ids[i] < 45)
-                  //if(i >=3839 && i < 3855)
-           //       if(tree.bodies_ids[i] > 15455 && tree.bodies_ids[i] < 15465)
-                  fprintf(stderr,"Output: %d %lld || Pos: %f %f %f %lg\t || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
-//                  fprintf(outFile,"Output: %d %lld || Pos: %f %f %f %lg\t || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
-                          i,
-                          tree.bodies_ids[i],
-                          tree.bodies_Ppos[i].x,
-                          tree.bodies_Ppos[i].y,
-                          tree.bodies_Ppos[i].z,
-                          tree.bodies_Ppos[i].w,
-                          tree.bodies_dens_out[i].x,
-                          tree.bodies_dens_out[i].y,
-                          tree.bodies_grad[i].w,
-                          tree.bodies_grad[i].x,
-                          tree.bodies_grad[i].y,
-                          tree.bodies_grad[i].z,
-                          tree.bodies_hydro[i].x,
-                          tree.bodies_hydro[i].y,
-                          tree.bodies_hydro[i].z,
-                          tree.bodies_hydro[i].w,
-                          tree.bodies_acc1[i].x,
-                          tree.bodies_acc1[i].y,
-                          tree.bodies_acc1[i].z,
-                          tree.bodies_acc1[i].w);
-                             }
-//              fclose(outFile);
-
- mpiSync();
- exit(0);
 
 
 
 }
 
-void octree::approximate_density_let(tree_structure &tree, tree_structure &remoteTree, int bufferSize, bool doActivePart)
+void octree::approximate_density_let(tree_structure &tree, tree_structure &remoteTree, int bufferSize, bool isFinalLaunch)
 {
     //Start and end node of the remote tree structure
       uint2 node_begend;
@@ -881,6 +1065,7 @@ void octree::approximate_density_let(tree_structure &tree, tree_structure &remot
                              &tree.n,
                              &(this->eps2),
                              &node_begend,
+                             &isFinalLaunch,
                              tree.active_group_list.p(),
                              //i particle properties
                              tree.bodies_Ppos.p(),
@@ -930,14 +1115,16 @@ void octree::approximate_density_let(tree_structure &tree, tree_structure &remot
 
 void octree::approximate_derivative  (tree_structure &tree)
 {
-    uint2 node_begend;
-    int level_start = tree.startLevelMin;
-    node_begend.x   = tree.level_list[level_start].x;
-    node_begend.y   = tree.level_list[level_start].y;
+    uint2 node_begend = {tree.level_list[tree.startLevelMin].x,
+                         tree.level_list[tree.startLevelMin].y};
+
+    bool isFinalLaunch = (nProcs == 1);
+
     SPHDerivative.set_args(0,   &tree.n_active_groups,
                                   &tree.n,
                                   &(this->eps2),
                                   &node_begend,
+                                  &isFinalLaunch,
                                   tree.active_group_list.p(),
                                   //i particle properties
                                   tree.bodies_Ppos.p(),
@@ -971,19 +1158,14 @@ void octree::approximate_derivative  (tree_structure &tree)
       SPHDerivative.set_texture<real4>(3,  tree.bodies_Ppos,    "texBody");
       SPHDerivative.setWork(-1, NTHREAD, nBlocksForTreeWalk);
      //  SPHDerivative.setWork(-1, 32, 1);
-
-      setPressure.set_args(0, &tree.n, tree.bodies_dens.p(),  tree.bodies_grad.p(), tree.bodies_hydro.p());
-      setPressure.setWork(tree.n, 128);
-//      setPressure.execute2(gravStream->s());
+      //      size_t sz = 1048576 * 25;
+      //      cudaDeviceSetLimit(cudaLimitPrintfFifoSize, sz);
 
       tree.bodies_grad.zeroMemGPUAsync(gravStream->s());
-
-      size_t sz = 1048576 * 25;
-      cudaDeviceSetLimit(cudaLimitPrintfFifoSize, sz);
       tree.activePartlist.zeroMemGPUAsync(gravStream->s());
       SPHDerivative.execute2(gravStream->s());  //Derivative
 
-
+      cudaDeviceSynchronize();
 
       tree.bodies_dens_out.d2h();
       tree.bodies_grad.d2h();
@@ -992,23 +1174,21 @@ void octree::approximate_derivative  (tree_structure &tree)
       tree.bodies_ids.d2h();
 
 
-         if(nProcs > 1)
-         {
-             distributeBoundaries(false); //Always full update for now
-             makeDerivativeLET();
-         }
-         else
-         {
-             setPressure.execute2(gravStream->s());
-         }
-
-
-
-
+      if(nProcs > 1)
+      {
+         distributeBoundaries(false); //Always full update for now
+         makeDerivativeLET();
+      }
+      else
+      {
+//         setPressure.set_args(0, &tree.n, tree.bodies_dens.p(), tree.bodies_grad.p(), tree.bodies_hydro.p());
+//         setPressure.setWork(tree.n, 128);
+//         setPressure.execute2(gravStream->s());
+      }
 
 }
 
-void octree::approximate_derivative_let(tree_structure &tree, tree_structure &remoteTree, int bufferSize, bool doActivePart)
+void octree::approximate_derivative_let(tree_structure &tree, tree_structure &remoteTree, int bufferSize, bool isFinalLaunch)
 {
       //Start and end node of the remote tree structure
       uint2 node_begend;
@@ -1037,6 +1217,7 @@ void octree::approximate_derivative_let(tree_structure &tree, tree_structure &re
                              &tree.n,
                              &(this->eps2),
                              &node_begend,
+                             &isFinalLaunch,
                              tree.active_group_list.p(),
                              //i particle properties
                              tree.bodies_Ppos.p(),
@@ -1078,7 +1259,7 @@ void octree::approximate_derivative_let(tree_structure &tree, tree_structure &re
       CU_SAFE_CALL(cudaEventRecord(endRemoteGrav, gravStream->s()));
       letRunning = true;
 
-      if(doActivePart)
+      if(isFinalLaunch)
       {
           setPressure.set_args(0, &tree.n, tree.bodies_dens.p(), tree.bodies_grad.p(), tree.bodies_hydro.p());
           setPressure.setWork(tree.n, 128);
@@ -1096,10 +1277,13 @@ void octree::approximate_hydro(tree_structure &tree)
     node_begend.x   = tree.level_list[level_start].x;
     node_begend.y   = tree.level_list[level_start].y;
 
+    bool isFinalLaunch = (nProcs == 1);
+
     SPHHydro.set_args(0, &tree.n_active_groups,
              &tree.n,
              &(this->eps2),
              &node_begend,
+             &isFinalLaunch,
              tree.active_group_list.p(),
              //i particle properties
              tree.bodies_Ppos.p(),
@@ -1139,11 +1323,16 @@ void octree::approximate_hydro(tree_structure &tree)
      compute_properties(tree); //TODO make this smarter as in only compute cells not groups. And switch between SPH and Gravity
 
 
-//     tree.bodies_grad.zeroMemGPUAsync(gravStream->s());
+     //Reset bodies_grad, since we reuse/abuse it to store the dt
+     tree.bodies_grad.zeroMemGPUAsync(gravStream->s());
+     tree.bodies_acc1.zeroMemGPUAsync(gravStream->s());
+
 
 //     tree.interactions.zeroMemGPUAsync(gravStream->s());
      tree.activePartlist.zeroMemGPUAsync(gravStream->s());
      SPHHydro.execute2(gravStream->s());  //Hydro force
+
+     cudaDeviceSynchronize();
 
      gravStream->sync();
      countInteractions(tree, mpiCommWorld, procId);
@@ -1158,7 +1347,7 @@ void octree::approximate_hydro(tree_structure &tree)
 
 }
 
-void octree::approximate_hydro_let(tree_structure &tree, tree_structure &remoteTree, int bufferSize, bool doActivePart)
+void octree::approximate_hydro_let(tree_structure &tree, tree_structure &remoteTree, int bufferSize, bool isFinalLaunch)
 {
       //Start and end node of the remote tree structure
       uint2 node_begend;
@@ -1189,6 +1378,7 @@ void octree::approximate_hydro_let(tree_structure &tree, tree_structure &remoteT
                              &tree.n,
                              &(this->eps2),
                              &node_begend,
+                             &isFinalLaunch,
                              tree.active_group_list.p(),
                              //i particle properties
                              tree.bodies_Ppos.p(),
@@ -1230,9 +1420,9 @@ void octree::approximate_hydro_let(tree_structure &tree, tree_structure &remoteT
       CU_SAFE_CALL(cudaEventRecord(endRemoteGrav, gravStream->s()));
       letRunning = true;
 
-      if(doActivePart)
+      if(isFinalLaunch)
       {
-
+          fprintf(stderr,"Final Hydro call \n");
       }
 
       float4 *bla = &remoteTree.fullRemoteTree[(2*(remoteP))];
@@ -2121,7 +2311,8 @@ void octree::correct(tree_structure &tree)
                             tree.bodies_vel.p(), tree.bodies_acc0.p(), tree.bodies_acc1.p(),
                             tree.bodies_h.p(), tree.bodies_dens.p(), tree.bodies_pos.p(),
                             tree.bodies_Ppos.p(), tree.bodies_Pvel.p(), tree.oriParticleOrder.p(),
-                            real4Buffer1.p(), float2Buffer.p());
+                            real4Buffer1.p(), float2Buffer.p(),
+                            tree.bodies_hydro.p());
   correctParticles.setWork(tree.n, 128);
   correctParticles.execute2(execStream->s());
  
@@ -2133,7 +2324,7 @@ void octree::correct(tree_structure &tree)
   #ifdef DO_BLOCK_TIMESTEP
     computeDt.set_args(0, &tree.n, &t_current, &(this->eta), &(this->dt_limit), &(this->eps2),
                           tree.bodies_time.p(), tree.bodies_vel.p(), tree.ngb.p(), tree.bodies_pos.p(),
-                          tree.bodies_acc0.p(), tree.activePartlist.p(), &timeStep);
+                          tree.bodies_acc0.p(), tree.activePartlist.p(), &timeStep, tree.bodies_grad.p());
     computeDt.setWork(tree.n, 128);
     computeDt.execute2(execStream->s());
   #endif

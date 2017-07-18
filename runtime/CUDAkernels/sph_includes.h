@@ -171,8 +171,8 @@ namespace density
       const float r      = sqrtf(r2eps);
 
       temp = (fabs(massj*kernel.W(r, pos.w)) > 0);
-
       dens += massj*kernel.W(r, pos.w);
+
       //dens += 1;
       //Prevent adding ourself, TODO should make this 'if' more efficient, like multiply with something
       //Not needed for this SPH kernel?
@@ -256,8 +256,9 @@ namespace density
             {
               int temp = 0;
               addDensity(pos_i[k], jmass, jpos, eps2, density_i[k].dens, temp, kernel);
-//              density_i[k].smth++;
 
+//              gradient_i[k].x++;       //Number of operations
+//              gradient_i[k].y += temp; //Number of useful operations
 
 #if 0
           //    if(pos_i[0].x == 0.0 && pos_i[0].y == 0 && (pos_i[0].z > 0.03124 && pos_i[0].z < 0.03126))
@@ -270,8 +271,6 @@ namespace density
             }
         } 
 #endif
-              gradient_i[k].x++;       //Number of operations
-              gradient_i[k].y += temp; //Number of useful operations
             }
           }
         }
@@ -598,7 +597,6 @@ namespace derivative
 
           const int NGROUPTemp = NCRIT;
           const int offset     = NGROUPTemp*(laneId / NGROUPTemp);
-//          for (int j = 0; j < WARP_SIZE; j++)
           for (int j = offset; j < offset+NGROUPTemp; j++)
           {
                 const float4 jM0      = make_float4(__shfl(MP.x, j), __shfl(MP.y, j), __shfl(MP.z, j), __shfl(MP.w,j));
@@ -752,7 +750,9 @@ namespace hydroforce
             const float2 *body_jdens,
             const float4 *body_hydro)
         {
+          //Get v_sig_max from gradient_i x ?
           float v_sig_max = 0; //TODO implement this value/keep track of it over various directOp calls
+
 
           SPH::kernel_t kernel;
           const float4 MP = (FULL || ptclIdx >= 0) ? body_jpos [ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
@@ -776,7 +776,7 @@ namespace hydroforce
             const float xv_inner = dr.x * dv.x + dr.y * dv.y + dr.z * dv.z;
             const float w_ij     = (xv_inner < 0.0f) ? xv_inner / r : 0.0f;
 
-            const float2 jD    = make_float2(__shfl(MD.x, j), __shfl(MD.y, j));
+            const float2 jD      = make_float2(__shfl(MD.x, j), __shfl(MD.y, j));
             //
             const float ith_abs_gradW = kernel.abs_gradW(r, pos_i[0].w);
             const float jth_abs_gradW = (jD.y != 0) ? kernel.abs_gradW(r, jD.y) : 0.0f; //Returns NaN if smthj is 0 which happens if we do not use the particle, so 'if' for now
@@ -785,10 +785,8 @@ namespace hydroforce
                                                 : make_float4(0.0f,0.0f,0.0f,0.0f);
 
 
-
             //AV
             const float3 jH       = make_float3(__shfl(MH.x, j), __shfl(MH.y, j), __shfl(MH.w,j)); //Note w in z location
-
             const float v_sig     = hydro_i[0].y + jH.y - 3.0f * w_ij;
                         v_sig_max = (v_sig_max < v_sig) ? v_sig : v_sig_max;
             const float AV        = - 0.5f * v_sig * w_ij / (0.5f * (density_i[0].dens + jD.x)) * 0.5f * (hydro_i[0].w + jH.z);
@@ -797,59 +795,20 @@ namespace hydroforce
             float temp = jM0.w * (hydro_i[0].x / (density_i[0].dens * density_i[0].dens) + jH.x / (jD.x * jD.x) + AV);
             temp       = (jD.y != 0) ? temp : 0; //Same as above, a 0 smoothing length leads to NaN (divide by 0)
 
-      //      acc.y           += (fabs(abs_gradW) > 0);  //Count how often we do something useful in this function
-      //      acc.z           += 1; //Count how often we enter this function
-            acc_i[0].w           += jM0.w * (hydro_i[0].x / (density_i[0].dens * density_i[0].dens)  + 0.5 * AV) * (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z); //eng_dot
-            acc_i[0].x           -= temp  * gradW.x;
-            acc_i[0].y           -= temp  * gradW.y;
-            acc_i[0].z           -= temp  * gradW.z;
+            acc_i[0].x    -= temp  * gradW.x;
+            acc_i[0].y    -= temp  * gradW.y;
+            acc_i[0].z    -= temp  * gradW.z;
 
+            //eng_dot is acc_i[0].w
+            acc_i[0].w    += jM0.w * (hydro_i[0].x / (density_i[0].dens * density_i[0].dens)  + 0.5 * AV) * (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z); //eng_dot
 
-            gradient_i[0].x++; //Number of times we enter this function
-            gradient_i[0].y += (jM0.w*fabs(abs_gradW)) > 0; //Number of useful operations
-
-//            if(((pos_i[0].x > 0.968 && pos_i[0].x < 0.969) &&
-//                (pos_i[0].y > 0.093 && pos_i[0].y < 0.094) &&
-//                (pos_i[0].z > 0.078 && pos_i[0].z < 0.079) && (jM0.w*fabs(abs_gradW)) > 0))
-//            {
-////                   // if(jM0.x == jM0.y && jM0.x == 0 && (jM0.z > 0.07 && jM0.z < 0.071))
-////                    {
-//                        printf("ON DEV [ %d %d ], body props: %f %f %f %f || %f %f %f || r: %f smth: %f %f sum: %f\n",
-//                                threadIdx.x, blockIdx.x,
-//                                pos_i[0].x, pos_i[0].y, pos_i[0].z, pos_i[0].w,
-//                                jM0.x, jM0.y, jM0.z,
-//                                r, pos_i[0].w, jD.y,
-//                                gradient_i[0].y);
-////
-////                    }
-////
-//            }
-//            if((pos_i[0].x == 0 &&   (pos_i[0].y > 0.015 && pos_i[0].y < 0.0157) && (pos_i[0].z > 0.02 && pos_i[0].z < 0.024)) && (jM0.w*fabs(abs_gradW)) > 0)
-//            {
-////                   // if(jM0.x == jM0.y && jM0.x == 0 && (jM0.z > 0.07 && jM0.z < 0.071))
-////                    {
-//                        printf("ON DEV, body props: %f %f %f || %f %f %f || r: %f smth: %f %f\n",
-//                                pos_i[0].x, pos_i[0].y, pos_i[0].z,
-//                                jM0.x, jM0.y, jM0.z,
-//                                r, pos_i[0].w, jD.y);
-////
-////                    }
-////
-//            }
-
-//            if((pos_i[0].x == 0 && pos_i[0].y == 0 && (pos_i[0].z > 0.02 && pos_i[0].z < 0.024)) &&
-//               (jM0.x == 0 && (jM0.y > 0.0078 && jM0.y < 0.0079) && (jM0.z > 0.07 && jM0.z < 0.071)))
-//            {
-//                        printf("ON DEV2, body props: %f %f %f || %f %f %f || Rho: %f %f Vel: %f %f %f\n",
-//                                pos_i[0].x, pos_i[0].y, pos_i[0].z,
-//                                jM0.x, jM0.y, jM0.z,
-//                                jD.x, jD.y, jvel.x, jvel.y, jvel.z);
-//
-//            }
-
-
+            //      acc.y           += (fabs(abs_gradW) > 0);  //Count how often we do something useful in this function
+            //      acc.z           += 1; //Count how often we enter this function
+            //gradient_i[0].x++; //Number of times we enter this function
+            //gradient_i[0].y += (jM0.w*fabs(abs_gradW)) > 0; //Number of useful operations
           }//for WARP_SIZE
 
+          gradient_i[0].x = max(v_sig_max, gradient_i[0].x);    //This is fo the dt parameter
           //force[id].dt = PARAM::C_CFL * 2.0 * ith.smth / v_sig_max;
         }
 #endif

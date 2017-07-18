@@ -14,6 +14,9 @@ typedef float4 real4;
 //having the loose constants around
 #define SPH_KERNEL_SIZE 3.5f
 
+//#define ADIABATIC_INDEX 1.4f
+#define ADIABATIC_INDEX 5.0f/3.0f
+
 //Enabling the following increases the number of particle properties
 //exchanged during mpi particle exchange. Only required if you run
 //block time steps. Not needed in the default shared time-step mode.
@@ -64,8 +67,8 @@ typedef struct bodyStruct
 //#define LMEM_STACK_SIZE            3072         //Number of storage places PER thread, MUST be power 2 !!!!
 //#define LMEM_STACK_SIZE             2048        //Number of storage places PER thread, MUST be power 2 !!!!
 
-#define LMEM_EXTRA_SIZE            512
-#define LMEM_STACK_SIZE            512         //Number of storage places PER thread, MUST be power 2 !!!!
+#define LMEM_EXTRA_SIZE            256
+#define LMEM_STACK_SIZE            256         //Number of storage places PER thread, MUST be power 2 !!!!
 #define CELL_LIST_MEM_PER_WARP     (LMEM_STACK_SIZE*32)
 #if ((CELL_LIST_MEM_PER_WARP-1) & CELL_LIST_MEM_PER_WARP) != 0
 #error "CELL_LIST_MEM_PER_WARP must be power of 2"

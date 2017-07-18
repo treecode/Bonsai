@@ -161,6 +161,21 @@ float warpGroupReduce(float val)
     return val;
 }
 
+__inline__ __device__
+float warpGroupReduceMin(float val)
+{
+    for(int i=NCRIT; i < WARP_SIZE; i*=2)
+        val = min(val, __shfl_down(val,  i));
+    return val;
+}
+
+__inline__ __device__
+float warpGroupReduceMax(float val)
+{
+    for(int i=NCRIT; i < WARP_SIZE; i*=2)
+        val = max(val, __shfl_down(val,  i));
+    return val;
+}
 
 
 #endif

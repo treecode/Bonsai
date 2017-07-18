@@ -5,10 +5,22 @@
 #include <sstream>
 #include <iostream>
 
+
 typedef struct real4
 {
   float x,y,z,w;
 } real4;
+
+typedef struct real2
+{
+  float x,y,z,w;
+} real2;
+
+typedef float float4[4];
+typedef float float3[3];
+typedef float float2[2];  
+
+//The hydro properties: x = pressure, y = soundspeed, z = Energy , w = Balsala Switch
 
 #define DARKMATTERID  3000000000000000000
 #define DISKID        0
@@ -39,11 +51,15 @@ static IDType lGetIDType (const long long id)
 };
 
 
-void readAMUSEFile(std::vector<real4>    &bodyPositions, 
-                   std::vector<real4>    &bodyVelocities, 
-                   std::vector<IDType>   &bodiesIDs, 
-                   std::string fileName,
-                   const int reduceFactor) {
+ //#X Y Z MASS VX VY VZ RHO H U 
+ void readPhantomSPHFile(std::vector<real4>    &bodyPositions, 
+                        std::vector<real4>    &bodyVelocities, 
+                        std::vector<IDType>   &bodiesIDs, 
+                        std::vector<real2>    &bodyDensRho, 
+                        std::vector<real4>    &bodyDrvt, 
+                        std::vector<real4>    &bodyHydro, 
+                        std::string fileName,
+                        const int reduceFactor) {
   
     bodyPositions.clear();
   
@@ -60,39 +76,39 @@ void readAMUSEFile(std::vector<real4>    &bodyPositions,
       exit(0);
     }
     
-    //Skip the  header lines
+    //Skip the  header line
     std::string tempLine;
     std::getline(inputFile, tempLine);
-    std::getline(inputFile, tempLine);
-    
+   
 
     int pid  = 0;
     real4       positions;
     real4       velocity;
+    real4       drvt = {0,0,0,0};
+    real4       hydro = {0,0,0,0};
+    real2       rhoh;
+    int         ptype, idummy;
+    
+    
     int cntr = 0;
-//     float r2 = 0;
+
     while(std::getline(inputFile, tempLine))
     {
       if(tempLine.empty()) continue; //Skip empty lines
       
       std::stringstream ss(tempLine);
-      //Amuse format
-//       inputFile >> positions.w >> r2 >> r2 >> 
-//                velocity.x  >> velocity.y  >> velocity.z  >>
-//                positions.x >> positions.y >> positions.z;
-      ss >> positions.w >>
-              velocity.x >> velocity.y >> velocity.z  >>
-              positions.x >> positions.y >> positions.z;
-              
-//               positions.x /= 1000;
-//               positions.y /= 1000;
-//               positions.z /= 1000;
-          
-//       idummy = pid; //particleIDtemp;
-      
-//       cout << idummy << "\t"<< positions.w << "\t"<<  positions.x << "\t"<<  positions.y << "\t"<< positions.z << "\t"
-//       << velocity.x << "\t"<< velocity.y << "\t"<< velocity.z << "\t" << velocity.w << "\n";
-              
+
+      ss >>  idummy >> positions.x >> positions.y >> positions.z >> positions.w >>
+             velocity.x >> velocity.y >> velocity.z  >>
+             rhoh.x  >> rhoh.y >> hydro.z >> ptype;
+             
+//       fprintf(stderr,"TEST: %d | %f %f %f %f | %f %f %f | %f %f | %f | %d \n",
+//               idummy, 
+//               positions.x, positions.y, positions.z, positions.w,
+//               velocity.x , velocity.y, velocity.z,
+//               rhoh.x , rhoh.y , hydro.z, ptype);
+//               
+
       if(reduceFactor > 0)
       {
         if(cntr % reduceFactor == 0)
@@ -100,11 +116,17 @@ void readAMUSEFile(std::vector<real4>    &bodyPositions,
           positions.w *= reduceFactor;
           bodyPositions.push_back(positions);
           bodyVelocities.push_back(velocity);
+          bodyDensRho.push_back(rhoh);
+          bodyDrvt.push_back(drvt);
+          bodyHydro.push_back(hydro);
+          
+          //ptype == 1 is default gas particle 
+          //ptype == 4 is boundary particle
       
           //Convert the ID to a star (disk for now) particle
           bodiesIDs.push_back(lGetIDType(pid++));
         }
-      }      
+      } 
       cntr++;   
   }
   inputFile.close();
@@ -117,56 +139,59 @@ void readAMUSEFile(std::vector<real4>    &bodyPositions,
 
 #if 1
 template<typename IO, size_t N>
-static double writeStars(std::vector<real4>    &bodyPositions, 
-                         std::vector<real4>    &bodyVelocities, 
-                         std::vector<IDType>   &bodiesIDs, 
+static double writeStars(std::vector<real4>     &bodyPositions, 
+                         std::vector<real4>     &bodyVelocities, 
+                         std::vector<IDType>    &bodiesIDs, 
+                         std::vector<real2>    &bodyDensRho, 
+                         std::vector<real4>    &bodyDrvt, 
+                         std::vector<real4>    &bodyHydro, 
                          IO &out,
                          std::array<size_t,N> &count)
 {
-  double dtWrite = 0;
-
-  const int pCount  = bodyPositions.size();
-
-  /* write IDs */
-  {
-    BonsaiIO::DataType<IDType> ID("Stars:IDType", pCount);
-    for (int i = 0; i< pCount; i++)
-    {
-      //ID[i] = lGetIDType(bodiesIDs[i]);
-      ID[i] = bodiesIDs[i];
-      assert(ID[i].getType() > 0);
-      if (ID[i].getType() < count.size())
-        count[ID[i].getType()]++;
-    }
-    double t0 = MPI_Wtime();
-    out.write(ID);
-    dtWrite += MPI_Wtime() - t0;
-  }
+    double dtWrite = 0;
     
-  /* write pos */
-  {
-    BonsaiIO::DataType<real4> pos("Stars:POS:real4",pCount);
-    for (int i = 0; i< pCount; i++)
-      pos[i] = bodyPositions[i];
-    double t0 = MPI_Wtime();
-    out.write(pos);
-    dtWrite += MPI_Wtime() - t0;
-  }
+    const int nS  = bodyPositions.size();
+  
+  
+    BonsaiIO::DataType<IDType> S_id ("Stars:IDType",           nS);
+    BonsaiIO::DataType<real4>  S_pos("Stars:POS:real4",        nS);
+    BonsaiIO::DataType<float3> S_vel("Stars:VEL:float[3]",     nS);
+    BonsaiIO::DataType<float2> S_rhoh("Stars:RHOH:float[2]",   nS);
+    BonsaiIO::DataType<float4> S_hydro("Stars:HYDRO:float[4]", nS);
+    BonsaiIO::DataType<float4> S_drv  ("Stars:DRVT:float[4]" , nS);  
     
-  /* write vel */
-  {
-    typedef float vec3[3];
-    BonsaiIO::DataType<vec3> vel("Stars:VEL:float[3]",pCount);
-    for (int i = 0; i< pCount; i++)
+
+    for (int i = 0; i< nS; i++)
     {
-      vel[i][0] = bodyVelocities[i].x;
-      vel[i][1] = bodyVelocities[i].y;
-      vel[i][2] = bodyVelocities[i].z;
-    }
-    double t0 = MPI_Wtime();
-    out.write(vel);
-    dtWrite += MPI_Wtime() - t0;
-  }
+      S_id[i] = bodiesIDs[i];   
+      S_pos[i] = bodyPositions[i];
+      S_vel[i][0] = bodyVelocities[i].x;
+      S_vel[i][1] = bodyVelocities[i].y;
+      S_vel[i][2] = bodyVelocities[i].z; 
+      
+      S_rhoh[i][0] = bodyDensRho[i].x;
+      S_rhoh[i][1] = bodyDensRho[i].y;      
+      
+      S_hydro[i][0] = bodyHydro[i].x;
+      S_hydro[i][1] = bodyHydro[i].y;
+      S_hydro[i][2] = bodyHydro[i].z; 
+      S_hydro[i][3] = bodyHydro[i].w; 
+      
+      S_drv[i][0] = bodyDrvt[i].x;
+      S_drv[i][1] = bodyDrvt[i].y;
+      S_drv[i][2] = bodyDrvt[i].z; 
+      S_drv[i][3] = bodyDrvt[i].w;       
+    }    
+
+  
+    out.write(S_id);
+    out.write(S_pos);
+    out.write(S_vel);
+    out.write(S_rhoh);
+    out.write(S_hydro);
+    out.write(S_drv);    
+  
+  
 
   return dtWrite;
 }
@@ -210,8 +235,11 @@ int main(int argc, char * argv[])
   std::vector<real4>    bodyPositions;
   std::vector<real4>    bodyVelocities;
   std::vector<IDType>   bodiesIDs;
+  std::vector<real2>   bodyDensRho;
+  std::vector<real4>   bodyDrvt;
+  std::vector<real4>   bodyHydro;
   
-  readAMUSEFile(bodyPositions, bodyVelocities, bodiesIDs, baseName, reduceFactor);
+  readPhantomSPHFile(bodyPositions, bodyVelocities, bodiesIDs, bodyDensRho, bodyDrvt, bodyHydro, baseName, reduceFactor);
 
   if (rank == 0){
     fprintf(stderr, " nTotal= %ld \n", bodyPositions.size());
@@ -237,7 +265,9 @@ int main(int argc, char * argv[])
     
     if (rank == 0) fprintf(stderr, " write Stars\n");
     MPI_Barrier(comm);
-    dtWrite += writeStars(bodyPositions, bodyVelocities, bodiesIDs,out,ntypeloc);
+    dtWrite += writeStars(bodyPositions, bodyVelocities, bodiesIDs,
+                          bodyDensRho, bodyDrvt, bodyHydro,
+                          out,ntypeloc);
     
     MPI_Reduce(&ntypeloc, &ntypeglb, ntypeloc.size(), MPI_LONG_LONG, MPI_SUM, 0, comm);
     if (rank == 0)
