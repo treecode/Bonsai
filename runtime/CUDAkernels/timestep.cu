@@ -130,6 +130,7 @@ __device__ bool posOutsideDomain(float3 low, float3 high, float4 pos)
 
 }
 
+typedef unsigned long long ullong;
 KERNEL_DECLARE(predict_particles)(const int 	n_bodies,
 										float 	tc,
 										float 	tp,
@@ -139,7 +140,8 @@ KERNEL_DECLARE(predict_particles)(const int 	n_bodies,
 										float2 	*time,
 										real4 	*pPos,
 										real4 	*pVel,
-										real4   *hydro){
+										real4   *hydro,
+								  const ullong  *ID){
   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
   const uint tid = threadIdx.x;
   const uint idx = bid * blockDim.x + tid;
@@ -155,6 +157,17 @@ KERNEL_DECLARE(predict_particles)(const int 	n_bodies,
   float4 v = vel [idx];
   float4 a = acc [idx];
   float tb = time[idx].x;
+
+  //Boundary particle, do not modify position and velocity
+  if(ID[idx] >= 100000000)
+  {
+      pPos[idx] = p;
+      pVel[idx] = v;
+      return;
+  }
+
+
+
 
   #ifdef DO_BLOCK_TIMESTEP
     float dt_cb  = tc - tb;
@@ -267,6 +280,7 @@ static __device__ __forceinline__ float adjustH(const float h_old, const float n
 
 //TODO this kernel should be checking for active particles and not just assuming
   //all particles
+
 //The hydro properties: x = pressure, y = soundspeed, z = Energy , w = Balsala Switch
 KERNEL_DECLARE(set_pressure)(const int     n_bodies,
                              const float2 *density,
@@ -306,7 +320,8 @@ KERNEL_DECLARE(correct_particles)(const int n_bodies,
                                   /* 12 */   uint  *unsorted,
                                   /* 13 */   real4 *acc0_new,
                                   	  	  	 float2 *time_new,
-                                  	  	  	 float4 *body_hydro)
+                                  	  	  	 float4 *body_hydro,
+                                  	  const ullong  *ID)
 {
   const int bid =  blockIdx.y *  gridDim.x +  blockIdx.x;
   const int tid =  threadIdx.y * blockDim.x + threadIdx.x;
@@ -352,6 +367,18 @@ KERNEL_DECLARE(correct_particles)(const int n_bodies,
   v.z += (a1.z - a0.z)*dt_cb;
 
 
+  //Boundary particle, do not modify velocity and energy
+  if(ID[idx] >= 100000000)
+  {
+      //Reset the v modification
+      v = pVel[idx];
+  }
+  else
+  {   //Correct the energy
+      body_hydro[idx].z = (body_hydro[idx].z - dt_cb*a0.w) + dt_cb*a1.w;
+  }
+
+
   //Store the corrected velocity, acceleration and the new time step info
   vel     [idx] = v;
   acc0_new[idx] = a1;
@@ -361,13 +388,6 @@ KERNEL_DECLARE(correct_particles)(const int n_bodies,
   //Adjust the search radius for the next iteration to get closer to the
   //requested number of neighbours
   body_h[idx] = adjustH(body_h[idx], body_dens[idx].y);
-
-
-  //Correct the energy
-  //body_hydro[idx].z += 0.5f*dt_cb*a1.w;
-  //body_hydro[idx].z += (a1.w + a0.w)*dt_cb;
-
-  body_hydro[idx].z = (body_hydro[idx].z - dt_cb*a0.w) + dt_cb*a1.w;
 }
 
 

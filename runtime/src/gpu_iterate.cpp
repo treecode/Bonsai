@@ -725,35 +725,58 @@ bool octree::iterate_once(IterationData &idata) {
       my_dev::base_mem::printMemUsage();
 
 
-      std::ofstream out("sphDUMP.txt", std::ofstream::out);
+//      std::ofstream out("sphDUMP.txt", std::ofstream::out);
+//      for(int i=0; i < this->localTree.n; i++)
+//      {
+//          char buff[2048];
+//          sprintf(buff,"%d %lld || Pos: %f %f %f %lg\t Vel: %f %f %f || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
+//              i,
+//              this->localTree.bodies_ids[i],
+//              this->localTree.bodies_Ppos[i].x,
+//              this->localTree.bodies_Ppos[i].y,
+//              this->localTree.bodies_Ppos[i].z,
+//              this->localTree.bodies_Ppos[i].w,
+//              this->localTree.bodies_Pvel[i].x,
+//              this->localTree.bodies_Pvel[i].y,
+//              this->localTree.bodies_Pvel[i].z,
+//              this->localTree.bodies_dens_out[i].x,
+//              this->localTree.bodies_dens_out[i].y,
+//              this->localTree.bodies_grad[i].w,
+//              this->localTree.bodies_grad[i].x,
+//              this->localTree.bodies_grad[i].y,
+//              this->localTree.bodies_grad[i].z,
+//              this->localTree.bodies_hydro[i].x,
+//              this->localTree.bodies_hydro[i].y,
+//              this->localTree.bodies_hydro[i].z,
+//              this->localTree.bodies_hydro[i].w,
+//              this->localTree.bodies_acc1[i].x,
+//              this->localTree.bodies_acc1[i].y,
+//              this->localTree.bodies_acc1[i].z,
+//              this->localTree.bodies_acc1[i].w);
+//          out << buff;
+//      }
+
+      char fname[512];
+      sprintf(fname, "sphOut-%f.txt", t_current);
+      std::ofstream out(fname, std::ofstream::out);
+      out << "# id\tx\ty\tz\tm\tvx\tvy\tvz\tdensity\th\tu\tP\n";
       for(int i=0; i < this->localTree.n; i++)
       {
-          char buff[2048];
-          sprintf(buff,"%d %lld || Pos: %f %f %f %lg\t Vel: %f %f %f || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
-              i,
-              this->localTree.bodies_ids[i],
-              this->localTree.bodies_Ppos[i].x,
-              this->localTree.bodies_Ppos[i].y,
-              this->localTree.bodies_Ppos[i].z,
-              this->localTree.bodies_Ppos[i].w,
-              this->localTree.bodies_Pvel[i].x,
-              this->localTree.bodies_Pvel[i].y,
-              this->localTree.bodies_Pvel[i].z,
-              this->localTree.bodies_dens_out[i].x,
-              this->localTree.bodies_dens_out[i].y,
-              this->localTree.bodies_grad[i].w,
-              this->localTree.bodies_grad[i].x,
-              this->localTree.bodies_grad[i].y,
-              this->localTree.bodies_grad[i].z,
-              this->localTree.bodies_hydro[i].x,
-              this->localTree.bodies_hydro[i].y,
-              this->localTree.bodies_hydro[i].z,
-              this->localTree.bodies_hydro[i].w,
-              this->localTree.bodies_acc1[i].x,
-              this->localTree.bodies_acc1[i].y,
-              this->localTree.bodies_acc1[i].z,
-              this->localTree.bodies_acc1[i].w);
-          out << buff;
+            char buff[2048];
+            sprintf(buff,"%lld\t%f\t%f\t%f\t%lg\t%f\t%f\t%f\t%lg\t%f\t%f\t%f\n",
+                this->localTree.bodies_ids[i],
+                this->localTree.bodies_Ppos[i].x,
+                this->localTree.bodies_Ppos[i].y,
+                this->localTree.bodies_Ppos[i].z,
+                this->localTree.bodies_Ppos[i].w,
+                this->localTree.bodies_Pvel[i].x,
+                this->localTree.bodies_Pvel[i].y,
+                this->localTree.bodies_Pvel[i].z,
+                this->localTree.bodies_dens_out[i].x,
+                this->localTree.bodies_dens_out[i].y,
+                this->localTree.bodies_hydro[i].z,
+                this->localTree.bodies_hydro[i].x);
+            out << buff;
       }
       out.close();
 
@@ -869,7 +892,7 @@ void octree::predict(tree_structure &tree)
 
     predictParticles.set_args(0, &tree.n, &t_current, &t_previous, tree.bodies_pos.p(), tree.bodies_vel.p(),
                     tree.bodies_acc0.p(), tree.bodies_time.p(), tree.bodies_Ppos.p(), tree.bodies_Pvel.p(),
-                    tree.bodies_hydro.p());
+                    tree.bodies_hydro.p(), tree.bodies_ids.p());
     predictParticles.setWork(tree.n, 128);
     predictParticles.execute2(execStream->s());
 
@@ -932,7 +955,8 @@ void octree::approximate_density    (tree_structure &tree)
                            tree.bodies_acc1.p(),
                            tree.bodies_dens_out.p(),
                            tree.bodies_hydro_out.p(),
-                           tree.bodies_grad.p());
+                           tree.bodies_grad.p(),
+                           tree.bodies_ids.p());
     SPHDensity.set_texture<real4>(0,  tree.boxSizeInfo,    "texNodeSize");
     SPHDensity.set_texture<real4>(1,  tree.boxCenterInfo,  "texNodeCenter");
     SPHDensity.set_texture<real4>(2,  tree.multipole,      "texMultipole");
@@ -1091,7 +1115,8 @@ void octree::approximate_density_let(tree_structure &tree, tree_structure &remot
                              tree.bodies_acc1.p(),
                              tree.bodies_dens_out.p(),
                              tree.bodies_hydro_out.p(),
-                             tree.bodies_grad.p());
+                             tree.bodies_grad.p(),
+                             tree.bodies_ids.p());
       SPHDensityLET.set_texture<real4>(0,  remoteTree.fullRemoteTree, "texNodeSize",  1*(remoteP), remoteN);
       SPHDensityLET.set_texture<real4>(1,  remoteTree.fullRemoteTree, "texNodeCenter",1*(remoteP) + (remoteN + nodeTexOffset),     remoteN);
       SPHDensityLET.set_texture<real4>(2,  remoteTree.fullRemoteTree, "texMultipole", 1*(remoteP) + 2*(remoteN + nodeTexOffset), 3*remoteN);
@@ -1150,7 +1175,8 @@ void octree::approximate_derivative  (tree_structure &tree)
                                   tree.bodies_acc1.p(),
                                   tree.bodies_dens_out.p(),
                                   tree.bodies_hydro_out.p(),
-                                  tree.bodies_grad.p());
+                                  tree.bodies_grad.p(),
+                                  tree.bodies_ids.p());
 
       SPHDerivative.set_texture<real4>(0,  tree.boxSizeInfo,    "texNodeSize");
       SPHDerivative.set_texture<real4>(1,  tree.boxCenterInfo,  "texNodeCenter");
@@ -1243,7 +1269,8 @@ void octree::approximate_derivative_let(tree_structure &tree, tree_structure &re
                              tree.bodies_acc1.p(),
                              tree.bodies_dens_out.p(),
                              tree.bodies_hydro_out.p(),
-                             tree.bodies_grad.p());
+                             tree.bodies_grad.p(),
+                             tree.bodies_ids.p());
       SPHDerivativeLET.set_texture<real4>(0,  remoteTree.fullRemoteTree, "texNodeSize",  1*(remoteP), remoteN);
       SPHDerivativeLET.set_texture<real4>(1,  remoteTree.fullRemoteTree, "texNodeCenter",1*(remoteP) + (remoteN + nodeTexOffset),     remoteN);
       SPHDerivativeLET.set_texture<real4>(2,  remoteTree.fullRemoteTree, "texMultipole", 1*(remoteP) + 2*(remoteN + nodeTexOffset), 3*remoteN);
@@ -1309,7 +1336,8 @@ void octree::approximate_hydro(tree_structure &tree)
              tree.bodies_acc1.p(),
              tree.bodies_dens_out.p(),
              tree.bodies_hydro_out.p(),
-             tree.bodies_grad.p());
+             tree.bodies_grad.p(),
+             tree.bodies_ids.p());
 
      SPHHydro.set_texture<real4>(0,  tree.boxSizeInfo,    "texNodeSize");
      SPHHydro.set_texture<real4>(1,  tree.boxCenterInfo,  "texNodeCenter");
@@ -1404,7 +1432,8 @@ void octree::approximate_hydro_let(tree_structure &tree, tree_structure &remoteT
                              tree.bodies_acc1.p(),
                              tree.bodies_dens_out.p(),
                              tree.bodies_hydro_out.p(),
-                             tree.bodies_grad.p());
+                             tree.bodies_grad.p(),
+                             tree.bodies_ids.p());
       SPHHydro.set_texture<real4>(0,  remoteTree.fullRemoteTree, "texNodeSize",  3*(remoteP), remoteN);
       SPHHydro.set_texture<real4>(1,  remoteTree.fullRemoteTree, "texNodeCenter",3*(remoteP) + (remoteN + nodeTexOffset),     remoteN);
       SPHHydro.set_texture<real4>(2,  remoteTree.fullRemoteTree, "texMultipole", 3*(remoteP) + 2*(remoteN + nodeTexOffset), 3*remoteN);
@@ -1481,7 +1510,8 @@ void octree::approximate_gravity(tree_structure &tree)
                          tree.bodies_acc1.p(),
                          tree.bodies_dens_out.p(),
                          tree.bodies_hydro_out.p(),
-                         tree.bodies_grad.p());
+                         tree.bodies_grad.p(),
+                         tree.bodies_ids.p());
   SPHDensity.set_texture<real4>(0,  tree.boxSizeInfo,    "texNodeSize");
   SPHDensity.set_texture<real4>(1,  tree.boxCenterInfo,  "texNodeCenter");
   SPHDensity.set_texture<real4>(2,  tree.multipole,      "texMultipole");
@@ -1525,8 +1555,8 @@ void octree::approximate_gravity(tree_structure &tree)
                               tree.bodies_acc1.p(),
                               tree.bodies_dens_out.p(),
                               tree.bodies_hydro_out.p(),
-                              tree.bodies_grad.p());
-
+                              tree.bodies_grad.p(),
+                              tree.bodies_ids.p());
   SPHDerivative.set_texture<real4>(0,  tree.boxSizeInfo,    "texNodeSize");
   SPHDerivative.set_texture<real4>(1,  tree.boxCenterInfo,  "texNodeCenter");
   SPHDerivative.set_texture<real4>(2,  tree.multipole,      "texMultipole");
@@ -1563,7 +1593,8 @@ void octree::approximate_gravity(tree_structure &tree)
           tree.bodies_acc1.p(),
           tree.bodies_dens_out.p(),
           tree.bodies_hydro_out.p(),
-          tree.bodies_grad.p());
+          tree.bodies_grad.p(),
+          tree.bodies_ids.p());
 
   SPHHydro.set_texture<real4>(0,  tree.boxSizeInfo,    "texNodeSize");
   SPHHydro.set_texture<real4>(1,  tree.boxCenterInfo,  "texNodeCenter");
@@ -1732,7 +1763,8 @@ void octree::approximate_gravity(tree_structure &tree)
                          tree.bodies_acc1.p(),
                          tree.bodies_dens_out.p(),
                          tree.bodies_hydro_out.p(),
-                         tree.bodies_grad.p());
+                         tree.bodies_grad.p(),
+                         tree.bodies_ids.p());
 
 
   CU_SAFE_CALL(cudaDeviceSynchronize());
@@ -2312,7 +2344,7 @@ void octree::correct(tree_structure &tree)
                             tree.bodies_h.p(), tree.bodies_dens.p(), tree.bodies_pos.p(),
                             tree.bodies_Ppos.p(), tree.bodies_Pvel.p(), tree.oriParticleOrder.p(),
                             real4Buffer1.p(), float2Buffer.p(),
-                            tree.bodies_hydro.p());
+                            tree.bodies_hydro.p(), tree.bodies_ids.p());
   correctParticles.setWork(tree.n, 128);
   correctParticles.execute2(execStream->s());
  

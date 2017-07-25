@@ -88,7 +88,7 @@ static IDType lGetIDType (const long long id)
     real4       hydro = {0,0,0,0};
     real2       rhoh;
     int         ptype, idummy;
-    
+
     
     int cntr = 0;
 
@@ -122,9 +122,14 @@ static IDType lGetIDType (const long long id)
           
           //ptype == 1 is default gas particle 
           //ptype == 4 is boundary particle
+          int         offset=0;
+          if(ptype == 4)
+          {
+              offset = 100000000; 
+          }
       
           //Convert the ID to a star (disk for now) particle
-          bodiesIDs.push_back(lGetIDType(pid++));
+          bodiesIDs.push_back(lGetIDType(pid++ + offset));
         }
       } 
       cntr++;   

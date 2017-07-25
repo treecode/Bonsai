@@ -591,6 +591,9 @@ namespace derivative
             const float4 *body_hydro    //Not used here
             )
         {
+
+          //This function only seems to be used for computing the Balsala switch
+
           SPH::kernel_t kernel;
           const float4 MP = (FULL || ptclIdx >= 0) ? body_jpos[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
           const float4 MV = (FULL || ptclIdx >= 0) ? body_jvel[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
@@ -636,6 +639,7 @@ namespace derivative
 namespace hydroforce
 {
 //real4> bodies_hydro;   //The hydro properties: x = pressure, y = soundspeed, z = Energy , w = Balsala Switch
+#if 0
     static __device__ __forceinline__ void addParticleEffect(
         const float4    posi,
         const float4    veli,
@@ -679,9 +683,12 @@ namespace hydroforce
       acc.z           -= temp  * gradW.z;
 //      acc.y           += (fabs(abs_gradW) > 0);  //Count how often we do something useful in this function
 //      acc.z           += 1; //Count how often we enter this function
-      acc.w           += massj * (hydroi.x / (densi * densi) + 0.5 * AV) * (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z); //eng_dot
-    }
 
+      //Natsuki
+      acc.w           += massj * (hydroi.x / (densi * densi) + 0.5 * AV) * (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z); //eng_dot
+      //Gasoline acc.w           += massj * (hydroi.x / (densi * densj) + 0.5 * AV) * (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z); //eng_dot
+    }
+#endif
 
     template<int NI, bool FULL>
     struct directOperator {
@@ -744,7 +751,7 @@ namespace hydroforce
             const float   eps2,
             SPH::density::data    density_i[NI],
             SPH::derivative::data gradient_i[NI],
-            const float4  hydro_i[NI],
+            const float4  hydro_i[NI],              //x = pressure, y = soundspeed, z = Energy , w = Balsala Switch
             const float4 *body_jpos,
             const float4 *body_jvel,
             const float2 *body_jdens,
@@ -788,11 +795,14 @@ namespace hydroforce
             //AV
             const float3 jH       = make_float3(__shfl(MH.x, j), __shfl(MH.y, j), __shfl(MH.w,j)); //Note w in z location
             const float v_sig     = hydro_i[0].y + jH.y - 3.0f * w_ij;
-                        v_sig_max = (v_sig_max < v_sig) ? v_sig : v_sig_max;
             const float AV        = - 0.5f * v_sig * w_ij / (0.5f * (density_i[0].dens + jD.x)) * 0.5f * (hydro_i[0].w + jH.z);
 
+            //AV  =  AV  * (0.5*(BalA+BalB)) , see RossWog text between Eq 63 and 64
 
-            float temp = jM0.w * (hydro_i[0].x / (density_i[0].dens * density_i[0].dens) + jH.x / (jD.x * jD.x) + AV);
+            //dt variable
+            v_sig_max = (v_sig_max < v_sig) ? v_sig : v_sig_max;
+
+            float temp = jM0.w * (hydro_i[0].x / (density_i[0].dens * density_i[0].dens) + jH.x / (jD.x * jD.x) + AV); //Rosswog eq 61
             temp       = (jD.y != 0) ? temp : 0; //Same as above, a 0 smoothing length leads to NaN (divide by 0)
 
             acc_i[0].x    -= temp  * gradW.x;
@@ -800,7 +810,13 @@ namespace hydroforce
             acc_i[0].z    -= temp  * gradW.z;
 
             //eng_dot is acc_i[0].w
-            acc_i[0].w    += jM0.w * (hydro_i[0].x / (density_i[0].dens * density_i[0].dens)  + 0.5 * AV) * (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z); //eng_dot
+            //Natsuki , Rosswog Eq 62
+            //acc_i[0].w    += jM0.w * (hydro_i[0].x / (density_i[0].dens * density_i[0].dens)  + 0.5 * AV) * (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z); //eng_dot
+
+            //Gasoline, uses Rho_i * Rho_j
+            temp =  jM0.w * (hydro_i[0].x / (density_i[0].dens * jD.x)  + 0.5 * AV) * (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z); //eng_dot
+            temp = (jD.x != 0) ? temp : 0;
+            acc_i[0].w    += temp;
 
             //      acc.y           += (fabs(abs_gradW) > 0);  //Count how often we do something useful in this function
             //      acc.z           += 1; //Count how often we enter this function

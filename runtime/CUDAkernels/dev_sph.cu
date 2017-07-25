@@ -568,6 +568,8 @@ __device__ void computeGroupBoundsWithSmoothingLength(const float4 pos[2], const
     grpSize.z = fmaxf(fabs(grpCenter.z-r_min.z), fabs(grpCenter.z-r_max.z));
 }
 
+typedef unsigned long long ullong;
+
 
 template<int SHIFT2, int BLOCKDIM2, bool ACCUMULATE, template<int NI2, bool FULL> class directOp>
 static __device__
@@ -600,7 +602,8 @@ bool treewalk_control(
     float4          *body_acc_out,
     float2          *body_dens_out,
     float4          *body_grad_out,
-    float4          *body_hydro_out)
+    float4          *body_hydro_out,
+    const ullong    *ID)
 {
   /*********** set necessary thread constants **********/
 #ifdef DO_BLOCK_TIMESTEP
@@ -634,7 +637,6 @@ bool treewalk_control(
 
   //3813 BOdy is part of grp: 476
   //20726 BOdy is part of grp: 2590
-
 
 
   float4 pos_i [2], vel_i [2], acc_i [2], hydro_i[2];
@@ -851,6 +853,11 @@ bool treewalk_control(
                 dens_i[i].finalize(group_body_pos[body_i[i]].w);
                 body_dens_out[addr] = make_float2(dens_i[i].dens,dens_i[i].smth);
 
+                if(ID[addr] >= 100000000)
+                {
+                    body_dens_out[addr] = group_body_dens[addr];
+                }
+
 //                body_grad_out[addr].x = derivative_i[i].x; //For Stats
 //                body_grad_out[addr].y = derivative_i[i].y; //For Stats
 
@@ -889,7 +896,7 @@ bool treewalk_control(
                    printf("TEST: %f %f %f %f \n",  body_grad_out[addr].x, derivative_i[i].x, body_dens_out[addr].x, derivative_i[i].y);
                }
 
-               //Compute Balsala switch
+               //Compute Balsala switch, Rosswog Eq 63
                float temp  = fabs(derivative_i[i].w);
                float temp2 = derivative_i[i].x*derivative_i[i].x +
                              derivative_i[i].y*derivative_i[i].y +
@@ -922,7 +929,7 @@ bool treewalk_control(
 
               if(isFinalLaunch)
               {
-                  const float C_CFL = 0.3;
+                  const float C_CFL = 0.3; //Natsuki is 0.3
                   float dt = C_CFL * 2.0 * dens_i[0].smth / body_grad_out[addr].x;
                   body_grad_out[addr].x = dt;
               }
@@ -1057,7 +1064,8 @@ void approximate_SPH_main(
     float4   *body_acc_out,
     float2   *body_dens_out,
     float4   *body_grad_out,
-    float4   *body_hydro_out)
+    float4   *body_hydro_out,
+    const ullong    *ID)
 {
   const int blockDim2 = BLOCKDIM2;
   const int shMemSize = 1 * (1 << blockDim2);
@@ -1144,7 +1152,8 @@ void approximate_SPH_main(
                                     body_acc_out,
                                     body_dens_out,
                                     body_grad_out,
-                                    body_hydro_out);
+                                    body_hydro_out,
+                                    ID);
 
 #ifdef SHMODE
     if (!success)
@@ -1241,7 +1250,8 @@ void approximate_SPH_main(
                                               body_acc_out,
                                               body_dens_out,
                                               body_grad_out,
-                                              body_hydro_out);
+                                              body_hydro_out,
+                                              ID);
       assert(success);
 
       if(laneId == 0)
@@ -1287,7 +1297,8 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
           real4     *body_acc_out,
           float2    *body_dens_out,
           float4    *body_hydro_out,
-          float4    *body_grad_out)
+          float4    *body_grad_out,
+          const ullong    *ID)
     {
   approximate_SPH_main<false, NTHREAD2, SPH::density::directOperator>(
           n_active_groups,
@@ -1317,7 +1328,8 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
            body_acc_out,
            body_dens_out,
            body_grad_out,
-           body_hydro_out);
+           body_hydro_out,
+           ID);
 }
 
 
@@ -1358,7 +1370,8 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
           real4     *body_acc_out,
           float2    *body_dens_out,
           float4    *body_hydro_out,
-          float4    *body_grad_out)
+          float4    *body_grad_out,
+          const ullong    *ID)
     {
 #if 1
   approximate_SPH_main<false, NTHREAD2, SPH::derivative::directOperator>(
@@ -1389,7 +1402,8 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
            body_acc_out,
            body_dens_out,
            body_grad_out,
-           body_hydro_out);
+           body_hydro_out,
+           ID);
 #endif
 }
 
@@ -1431,7 +1445,8 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
           real4     *body_acc_out,
           float2    *body_dens_out,
           float4    *body_hydro_out,
-          float4    *body_grad_out)
+          float4    *body_grad_out,
+          const ullong    *ID)
     {
 #if 1
           approximate_SPH_main<false, NTHREAD2, SPH::hydroforce::directOperator>(
@@ -1462,7 +1477,8 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
           body_acc_out,
           body_dens_out,
           body_grad_out,
-          body_hydro_out);
+          body_hydro_out,
+          ID);
 #endif
     }
 
