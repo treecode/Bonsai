@@ -12,7 +12,18 @@ typedef float4 real4;
 
 //This will depend on the SPH method, I stick it here to be able to prevent
 //having the loose constants around
-#define SPH_KERNEL_SIZE 3.5f
+
+/* Quinitc kernel */
+#define SPH_KERNEL_SIZE 3.0f
+#define  PARAM_SMTH 1.0
+
+/* Phantom Wendland C6 kernel */
+//#define SPH_KERNEL_SIZE 2.0f
+//#define  PARAM_SMTH 1.6
+
+/* Natsuki Wendland C6 kernel , works*/
+//#define SPH_KERNEL_SIZE 3.5f
+//#define  PARAM_SMTH 1.2
 
 //#define ADIABATIC_INDEX 1.4f
 #define ADIABATIC_INDEX 5.0f/3.0f
@@ -30,6 +41,20 @@ typedef float4 real4;
     #error "Fatal, USE DUST does not work when using MPI. Its for demo only"
   #endif
 #endif
+
+
+
+struct bodyProps
+{
+    real4  *body_pos;
+    real4  *body_vel;
+    float2 *body_dens;
+    float4 *body_grad;
+    float4 *body_hydro;
+    unsigned long long *ID;
+};
+
+
 
 
 typedef struct bodyStruct

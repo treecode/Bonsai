@@ -4722,7 +4722,8 @@ void octree::mergeAndLaunchLETStructures(
           approximate_density_let(this->localTree, this->remoteTree, bufferSize, doActivePart);
           break;
       case LET_METHOD_DRVT:
-          approximate_derivative_let(this->localTree, this->remoteTree, bufferSize, doActivePart);
+          approximate_density_let(this->localTree, this->remoteTree, bufferSize, doActivePart);
+//          approximate_derivative_let(this->localTree, this->remoteTree, bufferSize, doActivePart);
           break;
       case LET_METHOD_HYDR:
           approximate_hydro_let(this->localTree, this->remoteTree, bufferSize, doActivePart);

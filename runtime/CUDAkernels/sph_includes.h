@@ -15,7 +15,7 @@
 /* FDPS Kernel */
 
 
-#define  PARAM_SMTH 1.2
+
 
 
 //__device__ __forceinline__ float pow3(float a) { return a*a*a; }
@@ -30,31 +30,25 @@
 
 namespace SPH
 {
-    //Wendland C6
-    struct kernel_t{
-        //W
-        __device__ __forceinline__ float W(const float dr, const float h) const{
-            const float H = supportRadius() * h;
-            const float s = dr / H;
-            float r_value;
-            r_value = (1.0f + s * (8.0f + s * (25.0f + s * (32.0f)))) * pow8(plus(1.0f - s));
-            r_value *= (1365.f/64.f) / (H * H * H * M_PI);
-            return r_value;
-        }
 
-        //gradW
-        __device__ __forceinline__ float abs_gradW(const float r, const float h) const{
-              const float H = supportRadius() * h;
-              const float s = r / H;
-              float r_value;
-              r_value = pow7(plus(1.0f - s)) * (plus(1.0f - s) * (8.0f + s * (50.0f + s * (96.0f))) - 8.0f * (1.0f + s * (8.0f + s * (25.0f + s * (32.0f)))));
-              r_value *= (1365.f/64.f) / (H * H * H * M_PI);
-              return r_value / (H  + 1.0e-6 * h);
-             }
-
-
+    struct base_kernel
+    {
         static __device__  __forceinline__ float supportRadius(){
             return SPH_KERNEL_SIZE;
+        }
+
+        template <typename type>  type
+        static __device__ __forceinline__  pow5(const type arg){
+            const type arg2 = arg * arg;
+            const type arg4 = arg2 * arg2;
+            return arg4 * arg;
+        }
+
+        template <typename type>  type
+        static __device__ __forceinline__  pow4(const type arg){
+            const type arg2 = arg * arg;
+            const type arg4 = arg2 * arg2;
+            return arg4;
         }
 
         template <typename type>  type
@@ -75,6 +69,193 @@ namespace SPH
         static __device__ __forceinline__  plus(const type arg){
             return (arg > 0) ? arg : 0;
         }
+    };
+
+    //Quintic kernel as defined in Phantom
+    struct kernel_t : public base_kernel {
+
+        static constexpr float cnormk = 1./(120.*M_PI);
+
+        /* this one works with #define SPH_KERNEL_SIZE 3.0f #define  PARAM_SMTH 1.0 */
+        //Quintic kernel as defined in Phantom
+        __device__ __forceinline__ float W(const float dr, const float h) const{
+
+            const float hi = 1.0f/h;
+            const float hi21 = hi*hi;
+            const float hi31 = hi*hi21;
+            const float q  = dr*hi;
+            const float q2 = (dr*dr)*hi21;
+            const float cnormkh = cnormk*hi31; //Quintic kernel
+
+            if(q < 1.0f)
+            {
+                const float q4 = q2*q2;
+                return cnormkh*(-10.0f*q4*q + 30.0f*q4 - 60.0f*q2 + 66.0f);
+            }
+            else if(q < 2.0f)
+            {
+                return cnormkh*(-pow5(q - 3.0f) + 6.0f*pow5((q - 2.0f)));
+            }
+            else if(q < 3.0f)
+            {
+                return cnormkh*(-pow5(q - 3.0f));
+            }
+            else
+            {
+                return 0;
+            }
+        }
+
+        __device__ __forceinline__ float abs_gradW(const float dr, const float h) const{
+            const float hi = 1.0f/h;
+            const float hi21 = hi*hi;
+            const float hi41 = hi21*hi21;
+            const float q  = dr*hi;
+            const float q2 = (dr*dr)*hi21;
+            const float cnormkh = cnormk*hi41; //Quintic kernel
+
+            if(q < 1.0f)
+            {
+                return cnormkh*(q*(-50.0f*q2*q + 120.0f*q2 - 120.0f));
+            }
+            else if(q < 2.0f)
+            {
+                return  cnormkh*(-5.0f*pow4(q - 3.0f) + 30.0f*pow4(q - 2.0f));
+            }
+            else if(q < 3.0f)
+            {
+                return cnormkh*(-5.0f*pow4(q - 3.0f));
+            }
+            else
+            {
+                return 0;
+            }
+        }
+
+        __device__ __forceinline__ float abs_gradW2(const float dr, const float h) const{
+            const float hi = 1.0f/h;
+            const float hi21 = hi*hi;
+//            const float hi41 = hi21*hi21;
+            const float q  = dr*hi;
+            const float q2 = (dr*dr)*hi21;
+            const float cnormkh = 1; //Quintic kernel
+
+            if(q < 1.0f)
+            {
+                return cnormkh*(q*(-50.0f*q2*q + 120.0f*q2 - 120.0f));
+            }
+            else if(q < 2.0f)
+            {
+                return  cnormkh*(-5.0f*pow4(q - 3.0f) + 30.0f*pow4(q - 2.0f));
+            }
+            else if(q < 3.0f)
+            {
+                return cnormkh*(-5.0f*pow4(q - 3.0f));
+            }
+            else
+            {
+                return 0;
+            }
+        }
+
+        //Combined kernel, does not multiply with hi3 and/or hi4 nor with cnorm. This is done as final
+        //step in the dev_sph code.
+        __device__ __forceinline__ float abs_gradW2(const float dr, const float h, float &w) const{
+            const float hi = 1.0f/h;
+            const float hi21 = hi*hi;
+            const float q  = dr*hi;
+            const float q2 = (dr*dr)*hi21;
+
+
+            if(q < 1.0f)
+            {
+                const float q4 = q2*q2;
+                w = (-10.0f*q4*q + 30.0f*q4 - 60.0f*q2 + 66.0f);
+                return (q*(-50.0f*q2*q + 120.0f*q2 - 120.0f));
+            }
+            else if(q < 2.0f)
+            {
+                w = -pow5(q - 3.0f) + 6.0f*pow5((q - 2.0f));
+                return  (-5.0f*pow4(q - 3.0f) + 30.0f*pow4(q - 2.0f));
+            }
+            else if(q < 3.0f)
+            {
+                w = -pow5(q - 3.0f);
+                return (-5.0f*pow4(q - 3.0f));
+            }
+            else
+            {
+                w = 0;
+                return 0;
+            }
+        }
+    };
+
+    //Wendland C6 kernel as defined in Phantom
+    struct kernel_t3 : public base_kernel {
+        static constexpr float cnormk = 1365./(512.*M_PI);
+
+        __device__ __forceinline__ float W(const float dr, const float h) const{
+            const float hi = 1.0f/h;
+            const float hi21 = hi*hi;
+            const float q  = dr*hi;
+            const float q2 = (dr*dr)*hi21;
+            const float hi31 = hi*hi21;
+
+            if(q >= 2.0) return 0;
+            return hi31*cnormk*(pow8(0.5*q - 1.0f)*(4.0f*q2*q + 6.25f*q2 + 4.0f*q + 1.0f));
+
+        }
+        __device__ __forceinline__ float abs_gradW(const float dr, const float h) const{
+            const float hi = 1.0f/h;
+            const float hi21 = hi*hi;
+            const float q  = dr*hi;
+            const float q2 = (dr*dr)*hi21;
+            const float hi41 = hi21*hi21;
+
+            if(q >= 2.0) return 0;
+            return hi41*cnormk*q*pow7(0.5*q - 1.0f)*(22.0f*q2 + 19.25f*q + 5.5f);
+        }
+        //        pure subroutine get_kernel(q2,q,wkern,grkern)
+        //         real, intent(in)  :: q2,q
+        //         real, intent(out) :: wkern,grkern
+        //
+        //         !--Wendland 2/3D C^6
+        //         if (q < 2.) then
+        //            wkern  = (q - 1.)**8*(32.*q2*q + 25.*q2 + 8.*q + 1.)
+        //            grkern = q*(q - 1.)**7*(352.*q2 + 154.*q + 22.)
+        //         else
+        //            wkern  = 0.
+        //            grkern = 0.
+        //         endif
+        //        end subroutine get_kernel
+
+    };
+
+
+    //Wendland C6 Natsuki
+    struct kernel_t2 : public base_kernel {
+        static constexpr float cnormk = 1; //TODO align this with below cnormk use
+
+        //W
+        __device__ __forceinline__ float W(const float dr, const float h) const{
+            const float H = supportRadius() * h;
+            const float s = dr / H;
+            float r_value;
+            r_value = (1.0f + s * (8.0f + s * (25.0f + s * (32.0f)))) * pow8(plus(1.0f - s));
+            r_value *= (1365.f/64.f) / (H * H * H * M_PI);
+            return r_value;
+        }
+
+        //gradW
+        __device__ __forceinline__ float abs_gradW(const float r, const float h) const{
+              const float H = supportRadius() * h;
+              const float s = r / H;
+              float r_value;
+              r_value = pow7(plus(1.0f - s)) * (plus(1.0f - s) * (8.0f + s * (50.0f + s * (96.0f))) - 8.0f * (1.0f + s * (8.0f + s * (25.0f + s * (32.0f)))));
+              r_value *= (1365.f/64.f) / (H * H * H * M_PI);
+              return r_value / (H  + 1.0e-6 * h);
+             }
     };
 
     namespace density
@@ -180,6 +361,54 @@ namespace density
     #endif
     }
 
+    static __device__ __forceinline__ void addDensity_gradh(
+        const float4    pos,
+        const float     massj,
+        const float3    posj,
+        const float     eps2,
+              float    &dens,
+              float    &gradh,
+              float    &temp,
+        const SPH::kernel_t &kernel)
+    {
+    #if 1  // to test performance of a tree-walk
+      //const float3 dr    = make_float3(posj.x - pos.x, posj.y - pos.y, posj.z - pos.z);
+        float3 dr    = make_float3(posj.x - pos.x, posj.y - pos.y, posj.z - pos.z);
+
+
+//      const float dxbound = 6.85937500f;
+//      const float dybound = 0.040594f;
+//      const float dzbound = 0.038274f;
+//      #define SIGN(x) ((x > 0) - (x < 0))
+//      if (abs(dr.x) > 0.5*dxbound) dr.x = dr.x - dxbound*SIGN(dr.x);
+//      if (abs(dr.y) > 0.5*dybound) dr.y = dr.y - dybound*SIGN(dr.y);
+//      if (abs(dr.z) > 0.5*dzbound) dr.z = dr.z - dzbound*SIGN(dr.z);
+
+
+
+      const float r2     = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
+      const float r2eps  = r2;// + eps2;
+      const float r      = sqrtf(r2eps);
+      const float qi     = r/pos.w;
+
+//      if(r2eps == 0) return;
+
+      float temp1, temp2;
+      temp2 = kernel.abs_gradW2(r, pos.w, temp1);
+
+      temp = temp1;
+      dens  += massj*temp1;  //Correct one
+
+      //Use this for testing
+//      if(massj == 0) temp1 = 0;
+//      dens  += temp1;
+
+
+      gradh += massj*(-qi*temp2 - 3*temp1);
+
+    #endif
+    }
+
 #if 1
     static __device__ __forceinline__ void addDensity2(
         const float4    pos,
@@ -236,12 +465,20 @@ namespace density
           const float4 *body_jpos,
           const float4 *body_jvel,
           const float2 *body_jdens,   //Not used here
-          const float4 *body_hydro    //Not used here
+          const float4 *body_hydro,    //Not used here
+          const unsigned long long IDi,
+          const unsigned long long *IDs
           )
         {
           SPH::kernel_t kernel;
-#if 1
+#if 0
           const float4 M0 = (FULL || ptclIdx >= 0) ? body_jpos[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+
+          const int  IDjx = (FULL || ptclIdx >= 0) ? IDs[ptclIdx] : 0;
+
+//          if(IDi == 64767){
+//              printf("On dev [ %d %d ] interact2-in: %.16lg \n", blockIdx.x, threadIdx.x, density_i[0].dens);
+//          }
 
           const int NGROUPTemp = NCRIT;
           const int offset     = NGROUPTemp*(laneId / NGROUPTemp);
@@ -251,29 +488,122 @@ namespace density
             const float4 jM0   = make_float4(__shfl(M0.x, j ), __shfl(M0.y, j), __shfl(M0.z, j), __shfl(M0.w,j));
             const float  jmass = jM0.w;
             const float3 jpos  = make_float3(jM0.x, jM0.y, jM0.z);
+
+
         #pragma unroll
             for (int k = 0; k < NI; k++)
             {
-              int temp = 0;
-              addDensity(pos_i[k], jmass, jpos, eps2, density_i[k].dens, temp, kernel);
+              float temp2 = gradient_i[k].x;
+//              float temp3 = density_i[k].dens;
+              float temp = 0;
+//              addDensity(pos_i[k], jmass, jpos, eps2, density_i[k].dens, temp, kernel);
+              addDensity_gradh(pos_i[k], jmass, jpos, eps2, density_i[k].dens, gradient_i[k].x, temp, kernel);
+
+
+
+              const int IDj = __shfl(IDjx, j);
+//
+
+//              if(IDi == 64767){
+//                 //if(0 != (gradient_i[k].x-temp2) && jmass > 0)
+//////                  if(IDj == 100000000)
+//                  if(temp != 0)
+//                  {
+//
+//
+//                     const float3 dr    = make_float3(jpos.x - pos_i[k].x, jpos.y - pos_i[k].y, jpos.z - pos_i[k].z);
+//                     const float r2     = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
+////
+////                     float hi1  = 1.0f/ pos_i[0].w;
+////                     float hi21 = hi1*hi1;
+////                     float phantom = r2*hi21;
+//
+//                     int tempID = (IDj >= 100000000 ? IDj-100000000 : IDj);
+//                     printf("ON DEV %d interact: %d dist: %.16lg \t sum: %f increase: %.16lg\n",
+//                             (int)IDi, tempID+1, sqrtf(r2), density_i[k].dens, temp);
+////                     printf("ON DEV %d interact: %d dist: %.16lg \t %.16f %.16f %.16f\n",
+////                                               (int)IDi, tempID+1, sqrtf(r2), dr.x,dr.y,dr.z);
+//
+////                             phantom, hi21, dr.x,dr.y,dr.z,jpos.x,jpos.y,jpos.z);
+//
+//
+//
+//
+////                      printf("ON DEV %d interact: %d dist: %f res: %f diff:\t %lg %lg || Sum: %f %f %f \t %f %f %f \n",
+////                              (int)IDi, IDj,
+////                              r2,
+////                              83157344.000000*(gradient_i[k].x-temp2),
+////                              (density_i[k].dens-temp3)/jmass,
+////                              temp,
+////                              gradient_i[k].x/jmass,
+//////                              gradient_i[k].x-temp2,
+////                              83157344.000000*gradient_i[k].x,
+////                              pos_i[k].x, pos_i[k].y, pos_i[k].z,
+////                              jpos.x, jpos.y, jpos.z);
+//                  }
+//              }
 
 //              gradient_i[k].x++;       //Number of operations
 //              gradient_i[k].y += temp; //Number of useful operations
 
-#if 0
-          //    if(pos_i[0].x == 0.0 && pos_i[0].y == 0 && (pos_i[0].z > 0.03124 && pos_i[0].z < 0.03126))
-       // if(((laneId + 1) % 8) == 0)
-        if(pos_i[0].x == 0.5 && pos_i[0].y == 0.5 && pos_i[0].z == 49.5)
-        {
-            if(temp > 0)
-            {
-                printf("%d Interaction with: %f %f %f  with  %f\t%f\t%f \n", laneId, pos_i[0].x,pos_i[0].y,pos_i[0].z, jpos.x, jpos.y, jpos.z);
-            }
-        } 
-#endif
             }
           }
+//          if(IDi == 64767){
+//              printf("On dev [ %d %d ] interact2-out: %.16lg \n", blockIdx.x, threadIdx.x, density_i[0].dens);
+//          }
         }
+
+
+#elif 1
+
+        const float4 M0 = (FULL || ptclIdx >= 0) ? body_jpos[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+        const float4 MV = (FULL || ptclIdx >= 0) ? body_jvel[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+        const int  IDjx = (FULL || ptclIdx >= 0) ? IDs[ptclIdx] : 0;
+
+
+        const int NGROUPTemp = NCRIT;
+        const int offset     = NGROUPTemp*(laneId / NGROUPTemp);
+        for (int j = offset; j < offset+NGROUPTemp; j++)
+        {
+          const float4 jM0   = make_float4(__shfl(M0.x, j ), __shfl(M0.y, j), __shfl(M0.z, j), __shfl(M0.w,j));
+          const float  jmass = jM0.w;
+          const float3 jpos  = make_float3(jM0.x, jM0.y, jM0.z);
+
+
+      #pragma unroll
+          for (int k = 0; k < NI; k++)
+          {
+            float3 dr    = make_float3(jpos.x - pos_i[k].x, jpos.y - pos_i[k].y, jpos.z - pos_i[k].z);
+            const float r2     = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
+            const float r2eps  = r2;// + eps2;
+            const float r      = sqrtf(r2eps);
+            const float qi     = r/pos_i[k].w;
+
+            float temp1, temp2;
+            temp2 = kernel.abs_gradW2(r, pos_i[k].w, temp1); //temp1 is density kernel, temp2 = derivative kernel
+
+            density_i[k].dens  += jmass*temp1;                   //Density
+            acc_i[k].x         += jmass*(-qi*temp2 - 3*temp1);   //Derivative
+
+            //Balsara switch, TODO(jbedorf): In theory this is only needed when we perform the final density iteration
+            const float3 jvel  = make_float3(__shfl(MV.x, j), __shfl(MV.y, j), __shfl(MV.z, j));
+            const float3 dv    = make_float3(jvel.x - vel_i[0].x, jvel.y - vel_i[0].y, jvel.z - vel_i[0].z);
+
+            const float4 gradW = (r > 0) ? make_float4(temp2 * dr.x / r, temp2 * dr.y / r, temp2 * dr.z / r, 0.0) : (float4){0.0, 0.0, 0.0, 0.0};
+            gradient_i[0].x -= jmass * (dv.y * gradW.z - dv.z * gradW.y);
+            gradient_i[0].y -= jmass * (dv.z * gradW.x - dv.x * gradW.z);
+            gradient_i[0].z -= jmass * (dv.x * gradW.y - dv.y * gradW.x);
+            gradient_i[0].w -= jmass * (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z);
+            //End Balsara
+          } //for k
+        } //for offset
+      }
+
+
+
+
+
+
 #elif 0
         //Version that shuffles the particle index instead of the particle-data
         //With the idea being that each particle can work on it's own useful particle-index
@@ -588,12 +918,12 @@ namespace derivative
             const float4 *body_jpos,
             const float4 *body_jvel,
             const float2 *body_jdens,   //Not used here
-            const float4 *body_hydro    //Not used here
+            const float4 *body_hydro,    //Not used here
+            const unsigned long long IDi,
+            const unsigned long long *IDs
             )
         {
-
-          //This function only seems to be used for computing the Balsala switch
-
+          //This function is only used for computing the Balsala switch
           SPH::kernel_t kernel;
           const float4 MP = (FULL || ptclIdx >= 0) ? body_jpos[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
           const float4 MV = (FULL || ptclIdx >= 0) ? body_jvel[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
@@ -615,18 +945,11 @@ namespace derivative
                 gradient_i[0].y -= jM0.w* (dv.z * gradW.x - dv.x * gradW.z);
                 gradient_i[0].z -= jM0.w* (dv.x * gradW.y - dv.y * gradW.x);
                 gradient_i[0].w -= jM0.w* (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z);
+//                gradient_i[0].w += abs_gradW;
 
 //                gradient_i[0].x++;       //Number of operations
 //                gradient_i[0].y += (jM0.w*fabs(abs_gradW)) > 0; //Number of useful operations
           }
-
-//          bool isZero =  (pos_i[0].x == 0.0f && (pos_i[0].x == pos_i[0].y) && (pos_i[0].x == pos_i[0].z));
-//            if(isZero)
-//            {
-//                printf("ON DEV [%d %d] , Partial sum: %f\n", threadIdx.x, blockIdx.x,  gradient_i[0].z);
-//            }
-
-
         }
 
 #endif
@@ -755,10 +1078,14 @@ namespace hydroforce
             const float4 *body_jpos,
             const float4 *body_jvel,
             const float2 *body_jdens,
-            const float4 *body_hydro)
+            const float4 *body_hydro,
+            const unsigned long long IDi,
+            const unsigned long long *IDs)
         {
           //Get v_sig_max from gradient_i x ?
           float v_sig_max = 0; //TODO implement this value/keep track of it over various directOp calls
+
+          float omegai = vel_i[0].w;
 
 
           SPH::kernel_t kernel;
@@ -766,10 +1093,10 @@ namespace hydroforce
           const float4 MV = (FULL || ptclIdx >= 0) ? body_jvel [ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
           const float4 MH = (FULL || ptclIdx >= 0) ? body_hydro[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
           const float2 MD = (FULL || ptclIdx >= 0) ? body_jdens[ptclIdx] : make_float2(0.0f, 0.0f);
+          const int  IDjx = (FULL || ptclIdx >= 0) ? IDs[ptclIdx] : 0;
 
           const int NGROUPTemp = NCRIT;
           const int offset     = NGROUPTemp*(laneId / NGROUPTemp);
-          //for (int j = 0; j < WARP_SIZE; j++)
           for (int j = offset; j < offset+NGROUPTemp; j++)
           {
             const float4 jM0   = make_float4(__shfl(MP.x, j), __shfl(MP.y, j), __shfl(MP.z, j), __shfl(MP.w,j));
@@ -778,10 +1105,13 @@ namespace hydroforce
             const float3 jvel  = make_float3(__shfl(MV.x, j), __shfl(MV.y, j), __shfl(MV.z, j));
             const float3 dv    = make_float3(vel_i[0].x - jvel.x, vel_i[0].y - jvel.y, vel_i[0].z - jvel.z);
 
+            const float omegaj = __shfl(MV.w, j);
+
             //
             const float r        = sqrtf(dr.x*dr.x + dr.y*dr.y + dr.z*dr.z);
             const float xv_inner = dr.x * dv.x + dr.y * dv.y + dr.z * dv.z;
             const float w_ij     = (xv_inner < 0.0f) ? xv_inner / r : 0.0f;
+            const float projv    = (r != 0) ? xv_inner / r : 0.0f;
 
             const float2 jD      = make_float2(__shfl(MD.x, j), __shfl(MD.y, j));
             //
@@ -791,32 +1121,222 @@ namespace hydroforce
             const float4 gradW        = (r > 0) ? make_float4(abs_gradW * dr.x / r, abs_gradW * dr.y / r, abs_gradW * dr.z / r, 0.0f)
                                                 : make_float4(0.0f,0.0f,0.0f,0.0f);
 
-
             //AV
-            const float3 jH       = make_float3(__shfl(MH.x, j), __shfl(MH.y, j), __shfl(MH.w,j)); //Note w in z location
-            const float v_sig     = hydro_i[0].y + jH.y - 3.0f * w_ij;
-            const float AV        = - 0.5f * v_sig * w_ij / (0.5f * (density_i[0].dens + jD.x)) * 0.5f * (hydro_i[0].w + jH.z);
+            const float4 jH       = make_float4(__shfl(MH.x, j), __shfl(MH.y, j), __shfl(MH.z,j), __shfl(MH.w,j)); //OLD: Note w in z location
 
-            //AV  =  AV  * (0.5*(BalA+BalB)) , see RossWog text between Eq 63 and 64
+#if 1
+            const float aAV       = 1.0f; //Alpha parameter for artificial viscosity
+            const float bAV       = 2.0f; //Beta parameter for artificial viscosity
+            const float aC        = 1.0f; //Artificial Conductivity parameter
 
-            //dt variable
+            const float v_sigi     = aAV*hydro_i[0].y - bAV * projv; //a*csi - b*drdv
+            const float v_sigj     = aAV*jH.y         - bAV * projv; //a*csj - b*drdv
+
+
+
+            //Determine the maximum for the dt variable
+            const float v_sig = max(v_sigi,v_sigj);
             v_sig_max = (v_sig_max < v_sig) ? v_sig : v_sig_max;
 
-            float temp = jM0.w * (hydro_i[0].x / (density_i[0].dens * density_i[0].dens) + jH.x / (jD.x * jD.x) + AV); //Rosswog eq 61
-            temp       = (jD.y != 0) ? temp : 0; //Same as above, a 0 smoothing length leads to NaN (divide by 0)
 
-            acc_i[0].x    -= temp  * gradW.x;
-            acc_i[0].y    -= temp  * gradW.y;
-            acc_i[0].z    -= temp  * gradW.z;
+
+
+//                  float AV        = - 0.5f * v_sig * w_ij / (0.5f * (density_i[0].dens + jD.x));
+//                  AV             *= 0.5f * (hydro_i[0].w + jH.w);   //Eq 63
+            //AV  =  AV  * (0.5*(BalA+BalB)) , see RossWog text between Eq 63 and 59
+#else
+            const float aAV   = 1.0f;
+            const float bAV   = 3.0f;
+            const float v_sig     = aAV*hydro_i[0].y + jH.y - bAV * w_ij;
+
+            const float hij   = 0.5 * (density_i[0].smth + jD.y);
+            //const float uij   = hij * xv_inner / (r*r + 0.0001 * hij * hij); //As in gadget2, Eq 12
+            const float uij   = hij * xv_inner / (r*r + 0.01 *(hij * hij)); //As in gadget2, Eq 12
+                  float AV    = -aAV*(0.5*(hydro_i[0].y + jH.y))*uij + bAV*(uij*uij); //Gadget2 eq 11
+                        AV    = AV / (0.5f * (density_i[0].dens + jD.x));
+                        AV   *= 0.5f * (hydro_i[0].w + jH.z);   //Eq 63
+
+#endif
+
+           float PA = 0, PB2 = 0, AVi = 0, AVj = 0;
+           float PAi  =  (1.0 / (density_i[0].dens* density_i[0].dens))*hydro_i[0].x;  //Note to self, can compute this in outerloops
+           float PAj  =  (1.0 / (jD.x * jD.x))* jH.x ;
+
+           if(w_ij < 0)
+           {
+               //Artificial viscosity switches, note that we do this per particle
+               AVi = 0.5f*(1.0 / density_i[0].dens)*v_sigi*projv;
+               AVj = 0.5f*(1.0 / jD.x)*v_sigj*projv;
+
+               //Multiply with the Balsara switch
+               AVi *= hydro_i[0].w;
+               AVj *= jH.w;
+           }
+
+           //Force according to equation 120 , with the addition of the Artificial Viscosity
+           PA   = jM0.w*(PAi-AVi)*omegai*ith_abs_gradW;
+           PB2  = jM0.w*(PAj-AVj)*omegaj*jth_abs_gradW;
+
+
+           float PB = PA+PB2;
+
+           //Scale by distance
+           const float4 gradW2 = (r > 0) ? make_float4(PB * dr.x / r, PB * dr.y / r, PB * dr.z / r, 0.0f)
+                                                           : make_float4(0.0f,0.0f,0.0f,0.0f);
+
+
+            //TODO the PAi part can be moved to outside the loop
+            //Energy following equation, Rosswog 2009, eq 119
+            //                     (      grkerni      )
+            float du = jM0.w*PAi*projv*omegai*ith_abs_gradW;
+
+            //Add AV to the energy, Rosswog eq 62 / Phantom eq 40
+            du += -AVi*jM0.w*projv*omegai*ith_abs_gradW;
+
+            //Add conductivity to the energy, Phantom eq 40.
+
+            float avg_rho = 2.0f/(density_i[0].dens + jD.x);
+            float vsigu   = sqrtf(fabs(hydro_i[0].x - jH.x)*avg_rho); //Phantom Eq 41, note for gravity use:  vsigu = abs(projv)
+            float autermi = aC*0.5f*jM0.w*(1.0f/density_i[0].dens); //TODO this should use the i-particle mass, but we don't have that here, w=smth
+            float autermj = aC*0.5f*jM0.w *(1.0f/jD.x);
+            float denij   = hydro_i[0].z - jH.z;
+
+            float AVC = vsigu*denij*(autermi*omegai*ith_abs_gradW + autermj*omegaj*jth_abs_gradW); //Phantom Eq 40
+
+            du += AVC;
+
+
+             //Older work
+
+            const int IDj = __shfl(IDjx, j);
+
+//                if(IDi == 148739 && gradW2.x != 0)
+                //if(IDi == 64767 && gradW2.x != 0)
+//            if(IDi == 100863 && IDj != 0)
+            if(IDi == 148737 && IDj != 0)
+//                if(0)
+                {
+                    int tempID = (IDj >= 100000000 ? IDj-100000000 : IDj);
+                    int boundary  = (IDj >= 100000000 ? 1 : 0);
+                    const float hi = 1.0f/pos_i[0].w;
+                    const float hi21 = hi*hi;
+                    const float hi41 = hi21*hi21;
+                    float cnormk = 1./(120.*M_PI);
+                    const float cnormkh2 = cnormk*hi41; //Quintic kernel
+
+//                    if(AVC != 0)
+//                    printf("ON DEV, %d\t%d\t%d\t\told:  %f %f\t%.16f\n",
+//                            (int)IDi+1,
+//                            boundary, // IDj+1,
+//                            tempID+1,
+//
+//                            denij, vsigu,
+//                            AVC);
+
+
+
+//                    printf("ON DEV, %d\t%d\t%d\t\told:  %f %f %f %f %f %f \n",
+//                            (int)IDi+1,
+//                            boundary, // IDj+1,
+//                            tempID+1,
+//
+//                            acc_i[0].w,
+//                            du,
+//                            w_ij,
+//                            projv,
+//                            omegai*ith_abs_gradW,
+//                            acc_i[0].w + du);
+//                            vel_i[0].x, vel_i[0].y, vel_i[0].z);
+//                            vel_i[0].y, jvel.y, dv.y);
+//                            jvel.x, jvel.y, jvel.z);
+//                            dv.x, dv.y, dv.z);
+
+
+
+
+//                    printf("ON DEV, %d\t%d\t%d\t\told:  %f %f %f \n",
+//                            (int)IDi+1,
+//                            boundary, // IDj+1,
+//                            tempID+1,
+//                            PA,
+//                            PB2);
+
+//                    printf("ON DEV, %d\t%d\t%d\t\told: rhoi: %f  v_sigi: %f w_ij: %f  res: %f || %f %f %f %f %f %f %f\n",
+//                            (int)IDi+1,
+//                            boundary, // IDj+1,
+//                            tempID+1,
+//                            1.0 / density_i[0].dens,
+//                            v_sigi, w_ij, -0.5*(1.0 / density_i[0].dens)*v_sigi*w_ij,
+//                            dr.x, dr.y, dr.z, dv.x, dv.y, dv.z, r);
+//                    printf("ON DEV, %d\t%d\t%d\t\told: rhoi: %f  v_sigi: %f w_ij: %f  res: %f || %f %f %f %f %f %f %f\n",
+//                            (int)IDi+1,
+//                            boundary, // IDj+1,
+//                            tempID+1,
+//                            1.0 / jD.x,
+//                            v_sigj, w_ij, -0.5*(1.0 / jD.x)*v_sigj*w_ij,
+//                            dr.x, dr.y, dr.z, dv.x, dv.y, dv.z, r);
+
+
+
+//                    printf("ON DEV, %d\t%d\t%d\t\told: %f\tnew: %f\t diff: %f | sigij: %f %f | P: %f rho2i %f AV: %f %f | kern: %f\t%f | rho: %f %f | wij: %f cs: %f\n",
+//                            (int)IDi+1,
+//                            boundary, // IDj+1,
+//                            tempID+1,
+//                            acc_i[0].x,
+//                            acc_i[0].x - gradW2.x,
+//                            gradW2.x, //diff
+//                            PB,
+//                            v_sigj,
+//
+//                            hydro_i[0].x,
+//                            (1.0 / (density_i[0].dens* density_i[0].dens)),
+//
+//                            AVi,
+//                            AVj,
+//
+//                            -jM0.w*PA,
+//                            -jM0.w*PB2,
+//                            omegai*ith_abs_gradW,
+//                            omegaj*jth_abs_gradW,
+//                            density_i[0].dens,
+//                            jD.x,
+//                            w_ij,
+//                            hydro_i[0].y);
+                } //ID
+
+
+          if(jD.x != 0) {
+            acc_i[0].x    -= gradW2.x;
+            acc_i[0].y    -= gradW2.y;
+            acc_i[0].z    -= gradW2.z;
+            acc_i[0].w    += du;
+          }
+
+
+
+
+
+//            float temp = jM0.w * (hydro_i[0].x / (density_i[0].dens * density_i[0].dens) + jH.x / (jD.x * jD.x) + AV); //Rosswog eq 61
+//            temp       = (jD.y != 0) ? temp : 0; //Same as above, a 0 smoothing length leads to NaN (divide by 0)
+
+//            acc_i[0].x    -= temp  * gradW.x;
+//            acc_i[0].y    -= temp  * gradW.y;
+//            acc_i[0].z    -= temp  * gradW.z;
 
             //eng_dot is acc_i[0].w
             //Natsuki , Rosswog Eq 62
-            //acc_i[0].w    += jM0.w * (hydro_i[0].x / (density_i[0].dens * density_i[0].dens)  + 0.5 * AV) * (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z); //eng_dot
+//            acc_i[0].w    += jM0.w * (hydro_i[0].x / (density_i[0].dens * density_i[0].dens)  + 0.5 * AV) * (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z); //eng_dot
 
             //Gasoline, uses Rho_i * Rho_j
-            temp =  jM0.w * (hydro_i[0].x / (density_i[0].dens * jD.x)  + 0.5 * AV) * (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z); //eng_dot
-            temp = (jD.x != 0) ? temp : 0;
-            acc_i[0].w    += temp;
+//            temp =  jM0.w * (hydro_i[0].x / (density_i[0].dens * jD.x)  + 0.5 * AV) * (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z); //eng_dot
+//            temp = (jD.x != 0) ? temp : 0;
+//            acc_i[0].w    += temp;
+
+
+//            Hier gebleven, in de papers van MAGMA staat duidelijker wat er in de formules moet
+            //omegai*massj*(Pi/(rhoi^2))*(dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z)
+//            acc_i[0].w += omegai*jM0.w * (hydro_i[0].x / (density_i[0].dens * density_i[0].dens));
+
 
             //      acc.y           += (fabs(abs_gradW) > 0);  //Count how often we do something useful in this function
             //      acc.z           += 1; //Count how often we enter this function
