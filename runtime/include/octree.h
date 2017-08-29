@@ -631,6 +631,7 @@ public:
   int       mpiGetRank();
   int       mpiGetNProcs();
   void      AllSum(double &value);
+  double    AllMin(double value);
   int       SumOnRootRank(int value);
   double    SumOnRootRank(double value);
 

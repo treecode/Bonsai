@@ -1206,9 +1206,26 @@ namespace hydroforce
             du += AVC;
 
 
+
              //Older work
 
             const int IDj = __shfl(IDjx, j);
+
+
+
+//            if(IDi == 7 && jD.x != 0) //&& gradW2.x != 0)
+//            {
+//                printf("ON DEV-HYDRO [ %d ]\t %f %f %f | %.16f %f\n",
+//                        threadIdx.x,
+//                        jM0.x, jM0.y, jM0.z,
+//                        gradW2.x,
+//                        acc_i[0].x );
+//            }
+//
+//            du = 1;
+
+
+
 
 //                if(IDi == 148739 && gradW2.x != 0)
                 //if(IDi == 64767 && gradW2.x != 0)

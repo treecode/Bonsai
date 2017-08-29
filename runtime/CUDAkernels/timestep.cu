@@ -31,7 +31,6 @@ static __device__ __forceinline__ void get_TnextD(const int n_bodies,
   while (i < n_bodies) {
     if (i             < n_bodies) tmin = fminf(tmin, time[i            ].y);
     if (i + blockSize < n_bodies) tmin = fminf(tmin, time[i + blockSize].y);
-
     i += gridSize;
   }
 
@@ -56,6 +55,7 @@ static __device__ __forceinline__ void get_TnextD(const int n_bodies,
 
   // write result for this block to global mem
   if (tid == 0) tnext[blockIdx.x] = sdata[0];
+
 }
 
 KERNEL_DECLARE(get_Tnext)(const int n_bodies,
@@ -169,13 +169,14 @@ KERNEL_DECLARE(predict_particles)(const int 	n_bodies,
 
 
 
-  #ifdef DO_BLOCK_TIMESTEP
-    float dt_cb  = tc - tb;
-  #else
-    float dt_cb  = tc - tp;
-    time[idx].x  = tp;
-  #endif
+//  #ifdef DO_BLOCK_TIMESTEP
+//    float dt_cb  = tc - tb;
+//  #else
+//    float dt_cb  = tc - tp;
+//    time[idx].x  = tp;
+//  #endif
 
+  float dt_cb  = tc - tp;
 //   float dt_pb  = tp - tb;
 
   p.x += v.x*dt_cb + a.x*dt_cb*dt_cb*0.5f;
@@ -188,7 +189,6 @@ KERNEL_DECLARE(predict_particles)(const int 	n_bodies,
 
 //  hydro[idx].z += 0.5f*dt_cb*a.w;
   hydro[idx].z += dt_cb*a.w;
-
 
   //Adjust the particle for periodic boundaries
 //  1.0f, 0.125f, 0.125f
@@ -206,6 +206,7 @@ KERNEL_DECLARE(predict_particles)(const int 	n_bodies,
   float3 high = { 4.406250, 0.020297, 0.019137};
 
   float3 len_root = {(high.x-low.x), (high.y-low.y), (high.z-low.z)};
+
 
   if(posOutsideDomain(low, high, p) ){
       while(p.x < low.x){
@@ -260,7 +261,8 @@ KERNEL_DECLARE(setActiveGroups)(const int n_bodies,
   //same location but the net result is the same
   int grpID = body2grouplist[idx];
 
-  //valid_list[grpID] = grpID | ((tc == te) << 31);
+  //TODO(jbedorf): Force all groups to be active for SPH testing
+  valid_list[grpID] = grpID | (1 << 31);
 
   if(tc == te)
   {
@@ -383,6 +385,7 @@ KERNEL_DECLARE(correct_particles)(const int n_bodies,
   vel     [idx] = v;
   acc0_new[idx] = a1;
   time_new[idx] = time[unsortedIdx];
+
   unsorted[idx] = idx;  //Have to reset it in case we do not resort the particles
 
   //Adjust the search radius for the next iteration to get closer to the
@@ -500,7 +503,6 @@ extern "C"  __global__ void compute_dt(const int n_bodies,
 
   time[idx].x = tc;
   time[idx].y = tc + dt;
-
 #endif
 }
 

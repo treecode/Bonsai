@@ -887,7 +887,7 @@ bool treewalk_control(
                     if(addr < 10)
                     {
                         //printf("ON DEV: %d Bal: %f %f %f %f | %f %f\n", addr, temp, temp2, temp3,  group_body_hydro[addr].w, group_body_hydro[addr].y , body_dens_out[addr].y);
-                        printf("ON DEV: %d Bal: %f | %f %f\n", addr,  group_body_hydro[addr].w, group_body_hydro[addr].y , body_dens_out[addr].y);
+//                        printf("ON DEV: %d Bal: %f | %f %f\n", addr,  group_body_hydro[addr].w, group_body_hydro[addr].y , body_dens_out[addr].y);
                     }
                 } //is final launch
 
@@ -1009,20 +1009,10 @@ bool treewalk_control(
 
               if(isFinalLaunch)
               {
-                  const float C_CFL = 0.3; //Natsuki is 0.3
+                  const float C_CFL = 0.3; //Default is 0.3
                   float dt = C_CFL * 2.0 * dens_i[0].smth / body_grad_out[addr].x;
                   body_grad_out[addr].x = dt;
               }
-
-//              if(ID[addr] >= 148734 &&  ID[addr] <= 148740)
-//              {
-//                  printf("ON DEV, force: %ld \t u: %f a:  %f %f %f \n",
-//                          ID[addr]+1,
-//                          body_acc_out[addr].w,
-//                          body_acc_out[addr].x,
-//                          body_acc_out[addr].y,
-//                          body_acc_out[addr].z);
-//              }
 
 
               //TODO remove, this records interaction stats
@@ -1341,9 +1331,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
           uint2     node_begend,
           bool      isFinalLaunch,
           int       *active_groups,
-
           bodyProps group_body,                //The i-particles
-
           int       *active_inout,
           int2      *interactions,
           float4    *boxSizeInfo,
@@ -1352,29 +1340,16 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
           float4    *groupCenterInfo,
           real4     *multipole_data,
           int       *MEM_BUF,
-
-          real4     *body_pos_j,
-          real4     *body_vel_j,
-          float2    *body_dens_j,
-          float4    *body_grad_j,
-          float4    *body_hydro_j,
-
+          bodyProps body_j,                //The j-particles
           real4     *body_acc_out,
           float2    *body_dens_out,
           float4    *body_hydro_out,
           float4    *body_grad_out,
           const ullong    *ID)
     {
-      bodyProps body_j;
-
-      body_j.body_pos   = body_pos_j;
-      body_j.body_vel   = body_vel_j;
-      body_j.body_dens  = body_dens_j;
-      body_j.body_grad  = body_grad_j;
-      body_j.body_hydro = body_hydro_j;
 
   approximate_SPH_main<false, NTHREAD2, SPH::density::directOperator>(
-          n_active_groups,
+           n_active_groups,
            n_bodies,
            eps2,
            node_begend,

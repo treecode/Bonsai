@@ -561,8 +561,8 @@ bool octree::iterate_once(IterationData &idata) {
          if(j == procId)
          for(int i=0; i < this->localTree.n; i++)
          {
-//             if(this->localTree.bodies_ids[i] < 10)
              ullong tempID = this->localTree.bodies_ids[i] >= 100000000 ? this->localTree.bodies_ids[i]-100000000 : this->localTree.bodies_ids[i];
+             if(tempID < 10)
                  LOGF(stderr,"Rho out: %d %lld || Pos: %f %f %f %lg\t || Vel: %f %f %f gradh: %f || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
                      i,
                      tempID, //this->localTree.bodies_ids[i],
@@ -593,7 +593,7 @@ bool octree::iterate_once(IterationData &idata) {
 //         if(t_current > 0)
          {
              mpiSync();
-             exit(0);
+//             exit(0);
          }
         }
 
@@ -860,7 +860,7 @@ bool octree::iterate_once(IterationData &idata) {
 //      }
 
       char fname[512];
-      sprintf(fname, "sphOut-%f.txt", t_current);
+      sprintf(fname, "sphOut-%f-%d.txt", t_current, procId);
       std::ofstream out(fname, std::ofstream::out);
       out << "# id\tx\ty\tz\tm\tvx\tvy\tvz\tdensity\th\tu\tP\n";
       for(int i=0; i < this->localTree.n; i++)
@@ -992,8 +992,11 @@ void octree::predict(tree_structure &tree)
     else	      temp 		 = 1;
   #endif
 
+    //Enforce global time-step
+    t_current = this->AllMin(t_current);
 
-    //Set valid list to zero, TODO should we act on this comment?
+
+    //Set valid list to zero  <- TODO should we act on this comment?
 
     predictParticles.set_args(0, &tree.n, &t_current, &t_previous, tree.bodies_pos.p(), tree.bodies_vel.p(),
                     tree.bodies_acc0.p(), tree.bodies_time.p(), tree.bodies_Ppos.p(), tree.bodies_Pvel.p(),
@@ -1038,6 +1041,12 @@ void octree::approximate_density    (tree_structure &tree)
     group_body.body_grad  = (real4*)tree.bodies_grad.d();
     group_body.body_hydro = (real4*)tree.bodies_hydro.d();
 
+    bodyProps j_body;
+    j_body.body_pos   = (real4*)(tree.bodies_Ppos.d());
+    j_body.body_vel   = (real4*)tree.bodies_Pvel.d();
+    j_body.body_dens  = (float2*)tree.bodies_dens.d();      //Per particle density (x) and nnb (y)
+    j_body.body_grad  = (real4*)tree.bodies_grad.d();
+    j_body.body_hydro = (real4*)tree.bodies_hydro.d();
 
     SPHDensity.set_args(0,
                            &tree.n_active_groups,
@@ -1057,11 +1066,7 @@ void octree::approximate_density    (tree_structure &tree)
                            tree.multipole.p(),
                            tree.generalBuffer1.p(),  //The buffer to store the tree walks
                            //j particle properties
-                           tree.bodies_Ppos.p(),
-                           tree.bodies_Pvel.p(),
-                           tree.bodies_dens.p(),     //Per particle density (x) and nnb (y)
-                           tree.bodies_grad.p(),
-                           tree.bodies_hydro.p(),
+                           &j_body,
                            //Result buffers
                            tree.bodies_acc1.p(),
                            tree.bodies_dens_out.p(),
@@ -1210,6 +1215,13 @@ void octree::approximate_density_let(tree_structure &tree, tree_structure &remot
       group_body.body_grad  = (real4*)tree.bodies_grad.d();
       group_body.body_hydro = (real4*)tree.bodies_hydro.d();
 
+      bodyProps j_body;
+      j_body.body_pos   = (real4*)(remoteTree.fullRemoteTree.d());
+      j_body.body_vel   = (real4*)velLoc;
+      j_body.body_dens  = (float2*)tree.bodies_dens.d();
+      j_body.body_grad  = (real4*)tree.bodies_grad.d();
+      j_body.body_hydro = (real4*)tree.bodies_hydro.d();
+
 
       SPHDensityLET.set_args(0, &tree.n_active_groups,
                              &tree.n,
@@ -1228,11 +1240,7 @@ void octree::approximate_density_let(tree_structure &tree, tree_structure &remot
                              &multiLoc,
                              tree.generalBuffer1.p(),  //The buffer to store the tree walks
                              //j particle properties
-                             remoteTree.fullRemoteTree.p(),
-                             &velLoc, //tree.bodies_Pvel.p(),
-                             tree.bodies_dens.p(),     //Per particle density (x) and nnb (y)
-                             tree.bodies_grad.p(),
-                             tree.bodies_hydro.p(),
+                             &j_body,
                              //Result buffers
                              tree.bodies_acc1.p(),
                              tree.bodies_dens_out.p(),
@@ -1567,6 +1575,7 @@ void octree::approximate_hydro_let(tree_structure &tree, tree_structure &remoteT
       tree.activePartlist.zeroMemGPUAsync(gravStream->s()); //Resets atomics
 
       CU_SAFE_CALL(cudaEventRecord(startRemoteGrav, gravStream->s()));
+//      tree.bodies_acc1.zeroMemGPUAsync(gravStream->s()); //Reset as we used it before to store gradh
       SPHHydro.execute2(gravStream->s());
       CU_SAFE_CALL(cudaEventRecord(endRemoteGrav, gravStream->s()));
       letRunning = true;
@@ -2437,10 +2446,6 @@ void octree::correct(tree_structure &tree)
   #ifdef DO_BLOCK_TIMESTEP
     //Reduce the number of valid particles
     gravStream->sync(); //Sync to make sure that the gravity phase is finished
-//    getNActive.set_arg<int>(0,    &tree.n);
-//    getNActive.set_arg<cl_mem>(1, tree.activePartlist.p());
-//    getNActive.set_arg<cl_mem>(2, this->nactive.p());
-//    getNActive.set_arg<int>(3,    NULL, 128); //Dynamic shared memory , equal to number of threads
     getNActive.set_args(sizeof(int)*128, &tree.n, tree.activePartlist.p(), this->nactive.p());
     getNActive.setWork(-1, 128,   NBLOCK_REDUCE);
     getNActive.execute2(execStream->s());
@@ -2451,7 +2456,7 @@ void octree::correct(tree_structure &tree)
     for (int i = 1; i < NBLOCK_REDUCE ; i++)
         tree.n_active_particles += this->nactive[i];
   #endif
-  LOG("Active particles: %d \n", tree.n_active_particles);
+  LOG("Active particles: %d Total: %d\n", tree.n_active_particles, tree.n);
 
 
   my_dev::dev_mem<float2>  float2Buffer;
@@ -2469,7 +2474,7 @@ void octree::correct(tree_structure &tree)
                             tree.bodies_hydro.p(), tree.bodies_ids.p());
   correctParticles.setWork(tree.n, 128);
   correctParticles.execute2(execStream->s());
- 
+
   //Copy the shuffled items back to their original buffers
   tree.bodies_acc0.copy_devonly(real4Buffer1, tree.n);
   tree.bodies_time.copy_devonly(float2Buffer, float2Buffer.get_size());

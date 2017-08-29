@@ -148,6 +148,7 @@ inline int getTreeWalkBlocksPerSM(int devMajor, int devMinor)
 
 #define NLEAF 16
 #define NCRIT 8
+//BEST PERF #define NCRIT 8
 #define NTHREAD 128
 
 #if NLEAF == 1

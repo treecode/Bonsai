@@ -650,6 +650,15 @@ void octree::AllSum(double &value)
 #endif
 }
 
+double octree::AllMin(double value)
+{
+#ifdef USE_MPI
+  double tmp = -1;
+  MPI_Allreduce(&value,&tmp,1, MPI_DOUBLE, MPI_MIN,mpiCommWorld);
+  return tmp;
+#endif
+}
+
 
 //Sum the number of particles on all processes
 void octree::mpiSumParticleCount(int numberOfParticles)
