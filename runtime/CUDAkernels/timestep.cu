@@ -190,48 +190,38 @@ KERNEL_DECLARE(predict_particles)(const int 	n_bodies,
 //  hydro[idx].z += 0.5f*dt_cb*a.w;
   hydro[idx].z += dt_cb*a.w;
 
-  //Adjust the particle for periodic boundaries
-//  1.0f, 0.125f, 0.125f
-//  low: 0,0,0  max:
-//  JB, domain info: cntr: 1.000000 0.125000 0.125000  size: 0.000000 0.000000 0.234375
-//
-//  pos_root_domain_=0   0    0   1   0.125    0.125
+  //Adjust the particle position for periodic boundaries
+  domainInformation domainInfo;
+  domainInfo.domainSize =  {6.8593750000000000, 4.0594940802395563E-002f, 3.8273277230987154E-002f};   //Hardcoded for phantom tube
 
-  //default tube
-//  float3 low  = {0,0,0};
-//  float3 high = {1, 0.125, 0.125};
-
-  //Phantom tube
-  float3 low  = {-2.453125,-0.020297,-0.019137};
-  float3 high = { 4.406250, 0.020297, 0.019137};
-
-  float3 len_root = {(high.x-low.x), (high.y-low.y), (high.z-low.z)};
-
+  float3 low, high;
+  low.x = -(domainInfo.domainSize.x / 2.0f); low.y  = -(domainInfo.domainSize.y / 2.0f); low.z  = -(domainInfo.domainSize.z / 2.0f);
+  high.x = (domainInfo.domainSize.x / 2.0f); high.y =  (domainInfo.domainSize.y / 2.0f); high.z =  (domainInfo.domainSize.z / 2.0f);
 
   if(posOutsideDomain(low, high, p) ){
       while(p.x < low.x){
-          p.x += len_root.x;
+          p.x += domainInfo.domainSize.x;
       }
       while(p.x > high.x){
-          p.x -= len_root.x;
+          p.x -= domainInfo.domainSize.x;
       }
       if(p.x == high.x){
           p.x = low.x;
       }
       while(p.y < low.y){
-          p.y += len_root.y;
+          p.y += domainInfo.domainSize.y;
       }
       while(p.y >= high.y){
-          p.y -= len_root.y;
+          p.y -= domainInfo.domainSize.y;
       }
       if(p.y == high.y){
           p.y = low.y;
       }
       while(p.z < high.z){
-          p.z += len_root.z;
+          p.z += domainInfo.domainSize.z;
       }
       while(p.z >= high.z){
-          p.z -= len_root.z;
+          p.z -= domainInfo.domainSize.z;
       }
       if(p.z == high.z){
           p.z = low.z;

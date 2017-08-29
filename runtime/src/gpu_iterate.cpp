@@ -456,8 +456,6 @@ bool octree::iterate_once(IterationData &idata) {
        setPressure.setWork(this->localTree.n, 128);
        setPressure.execute2(gravStream->s());
 
-//       approximate_derivative(this->localTree);
-//
 
         if(0)
         {
@@ -512,30 +510,6 @@ bool octree::iterate_once(IterationData &idata) {
         }
 
 
-//        LOGF(stderr,"Start Derivative\n");
-//        approximate_derivative(this->localTree);
-
-
-//        this->localTree.bodies_acc1.d2h();
-//        this->localTree.bodies_hydro.d2h();
-//        this->localTree.bodies_ids.d2h();
-
-//        for(int i=0; i < this->localTree.n; i++)
-//        {
-//            ullong tempID = this->localTree.bodies_ids[i] >= 100000000 ? this->localTree.bodies_ids[i]-100000000 : this->localTree.bodies_ids[i];
-//            fprintf(stderr,"Bal out: %d %lld || %.16lg %.16lg\n",
-//                            i,
-//                            tempID,
-//                            this->localTree.bodies_acc1[i].z,
-//                            this->localTree.bodies_hydro[i].w);
-//            if(i > 20) break;
-//        }
-//        exit(0);
-
-
-
-//        countInteractions(this->localTree, mpiCommWorld, procId);
-
         LOGF(stderr,"Start Hydro\n");
 
         approximate_hydro(this->localTree);
@@ -544,7 +518,6 @@ bool octree::iterate_once(IterationData &idata) {
         countInteractions(this->localTree, mpiCommWorld, procId);
         mpiSync();
 
-//        if(t_current >= 0.2)
         if(1)
         {
          this->localTree.bodies_dens_out.d2h();
@@ -682,7 +655,7 @@ bool octree::iterate_once(IterationData &idata) {
 
 
     float ms=0, msLET=0;
-#if 1 //enable when load-balancing, gets the accurate GPU time from events
+#if 0 //enable when load-balancing, gets the accurate GPU time from events
     CU_SAFE_CALL(cudaEventElapsedTime(&ms, startLocalGrav, endLocalGrav));
     if(nProcs > 1)  CU_SAFE_CALL(cudaEventElapsedTime(&msLET,startRemoteGrav, endRemoteGrav));
 
@@ -1033,21 +1006,6 @@ void octree::approximate_density    (tree_structure &tree)
 
     bool isFinalLaunch = (nProcs == 1);
 
-
-    bodyProps group_body;
-    group_body.body_pos   = (real4*)(tree.bodies_Ppos.d());
-    group_body.body_vel   = (real4*)tree.bodies_Pvel.d();
-    group_body.body_dens  = (float2*)tree.bodies_dens.d();
-    group_body.body_grad  = (real4*)tree.bodies_grad.d();
-    group_body.body_hydro = (real4*)tree.bodies_hydro.d();
-
-    bodyProps j_body;
-    j_body.body_pos   = (real4*)(tree.bodies_Ppos.d());
-    j_body.body_vel   = (real4*)tree.bodies_Pvel.d();
-    j_body.body_dens  = (float2*)tree.bodies_dens.d();      //Per particle density (x) and nnb (y)
-    j_body.body_grad  = (real4*)tree.bodies_grad.d();
-    j_body.body_hydro = (real4*)tree.bodies_hydro.d();
-
     SPHDensity.set_args(0,
                            &tree.n_active_groups,
                            &tree.n,
@@ -1056,7 +1014,7 @@ void octree::approximate_density    (tree_structure &tree)
                            &isFinalLaunch,
                            tree.active_group_list.p(),
                            //i particle properties
-                           &group_body,
+                           &tree.group_body,
                            tree.activePartlist.p(),
                            tree.interactions.p(),
                            tree.boxSizeInfo.p(),
@@ -1066,7 +1024,7 @@ void octree::approximate_density    (tree_structure &tree)
                            tree.multipole.p(),
                            tree.generalBuffer1.p(),  //The buffer to store the tree walks
                            //j particle properties
-                           &j_body,
+                           &tree.group_body,    //Note i and j particles are the same in local call
                            //Result buffers
                            tree.bodies_acc1.p(),
                            tree.bodies_dens_out.p(),
@@ -1198,22 +1156,10 @@ void octree::approximate_density_let(tree_structure &tree, tree_structure &remot
 
       LOG("LET node begend [%d]: %d %d iter-> %d\n", procId, node_begend.x, node_begend.y, iter);
 
-//      void *multiLoc = remoteTree.fullRemoteTree.a(1*(remoteP) + 2*(remoteN+nodeTexOffset));
-//      void *boxSILoc = remoteTree.fullRemoteTree.a(1*(remoteP));
-//      void *boxCILoc = remoteTree.fullRemoteTree.a(1*(remoteP) + remoteN + nodeTexOffset);
-
-
       void *multiLoc = remoteTree.fullRemoteTree.a(2*(remoteP) + 2*(remoteN+nodeTexOffset));
       void *boxSILoc = remoteTree.fullRemoteTree.a(2*(remoteP));
       void *boxCILoc = remoteTree.fullRemoteTree.a(2*(remoteP) + remoteN + nodeTexOffset);
       void *velLoc   = remoteTree.fullRemoteTree.a(1*(remoteP));
-
-      bodyProps group_body;
-      group_body.body_pos   = (real4*)(tree.bodies_Ppos.d());
-      group_body.body_vel   = (real4*)tree.bodies_Pvel.d();
-      group_body.body_dens  = (float2*)tree.bodies_dens.d();
-      group_body.body_grad  = (real4*)tree.bodies_grad.d();
-      group_body.body_hydro = (real4*)tree.bodies_hydro.d();
 
       bodyProps j_body;
       j_body.body_pos   = (real4*)(remoteTree.fullRemoteTree.d());
@@ -1230,7 +1176,7 @@ void octree::approximate_density_let(tree_structure &tree, tree_structure &remot
                              &isFinalLaunch,
                              tree.active_group_list.p(),
                              //i particle properties
-                             &group_body,
+                             &tree.group_body,
                              tree.activePartlist.p(),
                              tree.interactions.p(),
                              &boxSILoc,
@@ -1268,165 +1214,6 @@ void octree::approximate_density_let(tree_structure &tree, tree_structure &remot
 }
 
 
-void octree::approximate_derivative  (tree_structure &tree)
-{
-    uint2 node_begend = {tree.level_list[tree.startLevelMin].x,
-                         tree.level_list[tree.startLevelMin].y};
-
-    bool isFinalLaunch = (nProcs == 1);
-
-    SPHDerivative.set_args(0,   &tree.n_active_groups,
-                                  &tree.n,
-                                  &(this->eps2),
-                                  &node_begend,
-                                  &isFinalLaunch,
-                                  tree.active_group_list.p(),
-                                  //i particle properties
-                                  tree.bodies_Ppos.p(),
-                                  tree.bodies_Pvel.p(),
-                                  tree.bodies_dens.p(),
-                                  tree.bodies_grad.p(),
-                                  tree.bodies_hydro.p(),
-                                  tree.activePartlist.p(),
-                                  tree.interactions.p(),
-                                  tree.boxSizeInfo.p(),
-                                  tree.groupSizeInfo.p(),
-                                  tree.boxCenterInfo.p(),
-                                  tree.groupCenterInfo.p(),
-                                  tree.multipole.p(),
-                                  tree.generalBuffer1.p(),  //The buffer to store the tree walks
-                                  //j particle properties
-                                  tree.bodies_Ppos.p(),
-                                  tree.bodies_Pvel.p(),
-                                  tree.bodies_dens.p(),     //Per particle density (x) and nnb (y)
-                                  tree.bodies_grad.p(),
-                                  tree.bodies_hydro.p(),
-                                  //Result buffers
-                                  tree.bodies_acc1.p(),
-                                  tree.bodies_dens_out.p(),
-                                  tree.bodies_hydro_out.p(),
-                                  tree.bodies_grad.p(),
-                                  tree.bodies_ids.p());
-
-      SPHDerivative.set_texture<real4>(0,  tree.boxSizeInfo,    "texNodeSize");
-      SPHDerivative.set_texture<real4>(1,  tree.boxCenterInfo,  "texNodeCenter");
-      SPHDerivative.set_texture<real4>(2,  tree.multipole,      "texMultipole");
-      SPHDerivative.set_texture<real4>(3,  tree.bodies_Ppos,    "texBody");
-      SPHDerivative.setWork(-1, NTHREAD, nBlocksForTreeWalk);
-     //  SPHDerivative.setWork(-1, 32, 1);
-      //      size_t sz = 1048576 * 25;
-      //      cudaDeviceSetLimit(cudaLimitPrintfFifoSize, sz);
-
-      tree.bodies_grad.zeroMemGPUAsync(gravStream->s());
-      tree.activePartlist.zeroMemGPUAsync(gravStream->s());
-      SPHDerivative.execute2(gravStream->s());  //Derivative
-
-      cudaDeviceSynchronize();
-
-      tree.bodies_dens_out.d2h();
-      tree.bodies_grad.d2h();
-      tree.bodies_hydro.d2h();
-      tree.bodies_acc1.d2h();
-      tree.bodies_ids.d2h();
-
-
-      if(nProcs > 1)
-      {
-         distributeBoundaries(false); //Always full update for now
-         makeDerivativeLET();
-      }
-      else
-      {
-//         setPressure.set_args(0, &tree.n, tree.bodies_dens.p(), tree.bodies_grad.p(), tree.bodies_hydro.p());
-//         setPressure.setWork(tree.n, 128);
-//         setPressure.execute2(gravStream->s());
-      }
-
-}
-
-void octree::approximate_derivative_let(tree_structure &tree, tree_structure &remoteTree, int bufferSize, bool isFinalLaunch)
-{
-      //Start and end node of the remote tree structure
-      uint2 node_begend;
-      node_begend.x =  0;
-      node_begend.y =  remoteTree.remoteTreeStruct.w;
-
-      //The texture offset used:
-      int nodeTexOffset     = remoteTree.remoteTreeStruct.z ;
-
-      //The start and end of the top nodes:
-      node_begend.x = (remoteTree.remoteTreeStruct.w >> 16);
-      node_begend.y = (remoteTree.remoteTreeStruct.w & 0xFFFF);
-
-      //Number of particles and number of nodes in the remote tree
-      int remoteP = remoteTree.remoteTreeStruct.x;
-      int remoteN = remoteTree.remoteTreeStruct.y;
-
-      LOG("SPHDerivative LET node begend [%d]: %d %d iter-> %d\n", procId, node_begend.x, node_begend.y, iter);
-
-      void *multiLoc = remoteTree.fullRemoteTree.a(2*(remoteP) + 2*(remoteN+nodeTexOffset));
-      void *boxSILoc = remoteTree.fullRemoteTree.a(2*(remoteP));
-      void *boxCILoc = remoteTree.fullRemoteTree.a(2*(remoteP) + remoteN + nodeTexOffset);
-      void *velLoc   = remoteTree.fullRemoteTree.a(1*(remoteP));
-
-      SPHDerivativeLET.set_args(0, &tree.n_active_groups,
-                             &tree.n,
-                             &(this->eps2),
-                             &node_begend,
-                             &isFinalLaunch,
-                             tree.active_group_list.p(),
-                             //i particle properties
-                             tree.bodies_Ppos.p(),
-                             tree.bodies_Pvel.p(),
-                             tree.bodies_dens.p(),
-                             tree.bodies_grad.p(),
-                             tree.bodies_hydro.p(),
-                             tree.activePartlist.p(),
-                             tree.interactions.p(),
-                             &boxSILoc,
-                             tree.groupSizeInfo.p(),
-                             &boxCILoc,
-                             tree.groupCenterInfo.p(),
-                             &multiLoc,
-                             tree.generalBuffer1.p(),  //The buffer to store the tree walks
-                             //j particle properties
-                             remoteTree.fullRemoteTree.p(),
-                             &velLoc, //tree.bodies_Pvel.p(),
-                             tree.bodies_dens.p(),     //Per particle density (x) and nnb (y)
-                             tree.bodies_grad.p(),
-                             tree.bodies_hydro.p(),
-                             //Result buffers
-                             tree.bodies_acc1.p(),
-                             tree.bodies_dens_out.p(),
-                             tree.bodies_hydro_out.p(),
-                             tree.bodies_grad.p(),
-                             tree.bodies_ids.p());
-      SPHDerivativeLET.set_texture<real4>(0,  remoteTree.fullRemoteTree, "texNodeSize",  1*(remoteP), remoteN);
-      SPHDerivativeLET.set_texture<real4>(1,  remoteTree.fullRemoteTree, "texNodeCenter",1*(remoteP) + (remoteN + nodeTexOffset),     remoteN);
-      SPHDerivativeLET.set_texture<real4>(2,  remoteTree.fullRemoteTree, "texMultipole", 1*(remoteP) + 2*(remoteN + nodeTexOffset), 3*remoteN);
-      SPHDerivativeLET.set_texture<real4>(3,  remoteTree.fullRemoteTree, "texBody"      ,0,                                           remoteP);
-
-      SPHDerivativeLET.setWork(-1, NTHREAD, nBlocksForTreeWalk);
-
-      remoteTree.fullRemoteTree.h2d(bufferSize); //Only copy required data
-      tree.activePartlist.zeroMemGPUAsync(gravStream->s()); //Resets atomics
-
-      CU_SAFE_CALL(cudaEventRecord(startRemoteGrav, gravStream->s()));
-      SPHDerivativeLET.execute2(gravStream->s());
-      CU_SAFE_CALL(cudaEventRecord(endRemoteGrav, gravStream->s()));
-      letRunning = true;
-
-      if(isFinalLaunch)
-      {
-          setPressure.set_args(0, &tree.n, tree.bodies_dens.p(), tree.bodies_grad.p(), tree.bodies_hydro.p());
-          setPressure.setWork(tree.n, 128);
-          setPressure.execute2(gravStream->s());
-      }
-
-      return;
-}
-
-
 void octree::approximate_hydro(tree_structure &tree)
 {
     uint2 node_begend;
@@ -1443,11 +1230,7 @@ void octree::approximate_hydro(tree_structure &tree)
              &isFinalLaunch,
              tree.active_group_list.p(),
              //i particle properties
-             tree.bodies_Ppos.p(),
-             tree.bodies_Pvel.p(),
-             tree.bodies_dens.p(),
-             tree.bodies_grad.p(),
-             tree.bodies_hydro.p(),
+             &tree.group_body,
              tree.activePartlist.p(),
              tree.interactions.p(),
              tree.boxSizeInfo.p(),
@@ -1457,11 +1240,7 @@ void octree::approximate_hydro(tree_structure &tree)
              tree.multipole.p(),
              tree.generalBuffer1.p(),  //The buffer to store the tree walks
              //j particle properties
-             tree.bodies_Ppos.p(),
-             tree.bodies_Pvel.p(),
-             tree.bodies_dens.p(),     //Per particle density (x) and nnb (y)
-             tree.bodies_grad.p(),
-             tree.bodies_hydro.p(),
+             &tree.group_body,    //Note i and j particles are the same in local call
              //Result buffers
              tree.bodies_acc1.p(),
              tree.bodies_dens_out.p(),
@@ -1528,9 +1307,14 @@ void octree::approximate_hydro_let(tree_structure &tree, tree_structure &remoteT
       void *multiLoc = remoteTree.fullRemoteTree.a(4*(remoteP) + 2*(remoteN+nodeTexOffset));
       void *boxSILoc = remoteTree.fullRemoteTree.a(4*(remoteP));
       void *boxCILoc = remoteTree.fullRemoteTree.a(4*(remoteP) + remoteN + nodeTexOffset);
-      void *velLoc   = remoteTree.fullRemoteTree.a(1*(remoteP));
-      void *densLoc  = remoteTree.fullRemoteTree.a(2*(remoteP));
-      void *hydroLoc = remoteTree.fullRemoteTree.a(3*(remoteP));
+
+      bodyProps j_body;
+      j_body.body_pos   = (real4*)( remoteTree.fullRemoteTree.d());
+      j_body.body_vel   = (real4*)  remoteTree.fullRemoteTree.a(1*(remoteP));
+      j_body.body_dens  = (float2*) remoteTree.fullRemoteTree.a(2*(remoteP));      //Per particle density (x) and nnb (y)
+      j_body.body_grad  = (real4*)tree.bodies_grad.d();
+      j_body.body_hydro = (real4*)  remoteTree.fullRemoteTree.a(3*(remoteP));
+
 
       SPHHydro.set_args(0, &tree.n_active_groups,
                              &tree.n,
@@ -1539,11 +1323,7 @@ void octree::approximate_hydro_let(tree_structure &tree, tree_structure &remoteT
                              &isFinalLaunch,
                              tree.active_group_list.p(),
                              //i particle properties
-                             tree.bodies_Ppos.p(),
-                             tree.bodies_Pvel.p(),
-                             tree.bodies_dens.p(),
-                             tree.bodies_grad.p(),
-                             tree.bodies_hydro.p(),
+                             &tree.group_body,
                              tree.activePartlist.p(),
                              tree.interactions.p(),
                              &boxSILoc,
@@ -1553,11 +1333,7 @@ void octree::approximate_hydro_let(tree_structure &tree, tree_structure &remoteT
                              &multiLoc,
                              tree.generalBuffer1.p(),  //The buffer to store the tree walks
                              //j particle properties
-                             remoteTree.fullRemoteTree.p(),
-                             &velLoc,
-                             &densLoc,     //Per particle density (x) and nnb (y)
-                             tree.bodies_grad.p(),
-                             &hydroLoc,
+                             &j_body,
                              //Result buffers
                              tree.bodies_acc1.p(),
                              tree.bodies_dens_out.p(),
@@ -2588,5 +2364,164 @@ double octree::compute_energies(tree_structure &tree)
   }
 
   return de;
+}
+
+
+void octree::approximate_derivative  (tree_structure &tree)
+{
+    uint2 node_begend = {tree.level_list[tree.startLevelMin].x,
+                         tree.level_list[tree.startLevelMin].y};
+
+    bool isFinalLaunch = (nProcs == 1);
+
+    SPHDerivative.set_args(0,   &tree.n_active_groups,
+                                  &tree.n,
+                                  &(this->eps2),
+                                  &node_begend,
+                                  &isFinalLaunch,
+                                  tree.active_group_list.p(),
+                                  //i particle properties
+                                  tree.bodies_Ppos.p(),
+                                  tree.bodies_Pvel.p(),
+                                  tree.bodies_dens.p(),
+                                  tree.bodies_grad.p(),
+                                  tree.bodies_hydro.p(),
+                                  tree.activePartlist.p(),
+                                  tree.interactions.p(),
+                                  tree.boxSizeInfo.p(),
+                                  tree.groupSizeInfo.p(),
+                                  tree.boxCenterInfo.p(),
+                                  tree.groupCenterInfo.p(),
+                                  tree.multipole.p(),
+                                  tree.generalBuffer1.p(),  //The buffer to store the tree walks
+                                  //j particle properties
+                                  tree.bodies_Ppos.p(),
+                                  tree.bodies_Pvel.p(),
+                                  tree.bodies_dens.p(),     //Per particle density (x) and nnb (y)
+                                  tree.bodies_grad.p(),
+                                  tree.bodies_hydro.p(),
+                                  //Result buffers
+                                  tree.bodies_acc1.p(),
+                                  tree.bodies_dens_out.p(),
+                                  tree.bodies_hydro_out.p(),
+                                  tree.bodies_grad.p(),
+                                  tree.bodies_ids.p());
+
+      SPHDerivative.set_texture<real4>(0,  tree.boxSizeInfo,    "texNodeSize");
+      SPHDerivative.set_texture<real4>(1,  tree.boxCenterInfo,  "texNodeCenter");
+      SPHDerivative.set_texture<real4>(2,  tree.multipole,      "texMultipole");
+      SPHDerivative.set_texture<real4>(3,  tree.bodies_Ppos,    "texBody");
+      SPHDerivative.setWork(-1, NTHREAD, nBlocksForTreeWalk);
+     //  SPHDerivative.setWork(-1, 32, 1);
+      //      size_t sz = 1048576 * 25;
+      //      cudaDeviceSetLimit(cudaLimitPrintfFifoSize, sz);
+
+      tree.bodies_grad.zeroMemGPUAsync(gravStream->s());
+      tree.activePartlist.zeroMemGPUAsync(gravStream->s());
+      SPHDerivative.execute2(gravStream->s());  //Derivative
+
+      cudaDeviceSynchronize();
+
+      tree.bodies_dens_out.d2h();
+      tree.bodies_grad.d2h();
+      tree.bodies_hydro.d2h();
+      tree.bodies_acc1.d2h();
+      tree.bodies_ids.d2h();
+
+
+      if(nProcs > 1)
+      {
+         distributeBoundaries(false); //Always full update for now
+         makeDerivativeLET();
+      }
+      else
+      {
+//         setPressure.set_args(0, &tree.n, tree.bodies_dens.p(), tree.bodies_grad.p(), tree.bodies_hydro.p());
+//         setPressure.setWork(tree.n, 128);
+//         setPressure.execute2(gravStream->s());
+      }
+
+}
+
+void octree::approximate_derivative_let(tree_structure &tree, tree_structure &remoteTree, int bufferSize, bool isFinalLaunch)
+{
+      //Start and end node of the remote tree structure
+      uint2 node_begend;
+      node_begend.x =  0;
+      node_begend.y =  remoteTree.remoteTreeStruct.w;
+
+      //The texture offset used:
+      int nodeTexOffset     = remoteTree.remoteTreeStruct.z ;
+
+      //The start and end of the top nodes:
+      node_begend.x = (remoteTree.remoteTreeStruct.w >> 16);
+      node_begend.y = (remoteTree.remoteTreeStruct.w & 0xFFFF);
+
+      //Number of particles and number of nodes in the remote tree
+      int remoteP = remoteTree.remoteTreeStruct.x;
+      int remoteN = remoteTree.remoteTreeStruct.y;
+
+      LOG("SPHDerivative LET node begend [%d]: %d %d iter-> %d\n", procId, node_begend.x, node_begend.y, iter);
+
+      void *multiLoc = remoteTree.fullRemoteTree.a(2*(remoteP) + 2*(remoteN+nodeTexOffset));
+      void *boxSILoc = remoteTree.fullRemoteTree.a(2*(remoteP));
+      void *boxCILoc = remoteTree.fullRemoteTree.a(2*(remoteP) + remoteN + nodeTexOffset);
+      void *velLoc   = remoteTree.fullRemoteTree.a(1*(remoteP));
+
+      SPHDerivativeLET.set_args(0, &tree.n_active_groups,
+                             &tree.n,
+                             &(this->eps2),
+                             &node_begend,
+                             &isFinalLaunch,
+                             tree.active_group_list.p(),
+                             //i particle properties
+                             tree.bodies_Ppos.p(),
+                             tree.bodies_Pvel.p(),
+                             tree.bodies_dens.p(),
+                             tree.bodies_grad.p(),
+                             tree.bodies_hydro.p(),
+                             tree.activePartlist.p(),
+                             tree.interactions.p(),
+                             &boxSILoc,
+                             tree.groupSizeInfo.p(),
+                             &boxCILoc,
+                             tree.groupCenterInfo.p(),
+                             &multiLoc,
+                             tree.generalBuffer1.p(),  //The buffer to store the tree walks
+                             //j particle properties
+                             remoteTree.fullRemoteTree.p(),
+                             &velLoc, //tree.bodies_Pvel.p(),
+                             tree.bodies_dens.p(),     //Per particle density (x) and nnb (y)
+                             tree.bodies_grad.p(),
+                             tree.bodies_hydro.p(),
+                             //Result buffers
+                             tree.bodies_acc1.p(),
+                             tree.bodies_dens_out.p(),
+                             tree.bodies_hydro_out.p(),
+                             tree.bodies_grad.p(),
+                             tree.bodies_ids.p());
+      SPHDerivativeLET.set_texture<real4>(0,  remoteTree.fullRemoteTree, "texNodeSize",  1*(remoteP), remoteN);
+      SPHDerivativeLET.set_texture<real4>(1,  remoteTree.fullRemoteTree, "texNodeCenter",1*(remoteP) + (remoteN + nodeTexOffset),     remoteN);
+      SPHDerivativeLET.set_texture<real4>(2,  remoteTree.fullRemoteTree, "texMultipole", 1*(remoteP) + 2*(remoteN + nodeTexOffset), 3*remoteN);
+      SPHDerivativeLET.set_texture<real4>(3,  remoteTree.fullRemoteTree, "texBody"      ,0,                                           remoteP);
+
+      SPHDerivativeLET.setWork(-1, NTHREAD, nBlocksForTreeWalk);
+
+      remoteTree.fullRemoteTree.h2d(bufferSize); //Only copy required data
+      tree.activePartlist.zeroMemGPUAsync(gravStream->s()); //Resets atomics
+
+      CU_SAFE_CALL(cudaEventRecord(startRemoteGrav, gravStream->s()));
+      SPHDerivativeLET.execute2(gravStream->s());
+      CU_SAFE_CALL(cudaEventRecord(endRemoteGrav, gravStream->s()));
+      letRunning = true;
+
+      if(isFinalLaunch)
+      {
+          setPressure.set_args(0, &tree.n, tree.bodies_dens.p(), tree.bodies_grad.p(), tree.bodies_hydro.p());
+          setPressure.setWork(tree.n, 128);
+          setPressure.execute2(gravStream->s());
+      }
+
+      return;
 }
 

@@ -94,6 +94,13 @@ void octree::allocateParticleMemory(tree_structure &tree)
     tree.parallelBoundaries.cmalloc(mpiGetNProcs()+1, true);
   }
 
+
+  tree.group_body.body_pos   = (real4*)(tree.bodies_Ppos.d());
+  tree.group_body.body_vel   = (real4*)tree.bodies_Pvel.d();
+  tree.group_body.body_dens  = (float2*)tree.bodies_dens.d();
+  tree.group_body.body_grad  = (real4*)tree.bodies_grad.d();
+  tree.group_body.body_hydro = (real4*)tree.bodies_hydro.d();
+
 }
 
 
@@ -159,6 +166,13 @@ void octree::reallocateParticleMemory(tree_structure &tree)
 
   //General buffer is used at multiple locations and reused in different functions
   tree.generalBuffer1.cresize(tempSize, reduce);
+
+
+  tree.group_body.body_pos   = (real4*)(tree.bodies_Ppos.d());
+  tree.group_body.body_vel   = (real4*)tree.bodies_Pvel.d();
+  tree.group_body.body_dens  = (float2*)tree.bodies_dens.d();
+  tree.group_body.body_grad  = (real4*)tree.bodies_grad.d();
+  tree.group_body.body_hydro = (real4*)tree.bodies_hydro.d();
 
   my_dev::base_mem::printMemUsage();
 }

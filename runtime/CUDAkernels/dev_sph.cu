@@ -559,13 +559,11 @@ bool treewalk_control(
   const real4     *group_body_pos   = group_body.body_pos;
   const real4     *group_body_vel   = group_body.body_vel;
   const float2    *group_body_dens  = group_body.body_dens;
-//  const float4    *group_body_grad  = group_body.body_grad;
         float4    *group_body_hydro = group_body.body_hydro;
 
    const real4     *body_pos_j   = body_j.body_pos;
    const real4     *body_vel_j   = body_j.body_vel;
    const float2    *body_dens_j  = body_j.body_dens;
-//   const real4     *body_grad_j  = body_j.body_grad;
    const real4     *body_hydro_j = body_j.body_hydro;
 
 
@@ -596,14 +594,6 @@ bool treewalk_control(
    * TODO Also consider removing all the [2] sized arrays as 64 particles per group is significantly slower and hence will
    * probably not be used in the SPH kernels
    */
-//  if(body_i[0] == 3813)
-//  {
-//      printf("BOdy is part of grp: %d  group props: %d %d \n", bid,body_addr, nb_i);
-//  }
-
-  //3813 BOdy is part of grp: 476
-  //20726 BOdy is part of grp: 2590
-
 
   float4 pos_i [2], vel_i [2], acc_i [2], hydro_i[2];
   SPH::density::data    dens_i[2];
@@ -659,40 +649,31 @@ bool treewalk_control(
 
   //For periodic boundaries, mirror the group and body positions along the periodic axis
   //float3 domainSize = {1.0f, 0.125f, 0.125f};   //Hardcoded for our testing IC
-//  float3 domainSize = {100.0f, 100.0f, 100.0f};   //Hardcoded for our testing IC
-//  float3 domainSize = {6.8593750000000000, 0.040594f, 0.038274f};   //Hardcoded for phantom tube
-  float3 domainSize = {6.8593750000000000, 4.0594940802395563E-002f, 3.8273277230987154E-002f};   //Hardcoded for phantom tube
 
+  domainInformation domainInfo;
+  domainInfo.domainSize =  {6.8593750000000000, 4.0594940802395563E-002f, 3.8273277230987154E-002f};   //Hardcoded for phantom tube
+  domainInfo.xrange = { 0, 0};
+  domainInfo.yrange = {-1, 1};
+  domainInfo.zrange = {-1, 1};
 
   long long int startC = clock64();
 
   const ullong IDi = ID[body_i[0]];
 
-//  if(IDi == 100012032){
-//
-//      printf("ON DEV %d Default position %f %f %f \n", (int)IDi, pos_i[0].x ,pos_i[0].y, pos_i[0].z);
-//  }
-
 
   //TODO use templates or parameterize this at some point
-//  for(int ix=-1; ix <= 1; ix++)     //Periodic around X
+  for(int ix=domainInfo.xrange.x; ix <= domainInfo.xrange.y; ix++)     //Periodic around X
   {
-    for(int iy=-1; iy <= 1; iy++)   //Periodic around Y
+    for(int iy=domainInfo.yrange.x; iy <= domainInfo.yrange.y; iy++)   //Periodic around Y
     {
-      for(int iz=-1; iz <= 1; iz++) //Periodic around Z
+      for(int iz=domainInfo.zrange.x; iz <= domainInfo.zrange.y; iz++) //Periodic around Z
       {
-//          int ix =0; int iz=0; int iy = 0;// iz = 0;
-//          if(iy == 1) continue;
-//          if(iy == 0 && (directOp<1, true>::type == SPH::DERIVATIVE)) continue;
-//          int iz = 0;
-          int ix = 0;
-
           float4 pGroupPos   = group_pos;
           float4 pBodyPos[2] = {pos_i[0], pos_i[1]};
 
-          pGroupPos.x   += (domainSize.x*ix); pBodyPos[0].x += (domainSize.x*ix); pBodyPos[1].x += (domainSize.x*ix);
-          pGroupPos.y   += (domainSize.y*iy); pBodyPos[0].y += (domainSize.y*iy); pBodyPos[1].y += (domainSize.y*iy);
-          pGroupPos.z   += (domainSize.z*iz); pBodyPos[0].z += (domainSize.z*iz); pBodyPos[1].z += (domainSize.z*iz);
+          pGroupPos.x   += (domainInfo.domainSize.x*ix); pBodyPos[0].x += (domainInfo.domainSize.x*ix); pBodyPos[1].x += (domainInfo.domainSize.x*ix);
+          pGroupPos.y   += (domainInfo.domainSize.y*iy); pBodyPos[0].y += (domainInfo.domainSize.y*iy); pBodyPos[1].y += (domainInfo.domainSize.y*iy);
+          pGroupPos.z   += (domainInfo.domainSize.z*iz); pBodyPos[0].z += (domainInfo.domainSize.z*iz); pBodyPos[1].z += (domainInfo.domainSize.z*iz);
 
           uint2 curCounters = {0};
 
@@ -790,20 +771,9 @@ bool treewalk_control(
       //Reduce the dt parameter
       derivative_i[0].x = warpGroupReduceMax(derivative_i[0].x);
 
-
-//Below is for statistics
-//      float temp = derivative_i[0].y;
-//      derivative_i[0].x = warpGroupReduce(derivative_i[0].x); //For stats
-//      derivative_i[0].y = warpGroupReduce(derivative_i[0].y); //For stats
-
-//      if(((pos_i[0].x > 0.968 && pos_i[0].x < 0.969) &&
-//                (pos_i[0].y > 0.093 && pos_i[0].y < 0.094) &&
-//                (pos_i[0].z > 0.078 && pos_i[0].z < 0.079)))
-//              {
-//          printf("ON DEV: [ %d %d ] Body is part of grp: %d  addr: %d \tSum: %f %f \n",
-//                  threadIdx.x, blockIdx.x, bid, body_i[0], derivative_i[0].y, temp);
-//              }
-
+      //Below is for statistics
+      //derivative_i[0].x = warpGroupReduce(derivative_i[0].x); //For stats
+      //derivative_i[0].y = warpGroupReduce(derivative_i[0].y); //For stats
   }
 
   if (laneId < nb_i)
@@ -940,54 +910,7 @@ bool treewalk_control(
   //              else body_grad_out[addr].y = derivative_i[i].y;
   //              body_grad_out[addr].z = derivative_i[i].z;
   //              body_grad_out[addr].w = derivative_i[i].w;
-            }
-
-          if(directOp<1, true>::type == SPH::DERIVATIVE)
-          {
-            derivative_i[i].x += body_grad_out[addr].x;
-            derivative_i[i].y += body_grad_out[addr].y;
-            derivative_i[i].z += body_grad_out[addr].z;
-            derivative_i[i].w += body_grad_out[addr].w;
-
-            if(isFinalLaunch)
-            {
-                //Finalize the values as this launch contained the final required data
-               derivative_i[i].finalize(body_dens_out[addr].x);
-
-               //Need this printf to get non-nan results on GTX1080
-               if(addr == -3830)
-               {
-                   printf("TEST: %f %f %f %f \n",  body_grad_out[addr].x, derivative_i[i].x, body_dens_out[addr].x, derivative_i[i].y);
-               }
-
-               //Compute Balsala switch, Rosswog Eq 63
-               //Absolute gradient |D.v|
-               float temp  = fabs(derivative_i[i].w);
-               //Cross product: D x V
-               float temp2 = derivative_i[i].x*derivative_i[i].x +
-                             derivative_i[i].y*derivative_i[i].y +
-                             derivative_i[i].z*derivative_i[i].z;
-               //0.0001*Sound-speed/smoothing-length
-               float temp3 = 1.0e-4 * group_body_hydro[addr].y / body_dens_out[addr].y;
-
-               //Note using group_body_hydro here instead of body_hydro_out to store Balsara Switch
-               group_body_hydro[addr].w = temp / (temp + sqrtf(temp2) + temp3);
-
-               if(addr < 10)
-               {
-                   printf("ON DEV-XX: %d Bal: %f %f %f %f | %f %f\n", addr, temp, temp2, temp3,  group_body_hydro[addr].w, group_body_hydro[addr].y , body_dens_out[addr].y);
-               }
-
-
-            }
-
-            body_grad_out[addr].x = derivative_i[i].x;
-            body_grad_out[addr].y = derivative_i[i].y;
-            body_grad_out[addr].z = derivative_i[i].z;
-            body_grad_out[addr].w = derivative_i[i].w;
           }
-
-
 
 
           if(directOp<1, true>::type == SPH::HYDROFORCE)
@@ -1194,7 +1117,6 @@ void approximate_SPH_main(
 //    if(bid != 59) continue;//JB TODO REMOVE
 
 
-
     int *lmem = &MEM_BUF[(CELL_LIST_MEM_PER_WARP<<nWarps2)*blockIdx.x + CELL_LIST_MEM_PER_WARP*warpId];
     const bool success = treewalk_control<0,blockDim2,ACCUMULATE, directOp>(
                                     bid,
@@ -1347,7 +1269,6 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
           float4    *body_grad_out,
           const ullong    *ID)
     {
-
   approximate_SPH_main<false, NTHREAD2, SPH::density::directOperator>(
            n_active_groups,
            n_bodies,
@@ -1373,90 +1294,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
 }
 
 
-
-
-  extern "C"
-__launch_bounds__(NTHREAD,1024/NTHREAD)
-  __global__ void
-  dev_sph_derivative(
-          const int n_active_groups,
-          int       n_bodies,
-          float     eps2,
-          uint2     node_begend,
-          bool      isFinalLaunch,
-          int       *active_groups,
-
-          real4     *group_body_pos,           //This can be different from body_pos
-          real4     *group_body_vel,
-          float2    *group_body_dens,
-          float4    *group_body_grad,
-          real4     *group_body_hydro,
-
-          int       *active_inout,
-          int2      *interactions,
-          float4    *boxSizeInfo,
-          float4    *groupSizeInfo,
-          float4    *boxCenterInfo,
-          float4    *groupCenterInfo,
-          real4     *multipole_data,
-          int       *MEM_BUF,
-
-          real4     *body_pos_j,
-          real4     *body_vel_j,
-          float2    *body_dens_j,
-          float4    *body_grad_j,
-          float4    *body_hydro_j,
-
-          real4     *body_acc_out,
-          float2    *body_dens_out,
-          float4    *body_hydro_out,
-          float4    *body_grad_out,
-          const ullong    *ID)
-    {
-#if 1
-      bodyProps group_body, body_j;
-
-      group_body.body_pos   = group_body_pos;
-      group_body.body_vel   = group_body_vel;
-      group_body.body_dens  = group_body_dens;
-      group_body.body_grad  = group_body_grad;
-      group_body.body_hydro = group_body_hydro;
-
-      body_j.body_pos   = body_pos_j;
-      body_j.body_vel   = body_vel_j;
-      body_j.body_dens  = body_dens_j;
-      body_j.body_grad  = body_grad_j;
-      body_j.body_hydro = body_hydro_j;
-
-  approximate_SPH_main<false, NTHREAD2, SPH::derivative::directOperator>(
-          n_active_groups,
-           n_bodies,
-           eps2,
-           node_begend,
-           isFinalLaunch,
-           active_groups,
-           group_body,
-           active_inout,
-           interactions,
-           boxSizeInfo,
-           groupSizeInfo,
-           boxCenterInfo,
-           groupCenterInfo,
-           multipole_data,
-           MEM_BUF,
-           body_j,
-           body_acc_out,
-           body_dens_out,
-           body_grad_out,
-           body_hydro_out,
-           ID);
-#endif
-}
-
-
-
-
-  extern "C"
+extern "C"
 __launch_bounds__(NTHREAD,1024/NTHREAD)
   __global__ void
   dev_sph_hydro(
@@ -1466,13 +1304,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
           uint2     node_begend,
           bool      isFinalLaunch,
           int       *active_groups,
-
-          real4     *group_body_pos,           //This can be different from body_pos
-          real4     *group_body_vel,
-          float2    *group_body_dens,
-          float4    *group_body_grad,
-          real4     *group_body_hydro,
-
+          bodyProps group_body,
           int       *active_inout,
           int2      *interactions,
           float4    *boxSizeInfo,
@@ -1481,13 +1313,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
           float4    *groupCenterInfo,
           real4     *multipole_data,
           int       *MEM_BUF,
-
-          real4     *body_pos_j,
-          real4     *body_vel_j,
-          float2    *body_dens_j,
-          float4    *body_grad_j,
-          float4    *body_hydro_j,
-
+          bodyProps body_j,
           real4     *body_acc_out,
           float2    *body_dens_out,
           float4    *body_hydro_out,
@@ -1495,20 +1321,6 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
           const ullong    *ID)
     {
 #if 1
-      bodyProps group_body, body_j;
-
-      group_body.body_pos   = group_body_pos;
-      group_body.body_vel   = group_body_vel;
-      group_body.body_dens  = group_body_dens;
-      group_body.body_grad  = group_body_grad;
-      group_body.body_hydro = group_body_hydro;
-
-      body_j.body_pos   = body_pos_j;
-      body_j.body_vel   = body_vel_j;
-      body_j.body_dens  = body_dens_j;
-      body_j.body_grad  = body_grad_j;
-      body_j.body_hydro = body_hydro_j;
-
       approximate_SPH_main<false, NTHREAD2, SPH::hydroforce::directOperator>(
           n_active_groups,
           n_bodies,
@@ -1935,6 +1747,89 @@ extern "C" __global__ void gpu_boundaryTree2(
 
     return;
 }
+
+
+
+
+
+extern "C"
+__launch_bounds__(NTHREAD,1024/NTHREAD)
+__global__ void
+dev_sph_derivative(
+        const int n_active_groups,
+        int       n_bodies,
+        float     eps2,
+        uint2     node_begend,
+        bool      isFinalLaunch,
+        int       *active_groups,
+
+        real4     *group_body_pos,           //This can be different from body_pos
+        real4     *group_body_vel,
+        float2    *group_body_dens,
+        float4    *group_body_grad,
+        real4     *group_body_hydro,
+
+        int       *active_inout,
+        int2      *interactions,
+        float4    *boxSizeInfo,
+        float4    *groupSizeInfo,
+        float4    *boxCenterInfo,
+        float4    *groupCenterInfo,
+        real4     *multipole_data,
+        int       *MEM_BUF,
+
+        real4     *body_pos_j,
+        real4     *body_vel_j,
+        float2    *body_dens_j,
+        float4    *body_grad_j,
+        float4    *body_hydro_j,
+
+        real4     *body_acc_out,
+        float2    *body_dens_out,
+        float4    *body_hydro_out,
+        float4    *body_grad_out,
+        const ullong    *ID)
+  {
+#if 1
+    bodyProps group_body, body_j;
+
+    group_body.body_pos   = group_body_pos;
+    group_body.body_vel   = group_body_vel;
+    group_body.body_dens  = group_body_dens;
+    group_body.body_grad  = group_body_grad;
+    group_body.body_hydro = group_body_hydro;
+
+    body_j.body_pos   = body_pos_j;
+    body_j.body_vel   = body_vel_j;
+    body_j.body_dens  = body_dens_j;
+    body_j.body_grad  = body_grad_j;
+    body_j.body_hydro = body_hydro_j;
+
+approximate_SPH_main<false, NTHREAD2, SPH::derivative::directOperator>(
+        n_active_groups,
+         n_bodies,
+         eps2,
+         node_begend,
+         isFinalLaunch,
+         active_groups,
+         group_body,
+         active_inout,
+         interactions,
+         boxSizeInfo,
+         groupSizeInfo,
+         boxCenterInfo,
+         groupCenterInfo,
+         multipole_data,
+         MEM_BUF,
+         body_j,
+         body_acc_out,
+         body_dens_out,
+         body_grad_out,
+         body_hydro_out,
+         ID);
+#endif
+}
+
 
 
 #if 0

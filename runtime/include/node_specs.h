@@ -42,6 +42,13 @@ typedef float4 real4;
   #endif
 #endif
 
+struct domainInformation
+{
+    float3 domainSize;
+    int2   xrange;
+    int2   yrange;
+    int3   zrange;
+};
 
 
 struct bodyProps

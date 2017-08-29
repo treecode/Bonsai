@@ -249,8 +249,8 @@ class tree_structure
     //Density related buffers
     my_dev::dev_mem<real2> bodies_dens;      //The particles density (x) and smoothing length (y)
     my_dev::dev_mem<real2> bodies_dens_out;  //The particles density (x) and smoothing length (y) output computed during tree-walk
-    my_dev::dev_mem<real4> bodies_grad;      //The density gradient
-    my_dev::dev_mem<real > bodies_h;         //Search radius, keep for compatability for now
+    my_dev::dev_mem<real4> bodies_grad;      //The density gradient TODO(jbedorf): This one can probably be removed
+    my_dev::dev_mem<real > bodies_h;         //Search radius, keep for compatibility for now
     my_dev::dev_mem<real4> bodies_hydro;     //The hydro properties: x = pressure, y = soundspeed, z = Energy , w = Balsala Switch
     my_dev::dev_mem<real4> bodies_hydro_out; //The hydro result array
 
@@ -295,6 +295,9 @@ class tree_structure
 
     my_dev::dev_mem<float4> smallBoundaryTree;
     my_dev::dev_mem<float4>  fullBoundaryTree;
+
+
+    bodyProps group_body;
 
 
     //Combined buffers:
