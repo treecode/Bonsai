@@ -7,6 +7,56 @@
 
 __constant__ bodyProps group_body_props;
 
+#if 0
+#include "cuda_fp16.h"
+#else
+
+#if defined(__CUDACC_RTC__)
+#define __CUDA_FP16_DECL__ __host__ __device__
+#else /* !__CUDACC_RTC__ */
+#define __CUDA_FP16_DECL__ static __device__ __inline__
+#endif /* __CUDACC_RTC__ */
+
+
+typedef struct __align__(4) {
+   unsigned int x;
+} __half2;
+typedef struct __align__(2) {
+   unsigned short x;
+} __half;
+
+typedef __half2 half2;
+__CUDA_FP16_DECL__ __half2 __halves2half2(const __half l, const __half h)
+{
+   __half2 val;
+   asm("{  mov.b32 %0, {%1,%2};}\n"
+       : "=r"(val.x) : "h"(l.x), "h"(h.x));
+   return val;
+}
+__CUDA_FP16_DECL__ __half __float2half(const float f)
+{
+   __half val;
+   asm volatile("{  cvt.rn.f16.f32 %0, %1;}\n" : "=h"(val.x) : "f"(f));
+   return val;
+}
+
+__CUDA_FP16_DECL__ float2 __half22float2(const __half2 l)
+{
+   float hi_float;
+   float lo_float;
+   asm("{.reg .f16 low,high;\n"
+       "  mov.b32 {low,high},%1;\n"
+       "  cvt.f32.f16 %0, low;}\n" : "=f"(lo_float) : "r"(l.x));
+
+   asm("{.reg .f16 low,high;\n"
+       "  mov.b32 {low,high},%1;\n"
+       "  cvt.f32.f16 %0, high;}\n" : "=f"(hi_float) : "r"(l.x));
+
+   return make_float2(lo_float, hi_float);
+}
+#endif
+
+
 
 /*
  * TODO
@@ -307,7 +357,6 @@ uint2 approximate_sph(
     hydro_i[i] = _hydro_i[i];
   }
 
-
   uint2 interactionCounters = {0}; /* # of approximate and exact force evaluations */
 
 
@@ -345,12 +394,29 @@ uint2 approximate_sph(
 
     //For hydro-force we also compare it with smoothing range of the cell, for other props
     //we just use 0. Let's hope compiler is smart enough to notice it stays 0 in that case
+    __half2 openings =  *(__half2*)(&cellPos.w);
+    float2 openxy    = __half22float2(openings);    //Tree-code opening is in X, SPH max smoothing is in Y
+
+
     float cellH  = 0;
-    if(directOP<1, true>::type == SPH::HYDROFORCE) cellH = fabs(cellPos.w);
+
+    bool splitCell = false;
+    if(directOP<1, true>::type == SPH::HYDROFORCE)
+    {
+        cellH = fabs(cellPos.w);
+//        cellH = fabs(openxy.y);
+        float temp = max(cellH, grpH);
+//        float temp = (cellH+grpH);
+        splitCell         = split_node_sph_md(cellSize, cellPos, groupPos, groupSize, temp, 0);
+    }
+    else
+    {
+        splitCell         = split_node_sph_md(cellSize, cellPos, groupPos, groupSize, grpH, 0);
+    }
 
 
-    //bool splitCell         = split_node_sph_md(cellSize, cellPos, groupPos, groupSize, grpH, cellH);
-    bool splitCell         = split_node_sph_md_b(cellSize, cellPos, groupPos, groupSize, grpH, cellH);
+//    bool splitCell         = split_node_sph_md(cellSize, cellPos, groupPos, groupSize, grpH, cellH);
+    //bool splitCell         = split_node_sph_md_b(cellSize, cellPos, groupPos, groupSize, grpH, cellH);
     interactionCounters.x += 1; //Keep track of number of opening tests
 
 
@@ -588,7 +654,7 @@ bool treewalk_control(
   body_i[1]    = body_addr + WARP_SIZE + laneId%(nb_i - WARP_SIZE);
 
   body_i[0]    = body_addr + laneId%NCRIT; //This ensures that the thread groups work on independent particles.
-  if(laneId%NCRIT > nb_i) body_i[0] = body_addr;
+  if(laneId%NCRIT >= nb_i) body_i[0] = body_addr;
 
   /*
    * TODO Also consider removing all the [2] sized arrays as 64 particles per group is significantly slower and hence will
@@ -613,7 +679,6 @@ bool treewalk_control(
     vel_i[1]       = group_body_vel[body_i[1]];
     hydro_i[1]     = group_body_hydro[body_i[1]];
     dens_i[1].smth = group_body_dens[body_i[1]].y;
-
   }
 
   //For the hydro force we need the current density value
@@ -639,7 +704,7 @@ bool treewalk_control(
   {
     cellH = max(cellH, warpAllReduceMax(pos_i[1].w));
   }
-  cellH *= SPH::kernel_t::supportRadius(); //3.5;   //TODO This (value around 3) is needed to get the results to match those of FDPS, why is that. Looks like there is no hard cutoff in the kernel??
+  cellH *= SPH::kernel_t::supportRadius(); //Multiply with the kernel cut-off radius
   cellH *= cellH; //Squared for distance comparison without sqrt
 #else
   //TODO: This results in more cells being opened. Look into this later, might be related to the 3.5 factor
@@ -744,18 +809,18 @@ bool treewalk_control(
 
   long long int endC = clock64();
 
-  if(directOp<1, true>::type == SPH::DERIVATIVE)
-  {
-      derivative_i[0].x = warpGroupReduce(derivative_i[0].x);
-      derivative_i[0].y = warpGroupReduce(derivative_i[0].y);
-      derivative_i[0].z = warpGroupReduce(derivative_i[0].z);
-      derivative_i[0].w = warpGroupReduce(derivative_i[0].w);
-  }
+//  if(directOp<1, true>::type == SPH::DERIVATIVE)
+//  {
+//      derivative_i[0].x = warpGroupReduce(derivative_i[0].x);
+//      derivative_i[0].y = warpGroupReduce(derivative_i[0].y);
+//      derivative_i[0].z = warpGroupReduce(derivative_i[0].z);
+//      derivative_i[0].w = warpGroupReduce(derivative_i[0].w);
+//  }
   if(directOp<1, true>::type == SPH::DENSITY)
   {
       dens_i[0].dens    = warpGroupReduce(dens_i[0].dens);
-      derivative_i[0].x = warpGroupReduce(derivative_i[0].x); //For stats
-      derivative_i[0].y = warpGroupReduce(derivative_i[0].y); //For stats
+      derivative_i[0].x = warpGroupReduce(derivative_i[0].x);
+      derivative_i[0].y = warpGroupReduce(derivative_i[0].y);
       derivative_i[0].z = warpGroupReduce(derivative_i[0].z);
       derivative_i[0].w = warpGroupReduce(derivative_i[0].w);
 
@@ -772,8 +837,8 @@ bool treewalk_control(
       derivative_i[0].x = warpGroupReduceMax(derivative_i[0].x);
 
       //Below is for statistics
-      //derivative_i[0].x = warpGroupReduce(derivative_i[0].x); //For stats
-      //derivative_i[0].y = warpGroupReduce(derivative_i[0].y); //For stats
+      derivative_i[0].z = warpGroupReduce(derivative_i[0].z); //For stats
+      derivative_i[0].y = warpGroupReduce(derivative_i[0].y); //For stats
   }
 
   if (laneId < nb_i)
@@ -821,7 +886,6 @@ bool treewalk_control(
                     float gradh = 1.0f / (1 + omega*acc_i[i].x); //Eq 5 of phantom paper
                     group_body.body_vel[addr].w = gradh;         //Note we store this in the (predicted) velocity array
 
-
                     if(ID[addr] >= 100000000)   //Boundary particles do not update their density/smoothing values
                     {
                         body_dens_out[addr] = group_body_dens[addr];
@@ -853,12 +917,6 @@ bool treewalk_control(
 
                     //Note using group_body_hydro here instead of body_hydro_out to store Balsara Switch
                     group_body_hydro[addr].w = temp / (temp + sqrtf(temp2) + temp3);
-
-                    if(addr < 10)
-                    {
-                        //printf("ON DEV: %d Bal: %f %f %f %f | %f %f\n", addr, temp, temp2, temp3,  group_body_hydro[addr].w, group_body_hydro[addr].y , body_dens_out[addr].y);
-//                        printf("ON DEV: %d Bal: %f | %f %f\n", addr,  group_body_hydro[addr].w, group_body_hydro[addr].y , body_dens_out[addr].y);
-                    }
                 } //is final launch
 
                 body_dens_out[addr]   = make_float2(dens_i[i].dens,dens_i[i].smth);
@@ -868,48 +926,6 @@ bool treewalk_control(
                 body_grad_out[addr].y = derivative_i[i].y;
                 body_grad_out[addr].z = derivative_i[i].z;
                 body_grad_out[addr].w = derivative_i[i].w;
-
-
-//                float omega = -dens_i[i].smth / (3*dens_i[i].dens);
-//                float gradh = 1.0f / (1 - omega*derivative_i[i].x); //Eq 5 of phantom paper
-//                //group_body.body_grad[addr].x = gradh;
-//                group_body.body_vel[addr].w = gradh;
-
-//
-//                if(ID[addr] == 12032 || ID[addr] == 100000000+12032)
-//                {
-//                    printf("ON DEV, %d OMEGA:  %f sum: %f  %f cnormk*h41: %f gradh: %f h: %f rho: %f | %f %f\n",
-//                            ID[addr],
-//                            omega,
-//                            derivative_i[i].x,
-//                            tempA / body_pos_j[0].w,
-//                            cnormk*hi41,
-//                            gradh,
-//                            dens_i[i].smth,
-//                            dens_i[i].dens,
-//                            body_dens_out[addr].x,
-//                            body_dens_out[addr].y);
-//                }
-//                if(ID[addr] < 10 || ID[addr] == 100000000)
-//                {
-//                    printf("ON DEV: %d \t rho: %f smth: %f \t gradh: %.16f  fac: %f \n",
-//                            ID[addr],
-//                            dens_i[i].dens,
-//                            dens_i[i].smth,
-//                            derivative_i[i].x,
-//                            gradh);
-//                }
-//                body_grad_out[addr].x = derivative_i[i].x; //For Stats
-//                body_grad_out[addr].y = derivative_i[i].y; //For Stats
-
-  //              //TODO remove, this records stats
-  //               body_grad_out[addr].x += derivative_i[i].x;
-  //               body_grad_out[addr].y += derivative_i[i].y;
-  //
-  //              if(laneId == -1) body_grad_out[addr].y += endC-startC;
-  //              else body_grad_out[addr].y = derivative_i[i].y;
-  //              body_grad_out[addr].z = derivative_i[i].z;
-  //              body_grad_out[addr].w = derivative_i[i].w;
           }
 
 
@@ -937,10 +953,9 @@ bool treewalk_control(
                   body_grad_out[addr].x = dt;
               }
 
-
               //TODO remove, this records interaction stats
-              //body_grad_out[addr].x += derivative_i[i].x;
-              //body_grad_out[addr].y += derivative_i[i].y;
+              body_grad_out[addr].z += derivative_i[i].z;
+              body_grad_out[addr].y += derivative_i[i].y;
           }
         }
         active_inout[addr] = 1;

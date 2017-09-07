@@ -2,6 +2,70 @@
 #include "support_kernels.cu"
 #include <stdio.h>
 
+#if 0
+#include "cuda_fp16.h"
+#else
+
+#if defined(__CUDACC_RTC__)
+#define __CUDA_FP16_DECL__ __host__ __device__
+#else /* !__CUDACC_RTC__ */
+#define __CUDA_FP16_DECL__ static __device__ __inline__
+#endif /* __CUDACC_RTC__ */
+
+
+typedef struct __align__(4) {
+   unsigned int x;
+} __half2;
+typedef struct __align__(2) {
+   unsigned short x;
+} __half;
+
+typedef __half2 half2;
+__CUDA_FP16_DECL__ __half2 __halves2half2(const __half l, const __half h)
+{
+   __half2 val;
+   asm("{  mov.b32 %0, {%1,%2};}\n"
+       : "=r"(val.x) : "h"(l.x), "h"(h.x));
+   return val;
+}
+__CUDA_FP16_DECL__ __half __float2half(const float f)
+{
+   __half val;
+   asm volatile("{  cvt.rn.f16.f32 %0, %1;}\n" : "=h"(val.x) : "f"(f));
+   return val;
+}
+__CUDA_FP16_DECL__ __half __float2half_ru(const float f)
+{
+   __half val;
+   asm volatile("{  cvt.rp.f16.f32 %0, %1;}\n" : "=h"(val.x) : "f"(f));
+   return val;
+}
+__CUDA_FP16_DECL__ __half __float2half_rd(const float f)
+{
+   __half val;
+   asm volatile("{  cvt.rm.f16.f32 %0, %1;}\n" : "=h"(val.x) : "f"(f));
+   return val;
+}
+
+
+__CUDA_FP16_DECL__ float2 __half22float2(const __half2 l)
+{
+   float hi_float;
+   float lo_float;
+   asm("{.reg .f16 low,high;\n"
+       "  mov.b32 {low,high},%1;\n"
+       "  cvt.f32.f16 %0, low;}\n" : "=f"(lo_float) : "r"(l.x));
+
+   asm("{.reg .f16 low,high;\n"
+       "  mov.b32 {low,high},%1;\n"
+       "  cvt.f32.f16 %0, high;}\n" : "=f"(hi_float) : "r"(l.x));
+
+   return make_float2(lo_float, hi_float);
+}
+#endif
+
+
+
 #include "../profiling/bonsai_timing.h"
 PROF_MODULE(compute_propertiesD);
 
@@ -248,7 +312,7 @@ KERNEL_DECLARE(compute_leaf)
     compute_quadropole(oct_q11, oct_q22, oct_q33, oct_q12, oct_q13, oct_q23, p);
     compute_bounds(r_min, r_max, p);
 
-    maxSmth = fmaxf(body_dens[i].y, maxSmth);
+//    maxSmth = fmaxf(body_dens[i].y, maxSmth);
     //Change the particle into a box and use that as the boundaries
     float  smth  = body_dens[i].y*SPH_KERNEL_SIZE;
     compute_bounds_node(r_minSPH, r_maxSPH,
@@ -272,9 +336,6 @@ KERNEL_DECLARE(compute_leaf)
   mon.x *= im;
   mon.y *= im;
   mon.z *= im;
-
-  //jbedorf, store darkMatterMass in Q1.w
-  //stellar mass is mon.w-darkMatterMass
 
   double4 Q0, Q1;
   Q0 = make_double4(oct_q11, oct_q22, oct_q33, maxEps); //Store max softening
@@ -376,21 +437,16 @@ KERNEL_DECLARE(compute_non_leaf)(const int curLevel,         //Level for which w
     double4 tmon = multipole[3*i + 0];
 
     maxEps  = max(multipole[3*i + 1].w, maxEps);
-    maxSmth = max(nodeLowerBounds[i].w, maxSmth);
 
 
     compute_monopole_node(mass, posx, posy, posz, tmon);
     compute_quadropole_node(oct_q11, oct_q22, oct_q33, oct_q12, oct_q13, oct_q23,
                             multipole[3*i + 1], multipole[3*i + 2]);
+
     compute_bounds_node(r_min, r_max, nodeLowerBounds[i], nodeUpperBounds[i]);
-
-
     compute_bounds_node(r_minSPH, r_maxSPH,
-                        make_float4(nodeLowerBounds[i].x-maxSmth, nodeLowerBounds[i].y-maxSmth, nodeLowerBounds[i].z-maxSmth, 0),
-                        make_float4(nodeLowerBounds[i].x+maxSmth, nodeLowerBounds[i].y+maxSmth, nodeLowerBounds[i].z+maxSmth, 0));
-    compute_bounds_node(r_minSPH, r_maxSPH,
-                        make_float4(nodeUpperBounds[i].x-maxSmth, nodeUpperBounds[i].y-maxSmth, nodeUpperBounds[i].z-maxSmth, 0),
-                        make_float4(nodeUpperBounds[i].x+maxSmth, nodeUpperBounds[i].y+maxSmth, nodeUpperBounds[i].z+maxSmth, 0));
+                        make_float4(nodeLowerBounds[i].x-nodeLowerBounds[i].w, nodeLowerBounds[i].y-nodeLowerBounds[i].w, nodeLowerBounds[i].z-nodeLowerBounds[i].w, 0),
+                        make_float4(nodeLowerBounds[i].x+nodeLowerBounds[i].w, nodeLowerBounds[i].y+nodeLowerBounds[i].w, nodeLowerBounds[i].z+nodeLowerBounds[i].w, 0));
   }
 
   maxSmth     = fmaxf(fmaxf(fmaxf(fabs(r_min.x-r_minSPH.x), fabs(r_max.x-r_maxSPH.x)),
@@ -507,6 +563,21 @@ KERNEL_DECLARE(compute_scaling)(const int      node_count,
   boxCenterInfo[idx].z = mon.z;
 #endif
 
+  uint2 bij     = node_bodies[idx];
+  uint pfirst   = bij.x & ILEVELMASK;
+  uint nchild   = bij.y - pfirst;
+
+  //Change the indirections of the leaf nodes so
+  //they point to the particle data
+  bool leaf = (r_max.w > 0);
+  if(leaf)
+  {
+    pfirst             = pfirst | ((nchild-1) << LEAFBIT);
+    boxSizeInfo[idx].w = __int_as_float(pfirst);
+  }
+
+
+
   //Extra check, shouldn't be necessary, probably it is otherwise the test for leaf can fail
   //So it IS important Otherwise 0.0 < 0 can fail, now it will be: -1e-12 < 0 
   if(l < 0.000001)
@@ -521,10 +592,6 @@ KERNEL_DECLARE(compute_scaling)(const int      node_count,
     
   cellOp = cellOp*cellOp;
 
-  uint2 bij     = node_bodies[idx];
-  uint pfirst   = bij.x & ILEVELMASK;
-  uint nchild   = bij.y - pfirst;
-  
 
   //If this is (leaf)node with only 1 particle then we change 
   //the opening criteria to a large number to force that the 
@@ -544,12 +611,19 @@ KERNEL_DECLARE(compute_scaling)(const int      node_count,
 
   boxCenterInfo[idx].w = cellOp;
 
+
   /* For SPH we re-use boxCenterInfo[idx].w  to hold the max smoothing range
    * of the particles within this cell. TODO use a better variable to hold this?
    */
 
   //Store the search length squared. This eases the distance comparisons
-  boxSmoothingInfo[idx] = (SPH_KERNEL_SIZE*r_min.w)*(SPH_KERNEL_SIZE*r_min.w);
+  //TODO I dont think this has to be multiplied by SPH_KERNEL_SIZE, that has already
+  //been done in the initial compute_leaf part
+//  boxSmoothingInfo[idx] = (SPH_KERNEL_SIZE*r_min.w)*(SPH_KERNEL_SIZE*r_min.w);
+  boxSmoothingInfo[idx] = (r_min.w)*(r_min.w);
+
+//  boxSmoothingInfo[idx] *= 5;
+//  r_min.w *= 5;
 
   bool doSPH = true;
   if(doSPH)
@@ -558,26 +632,39 @@ KERNEL_DECLARE(compute_scaling)(const int      node_count,
       if(r_min.w < 0.000001) r_min.w = 0.000001;
       if (r_max.w > 0){
           boxCenterInfo[idx].w    = -(r_min.w*r_min.w);
-//          multipoleF[3*idx + 2].w =  (r_min.w*r_min.w);
       }
       else {
-           boxCenterInfo[idx].w    =  (r_min.w*r_min.w);
-//           multipoleF[3*idx + 2].w =  (r_min.w*r_min.w);
+          boxCenterInfo[idx].w    =  (r_min.w*r_min.w);
       }
   }
 
-  //Change the indirections of the leaf nodes so
-  //they point to the particle data
-  bool leaf = (r_max.w > 0);
-  if(leaf)
-  {
-    pfirst             = pfirst | ((nchild-1) << LEAFBIT);
-    boxSizeInfo[idx].w = __int_as_float(pfirst);
-  }
+#if 0
+      //Change it into half precision
+
+      __half sph_opening;
+      __half tree_opening;
+
+      //Round up and down to make sure we stay on the save side
+      if (r_max.w > 0) {
+          sph_opening  = __float2half_rd(-(r_min.w*r_min.w));
+          tree_opening = __float2half_rd(cellOp);
+      } else {
+          sph_opening  = __float2half_ru(  r_min.w*r_min.w);
+          tree_opening = __float2half_ru(cellOp);
+      }
+
+      half2 opening = __halves2half2(tree_opening, sph_opening);
+      *((half2*)&boxCenterInfo[idx].w) = opening;
+
+//      if(idx < 10) {
+//          printf("ON DEVa %d: | %f\n",  idx, tree_opening);
+//          printf("ON DEVb %d: | %f\n",  idx, sph_opening);
+//          printf("ON DEVc %d:  %f %f\n",  idx, cellOp,(r_min.w*r_min.w));
+//      }
+#endif
 
   return;
 }
-
 
 
 //Compute the properties for the groups

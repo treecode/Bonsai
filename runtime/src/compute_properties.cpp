@@ -141,6 +141,24 @@ void octree::compute_properties(tree_structure &tree) {
        tree.fullBoundaryTree. d2h(boundaryTreeDimensions.y, false, LETDataToHostStream->s());
     }
 
+
+//    tree.boxCenterInfo.d2h(10);
+//
+//    struct __half  { unsigned short x;   };
+//    struct __half2 { unsigned short x,y; };
+//
+//    for(int i=0; i < 10; i++) {
+//        __half2 temp = *((__half2*)&tree.boxCenterInfo[i].w);
+//
+//        float resa = _cvtsh_ss(temp.x);
+//        float resb = _cvtsh_ss(temp.y);
+//
+//        fprintf(stderr, "HOST %d : %f %f \n", i, resa,resb);
+//    }
+
+
+
+
 #if 0
     cudaDeviceSynchronize();
 

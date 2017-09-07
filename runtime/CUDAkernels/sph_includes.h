@@ -15,6 +15,7 @@
 /* FDPS Kernel */
 
 
+//#define STATS
 
 
 
@@ -591,15 +592,23 @@ namespace density
 
             const float4 gradW = (r > 0) ? make_float4(temp2 * dr.x / r, temp2 * dr.y / r, temp2 * dr.z / r, 0.0) : (float4){0.0, 0.0, 0.0, 0.0};
             gradient_i[0].x -= jmass * (dv.y * gradW.z - dv.z * gradW.y);
+//            gradient_i[0].y -= jmass * (dv.z * gradW.x - dv.x * gradW.z);
+//            gradient_i[0].z -= jmass * (dv.x * gradW.y - dv.y * gradW.x);
+            gradient_i[0].w -= jmass * (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z);
+
+
+            //For interaction stats
+#ifdef STATS
+            gradient_i[0].z++;       //Number of operations
+            gradient_i[0].y += fabs(jmass * temp1) > 0; //Number of useful operations
+#else
             gradient_i[0].y -= jmass * (dv.z * gradW.x - dv.x * gradW.z);
             gradient_i[0].z -= jmass * (dv.x * gradW.y - dv.y * gradW.x);
-            gradient_i[0].w -= jmass * (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z);
+#endif
             //End Balsara
           } //for k
         } //for offset
       }
-
-
 
 
 
@@ -945,11 +954,11 @@ namespace derivative
                 gradient_i[0].y -= jM0.w* (dv.z * gradW.x - dv.x * gradW.z);
                 gradient_i[0].z -= jM0.w* (dv.x * gradW.y - dv.y * gradW.x);
                 gradient_i[0].w -= jM0.w* (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z);
-//                gradient_i[0].w += abs_gradW;
 
-//                gradient_i[0].x++;       //Number of operations
+//                gradient_i[0].z++;       //Number of operations
 //                gradient_i[0].y += (jM0.w*fabs(abs_gradW)) > 0; //Number of useful operations
           }
+
         }
 
 #endif
@@ -1185,6 +1194,7 @@ namespace hydroforce
                                                            : make_float4(0.0f,0.0f,0.0f,0.0f);
 
 
+
             //TODO the PAi part can be moved to outside the loop
             //Energy following equation, Rosswog 2009, eq 119
             //                     (      grkerni      )
@@ -1210,21 +1220,6 @@ namespace hydroforce
              //Older work
 
             const int IDj = __shfl(IDjx, j);
-
-
-
-//            if(IDi == 7 && jD.x != 0) //&& gradW2.x != 0)
-//            {
-//                printf("ON DEV-HYDRO [ %d ]\t %f %f %f | %.16f %f\n",
-//                        threadIdx.x,
-//                        jM0.x, jM0.y, jM0.z,
-//                        gradW2.x,
-//                        acc_i[0].x );
-//            }
-//
-//            du = 1;
-
-
 
 
 //                if(IDi == 148739 && gradW2.x != 0)
@@ -1322,12 +1317,19 @@ namespace hydroforce
                 } //ID
 
 
+
           if(jD.x != 0) {
             acc_i[0].x    -= gradW2.x;
             acc_i[0].y    -= gradW2.y;
             acc_i[0].z    -= gradW2.z;
             acc_i[0].w    += du;
+#ifdef STATS
+            gradient_i[0].y += (fabs(abs_gradW)) > 0; //Number of useful operations
           }
+          gradient_i[0].z++; //Number of times we enter this function
+#else
+          }
+#endif
 
 
 
@@ -1357,8 +1359,7 @@ namespace hydroforce
 
             //      acc.y           += (fabs(abs_gradW) > 0);  //Count how often we do something useful in this function
             //      acc.z           += 1; //Count how often we enter this function
-            //gradient_i[0].x++; //Number of times we enter this function
-            //gradient_i[0].y += (jM0.w*fabs(abs_gradW)) > 0; //Number of useful operations
+
           }//for WARP_SIZE
 
           gradient_i[0].x = max(v_sig_max, gradient_i[0].x);    //This is fo the dt parameter
