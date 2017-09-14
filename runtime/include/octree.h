@@ -56,6 +56,10 @@ typedef float2             real2;
 typedef unsigned int       uint;
 typedef unsigned long long ullong; //ulonglong1
 
+struct __half  { unsigned short x;   };
+struct __half2 { unsigned short x,y; };
+
+
 #define NBLOCK_REDUCE     256
 #define NBLOCK_BOUNDARY   120
 #define NTHREAD_BOUNDARY  256

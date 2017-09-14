@@ -142,21 +142,26 @@ void octree::compute_properties(tree_structure &tree) {
     }
 
 
-//    tree.boxCenterInfo.d2h(10);
-//
-//    struct __half  { unsigned short x;   };
-//    struct __half2 { unsigned short x,y; };
-//
-//    for(int i=0; i < 10; i++) {
-//        __half2 temp = *((__half2*)&tree.boxCenterInfo[i].w);
-//
-//        float resa = _cvtsh_ss(temp.x);
-//        float resb = _cvtsh_ss(temp.y);
-//
-//        fprintf(stderr, "HOST %d : %f %f \n", i, resa,resb);
-//    }
+    tree.boxCenterInfo.d2h(10);
 
 
+    for(int i=0; i < 10; i++) {
+        __half2 temp = *((__half2*)&tree.boxCenterInfo[i].w);
+
+        float resa = _cvtsh_ss(temp.x);
+        float resb = _cvtsh_ss(temp.y);
+
+        //Convert floats back to halfs
+        __half2 newa, newb;
+
+        newa.x = _cvtss_sh(resa+resb,0);
+        newa.y = _cvtss_sh(resa-resb,0);
+
+        float resc = _cvtsh_ss(newa.x);
+        float resd = _cvtsh_ss(newa.y);
+
+//        fprintf(stderr, "HOST %d : %f %f | %f %f\n", i, resa,resb, resc, resd);
+    }
 
 
 #if 0

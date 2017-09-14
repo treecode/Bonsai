@@ -200,7 +200,7 @@ void countInteractions(tree_structure &tree, MPI_Comm mpiCommWorld, int procId)
   for(int i=0; i < tree.n; i++) {
       openingTestSum     += tree.interactions[i].x; distanceTestSum     += tree.interactions[i].y;
       minOps = min(minOps, tree.interactions[i].y); maxOps = max(maxOps, tree.interactions[i].y);
-      interactionTotal   += (int) tree.bodies_grad[i].x;  interactionUsefull   += (int)tree.bodies_grad[i].y;
+      interactionTotal   += (int) tree.bodies_grad[i].z;  interactionUsefull   += (int)tree.bodies_grad[i].y;
 //      fprintf(stderr,"Body: %d\t\t%d\t%d\n", i, tree.interactions[i].x, tree.interactions[i].y);
   }
   fprintf(stderr,"Number of opening angle checks: %lld [ %lld ] distance test: %lld [ Avg: %lld Min: %d Max: %d ] Interactions: avg-total: %lld avg-useful: %lld Total useful: %lld\n",
@@ -361,7 +361,6 @@ bool octree::iterate_once(IterationData &idata) {
 
 
 
-
     idata.totalPredCor += get_time() - tTempTime;
 
     if(nProcs > 1)
@@ -509,7 +508,6 @@ bool octree::iterate_once(IterationData &idata) {
          }
         }
 
-
         LOGF(stderr,"Start Hydro\n");
 
         approximate_hydro(this->localTree);
@@ -518,7 +516,7 @@ bool octree::iterate_once(IterationData &idata) {
         countInteractions(this->localTree, mpiCommWorld, procId);
         mpiSync();
 
-        if(1)
+        if(0)
         {
          this->localTree.bodies_dens_out.d2h();
          this->localTree.bodies_grad.d2h();
@@ -535,7 +533,7 @@ bool octree::iterate_once(IterationData &idata) {
          for(int i=0; i < this->localTree.n; i++)
          {
              ullong tempID = this->localTree.bodies_ids[i] >= 100000000 ? this->localTree.bodies_ids[i]-100000000 : this->localTree.bodies_ids[i];
-             if(tempID < 10)
+             if(tempID < 10 || std::isinf(this->localTree.bodies_acc1[i].x))
                  LOGF(stderr,"Rho out: %d %lld || Pos: %f %f %f %lg\t || Vel: %f %f %f gradh: %f || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
                      i,
                      tempID, //this->localTree.bodies_ids[i],
@@ -569,9 +567,6 @@ bool octree::iterate_once(IterationData &idata) {
 //             exit(0);
          }
         }
-
-
-
 
 
        this->localTree.bodies_dens_out.d2h();
@@ -1053,7 +1048,7 @@ void octree::approximate_density    (tree_structure &tree)
         cudaEventRecord(endLocalGrav, gravStream->s());
 
         cudaDeviceSynchronize();
-        countInteractions(tree, mpiCommWorld, procId);
+//        countInteractions(tree, mpiCommWorld, procId);
     //    double tEnd = get_time();
     //
     //    float ms;
@@ -1081,56 +1076,10 @@ void octree::approximate_density    (tree_structure &tree)
 
         countInteractions(tree, mpiCommWorld, procId);
 
-        if(0)
-        {
-              this->localTree.bodies_dens_out.d2h();
-              this->localTree.bodies_grad.d2h();
-              this->localTree.bodies_hydro.d2h();
-              this->localTree.bodies_acc1.d2h();
-              this->localTree.bodies_ids.d2h();
-              this->localTree.bodies_Ppos.d2h();
-              this->localTree.bodies_Pvel.d2h();
+//        mpiSync(); exit(0);
 
-              for(int i=0; i < this->localTree.n; i++)
-                 {
 
-                 if(this->localTree.bodies_ids[i] < 10 || i < 10)
-                 //                  if(tree.bodies_ids[i] == 24263 || tree.bodies_ids[i] == 24266)
-                 //                      if(tree.bodies_ids[i] >=35 && tree.bodies_ids[i] < 45)
-                 //if(i >=3839 && i < 3855)
-                 //       if(tree.bodies_ids[i] > 15455 && tree.bodies_ids[i] < 15465)
-                 fprintf(stderr,"PPOS input: %d %lld || Pos: %f %f %f %lg\t || Vel: %f %f %f  || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
-                 //                  fprintf(outFile,"Output: %d %lld || Pos: %f %f %f %lg\t || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
-                         i,
-                         this->localTree.bodies_ids[i],
-                         this->localTree.bodies_Ppos[i].x,
-                         this->localTree.bodies_Ppos[i].y,
-                         this->localTree.bodies_Ppos[i].z,
-                         this->localTree.bodies_Ppos[i].w,
-
-                         this->localTree.bodies_Pvel[i].x,
-                         this->localTree.bodies_Pvel[i].y,
-                         this->localTree.bodies_Pvel[i].z,
-
-                         this->localTree.bodies_dens_out[i].x,
-                         this->localTree.bodies_dens_out[i].y,
-                         this->localTree.bodies_grad[i].w,
-                         this->localTree.bodies_grad[i].x,
-                         this->localTree.bodies_grad[i].y,
-                         this->localTree.bodies_grad[i].z,
-                         this->localTree.bodies_hydro[i].x,
-                         this->localTree.bodies_hydro[i].y,
-                         this->localTree.bodies_hydro[i].z,
-                         this->localTree.bodies_hydro[i].w,
-                         this->localTree.bodies_acc1[i].x,
-                         this->localTree.bodies_acc1[i].y,
-                         this->localTree.bodies_acc1[i].z,
-                         this->localTree.bodies_acc1[i].w);
-                 }
-              exit(0);
-          }//print section
-
-    }
+    } //For i
 
 
 
@@ -1265,7 +1214,7 @@ void octree::approximate_hydro(tree_structure &tree)
      tree.bodies_acc1.zeroMemGPUAsync(gravStream->s()); //Reset as we used it before to store gradh
 
 
-//     tree.interactions.zeroMemGPUAsync(gravStream->s());
+     tree.interactions.zeroMemGPUAsync(gravStream->s());
      tree.activePartlist.zeroMemGPUAsync(gravStream->s());
      SPHHydro.execute2(gravStream->s());  //Hydro force
 
@@ -2362,6 +2311,13 @@ double octree::compute_energies(tree_structure &tree)
 		  iter, this->t_current, Etot, Ekin, Epot, de, de_max, dde, dde_max, get_time() - tinit);          
 #endif
   }
+
+
+  if(isnan(Etot)){
+      LOGF(stderr,"NaN detected, exit\n");
+      exit(0);
+  }
+  mpiSync(); //TODO(jbedorf) remove this and the lines above if we solved NaN problems
 
   return de;
 }

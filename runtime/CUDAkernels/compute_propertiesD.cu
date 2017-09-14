@@ -47,6 +47,13 @@ __CUDA_FP16_DECL__ __half __float2half_rd(const float f)
    return val;
 }
 
+__CUDA_FP16_DECL__ float __half2float(const __half h)
+{
+   float val;
+   asm volatile("{  cvt.f32.f16 %0, %1;}\n" : "=f"(val) : "h"(h.x));
+   return val;
+}
+
 
 __CUDA_FP16_DECL__ float2 __half22float2(const __half2 l)
 {
@@ -446,12 +453,13 @@ KERNEL_DECLARE(compute_non_leaf)(const int curLevel,         //Level for which w
     compute_bounds_node(r_min, r_max, nodeLowerBounds[i], nodeUpperBounds[i]);
     compute_bounds_node(r_minSPH, r_maxSPH,
                         make_float4(nodeLowerBounds[i].x-nodeLowerBounds[i].w, nodeLowerBounds[i].y-nodeLowerBounds[i].w, nodeLowerBounds[i].z-nodeLowerBounds[i].w, 0),
-                        make_float4(nodeLowerBounds[i].x+nodeLowerBounds[i].w, nodeLowerBounds[i].y+nodeLowerBounds[i].w, nodeLowerBounds[i].z+nodeLowerBounds[i].w, 0));
+                        make_float4(nodeUpperBounds[i].x+nodeLowerBounds[i].w, nodeUpperBounds[i].y+nodeLowerBounds[i].w, nodeUpperBounds[i].z+nodeLowerBounds[i].w, 0));
   }
 
   maxSmth     = fmaxf(fmaxf(fmaxf(fabs(r_min.x-r_minSPH.x), fabs(r_max.x-r_maxSPH.x)),
                             fmaxf(fabs(r_min.y-r_minSPH.y), fabs(r_max.y-r_maxSPH.y))),
                             fmaxf(fabs(r_min.z-r_minSPH.z), fabs(r_max.z-r_maxSPH.z)));
+
 
   //Save the bounds
   nodeLowerBounds[nodeID] = make_float4(r_min.x, r_min.y, r_min.z, maxSmth);
@@ -616,14 +624,10 @@ KERNEL_DECLARE(compute_scaling)(const int      node_count,
    * of the particles within this cell. TODO use a better variable to hold this?
    */
 
+  //TODO(jbedorf): Remove this after we removed the use of it in parallel.cpp
   //Store the search length squared. This eases the distance comparisons
-  //TODO I dont think this has to be multiplied by SPH_KERNEL_SIZE, that has already
-  //been done in the initial compute_leaf part
-//  boxSmoothingInfo[idx] = (SPH_KERNEL_SIZE*r_min.w)*(SPH_KERNEL_SIZE*r_min.w);
-  boxSmoothingInfo[idx] = (r_min.w)*(r_min.w);
+  boxSmoothingInfo[idx] = 0.0;// (r_min.w)*(r_min.w);
 
-//  boxSmoothingInfo[idx] *= 5;
-//  r_min.w *= 5;
 
   bool doSPH = true;
   if(doSPH)
@@ -638,8 +642,9 @@ KERNEL_DECLARE(compute_scaling)(const int      node_count,
       }
   }
 
-#if 0
-      //Change it into half precision
+#if 1
+      //Change it into half precision, allows storing gravity and sph criteria
+      //into a single fp32 value
 
       __half sph_opening;
       __half tree_opening;
@@ -655,12 +660,6 @@ KERNEL_DECLARE(compute_scaling)(const int      node_count,
 
       half2 opening = __halves2half2(tree_opening, sph_opening);
       *((half2*)&boxCenterInfo[idx].w) = opening;
-
-//      if(idx < 10) {
-//          printf("ON DEVa %d: | %f\n",  idx, tree_opening);
-//          printf("ON DEVb %d: | %f\n",  idx, sph_opening);
-//          printf("ON DEVc %d:  %f %f\n",  idx, cellOp,(r_min.w*r_min.w));
-//      }
 #endif
 
   return;

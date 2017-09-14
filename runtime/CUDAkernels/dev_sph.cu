@@ -392,8 +392,7 @@ uint2 approximate_sph(
     //const float4 cellSize = tex1Dfetch(ztexNodeSize,   cellIdx);
     //const float4 cellPos  = tex1Dfetch(ztexNodeCenter, cellIdx);
 
-    //For hydro-force we also compare it with smoothing range of the cell, for other props
-    //we just use 0. Let's hope compiler is smart enough to notice it stays 0 in that case
+
     __half2 openings =  *(__half2*)(&cellPos.w);
     float2 openxy    = __half22float2(openings);    //Tree-code opening is in X, SPH max smoothing is in Y
 
@@ -403,11 +402,10 @@ uint2 approximate_sph(
     bool splitCell = false;
     if(directOP<1, true>::type == SPH::HYDROFORCE)
     {
-        cellH = fabs(cellPos.w);
-//        cellH = fabs(openxy.y);
-        float temp = max(cellH, grpH);
-//        float temp = (cellH+grpH);
-        splitCell         = split_node_sph_md(cellSize, cellPos, groupPos, groupSize, temp, 0);
+        //For hydro force we have to use mutual forces, so take the maximum smoothing of the cell and the group
+//                cellH = fabs(cellPos.w);
+        cellH = fabs(openxy.y);
+        splitCell         = split_node_sph_md(cellSize, cellPos, groupPos, groupSize, max(cellH, grpH), 0);
     }
     else
     {

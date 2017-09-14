@@ -4,6 +4,9 @@
 #include <sys/time.h>
 #endif
 
+
+#define USE_MPI
+
 #ifdef USE_MPI
 
 
@@ -569,6 +572,9 @@ void octree::computeProps_TopLevelTree(
         double3 r_min = {+1e10f, +1e10f, +1e10f};
         double3 r_max = {-1e10f, -1e10f, -1e10f};
 
+        double3 r_minSPH = {+1e10f, +1e10f, +1e10f};
+        double3 r_maxSPH = {-1e10f, -1e10f, -1e10f};
+
         double mass, posx, posy, posz;
         mass = posx = posy = posz = 0.0;
 
@@ -593,7 +599,17 @@ void octree::computeProps_TopLevelTree(
           double3 curRmax = {sourceCenter[k].x + sourceSize[k].x,
                              sourceCenter[k].y + sourceSize[k].y,
                              sourceCenter[k].z + sourceSize[k].z};
+
+#if 0
           cellSmth = std::max(cellSmth , std::fabs(sourceCenter[k].w));
+#else
+          //Smoothing length is encoded in the higher bits of 32
+          __half2 temp = *((__half2*)&sourceCenter[k].w);
+          cellSmth = _cvtsh_ss(temp.y);
+//          cellSmth = std::max(cellSmth , std::fabs(cellSmthx));
+#endif
+
+
 
           //Compute the new min/max
           r_min.x = min(curRmin.x, r_min.x);
@@ -602,6 +618,14 @@ void octree::computeProps_TopLevelTree(
           r_max.x = max(curRmax.x, r_max.x);
           r_max.y = max(curRmax.y, r_max.y);
           r_max.z = max(curRmax.z, r_max.z);
+
+          double smth = sqrt(abs(cellSmth));
+          r_minSPH.x = min(curRmin.x-smth, r_min.x);
+          r_minSPH.y = min(curRmin.y-smth, r_min.y);
+          r_minSPH.z = min(curRmin.z-smth, r_min.z);
+          r_maxSPH.x = max(curRmax.x+smth, r_max.x);
+          r_maxSPH.y = max(curRmax.y+smth, r_max.y);
+          r_maxSPH.z = max(curRmax.z+smth, r_max.z);
 
           //Compute monopole and quadrupole
           if(nodes[j].y == 1)
@@ -714,10 +738,28 @@ void octree::computeProps_TopLevelTree(
           float cellOp = (l/theta);
         #endif
 
-        //GRAVITY boxCenterD.w       = cellOp*cellOp;
+        //GRAVITY
+        boxCenterD.w       = cellOp*cellOp;
+
+        float maxSmth     = fmaxf(fmaxf(fmaxf(fabs(r_min.x-r_minSPH.x), fabs(r_max.x-r_maxSPH.x)),
+                                  fmaxf(fabs(r_min.y-r_minSPH.y), fabs(r_max.y-r_maxSPH.y))),
+                                  fmaxf(fabs(r_min.z-r_minSPH.z), fabs(r_max.z-r_maxSPH.z)));
+
+        __half2 newCellOpSmth;
+        newCellOpSmth.x = _cvtss_sh(cellOp*cellOp,0);
+        //newCellOpSmth.y = _cvtss_sh(cellSmth,0);
+        //newCellOpSmth.y = _cvtss_sh(10*(maxSmth*maxSmth),0);
+        newCellOpSmth.y = _cvtss_sh(10,0);
+        *((__half2*)&boxCenterD.w) = newCellOpSmth;
+//
+//        LOGF(stderr,"TEST target: %d \t %f %f %f smth: %f - %f | %f %f %f\n", j,
+//                boxCenterD.x, boxCenterD.y, boxCenterD.z, cellSmth, maxSmth*maxSmth,
+//                boxSizeD.x, boxSizeD.y, boxSizeD.z);
 
         //SPH
-        boxCenterD.w = cellSmth;
+//        boxCenterD.w       = cellSmth;
+
+
         float4 boxCenter   = make_float4(boxCenterD.x,boxCenterD.y, boxCenterD.z, boxCenterD.w);
         topTreeCenters[j]  = boxCenter;
 

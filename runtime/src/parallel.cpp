@@ -2037,24 +2037,31 @@ int getLEToptQuickTreevsTree(
     {
       const uint4       nodePacked = levelList.first()[i];
       const uint  nodeIdx          = nodePacked.x;
-      const float nodeInfo_x       = nodeCentre[nodeIdx].w;
+
+      __half2 temp = *((__half2*)&nodeCentre[nodeIdx].w);
+      const float nodeInfo_x = _cvtsh_ss(temp.x);
+      const float nodeSmth  = fabs(_cvtsh_ss(temp.y));
+
+//      const float nodeInfo_x       = nodeCentre[nodeIdx].w;
       const uint  nodeInfo_y       = host_float_as_int(nodeSize[nodeIdx].w);
       const _v4sf nodeCOM          = __builtin_ia32_vec_set_v4sf(multipoleV[nodeIdx*3], nodeInfo_x, 3);
+
+//      const float nodeSmth2 = abs(nodeSmooth[nodeIdx].x);
 
 
       //SPH uses physical center and size of the box to test overlap and distance
       const _v4sf nodeSIZE = nodeSizeV  [nodeIdx];
-      const _v4sf nodeCNTR = __builtin_ia32_vec_set_v4sf(nodeCentreV[nodeIdx], nodeSmooth[nodeIdx].x, 3); //Move smoothing to the .w of cntr
+      const _v4sf nodeCNTR = __builtin_ia32_vec_set_v4sf(nodeCentreV[nodeIdx], nodeSmth, 3); //Move smoothing to the .w of cntr
 
 #ifdef USE_AVX
       _v8sf checkValueGrav = {nodeInfo_x, nodeInfo_x, nodeInfo_x, nodeInfo_x,nodeInfo_x, nodeInfo_x, nodeInfo_x, nodeInfo_x};
             checkValueGrav = __abs8(checkValueGrav);
-      _v8sf checkValueSPH  = {nodeSmooth[nodeIdx].x, nodeSmooth[nodeIdx].x, nodeSmooth[nodeIdx].x, nodeSmooth[nodeIdx].x,
-                              nodeSmooth[nodeIdx].x, nodeSmooth[nodeIdx].x, nodeSmooth[nodeIdx].x, nodeSmooth[nodeIdx].x};
+      _v8sf checkValueSPH  = {nodeSmth, nodeSmth, nodeSmth, nodeSmth, nodeSmth, nodeSmth, nodeSmth, nodeSmth};
 #else
       _v4sf checkValueGrav = {nodeInfo_x, nodeInfo_x, nodeInfo_x, nodeInfo_x};
             checkValueGrav = __abs(checkValueGrav);
-      _v4sf checkValueSPH  = {nodeSmooth[nodeIdx].x, nodeSmooth[nodeIdx].x, nodeSmooth[nodeIdx].x, nodeSmooth[nodeIdx].x};
+       //nodeSmth
+      _v4sf checkValueSPH  = {nodeSmth, nodeSmth, nodeSmth, nodeSmth};
 #endif
 
       const bool lleaf   = nodeInfo_x <= 0.0f;
@@ -2071,12 +2078,13 @@ int getLEToptQuickTreevsTree(
           centre[laneIdx] = grpNodeCenterInfoV[group];
           size  [laneIdx] =   grpNodeSizeInfoV[group];
 
-
           //For hydro we need mutual forces so add the group and node smoothing
           if(LETMethod == LET_METHOD_HYDR)
           {
-              //TODO (jbedorf): SMTH_HALF
-              float max_distance = std::max(nodeSmooth[nodeIdx].x,abs(groupCentreInfo[group].w));
+              __half2 temp = *((__half2*)&groupCentreInfo[group].w);
+              const float grpSmth  = fabs(_cvtsh_ss(temp.y));
+
+              float max_distance = std::max(nodeSmth,grpSmth);
               switch(laneIdx)
               {
                 case 0: checkValueSPH = __builtin_ia32_vec_set_v4sf(checkValueSPH, max_distance, 0); break;
@@ -2189,6 +2197,8 @@ int3 getLET1(
     const int                cellEnd,
     const real4             *bodies_pos,
     const real4             *bodies_vel,
+    const real2             *bodies_dens,
+    const real4             *bodies_hydro,
     const int                nParticles,
     const real4             *groupSizeInfo,
     const real4             *groupCentreInfo,
@@ -2225,10 +2235,10 @@ int3 getLET1(
       const int SIMDW2  = 4;
   #endif
 
-  //TODO (jbedorf): SMTH_HALF
 
   const _v4sf*      bodies_posV     = (const _v4sf*)bodies_pos;
   const _v4sf*      bodies_velV     = (const _v4sf*)bodies_vel;
+  const _v4sf*      bodies_HydroV   = (const _v4sf*)bodies_hydro;
   const _v4sf*      nodeSizeV       = (const _v4sf*)nodeSize;
   const _v4sf*      nodeCentreV     = (const _v4sf*)nodeCentre;
   const _v4sf*      multipoleV      = (const _v4sf*)multipole;
@@ -2304,6 +2314,7 @@ int3 getLET1(
     _v4sf bsm;
     if(selectionMethod & SELECT_SPH)
     {
+       // assert(0); //groupSmoothV should not be used any longer and is replaced by the second half of the center.w
         bsm = __builtin_ia32_vec_set_v4sf (bsm, groupSmoothV[std::min(ib+0,nGroups-1)][0], 0); //grp 1 = smooth in x
         bsm = __builtin_ia32_vec_set_v4sf (bsm, groupSmoothV[std::min(ib+1,nGroups-1)][0], 1); //grp 2 = smooth in y etc.
         bsm = __builtin_ia32_vec_set_v4sf (bsm, groupSmoothV[std::min(ib+2,nGroups-1)][0], 2);
@@ -2319,11 +2330,11 @@ int3 getLET1(
   for (int cell = cellBeg; cell < cellEnd; cell++)
     levelList.first().push_back(cell);
 
- int depth = 0;
+  int depth = 0;
   while (!levelList.first().empty())
   {
     const int csize = levelList.first().size();
-#if 1
+#if 0
     if (nGroups > 128)   /* randomizes algo, can give substantial speed-up */
         shuffle3vecAllocated<v4sf,SIMDW>(bufferStruct.groupCentreSIMD,
                                          bufferStruct.groupSizeSIMD,
@@ -2336,7 +2347,14 @@ int3 getLET1(
     for (int i = 0; i < csize; i++)
     {
       const uint    nodeIdx  = levelList.first()[i];
-      const float nodeInfo_x = nodeCentre[nodeIdx].w;
+      //const float nodeInfo_x = nodeCentre[nodeIdx].w;
+
+
+      __half2 temp = *((__half2*)&nodeCentre[nodeIdx].w);
+      const float nodeInfo_x =     _cvtsh_ss(temp.x);
+      const float nodeSmth   = abs(_cvtsh_ss(temp.y));
+
+
       const uint  nodeInfo_y = host_float_as_int(nodeSize[nodeIdx].w);
 
       _v4sf nodeCOM = multipoleV[nodeIdx*3];
@@ -2383,25 +2401,35 @@ int3 getLET1(
                                                                     (_v4sf*)&bufferStruct.groupSizeSIMD[ib],
                                                                     periodicDomainSize,
                                                                     xP,yP,zP);
-          }
+          } //if grav
           if(split) break;
-//
+
+
+          //checkValue =  bufferStruct.groupSmoothSIMD[ib];
+
           //SPH test if distance between boxes is smaller than the smoothing range
           if(selectionMethod & SELECT_SPH)
           {
+              float temp_smth[4] = {0.0,0.0,0.0,0.0};
 
-//              float smth =  fabs(groupSmoothInfo[group].x); //This is for density computation
-//              if(LETMethod == LET_METHOD_HYDR)
-//              {
-//                  smth = std::max(fabs(nodeInfo_x), fabs(groupSmoothInfo[group].x));
-//              }
-//              checkValue = {0.0,0.0,0.0,0.0};
+              for(int k=0; k < SIMDW2; k++)
+              {
+                  auto cntr = bufferStruct.groupCentreSIMD[ib+3].data[k];
+                  __half2 temp = *((__half2*)&cntr);
+                  temp_smth[k] = fabs(_cvtsh_ss(temp.y)); //Smoothing distance of the group
 
-              //This function will have to be updated for Hydro smoothing
-              //see code above. Currently (Sept 1 2017) using this function causes segfaults
-              assert(0);
-              checkValue =  bufferStruct.groupSmoothSIMD[ib];
-//              nodeInfo_x
+                  //For hydro we need mutual forces, so grap the larger of the node and group smoothing values
+                  if(LETMethod == LET_METHOD_HYDR)
+                  {
+                      temp_smth[k] = std::max(nodeSmth, temp_smth[k]);
+                  }
+              }
+
+              checkValue       = __builtin_ia32_vec_set_v4sf (checkValue, temp_smth[0], 0);
+              checkValue       = __builtin_ia32_vec_set_v4sf (checkValue, temp_smth[1], 1);
+              checkValue       = __builtin_ia32_vec_set_v4sf (checkValue, temp_smth[2], 2);
+              checkValue       = __builtin_ia32_vec_set_v4sf (checkValue, temp_smth[3], 3);
+
               #ifdef USE_AVX
                              split |= split_node_grav_sph_impbh_box8simd1_periodic<TRANSPOSE_SPLIT, true>(
               #else
@@ -2414,10 +2442,10 @@ int3 getLET1(
                                                                    (_v4sf*)&bufferStruct.groupSizeSIMD[ib],
                                                                    periodicDomainSize,
                                                                    xP,yP,zP);
-          }
+          } //if (selectionMethod & SELECT_SPH)
       } //for nGroupsV
 
-
+//split = true;
 
       /**************/
 
@@ -2458,8 +2486,9 @@ int3 getLET1(
   assert((int)bufferStruct.LETBuffer_ptcl.size() == nExportPtcl);
   assert((int)bufferStruct.LETBuffer_node.size() == nExportCell);
 
-  int bodyPropsCount = 1;                             //Position
-  if(LETMethod == LET_METHOD_DRVT) bodyPropsCount++;  //Position and Velocity
+  int bodyPropsCount = 1;                                //Position
+  if(LETMethod == LET_METHOD_DRVT)  bodyPropsCount +=1;  //Position and Velocity
+  if(LETMethod == LET_METHOD_HYDR)  bodyPropsCount +=3;  //Position, Velocity, Density and Hydro
 
   /* now copy data into LETBuffer */
   {
@@ -2469,18 +2498,55 @@ int3 getLET1(
     real4 *LETBuffer   = *LETBuffer_ptr;
     _v4sf *vLETBuffer  = (_v4sf*)(&LETBuffer[1]); //Start at 1, since 0 contains the header
 
+    real2 *densBuffer   = (real2*)(&LETBuffer[1+2*nExportPtcl]);
+
 
     for (int i = 0; i < nExportPtcl; i++)
     {
       const int idx = bufferStruct.LETBuffer_ptcl[i];
       vLETBuffer[i] = bodies_posV[idx];
     }
-    if(LETMethod == LET_METHOD_DRVT)
+    if(LETMethod == LET_METHOD_DRVT ||LETMethod == LET_METHOD_HYDR)
     {
         for (int i = 0; i < nExportPtcl; i++)
         {
           const int idx = bufferStruct.LETBuffer_ptcl[i];
           vLETBuffer[nExportPtcl+i] = bodies_velV[idx];
+        }
+    }
+    if(LETMethod == LET_METHOD_HYDR)
+    {
+
+        //Changing this if 1 to if 0 also requires changes in mergeAndLaunch
+#if 0
+        int storeIdx = 0;
+        for(int i=0; i < nExportPtcl; i+=2)
+        {
+            int idx1             = bufferStruct.LETBuffer_ptcl[i];
+            int idx2             = bufferStruct.LETBuffer_ptcl[std::min(i+1, nExportPtcl-1)];
+
+            _v4sf dens = {0.0f,0.0f,0.0f,0.0f};
+            dens = __builtin_ia32_vec_set_v4sf(dens, bodies_dens[idx1].x, 0); //Move density to the .x component
+            dens = __builtin_ia32_vec_set_v4sf(dens, bodies_dens[idx1].y, 1); //Move smth to the .y component
+            dens = __builtin_ia32_vec_set_v4sf(dens, bodies_dens[idx2].x, 2); //Move density to the .z component
+            dens = __builtin_ia32_vec_set_v4sf(dens, bodies_dens[idx2].y, 3); //Move smth to the .w component
+            vLETBuffer[2*nExportPtcl+storeIdx] = dens;
+            storeIdx++;
+        }
+#endif
+
+        for (int i = 0; i < nExportPtcl; i++)
+        {
+          const int idx             = bufferStruct.LETBuffer_ptcl[i];
+
+          //Do not use the 4 lines below if above we set #if 1
+          _v4sf dens = {0.0f,0.0f,0.0f,0.0f};
+          dens = __builtin_ia32_vec_set_v4sf(dens, bodies_dens[idx].x, 0); //Move density to the .x component
+          dens = __builtin_ia32_vec_set_v4sf(dens, bodies_dens[idx].y, 1); //Move density to the .y component
+          vLETBuffer[2*nExportPtcl+i] = dens;
+
+
+          vLETBuffer[3*nExportPtcl+i] = bodies_HydroV[idx];
         }
     }
 
@@ -2609,7 +2675,13 @@ int getLEToptQuickFullTree(
 
       const uint4 nodePacked       = levelList.first()[i];
       const uint  nodeIdx          = nodePacked.x;
-      const float nodeInfo_x       = nodeCentre[nodeIdx].w;
+//      const float nodeInfo_x       = nodeCentre[nodeIdx].w;
+
+
+      __half2 temp = *((__half2*)&nodeCentre[nodeIdx].w);
+      const float nodeInfo_x = _cvtsh_ss(temp.x);
+      const float nodeSmth   = _cvtsh_ss(temp.y);
+
       const uint  nodeInfo_y       = host_float_as_int(nodeSize[nodeIdx].w);
 
       const _v4sf nodeCOM          = __builtin_ia32_vec_set_v4sf(multipoleV[nodeIdx*3], nodeInfo_x, 3);
@@ -2647,14 +2719,14 @@ int getLEToptQuickFullTree(
           centre[laneIdx]     = grpNodeCenterInfoV[group];
           if(selectionMethod & SELECT_SPH)
           {
-              float grpSmth = groupSmoothInfo[group].x;
+              __half2 temp     = *((__half2*)&groupCentreInfo[laneIdx].w);
+              float grpSmth = fabs(_cvtsh_ss(temp.y));     //This is for density computation, there we do not use the distance of the node
+              //float grpSmth = groupSmoothInfo[group].x;
 
-              //TODO (jbedorf): SMTH_HALF
               if(LETMethod == LET_METHOD_HYDR)
               {
                   //Hydro part requires mutual forces hence include the node smoothing in our test-criteria
                   grpSmth = std::max(grpSmth, nodeInfo_x);
-//                  grpSmth += nodeInfo_x;
               }
 
 
@@ -2769,6 +2841,12 @@ int getLEToptQuickFullTree(
   }
 
   double tCalc = get_time2();
+  // LOGF(stderr,"getLETOptQuick P: %d N: %d  Calc took: %lg Prepare: %lg Copy: %lg Total: %lg \n",nExportPtcl, nExportCell, tCalc-tStart, tPrep - tStart, tEnd-tCalc, tEnd-tStart);
+  //  fprintf(stderr,"[Proc: %d ] getLETOptQuick P: %d N: %d  Calc took: %lg Prepare: %lg (calc: %lg ) Copy: %lg Total: %lg \n",
+  //    procId, nExportPtcl, nExportCell, tCalc-tStart, tPrep - tStart, tCalc-tPrep,  tEnd-tCalc, tEnd-tStart);
+
+    return  1 + nExportPtcl + 5*nExportCell;
+
 #if 0 //Disabled tree-copy
   assert((int)bufferStruct.LETBuffer_ptcl.size() == nExportPtcl);
   assert((int)bufferStruct.LETBuffer_node.size() == nExportCell);
@@ -2822,11 +2900,6 @@ int getLEToptQuickFullTree(
   time = get_time2() - tStart;
   double tEnd = get_time2();
 #endif
-// LOGF(stderr,"getLETOptQuick P: %d N: %d  Calc took: %lg Prepare: %lg Copy: %lg Total: %lg \n",nExportPtcl, nExportCell, tCalc-tStart, tPrep - tStart, tEnd-tCalc, tEnd-tStart);
-//  fprintf(stderr,"[Proc: %d ] getLETOptQuick P: %d N: %d  Calc took: %lg Prepare: %lg (calc: %lg ) Copy: %lg Total: %lg \n",
-//    procId, nExportPtcl, nExportCell, tCalc-tStart, tPrep - tStart, tCalc-tPrep,  tEnd-tCalc, tEnd-tStart);
-
-  return  1 + nExportPtcl + 5*nExportCell;
 }
 
 
@@ -2927,12 +3000,17 @@ int3 getLEToptFullTree(
     {
       const uint4 nodePacked = levelList.first()[i];
 
-
-      //TODO (jbedorf): SMTH_HALF
-
-
       const uint  nodeIdx    = nodePacked.x;
+#if 0
       const float nodeInfo_x = nodeCentre[nodeIdx].w;
+#else
+      __half2 temp = *((__half2*)&nodeCentre[nodeIdx].w);
+      const float nodeInfo_x = _cvtsh_ss(temp.x);
+      const float nodeSmth   = _cvtsh_ss(temp.y);
+#endif
+
+
+
       const uint  nodeInfo_y = host_float_as_int(nodeSize[nodeIdx].w);
 
       const _v4sf nodeCOM  = __builtin_ia32_vec_set_v4sf(multipoleV[nodeIdx*3], nodeInfo_x, 3); //Set opening angle
@@ -2963,11 +3041,14 @@ int3 getLEToptFullTree(
           size  [laneIdx]  =   grpNodeSizeInfoV[group];
           if(selectionMethod & SELECT_SPH)
           {
+              //float smth =  fabs(groupSmoothInfo[group].x); //This is for density computation
+              __half2 temp     = *((__half2*)&groupCentreInfo[laneIdx].w);
+              float smth = fabs(_cvtsh_ss(temp.y));     //This is for density computation, there we do not use the distance of the node
+
               //Smth is the maximum allowed distance (already squared) before a cell is opened
-              float smth =  fabs(groupSmoothInfo[group].x); //This is for density computation
               if(LETMethod == LET_METHOD_HYDR)
               {
-                  smth = std::max(fabs(nodeInfo_x), fabs(groupSmoothInfo[group].x));
+                  smth = std::max(fabs(nodeSmth), smth); //For hydro we need mutual forces so take the longest distance
               }
 
               if(laneIdx == 0) checkValueSPH0 = __builtin_ia32_vec_set_v4sf(checkValueSPH0, smth, 0); //Set smoothing distance
@@ -3742,6 +3823,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                 usedStartEndNode.x, usedStartEndNode.y,
                                 &bodies_pos[0],
                                 &bodies_vel[0],
+                                &bodies_dens[0],
+                                &bodies_hydro[0],
                                 tree.n,
                                 grpSize, grpCenter, grpSmooth,
                                 endGrp,
@@ -4446,7 +4529,7 @@ void octree::mergeAndLaunchLETStructures(
                            &topMultiPoles[0],
                             tempMultipoleRes);
 
-  //Tree properties computed, now do some magic to put everything in one array
+  //Tree properties computed, now do some (spaghetti) magic to put everything in one array
 
 #else
   int topTree_n_nodes = 0;
@@ -4590,8 +4673,8 @@ void octree::mergeAndLaunchLETStructures(
 
     if(METHOD == LET_METHOD_DRVT || METHOD == LET_METHOD_HYDR) //Insert the velocity
     {
-        memcpy(&combinedRemoteTree[1*totalParticles+particleSumOffsets[i]],           //Write after the positions
-               &treeBuffers[i+procTrees][1+1*remoteP], sizeof(real4)*remoteP);      //Read after the positions
+        memcpy(&combinedRemoteTree[1*totalParticles+particleSumOffsets[i]],         //Write after the positions
+               &treeBuffers[i+procTrees][1+1*remoteP], sizeof(real4)*remoteP);      // Read after the positions
 
         if(METHOD == LET_METHOD_HYDR) //Insert density and hydro
         {
