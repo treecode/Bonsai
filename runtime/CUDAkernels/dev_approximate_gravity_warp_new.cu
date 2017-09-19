@@ -28,6 +28,48 @@ PROF_MODULE(dev_approximate_gravity);
 #define _QUADRUPOLE_
 #endif
 
+/***********************************/
+/***** DENSITY   ******************/
+
+static __device__ __forceinline__ void computeDensityAndNgb(
+    const float r2, const float hinv2, const float mass, 
+    float &density, float &nb)
+{
+#if 0  /* full kernel for reference */
+  const float hinv = 1.0f/h;
+  const float hinv2 = hinv*hinv;
+  const float hinv3 = hinv*hinv2;
+  const float C     = 3465.0f/(512.0f*M_PI)*hinv3;
+  const float q2    = r2*hinv2;
+  const float rho   = fmaxf(0.0f, 1.0f - q2);
+  nb      += ceilf(rho);
+  const float rho2 = rho*rho;
+  density += C * rho2*rho2;
+#else
+  const float rho   = fmaxf(0.0f, 1.0f - r2*hinv2);   /* fma, fmax */
+  const float rho2  = rho*rho;                        /* fmul */
+  density += rho2*rho2;                               /* fma */
+  nb      += ceilf(rho2);                             /* fadd, ceil */
+
+  /*2x fma, 1x fmul, 1x fadd, 1x ceil, 1x fmax */
+  /* total: 6 flops or 8 flops with ceil&fmax */
+#endif
+}
+
+#if 0
+static __device__ __forceinline__ float adjustH(const float h_old, const float nnb)
+{
+	const float nbDesired 	= 42;
+	const float f      	= 0.5f * (1.0f + cbrtf(nbDesired / nnb));
+	const float fScale 	= max(min(f, 1.2), 0.8);
+	return (h_old*fScale);
+}
+#endif
+
+
+
+
+
 /************************************/
 /*********   PREFIX SUM   ***********/
 /************************************/
@@ -127,18 +169,19 @@ static __device__ __forceinline__ int2 inclusive_segscan_warp(
 /**** binary scans ****/
 
 
+#if 0
 static __device__ int warp_exclusive_scan(const bool p, int &psum)
 {
   const unsigned int b = __ballot(p);
   psum = __popc(b & lanemask_lt());
   return __popc(b);
 }
-
 static __device__ int warp_exclusive_scan(const bool p)
 {
   const int b = __ballot(p);
   return __popc(b & lanemask_lt());
 }
+#endif
 
 
 /**************************************/
@@ -177,13 +220,15 @@ const void* getTexturePointer(const char* name)
 static __device__ __forceinline__ float4 add_acc(
     float4 acc,  const float4 pos,
     const float massj, const float3 posj,
-    const float eps2)
+    const float eps2,
+    float2 &density)
 {
 #if 1  // to test performance of a tree-walk 
   const float3 dr = make_float3(posj.x - pos.x, posj.y - pos.y, posj.z - pos.z);
 
-  const float r2     = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z + eps2;
-  const float rinv   = rsqrtf(r2);
+  const float r2     = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
+  const float r2eps  = r2 + eps2;
+  const float rinv   = rsqrtf(r2eps);
   const float rinv2  = rinv*rinv;
   const float mrinv  = massj * rinv;
   const float mrinv3 = mrinv * rinv2;
@@ -192,6 +237,8 @@ static __device__ __forceinline__ float4 add_acc(
   acc.x += mrinv3 * dr.x;
   acc.y += mrinv3 * dr.y;
   acc.z += mrinv3 * dr.z;
+
+  computeDensityAndNgb(r2,pos.w,massj,density.x,density.y);
 #endif
 
   return acc;
@@ -201,7 +248,8 @@ static __device__ __forceinline__ void directAcc(
     float4 acc_i[NI], 
     const float4 pos_i[NI],
     const int ptclIdx,
-    const float eps2)
+    const float eps2,
+    float2 density_i[NI])
 {
   const float4 M0 = (FULL || ptclIdx >= 0) ? tex1Dfetch(texBody, ptclIdx) : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
 
@@ -213,7 +261,7 @@ static __device__ __forceinline__ void directAcc(
     const float3 jpos  = make_float3(jM0.x, jM0.y, jM0.z);
 #pragma unroll
     for (int k = 0; k < NI; k++)
-      acc_i[k] = add_acc(acc_i[k], pos_i[k], jmass, jpos, eps2);
+      acc_i[k] = add_acc(acc_i[k], pos_i[k], jmass, jpos, eps2, density_i[k]);
   }
 }
 
@@ -224,7 +272,8 @@ static __device__ __forceinline__ float4 add_acc(
     float4 acc, 
     const float4 pos,
     const float mass, const float3 com,
-    const float4 Q0,  const float4 Q1, float eps2) 
+    const float4 Q0,  const float4 Q1, float eps2,
+    float2 &density) 
 {
 #if 1 
   const float3 dr = make_float3(pos.x - com.x, pos.y - com.y, pos.z - com.z);
@@ -272,6 +321,7 @@ template<int NI, bool FULL>
 static __device__ __forceinline__ void approxAcc(
     float4 acc_i[NI], 
     const float4 pos_i[NI],
+    float2 dens_i[NI],
     const int cellIdx,
     const float eps2)
 {
@@ -295,7 +345,8 @@ static __device__ __forceinline__ void approxAcc(
     const float3 jpos  = make_float3(jM0.x, jM0.y, jM0.z);
 #pragma unroll
       for (int k = 0; k < NI; k++)
-        acc_i[k] = add_acc(acc_i[k], pos_i[k], jmass, jpos, jQ0, jQ1, eps2);
+        acc_i[k] = add_acc(acc_i[k], pos_i[k], jmass, jpos, jQ0, jQ1, eps2, dens_i[k]);
+
   }
 }
 
@@ -366,7 +417,8 @@ uint2 approximate_gravity(
     const uint2 top_cells,
     int *shmem,
     int *cellList,
-    const float4 groupSize)
+    const float4 groupSize,
+    float2 dens_i[NI])
 {
   const int laneIdx = threadIdx.x & (WARP_SIZE-1);
 
@@ -377,6 +429,11 @@ uint2 approximate_gravity(
     pos_i[i] = _pos_i[i];
 
   uint2 interactionCounters = {0}; /* # of approximate and exact force evaluations */
+
+#pragma unroll 1
+  for (int i = 0; i < NI; i++)
+    dens_i[i] = make_float2(0,0);
+
 
   volatile int *tmpList = shmem;
 
@@ -497,7 +554,7 @@ uint2 approximate_gravity(
       if (approxCounter >= WARP_SIZE)
       {
         /* evalute cells stored in shmem */
-        approxAcc<NI,true>(acc_i, pos_i, tmpList[laneIdx], eps2);
+        approxAcc<NI,true>(acc_i, pos_i, dens_i, tmpList[laneIdx], eps2);
 
         approxCounter -= WARP_SIZE;
         const int scatterIdx = approxCounter + approxScatter.x - approxScatter.y;
@@ -541,7 +598,7 @@ uint2 approximate_gravity(
 
         if (nParticle >= WARP_SIZE)
         {
-          directAcc<NI,true>(acc_i, pos_i, ptclIdx, eps2);
+          directAcc<NI,true>(acc_i, pos_i, ptclIdx, eps2, dens_i);
           nParticle  -= WARP_SIZE;
           nProcessed += WARP_SIZE;
           if (INTCOUNT)
@@ -559,7 +616,7 @@ uint2 approximate_gravity(
           if (directCounter >= WARP_SIZE)
           {
             /* evalute cells stored in shmem */
-            directAcc<NI,true>(acc_i, pos_i, tmpList[laneIdx], eps2);
+            directAcc<NI,true>(acc_i, pos_i, tmpList[laneIdx], eps2, dens_i);
             directCounter -= WARP_SIZE;
             const int scatterIdx = directCounter + laneIdx - nParticle;
             if (scatterIdx >= 0)
@@ -588,7 +645,7 @@ uint2 approximate_gravity(
 
   if (approxCounter > 0)
   {
-    approxAcc<NI,false>(acc_i, pos_i, laneIdx < approxCounter ? approxCellIdx : -1, eps2);
+    approxAcc<NI,false>(acc_i, pos_i, dens_i, laneIdx < approxCounter ? approxCellIdx : -1, eps2);
     if (INTCOUNT)
       interactionCounters.x += approxCounter * NI;
     approxCounter = 0;
@@ -596,7 +653,7 @@ uint2 approximate_gravity(
 
   if (directCounter > 0)
   {
-    directAcc<NI,false>(acc_i, pos_i, laneIdx < directCounter ? directPtclIdx : -1, eps2);
+    directAcc<NI,false>(acc_i, pos_i, laneIdx < directCounter ? directPtclIdx : -1, eps2, dens_i);
     if (INTCOUNT)
       interactionCounters.y += directCounter * NI;
     directCounter = 0;
@@ -620,7 +677,9 @@ bool treewalk(
     float4 *acc_out,
     int2   *interactions,
     int    *ngb_out,
-    int    *active_inout)
+    int    *active_inout,
+    float  *body_h,
+    float2 *body_dens_out)
 {
 
   /*********** set necessary thread constants **********/
@@ -647,12 +706,19 @@ bool treewalk(
 
   float4 pos_i[2];
   float4 acc_i[2];
+  float2 dens_i[2];  
 
-  pos_i[0] = group_body_pos[body_i[0]];
-  if(ni > 1) //Only read if we actually have ni == 2
-    pos_i[1] = group_body_pos[body_i[1]];
+  pos_i[0]   = group_body_pos[body_i[0]];
+  pos_i[0].w = 1.0f/body_h[body_i[0]];
+  pos_i[0].w *= pos_i[0].w;  /* .w stores 1/h^2 to speed up computations */
+  if(ni > 1){       //Only read if we actually have ni == 2
+    pos_i[1]   = group_body_pos[body_i[1]];
+    pos_i[1].w = 1.0f/body_h[body_i[1]];  
+    pos_i[1].w *= pos_i[1].w;  /* .w stores 1/h^2 to speed up computations */
+  }
 
   acc_i[0] = acc_i[1] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+  dens_i[0] = dens_i[1] = make_float2(0.0f, 0.0f);
 
 
 #if 0
@@ -671,7 +737,8 @@ bool treewalk(
           node_begend,
           shmem, 
           lmem, 
-          curGroupSize);
+          curGroupSize,
+          dens_i);
     else
       counters = approximate_gravity<SHIFT2, BLOCKDIM2, 2,INTCOUNT>(
           acc_i,
@@ -681,23 +748,48 @@ bool treewalk(
           node_begend,
           shmem, 
           lmem, 
-          curGroupSize);
+          curGroupSize,
+          dens_i);
   }
   if(counters.x == 0xFFFFFFFF && counters.y == 0xFFFFFFFF)
     return false;
 
+#if 0
+  /* CUDA 8RC work around */
+  if(bid < 0) // bid ==0 && laneId < nb_i && && threadIdx.x == 0)
+  {
+	  printf("TEST\n");
+  	//printf("ON DEV [%d %d : %d %d ] ACC: %f %f %f %f INT: %d %d \n",
+  	//		bid, threadIdx.x, nb_i, body_i[0],
+  	//		acc_i[0].x,acc_i[0].y,acc_i[0].z,acc_i[0].w,
+  	//		counters.x, counters.y);
+  }
+#endif
+
   if (laneId < nb_i) 
   {
     const int addr = body_i[0];
+    {
+      const float hinv = 1.0f/body_h[addr];
+      const float C   = 3465.0f/(512.0f*M_PI)*hinv*hinv*hinv;
+      dens_i[0].x *= C;  /* scale rho */
+    }
     if (ACCUMULATE)
     {
       acc_out     [addr].x += acc_i[0].x;
       acc_out     [addr].y += acc_i[0].y;
       acc_out     [addr].z += acc_i[0].z;
       acc_out     [addr].w += acc_i[0].w;
+
+
+      body_dens_out[addr].x += dens_i[0].x;
+      body_dens_out[addr].y += dens_i[0].y;
     }
     else
-      acc_out     [addr] = acc_i[0];
+    {
+      acc_out      [addr] =  acc_i[0];
+      body_dens_out[addr] = dens_i[0];
+    }
     //       ngb_out     [addr] = ngb_i;
     ngb_out     [addr] = addr; //JB Fixed this for demo 
     active_inout[addr] = 1;
@@ -714,16 +806,27 @@ bool treewalk(
     if (ni == 2)
     {
       const int addr = body_i[1];
+      {
+        const float hinv = 1.0f/body_h[addr];
+        const float C   = 3465.0f/(512.0f*M_PI)*hinv*hinv*hinv;
+        dens_i[1].x *= C;  /* scale rho */
+      }
       if (ACCUMULATE)
       {
         acc_out     [addr].x += acc_i[1].x;
         acc_out     [addr].y += acc_i[1].y;
         acc_out     [addr].z += acc_i[1].z;
         acc_out     [addr].w += acc_i[1].w;
+      
+        body_dens_out[addr].x += dens_i[1].x;
+      	body_dens_out[addr].y += dens_i[1].y;
       }
       else
       {
-        acc_out     [addr] = acc_i[1];
+        acc_out      [addr] =  acc_i[1];
+        body_dens_out[addr] = dens_i[1];
+      
+//	body_h[addr] = adjustH(body_h[addr], dens_i[1].y);
       }
 
       //         ngb_out     [addr] = ngb_i;
@@ -765,7 +868,9 @@ void approximate_gravity_main(
     float4  *boxCenterInfo,
     float4  *groupCenterInfo,
     real4   *body_vel,
-    int     *MEM_BUF) 
+    int     *MEM_BUF,
+    float   *body_h,
+    float2  *body_dens) 
 {
   const int blockDim2 = BLOCKDIM2;
   const int shMemSize = 1 * (1 << blockDim2);
@@ -824,7 +929,9 @@ void approximate_gravity_main(
         acc_out,
         interactions,
         ngb_out,
-        active_inout);
+        active_inout,
+        body_h,
+        body_dens);
 
 #if 0
     if (bid % 10 == 0)
@@ -901,7 +1008,9 @@ void approximate_gravity_main(
           acc_out,
           interactions,
           ngb_out,
-          active_inout);
+          active_inout,
+          body_h,
+          body_dens);
       assert(success);
 
       if(laneId == 0)
@@ -934,7 +1043,9 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
       float4  *boxCenterInfo,
       float4  *groupCenterInfo,
       real4   *body_vel,
-      int     *MEM_BUF) 
+      int     *MEM_BUF,
+      float   *body_h,
+      float2  *body_dens) 
 {
   approximate_gravity_main<false, NTHREAD2>(
       n_active_groups,
@@ -954,7 +1065,9 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
       boxCenterInfo,
       groupCenterInfo,
       body_vel,
-      MEM_BUF);
+      MEM_BUF,
+      body_h,
+      body_dens);
 }
 
 
@@ -979,7 +1092,9 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
       float4  *boxCenterInfo,
       float4  *groupCenterInfo,
       real4   *body_vel,
-      int     *MEM_BUF) 
+      int     *MEM_BUF,
+      float   *body_h,
+      float2  *body_dens) 
 {
   approximate_gravity_main<true, NTHREAD2>(
       n_active_groups,
@@ -999,6 +1114,8 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
       boxCenterInfo,
       groupCenterInfo,
       body_vel,
-      MEM_BUF);
+      MEM_BUF,
+      body_h,
+      body_dens);
 }
 

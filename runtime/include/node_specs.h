@@ -9,21 +9,37 @@ typedef float4 real4;
 //Dont uncomment this yet
 #define DO_BLOCK_TIMESTEP
 
+//Enabling the following increases the number of particle properties
+//exchanged during mpi particle exchange. Only required if you run
+//block time steps. Not needed in the default shared time-step mode.
+//#define DO_BLOCK_TIMESTEP_EXCHANGE_MPI
+
 //Uncomment the next line to use thrust radix sort instead of built in one
 // #define USE_THRUST
-
-//If you uncomment the next line dust/massless particles will be treated
-//like normal particles and used in the tree-construction
-#if 0  /* DEFINED in CMakeLists.txt */
-#define USE_DUST
-#endif
-
 
 #if USE_DUST
   #if USE_MPI
     #error "Fatal, USE DUST does not work when using MPI. Its for demo only"
   #endif
 #endif
+
+
+typedef struct bodyStruct
+{
+  real4  pos;
+  real4  vel;
+  real4  acc0;
+  real4  Ppos;
+  real4  Pvel;
+  float2 time;
+  unsigned long long id;
+
+#ifdef DO_BLOCK_TIMESTEP_EXCHANGE_MPI
+
+  uint4 key;
+  real4 acc1;
+#endif
+} bodyStruct;
 
 
 

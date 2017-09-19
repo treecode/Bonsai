@@ -71,7 +71,6 @@ KERNEL_DECLARE(exclusive_scan_block)(int *ptr, const int N, int *count)
 {
   if (*count != 0) {
     extern __shared__ int shmemESB[];
-  //   volatile __shared__ int shmemESB[512];
     exclusive_scan_blockD(ptr, N, count, shmemESB);
   }
 }
@@ -86,30 +85,6 @@ typedef struct setupParams
 }setupParams;
 #endif
 
-//Warp based prefix sum, using extra buffer space to remove the need for if statements
-// static __device__  int hillisSteele4(volatile int *ptr, int *count, uint val, const unsigned int idx)
-static __device__  int hillisSteele4(volatile int *ptr, int &count, uint val, const unsigned int idx)
-{
-  //  const unsigned int lane   = idx & 31;  
-  //We don't require lane here since idx is always < 32 in the way we start the blocks/threads
-
-  //volatile int* tmp = ptr + (32 / 2);
-  volatile int* tmp = &ptr[16];
-  ptr[idx] = 0; tmp[idx] = val;
-
-  //Since we set half the array to 0 we don't need ifs!
-  tmp[idx] = val = tmp[idx -  1]  + val;
-  tmp[idx] = val = tmp[idx -  2]  + val;
-  tmp[idx] = val = tmp[idx -  4]  + val;
-  tmp[idx] = val = tmp[idx -  8]  + val;
-  tmp[idx] = val = tmp[idx -  16] + val;
-
-  //Inclusive sum/count
-  count = tmp[blockDim.x-1];
-
-  //Exclusive index
-  return (idx > 0) ? tmp[idx-1] : 0;
-}
 
 //Warp based prefix sum, using extra buffer space to remove the need for if statements
 // static __device__  int hillisSteele4(volatile int *ptr, int *count, uint val, const unsigned int idx)

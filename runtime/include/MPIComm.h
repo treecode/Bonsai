@@ -45,6 +45,7 @@ void MPIComm_free_type();
 struct MPIComm
 {
 
+  const MPI_Comm &mpiCommWorld;
   MPI_Comm MPI_COMM_I;
   MPI_Comm MPI_COMM_J;
 
@@ -64,7 +65,7 @@ struct MPIComm
 	  return ((double) Tvalue.tv_sec +1.e-6*((double) Tvalue.tv_usec));
 	}
 
-  MPIComm(const int _myid, const int _nproc) : myid(_myid), n_proc(_nproc)
+  MPIComm(const int _myid, const int _nproc, const MPI_Comm &comm) : myid(_myid), n_proc(_nproc), mpiCommWorld(comm)
   {
     //// ij-parallized ////
 
@@ -84,10 +85,10 @@ struct MPIComm
           n_proc_i, n_proc_j, n_proc_i * n_proc_j, n_proc);
     }
 
-    MPI_Comm_split(MPI_COMM_WORLD, i_color, myid, &MPI_COMM_I);
+    MPI_Comm_split(mpiCommWorld, i_color, myid, &MPI_COMM_I);
     MPI_Comm_size(MPI_COMM_I, &n_proc_i);
 
-    MPI_Comm_split(MPI_COMM_WORLD, j_color, myid, &MPI_COMM_J);
+    MPI_Comm_split(mpiCommWorld, j_color, myid, &MPI_COMM_J);
     MPI_Comm_size(MPI_COMM_J, &n_proc_j);
   } 
 
@@ -151,7 +152,7 @@ struct MPIComm
   template<typename T>
     void all2allv_2D_main(std::vector<T> &p, int scounts[], int sdispls[])
     {
-	//MPI_Barrier(MPI_COMM_WORLD);
+	//MPI_Barrier(mpiCommWorld);
 	    double t0 = get_time();
       std::vector<int> sub_counts(n_proc);
       //// exchange n of particles within j-comm -> sub counts ////
@@ -245,7 +246,7 @@ double t6 = get_time();
       for(int i=0;i<n_proc;i++)
         sdispls[i+1] = sdispls[i] + scounts[i];
 
-      //MPI_Barrier(MPI_COMM_WORLD); //// for test 
+      //MPI_Barrier(mpiCommWorld); //// for test 
       //
       all2allv_2D_main(p, scounts, &sdispls[0]);
     }
@@ -258,7 +259,7 @@ double t6 = get_time();
       std::vector<int> rdispls(n_proc+1);
 
       MPI_Alltoall(scounts, 1, MPI_INT, 
-          &rcounts[0], 1, MPI_INT, MPI_COMM_WORLD);
+          &rcounts[0], 1, MPI_INT, mpiCommWorld);
       rdispls[0] = 0;
       sdispls[0] = 0;
       for(int i=0;i<n_proc;i++)
@@ -267,12 +268,12 @@ double t6 = get_time();
         rdispls[i+1] = rdispls[i] + rcounts[i];
         //cout << myid << " " << i << "  " << scounts[i] << endl;
       }
-      //MPI_Barrier(MPI_COMM_WORLD); //// for test 
+      //MPI_Barrier(mpiCommWorld); //// for test 
       std::vector<T> p_new(rdispls[n_proc]);
 #ifdef USE_ALL2ALLV
-      MPI_Alltoallv(&p[0], scounts, &sdispls[0], MPIComm_datatype<T>(), &p_new[0], &rcounts[0], &rdispls[0], MPIComm_datatype<T>(), MPI_COMM_WORLD);
+      MPI_Alltoallv(&p[0], scounts, &sdispls[0], MPIComm_datatype<T>(), &p_new[0], &rcounts[0], &rdispls[0], MPIComm_datatype<T>(), mpiCommWorld);
 #else
-      all2all<T>(n_proc,myid,&p[0], scounts, &sdispls[0],  &p_new[0], &rcounts[0], &rdispls[0], MPI_COMM_WORLD);
+      all2all<T>(n_proc,myid,&p[0], scounts, &sdispls[0],  &p_new[0], &rcounts[0], &rdispls[0], mpiCommWorld);
 #endif
       p.swap(p_new);
     }
