@@ -417,7 +417,7 @@ void main()                                                        \n
 {                                                                  \n
     vec4 c = texture2D(tex, gl_TexCoord[0].xy);                    \n
     c.rgb *= scale;
-	c.rgb = pow(c.rgb, vec4(gamma));
+	c.rgb = pow(c.rgb, vec3(gamma));
     gl_FragColor = c;                                              \n
 }                                                                  \n
 );
@@ -616,7 +616,7 @@ void main()                                                        \n
     float d = length(gl_TexCoord[0].xy*2.0-1.0);
     c.rgb *= 1.0 - smoothstep(0.9, 1.5, d);
 
-	c.rgb = pow(c.rgb, vec4(gamma));
+	c.rgb = pow(c.rgb, vec3(gamma));
     gl_FragColor = c;                                              \n
 }                                                                  \n
 );
@@ -752,7 +752,7 @@ samplerCube tex;
 void main()                                                 \n
 {                                                           \n
   vec4 c = textureCube(tex, gl_TexCoord[0].xyz) * gl_Color; \n
-  c.rgb = pow(c.rgb, vec4(2.2));
+  c.rgb = pow(c.rgb, vec3(2.2));
   gl_FragColor = c;
     //gl_FragColor = textureCube(tex, gl_TexCoord[0].xyz) * gl_Color; \n
 }                                                           \n
