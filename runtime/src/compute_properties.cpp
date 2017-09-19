@@ -107,7 +107,7 @@ void octree::compute_properties(tree_structure &tree) {
 
     propsScalingD.set_args(0, &tree.n_nodes, multipoleD.p(), nodeLowerBounds.p(), nodeUpperBounds.p(),
                             tree.n_children.p(), tree.multipole.p(), &theta, tree.boxSizeInfo.p(),
-                            tree.boxCenterInfo.p(), tree.boxSmoothing.p(), tree.node_bodies.p());
+                            tree.boxCenterInfo.p(), tree.node_bodies.p());
     propsScalingD.setWork(tree.n_nodes, 128);
     LOG("propsScaling: on number of nodes: %d \n", tree.n_nodes); // propsScalingD.printWorkSize();
     propsScalingD.execute2(execStream->s());
@@ -134,33 +134,11 @@ void octree::compute_properties(tree_structure &tree) {
 
     devContext->stopTiming("Compute-properties", 3, execStream->s());
 
-//    if(nProcs > 1)
+    if(nProcs > 1)
     {
        //Only start the copy after the execStream has been completed, otherwise the buffers aint filled yet
        tree.smallBoundaryTree.d2h(boundaryTreeDimensions.x, false, LETDataToHostStream->s());
        tree.fullBoundaryTree. d2h(boundaryTreeDimensions.y, false, LETDataToHostStream->s());
-    }
-
-
-    tree.boxCenterInfo.d2h(10);
-
-
-    for(int i=0; i < 10; i++) {
-        __half2 temp = *((__half2*)&tree.boxCenterInfo[i].w);
-
-        float resa = _cvtsh_ss(temp.x);
-        float resb = _cvtsh_ss(temp.y);
-
-        //Convert floats back to halfs
-        __half2 newa, newb;
-
-        newa.x = _cvtss_sh(resa+resb,0);
-        newa.y = _cvtss_sh(resa-resb,0);
-
-        float resc = _cvtsh_ss(newa.x);
-        float resd = _cvtsh_ss(newa.y);
-
-//        fprintf(stderr, "HOST %d : %f %f | %f %f\n", i, resa,resb, resc, resd);
     }
 
 

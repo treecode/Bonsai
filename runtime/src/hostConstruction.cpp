@@ -738,29 +738,24 @@ void octree::computeProps_TopLevelTree(
           float cellOp = (l/theta);
         #endif
 
-        //GRAVITY
-        boxCenterD.w       = cellOp*cellOp;
-
-        float maxSmth     = fmaxf(fmaxf(fmaxf(fabs(r_min.x-r_minSPH.x), fabs(r_max.x-r_maxSPH.x)),
-                                  fmaxf(fabs(r_min.y-r_minSPH.y), fabs(r_max.y-r_maxSPH.y))),
-                                  fmaxf(fabs(r_min.z-r_minSPH.z), fabs(r_max.z-r_maxSPH.z)));
-
-        __half2 newCellOpSmth;
-        newCellOpSmth.x = _cvtss_sh(cellOp*cellOp,0);
-        //newCellOpSmth.y = _cvtss_sh(cellSmth,0);
-        //newCellOpSmth.y = _cvtss_sh(10*(maxSmth*maxSmth),0);
-        newCellOpSmth.y = _cvtss_sh(10,0);
-        *((__half2*)&boxCenterD.w) = newCellOpSmth;
-//
-//        LOGF(stderr,"TEST target: %d \t %f %f %f smth: %f - %f | %f %f %f\n", j,
-//                boxCenterD.x, boxCenterD.y, boxCenterD.z, cellSmth, maxSmth*maxSmth,
-//                boxSizeD.x, boxSizeD.y, boxSizeD.z);
-
-        //SPH
-//        boxCenterD.w       = cellSmth;
-
 
         float4 boxCenter   = make_float4(boxCenterD.x,boxCenterD.y, boxCenterD.z, boxCenterD.w);
+
+
+        float maxSmth     = fmaxf(fmaxf(fmaxf(fabs(r_min.x-r_minSPH.x), fabs(r_max.x-r_maxSPH.x)),
+                                  fmaxf(      fabs(r_min.y-r_minSPH.y), fabs(r_max.y-r_maxSPH.y))),
+                                  fmaxf(      fabs(r_min.z-r_minSPH.z), fabs(r_max.z-r_maxSPH.z)));
+
+        //Increase cellOp and maxSmth by 1% as there is no round-up mode on the host side.
+        cellOp  *= 1.01;
+        maxSmth *= 1.01;
+
+        __half2 newCellOpSmth;
+        newCellOpSmth.x = _cvtss_sh((float)(cellOp*cellOp),0); //GRAVITY
+        newCellOpSmth.y = _cvtss_sh(maxSmth*maxSmth,0);        //SPH
+        *((__half2*)&boxCenter.w) = newCellOpSmth;
+
+
         topTreeCenters[j]  = boxCenter;
 
         //Encode the child information, the leaf offsets are changed

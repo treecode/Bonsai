@@ -493,7 +493,6 @@ KERNEL_DECLARE(compute_scaling)(const int      node_count,
                                       float    theta,
                                       real4   *boxSizeInfo,
                                       real4   *boxCenterInfo,
-                                      float   *boxSmoothingInfo,
                                       uint2   *node_bodies){
 
   CUXTIMER("compute_scaling");
@@ -620,15 +619,6 @@ KERNEL_DECLARE(compute_scaling)(const int      node_count,
   boxCenterInfo[idx].w = cellOp;
 
 
-  /* For SPH we re-use boxCenterInfo[idx].w  to hold the max smoothing range
-   * of the particles within this cell. TODO use a better variable to hold this?
-   */
-
-  //TODO(jbedorf): Remove this after we removed the use of it in parallel.cpp
-  //Store the search length squared. This eases the distance comparisons
-  boxSmoothingInfo[idx] = 0.0;// (r_min.w)*(r_min.w);
-
-
   bool doSPH = true;
   if(doSPH)
   {
@@ -643,23 +633,21 @@ KERNEL_DECLARE(compute_scaling)(const int      node_count,
   }
 
 #if 1
-      //Change it into half precision, allows storing gravity and sph criteria
-      //into a single fp32 value
+    //Use half precision to store both gravity and sph criteria in a single fp32 value
+    __half sph_opening;
+    __half tree_opening;
 
-      __half sph_opening;
-      __half tree_opening;
+    //Round up and down to make sure we stay on the save side during the actual comparisons
+    if (r_max.w > 0) {
+      sph_opening  = __float2half_rd(-(r_min.w*r_min.w));
+      tree_opening = __float2half_rd(cellOp);
+    } else {
+      sph_opening  = __float2half_ru(  r_min.w*r_min.w);
+      tree_opening = __float2half_ru(cellOp);
+    }
 
-      //Round up and down to make sure we stay on the save side
-      if (r_max.w > 0) {
-          sph_opening  = __float2half_rd(-(r_min.w*r_min.w));
-          tree_opening = __float2half_rd(cellOp);
-      } else {
-          sph_opening  = __float2half_ru(  r_min.w*r_min.w);
-          tree_opening = __float2half_ru(cellOp);
-      }
-
-      half2 opening = __halves2half2(tree_opening, sph_opening);
-      *((half2*)&boxCenterInfo[idx].w) = opening;
+    half2 opening = __halves2half2(tree_opening, sph_opening);
+    *((half2*)&boxCenterInfo[idx].w) = opening;
 #endif
 
   return;

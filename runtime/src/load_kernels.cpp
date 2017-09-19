@@ -14,20 +14,6 @@ void octree::load_kernels() {
                           this->getDevContext()->getComputeCapabilityMinor());
   nBlocksForTreeWalk 	= nMultiProcessors*blocksPerSM;
   
-
-  //AMUSE specific
-  std::string pathName;
-  if(this->src_directory != NULL)
-  {
-    pathName.assign(this->src_directory);
-  }
-  else
-  {  
-    //Strip the executable name, to get the path name
-    std::string temp(execPath);
-    int idx = (int)temp.find_last_of("/\\");
-    pathName.assign(temp.substr(0, idx+1));
-  }
   
   //Connect the compute kernels to the actual CUDA functions
 

@@ -64,11 +64,9 @@ struct GETLETBUFFERS
   //These are for getLET(Quick) only
   std::vector<v4sf> groupCentreSIMD;
   std::vector<v4sf> groupSizeSIMD;
-  std::vector<v4sf> groupSmoothSIMD;
 
   std::vector<v4sf> groupCentreSIMDSwap;
   std::vector<v4sf> groupSizeSIMDSwap;
-  std::vector<v4sf> groupSmoothSIMDSwap;
 
   std::vector<int>  groupSIMDkeys;
 
@@ -93,8 +91,7 @@ struct GETLETBUFFERS
                  sizeof(currGroupLevelVec) +
                  sizeof(nextGroupLevelVec) +
                  sizeof(groupSplitFlag) +
-                 sizeof(groupCentreSIMD) +
-                 sizeof(groupSmoothSIMD)
+                 sizeof(groupCentreSIMD)
                )];
 };
 /* End of Magic */
@@ -159,6 +156,28 @@ inline float host_int_as_float(int val)
 
 //SSE stuff for local tree-walk
 #ifdef USE_MPI
+
+
+
+#if 1
+
+static inline float2 extract_opening_criteria(float val)
+{
+    __half2 temp = *((__half2*)&val);
+    float2 res = {_cvtsh_ss(temp.x), _cvtsh_ss(temp.y)};
+    return res;
+}
+
+
+#else
+
+// Future Power8 version
+
+#endif
+
+
+
+
 
 #ifdef __AVX__
 typedef float  _v8sf  __attribute__((vector_size(32)));
@@ -537,14 +556,13 @@ inline int split_node_grav_sph_impbh_box8simd1_periodic( // takes 4 tree nodes a
 #endif
 
 
+
 template<typename T, int STRIDE>
-void shuffle3vecAllocated(
+void shuffle2vecAllocated(
     std::vector<T>   &data1,
     std::vector<T>   &data2,
-    std::vector<T>   &data3,
     std::vector<T>   &rdata1,
     std::vector<T>   &rdata2,
-    std::vector<T>   &rdata3,
     std::vector<int> &keys)
 {
   const int n = data1.size();
@@ -557,7 +575,6 @@ void shuffle3vecAllocated(
 
   rdata1.resize(n); //Safety only
   rdata2.resize(n); //Safety only
-  rdata3.resize(n); //Safety only
   for (int i = 0, idx=0; i < n; i += STRIDE, idx++)
   {
     const int key = keys[idx];
@@ -565,13 +582,11 @@ void shuffle3vecAllocated(
     {
       rdata1[i+j] = data1[key+j];
       rdata2[i+j] = data2[key+j];
-      rdata3[i+j] = data3[key+j];
     }
   }
 
   data1.swap(rdata1);
   data2.swap(rdata2);
-  data3.swap(rdata3);
 }
 
 
@@ -1966,7 +1981,6 @@ int getLEToptQuickTreevsTree(
     GETLETBUFFERS &bufferStruct,
     const real4 *nodeCentre,        //Remote
     const real4 *nodeSize,          //Remote
-    const real4 *nodeSmooth,        //Remote
     const real4 *multipole,         //Remote
     const int cellBeg,
     const int cellEnd,
@@ -2038,16 +2052,12 @@ int getLEToptQuickTreevsTree(
       const uint4       nodePacked = levelList.first()[i];
       const uint  nodeIdx          = nodePacked.x;
 
-      __half2 temp = *((__half2*)&nodeCentre[nodeIdx].w);
-      const float nodeInfo_x = _cvtsh_ss(temp.x);
-      const float nodeSmth  = fabs(_cvtsh_ss(temp.y));
+      const float2 openings  = extract_opening_criteria(nodeCentre[nodeIdx].w);
+      const float nodeInfo_x = openings.x;
+      const float nodeSmth   = fabs(openings.y);
 
-//      const float nodeInfo_x       = nodeCentre[nodeIdx].w;
       const uint  nodeInfo_y       = host_float_as_int(nodeSize[nodeIdx].w);
       const _v4sf nodeCOM          = __builtin_ia32_vec_set_v4sf(multipoleV[nodeIdx*3], nodeInfo_x, 3);
-
-//      const float nodeSmth2 = abs(nodeSmooth[nodeIdx].x);
-
 
       //SPH uses physical center and size of the box to test overlap and distance
       const _v4sf nodeSIZE = nodeSizeV  [nodeIdx];
@@ -2081,8 +2091,8 @@ int getLEToptQuickTreevsTree(
           //For hydro we need mutual forces so add the group and node smoothing
           if(LETMethod == LET_METHOD_HYDR)
           {
-              __half2 temp = *((__half2*)&groupCentreInfo[group].w);
-              const float grpSmth  = fabs(_cvtsh_ss(temp.y));
+              const float2 openings  = extract_opening_criteria(groupCentreInfo[group].w);
+              const float grpSmth    = fabs(openings.y);
 
               float max_distance = std::max(nodeSmth,grpSmth);
               switch(laneIdx)
@@ -2202,7 +2212,6 @@ int3 getLET1(
     const int                nParticles,
     const real4             *groupSizeInfo,
     const real4             *groupCentreInfo,
-    const real4             *groupSmoothInfo,
     const int                nGroups,
     const int                nNodes,
           unsigned long long &nflops,
@@ -2244,7 +2253,7 @@ int3 getLET1(
   const _v4sf*      multipoleV      = (const _v4sf*)multipole;
   const _v4sf*      groupSizeV      = (const _v4sf*)groupSizeInfo;
   const _v4sf*      groupCenterV    = (const _v4sf*)groupCentreInfo;
-  const _v4sf*      groupSmoothV    = (const _v4sf*)groupSmoothInfo;
+
 
   Swap<std::vector<int> > levelList(bufferStruct.currLevelVecI, bufferStruct.nextLevelVecI);
 
@@ -2255,19 +2264,15 @@ int3 getLET1(
   const int allocSize = (int)(nGroupsV*1.10);
   bufferStruct.groupCentreSIMD.reserve(allocSize);
   bufferStruct.groupSizeSIMD.reserve(allocSize);
-  bufferStruct.groupSmoothSIMD.reserve(allocSize);
 
   bufferStruct.groupCentreSIMD.resize(nGroupsV);
   bufferStruct.groupSizeSIMD.resize(nGroupsV);
-  bufferStruct.groupSmoothSIMD.resize(nGroupsV);
 
   bufferStruct.groupCentreSIMDSwap.reserve(allocSize);
   bufferStruct.groupSizeSIMDSwap.reserve(allocSize);
-  bufferStruct.groupSmoothSIMDSwap.reserve(allocSize);
 
   bufferStruct.groupCentreSIMDSwap.resize(nGroupsV);
   bufferStruct.groupSizeSIMDSwap.resize(nGroupsV);
-  bufferStruct.groupSmoothSIMDSwap.resize(nGroupsV);
 
   bufferStruct.groupSIMDkeys.resize((int)(1.10*(nGroupsV/SIMDW)));
 
@@ -2310,21 +2315,6 @@ int3 getLET1(
     bufferStruct.groupSizeSIMD[ib+1] = bsy;
     bufferStruct.groupSizeSIMD[ib+2] = bsz;
     bufferStruct.groupSizeSIMD[ib+3] = bsw;
-
-    _v4sf bsm;
-    if(selectionMethod & SELECT_SPH)
-    {
-       // assert(0); //groupSmoothV should not be used any longer and is replaced by the second half of the center.w
-        bsm = __builtin_ia32_vec_set_v4sf (bsm, groupSmoothV[std::min(ib+0,nGroups-1)][0], 0); //grp 1 = smooth in x
-        bsm = __builtin_ia32_vec_set_v4sf (bsm, groupSmoothV[std::min(ib+1,nGroups-1)][0], 1); //grp 2 = smooth in y etc.
-        bsm = __builtin_ia32_vec_set_v4sf (bsm, groupSmoothV[std::min(ib+2,nGroups-1)][0], 2);
-        bsm = __builtin_ia32_vec_set_v4sf (bsm, groupSmoothV[std::min(ib+3,nGroups-1)][0], 3);
-
-        bufferStruct.groupSmoothSIMD[ib+0] = bsm; //Single smoothing value in all coordinates
-        bufferStruct.groupSmoothSIMD[ib+1] = bsm;
-        bufferStruct.groupSmoothSIMD[ib+2] = bsm;
-        bufferStruct.groupSmoothSIMD[ib+3] = bsm;
-    }
   }
 
   for (int cell = cellBeg; cell < cellEnd; cell++)
@@ -2334,26 +2324,21 @@ int3 getLET1(
   while (!levelList.first().empty())
   {
     const int csize = levelList.first().size();
-#if 0
+#if 1
     if (nGroups > 128)   /* randomizes algo, can give substantial speed-up */
-        shuffle3vecAllocated<v4sf,SIMDW>(bufferStruct.groupCentreSIMD,
+        shuffle2vecAllocated<v4sf,SIMDW>(bufferStruct.groupCentreSIMD,
                                          bufferStruct.groupSizeSIMD,
-                                         bufferStruct.groupSmoothSIMD,
                                          bufferStruct.groupCentreSIMDSwap,
                                          bufferStruct.groupSizeSIMDSwap,
-                                         bufferStruct.groupSmoothSIMDSwap,
                                          bufferStruct.groupSIMDkeys);
 #endif
     for (int i = 0; i < csize; i++)
     {
       const uint    nodeIdx  = levelList.first()[i];
-      //const float nodeInfo_x = nodeCentre[nodeIdx].w;
 
-
-      __half2 temp = *((__half2*)&nodeCentre[nodeIdx].w);
-      const float nodeInfo_x =     _cvtsh_ss(temp.x);
-      const float nodeSmth   = abs(_cvtsh_ss(temp.y));
-
+      const float2 openings  = extract_opening_criteria(nodeCentre[nodeIdx].w);
+      const float nodeInfo_x = openings.x;
+      const float nodeSmth   = fabs(openings.y);
 
       const uint  nodeInfo_y = host_float_as_int(nodeSize[nodeIdx].w);
 
@@ -2404,9 +2389,6 @@ int3 getLET1(
           } //if grav
           if(split) break;
 
-
-          //checkValue =  bufferStruct.groupSmoothSIMD[ib];
-
           //SPH test if distance between boxes is smaller than the smoothing range
           if(selectionMethod & SELECT_SPH)
           {
@@ -2414,9 +2396,8 @@ int3 getLET1(
 
               for(int k=0; k < SIMDW2; k++)
               {
-                  auto cntr = bufferStruct.groupCentreSIMD[ib+3].data[k];
-                  __half2 temp = *((__half2*)&cntr);
-                  temp_smth[k] = fabs(_cvtsh_ss(temp.y)); //Smoothing distance of the group
+                  const float2 openings  = extract_opening_criteria(bufferStruct.groupCentreSIMD[ib+3].data[k]);
+                  temp_smth[k]   = fabs(openings.y);
 
                   //For hydro we need mutual forces, so grap the larger of the node and group smoothing values
                   if(LETMethod == LET_METHOD_HYDR)
@@ -2444,8 +2425,6 @@ int3 getLET1(
                                                                    xP,yP,zP);
           } //if (selectionMethod & SELECT_SPH)
       } //for nGroupsV
-
-//split = true;
 
       /**************/
 
@@ -2589,7 +2568,6 @@ int getLEToptQuickFullTree(
     const int        nParticles,
     const real4     *groupSizeInfo,    //Remote
     const real4     *groupCentreInfo,  //Remote
-    const real4     *groupSmoothInfo,  //Remote
     const int        groupBeg,
     const int        groupEnd,
     const int        nNodes,
@@ -2617,7 +2595,6 @@ int getLEToptQuickFullTree(
   const _v4sf*         multipoleV = (const _v4sf*)multipole;
   const _v4sf*   grpNodeSizeInfoV = (const _v4sf*)groupSizeInfo;
   const _v4sf* grpNodeCenterInfoV = (const _v4sf*)groupCentreInfo;
-  const _v4sf* grpNodeSmoothInfoV = (const _v4sf*)groupSmoothInfo;
 
 
 #ifdef USE_AVX
@@ -2675,12 +2652,10 @@ int getLEToptQuickFullTree(
 
       const uint4 nodePacked       = levelList.first()[i];
       const uint  nodeIdx          = nodePacked.x;
-//      const float nodeInfo_x       = nodeCentre[nodeIdx].w;
 
-
-      __half2 temp = *((__half2*)&nodeCentre[nodeIdx].w);
-      const float nodeInfo_x = _cvtsh_ss(temp.x);
-      const float nodeSmth   = _cvtsh_ss(temp.y);
+      const float2 openings  = extract_opening_criteria(nodeCentre[nodeIdx].w);
+      const float nodeInfo_x = openings.x;
+      const float nodeSmth   = fabs(openings.y);
 
       const uint  nodeInfo_y       = host_float_as_int(nodeSize[nodeIdx].w);
 
@@ -2719,14 +2694,13 @@ int getLEToptQuickFullTree(
           centre[laneIdx]     = grpNodeCenterInfoV[group];
           if(selectionMethod & SELECT_SPH)
           {
-              __half2 temp     = *((__half2*)&groupCentreInfo[laneIdx].w);
-              float grpSmth = fabs(_cvtsh_ss(temp.y));     //This is for density computation, there we do not use the distance of the node
-              //float grpSmth = groupSmoothInfo[group].x;
+              const float2 openings  = extract_opening_criteria(groupCentreInfo[laneIdx].w);
+              float grpSmth          = fabs(openings.y);
 
               if(LETMethod == LET_METHOD_HYDR)
               {
                   //Hydro part requires mutual forces hence include the node smoothing in our test-criteria
-                  grpSmth = std::max(grpSmth, nodeInfo_x);
+                  grpSmth = std::max(grpSmth, nodeSmth);
               }
 
 
@@ -2926,7 +2900,6 @@ int3 getLEToptFullTree(
     const int        nParticles,
     const real4     *groupSizeInfo,
     const real4     *groupCentreInfo,
-    const real4     *groupSmoothInfo,
     const int        groupBeg,
     const int        groupEnd,
     const int        nNodes,
@@ -3001,15 +2974,10 @@ int3 getLEToptFullTree(
       const uint4 nodePacked = levelList.first()[i];
 
       const uint  nodeIdx    = nodePacked.x;
-#if 0
-      const float nodeInfo_x = nodeCentre[nodeIdx].w;
-#else
-      __half2 temp = *((__half2*)&nodeCentre[nodeIdx].w);
-      const float nodeInfo_x = _cvtsh_ss(temp.x);
-      const float nodeSmth   = _cvtsh_ss(temp.y);
-#endif
 
-
+      const float2 openings  = extract_opening_criteria(nodeCentre[nodeIdx].w);
+      const float nodeInfo_x = openings.x;
+      const float nodeSmth   = fabs(openings.y);
 
       const uint  nodeInfo_y = host_float_as_int(nodeSize[nodeIdx].w);
 
@@ -3041,14 +3009,13 @@ int3 getLEToptFullTree(
           size  [laneIdx]  =   grpNodeSizeInfoV[group];
           if(selectionMethod & SELECT_SPH)
           {
-              //float smth =  fabs(groupSmoothInfo[group].x); //This is for density computation
-              __half2 temp     = *((__half2*)&groupCentreInfo[laneIdx].w);
-              float smth = fabs(_cvtsh_ss(temp.y));     //This is for density computation, there we do not use the distance of the node
+              const float2 openings  = extract_opening_criteria(groupCentreInfo[laneIdx].w);
+              float smth   = fabs(openings.y); //This is for density computation, there we do not use the distance of the node
 
               //Smth is the maximum allowed distance (already squared) before a cell is opened
               if(LETMethod == LET_METHOD_HYDR)
               {
-                  smth = std::max(fabs(nodeSmth), smth); //For hydro we need mutual forces so take the longest distance
+                  smth = std::max(nodeSmth, smth); //For hydro we need mutual forces so take the longest distance
               }
 
               if(laneIdx == 0) checkValueSPH0 = __builtin_ia32_vec_set_v4sf(checkValueSPH0, smth, 0); //Set smoothing distance
@@ -3124,9 +3091,6 @@ int3 getLEToptFullTree(
 
       real4 size  = nodeSize[nodeIdx];
       int sizew = 0xFFFFFFFF;
-
-      //TODO(jbedorf):
-//      split = true;
 
       if (split)
       {
@@ -3223,7 +3187,7 @@ int3 getLEToptFullTree(
         {
           const int idx             = bufferStruct.LETBuffer_ptcl[i];
 
-//Uncomment this if the above #if 1 is set to #if 0
+          //Uncomment this if the above #if 1 is set to #if 0
           _v4sf dens = {0.0f,0.0f,0.0f,0.0f};
           dens = __builtin_ia32_vec_set_v4sf(dens, bodies_dens[idx].x, 0); //Move density to the .x component
           dens = __builtin_ia32_vec_set_v4sf(dens, bodies_dens[idx].y, 1); //Move density to the .y component
@@ -3548,7 +3512,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
             real4 *grpSize2   = &grpCenter[1+nBodyProps*nbody];
             real4 *grpCenter2 = &grpCenter[1+nBodyProps*nbody+nnode];
-            real4 *grpSmth    = &grpCenter[1+nBodyProps*nbody+nnode+nnode];
+//            real4 *grpSmth    = &grpCenter[1+nBodyProps*nbody+nnode+nnode];
 
 
             //The return value sizeTree is used to determine for which processes we have to make
@@ -3572,7 +3536,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                             tree.n,
                                             grpSize2,         //size
                                             grpCenter2,       //center
-                                            grpSmth,          //Smoothing
                                             0,                //group begin
                                             1,                //group end
                                             tree.n_nodes,
@@ -3589,7 +3552,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                               getLETBuffers[tid],
                                               &grpCenter[1+nBodyProps*nbody+nnode],    //center
                                               &grpCenter[1+nBodyProps*nbody],          //size
-                                              &grpCenter[1+nBodyProps*nbody+nnode*2],  //Smoothing
                                               &grpCenter[1+nBodyProps*nbody+nnode*3],  //multipole
                                               0, 1,                         //Start at the root of remote boundary tree
                                               &nodeSizeInfo[0],             //Local tree-sizes
@@ -3826,7 +3788,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                 &bodies_dens[0],
                                 &bodies_hydro[0],
                                 tree.n,
-                                grpSize, grpCenter, grpSmooth,
+                                grpSize, grpCenter,
                                 endGrp,
                                 tree.n_nodes, nflops,
                                 periodicDomainSize, periodicMethod,
@@ -3863,7 +3825,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                          &bodies_dens[0],
                                          &bodies_hydro[0],
                                          tree.n,
-                                         grpSize, grpCenter2,grpSmooth,
+                                         grpSize, grpCenter2,
                                          start, end, tree.n_nodes, nflops,
                                          periodicDomainSize, periodicMethod,
                                          selectionMethod,
@@ -4399,7 +4361,6 @@ void octree::mergeAndLaunchLETStructures(
     int currentCount =  bodyPropsCountSource*nParticlesCounted + 5*nNodesCounted;
 
     if(currentCount > localLimit)
-//    if(true) //TODO(jbedorf) , remove this it forces non-merging of tree-structures
     {
       LOGF(stderr, "Processing breaches memory limit. Limits local: %d, current: %d processed: %d \n",
           localLimit, currentCount, nProcsProcessed);
@@ -7123,6 +7084,44 @@ void shuffle2vecAllocated(
   data1.swap(rdata1);
   data2.swap(rdata2);
 }
+
+template<typename T, int STRIDE>
+void shuffle3vecAllocated(
+    std::vector<T>   &data1,
+    std::vector<T>   &data2,
+    std::vector<T>   &data3,
+    std::vector<T>   &rdata1,
+    std::vector<T>   &rdata2,
+    std::vector<T>   &rdata3,
+    std::vector<int> &keys)
+{
+  const int n = data1.size();
+
+  assert(n%STRIDE == 0);
+  keys.resize(n/STRIDE);
+  for (int i = 0, idx=0; i < n; i += STRIDE, idx++)
+    keys[idx] = i;
+  std::random_shuffle(keys.begin(), keys.end());
+
+  rdata1.resize(n); //Safety only
+  rdata2.resize(n); //Safety only
+  rdata3.resize(n); //Safety only
+  for (int i = 0, idx=0; i < n; i += STRIDE, idx++)
+  {
+    const int key = keys[idx];
+    for (int j = 0; j < STRIDE; j++)
+    {
+      rdata1[i+j] = data1[key+j];
+      rdata2[i+j] = data2[key+j];
+      rdata3[i+j] = data3[key+j];
+    }
+  }
+
+  data1.swap(rdata1);
+  data2.swap(rdata2);
+  data3.swap(rdata3);
+}
+
 #endif
 
 #if 0

@@ -187,7 +187,6 @@ KERNEL_DECLARE(predict_particles)(const int 	n_bodies,
   v.y += a.y*dt_cb;
   v.z += a.z*dt_cb;
 
-//  hydro[idx].z += 0.5f*dt_cb*a.w;
   hydro[idx].z += dt_cb*a.w;
 
   //Adjust the particle position for periodic boundaries
