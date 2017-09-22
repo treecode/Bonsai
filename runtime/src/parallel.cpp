@@ -1,16 +1,156 @@
 #include "octree.h"
 
-#define USE_MPI
-
-//#define USE_AVX
-
 
 #ifdef USE_MPI
-#include <xmmintrin.h>
 #include "radix.h"
 #include <parallel/algorithm>
 #include <map>
 #include "dd2d.h"
+
+
+//typedef float  _v4sf  __attribute__((vector_size(16)));
+//typedef int    _v4si  __attribute__((vector_size(16)));
+
+#ifdef __ALTIVEC__
+    #include <altivec.h>
+
+    #define VECLIB_ALIGNED8  __attribute__ ((__aligned__ (8)))
+    #define VECLIB_ALIGNED16 __attribute__ ((__aligned__ (16)))
+
+
+    typedef   VECLIB_ALIGNED16  vector float _v4sf;
+    typedef   VECLIB_ALIGNED16  vector int   _v4si;
+
+
+    //The below types and functions have been taken from the IBM vecLib
+    //https://www.ibm.com/developerworks/community/groups/community/powerveclib/
+    typedef
+      VECLIB_ALIGNED8
+      unsigned long long
+    __m64;
+
+    typedef
+      VECLIB_ALIGNED16
+      vector float
+    __m128;
+
+    typedef
+      VECLIB_ALIGNED16
+      vector unsigned char
+    __m128i;
+
+
+    typedef
+      VECLIB_ALIGNED16
+      union {
+        __m128i                   as_m128i;
+        __m64                     as_m64               [2];
+        vector signed   char      as_vector_signed_char;
+        vector unsigned char      as_vector_unsigned_char;
+        vector bool     char      as_vector_bool_char;
+        vector signed   short     as_vector_signed_short;
+        vector unsigned short     as_vector_unsigned_short;
+        vector bool     short     as_vector_bool_short;
+        vector signed   int       as_vector_signed_int;
+        vector unsigned int       as_vector_unsigned_int;
+        vector bool     int       as_vector_bool_int;
+        vector signed   long long as_vector_signed_long_long;
+        vector unsigned long long as_vector_unsigned_long_long;
+        vector bool     long long as_vector_bool_long_long;
+        char                      as_char              [16];
+        short                     as_short             [8];
+        int                       as_int               [4];
+        unsigned int              as_unsigned_int      [4];
+        long long                 as_long_long         [2];
+      } __m128i_union;
+
+
+
+    inline __m128 vec_shufflepermute4sp (__m128 left, __m128 right, unsigned int element_selectors)
+    {
+      unsigned long element_selector_10 =  element_selectors       & 0x03;
+      unsigned long element_selector_32 = (element_selectors >> 2) & 0x03;
+      unsigned long element_selector_54 = (element_selectors >> 4) & 0x03;
+      unsigned long element_selector_76 = (element_selectors >> 6) & 0x03;
+      #ifdef __LITTLE_ENDIAN__
+        const static unsigned int permute_selectors_from_left_operand  [4] = { 0x03020100, 0x07060504, 0x0B0A0908, 0x0F0E0D0C };
+        const static unsigned int permute_selectors_from_right_operand [4] = { 0x13121110, 0x17161514, 0x1B1A1918, 0x1F1E1D1C };
+      #elif __BIG_ENDIAN__
+        const static unsigned int permute_selectors_from_left_operand  [4] = { 0x00010203, 0x04050607, 0x08090A0B, 0x0C0D0E0F };
+        const static unsigned int permute_selectors_from_right_operand [4] = { 0x10111213, 0x14151617, 0x18191A1B, 0x1C1D1E1F };
+      #endif
+      __m128i_union permute_selectors;
+      #ifdef __LITTLE_ENDIAN__
+        permute_selectors.as_int[0] = permute_selectors_from_left_operand [element_selector_10];
+        permute_selectors.as_int[1] = permute_selectors_from_left_operand [element_selector_32];
+        permute_selectors.as_int[2] = permute_selectors_from_right_operand[element_selector_54];
+        permute_selectors.as_int[3] = permute_selectors_from_right_operand[element_selector_76];
+      #elif __BIG_ENDIAN__
+        permute_selectors.as_int[3] = permute_selectors_from_left_operand [element_selector_10];
+        permute_selectors.as_int[2] = permute_selectors_from_left_operand [element_selector_32];
+        permute_selectors.as_int[1] = permute_selectors_from_right_operand[element_selector_54];
+        permute_selectors.as_int[0] = permute_selectors_from_right_operand[element_selector_76];
+      #endif
+      return (vector float) vec_perm ((vector unsigned char) left, (vector unsigned char) right,
+                                      permute_selectors.as_vector_unsigned_char);
+    }
+
+    //Note that vmerge low and high map to reversed instructions.
+    //otherwise Intel and IBM results are different
+    #define OR           vec_or
+    #define ADD          vec_add
+    #define VMERGELOW    vec_vmrghw
+    #define VMERGEHIGH   vec_vmrglw
+    #define VECPERMUTE   vec_shufflepermute4sp
+    #define VECMAX       vec_max
+    #define VECCMPLE     (_v4sf) vec_cmple
+    #define AND          vec_and
+    #define VECTEST      vec_any_nan
+    #define SPLATS       vec_splats
+
+    //Note that parameter order is different between x86_64 and PPC
+    #define VECINSERT(a,b,c) vec_insert(a,b,c);
+
+
+    #undef vector
+    #undef bool
+    #undef pixel
+
+#else
+    //Uncomment the below to use 256 (AVX) bit instructions instead of 128 (SSE)
+    //#define USE_AVX
+
+    #include <xmmintrin.h>
+    #include <immintrin.h>
+    typedef float  _v4sf  __attribute__((vector_size(16)));
+    typedef int    _v4si  __attribute__((vector_size(16)));
+    typedef float  _v8sf  __attribute__((vector_size(32)));
+    typedef int    _v8si  __attribute__((vector_size(32)));
+
+
+    #define OR               __builtin_ia32_orps
+    #define ADD              __builtin_ia32_addps
+    #define AND              __builtin_ia32_andps
+    #define VMERGELOW        __builtin_ia32_unpcklps
+    #define VMERGEHIGH       __builtin_ia32_unpckhps
+    #define VECPERMUTE       __builtin_ia32_shufps
+    #define VECMAX           __builtin_ia32_maxps
+    #define SPLATS            _mm_set_ps1
+    #define VECCMPLE         __builtin_ia32_cmpleps
+    #define VECTEST          __builtin_ia32_movmskps
+    #define VECINSERT(a,b,c) __builtin_ia32_vec_set_v4sf(b,a,c);
+#endif
+
+
+struct v4sf
+{
+  _v4sf data;
+  v4sf() {}
+  v4sf(const _v4sf _data) : data(_data) {}
+  operator const _v4sf&() const {return data;}
+  operator       _v4sf&()       {return data;}
+
+};
 
 
 extern "C" uint2 thrust_partitionDomains( my_dev::dev_mem<uint2> &validList,
@@ -23,22 +163,7 @@ extern "C" uint2 thrust_partitionDomains( my_dev::dev_mem<uint2> &validList,
 
 
 #define USE_GROUP_TREE  //If this is defined we convert boundaries into a group
-
 #define NMAXPROC 32768
-
-
-typedef float  _v4sf  __attribute__((vector_size(16)));
-typedef int    _v4si  __attribute__((vector_size(16)));
-
-struct v4sf
-{
-  _v4sf data;
-  v4sf() {}
-  v4sf(const _v4sf _data) : data(_data) {}
-  operator const _v4sf&() const {return data;}
-  operator       _v4sf&()       {return data;}
-
-};
 
 /*
  *
@@ -91,7 +216,8 @@ struct GETLETBUFFERS
                  sizeof(currGroupLevelVec) +
                  sizeof(nextGroupLevelVec) +
                  sizeof(groupSplitFlag) +
-                 sizeof(groupCentreSIMD)
+                 sizeof(groupCentreSIMD) +
+                 sizeof(groupSizeSIMD)
                )];
 };
 /* End of Magic */
@@ -130,14 +256,6 @@ MPIComm *myComm;
 #endif //USE_MPI
 
 
-double get_time2() {
-  struct timeval Tvalue;
-  struct timezone dummy;
-  gettimeofday(&Tvalue,&dummy);
-  return ((double) Tvalue.tv_sec +1.e-6*((double) Tvalue.tv_usec));
-}
-
-
 
 inline int host_float_as_int(float val)
 {
@@ -160,34 +278,22 @@ inline float host_int_as_float(int val)
 
 
 #if 1
-
 static inline float2 extract_opening_criteria(float val)
 {
     __half2 temp = *((__half2*)&val);
     float2 res = {_cvtsh_ss(temp.x), _cvtsh_ss(temp.y)};
     return res;
 }
-
-
 #else
 
 // Future Power8 version
 
 #endif
 
-
-
-
-
-#ifdef __AVX__
-typedef float  _v8sf  __attribute__((vector_size(32)));
-typedef int    _v8si  __attribute__((vector_size(32)));
-#endif
-
 static inline _v4sf __abs(const _v4sf x)
 {
   const _v4si mask = {0x7fffffff, 0x7fffffff, 0x7fffffff, 0x7fffffff};
-  return __builtin_ia32_andps(x, (_v4sf)mask);
+  return AND(x, (_v4sf)mask);
 }
 
 #ifdef __AVX__
@@ -199,19 +305,41 @@ static inline _v8sf __abs8(const _v8sf x)
 }
 #endif
 
+//
+//
+//#ifdef __AVX__
+//typedef float  _v8sf  __attribute__((vector_size(32)));
+//typedef int    _v8si  __attribute__((vector_size(32)));
+//#endif
+//
+//static inline _v4sf __abs(const _v4sf x)
+//{
+//  const _v4si mask = {0x7fffffff, 0x7fffffff, 0x7fffffff, 0x7fffffff};
+//  return __builtin_ia32_andps(x, (_v4sf)mask);
+//}
+//
+//#ifdef __AVX__
+//static inline _v8sf __abs8(const _v8sf x)
+//{
+//  const _v8si mask = {0x7fffffff, 0x7fffffff, 0x7fffffff, 0x7fffffff,
+//    0x7fffffff, 0x7fffffff, 0x7fffffff, 0x7fffffff};
+//  return __builtin_ia32_andps256(x, (_v8sf)mask);
+//}
+//#endif
 
 
 inline void _v4sf_transpose(_v4sf &a, _v4sf &b, _v4sf &c, _v4sf &d){
-  _v4sf t0 = __builtin_ia32_unpcklps(a, c); // |c1|a1|c0|a0|
-  _v4sf t1 = __builtin_ia32_unpckhps(a, c); // |c3|a3|c2|a2|
-  _v4sf t2 = __builtin_ia32_unpcklps(b, d); // |d1|b1|d0|b0|
-  _v4sf t3 = __builtin_ia32_unpckhps(b, d); // |d3|b3|d2|b2|
+    _v4sf t0 = VMERGELOW (a, c); // |c1|a1|c0|a0|
+    _v4sf t1 = VMERGEHIGH(a, c); // |c3|a3|c2|a2|
+    _v4sf t2 = VMERGELOW (b, d); // |d1|b1|d0|b0|
+    _v4sf t3 = VMERGEHIGH(b, d); // |d3|b3|d2|b2|
 
-  a = __builtin_ia32_unpcklps(t0, t2);
-  b = __builtin_ia32_unpckhps(t0, t2);
-  c = __builtin_ia32_unpcklps(t1, t3);
-  d = __builtin_ia32_unpckhps(t1, t3);
+    a = VMERGELOW (t0, t2);
+    b = VMERGEHIGH(t0, t2);
+    c = VMERGELOW (t1, t3);
+    d = VMERGEHIGH(t1, t3);
 }
+
 
 #ifdef __AVX__
     static inline _v8sf pack_2xmm(const _v4sf a, const _v4sf b){
@@ -252,9 +380,9 @@ inline _v4sf split_node_grav_sph_impbh_box4a( // takes 4 tree nodes and returns 
 {
     const _v4sf zero = {0.0f, 0.0f, 0.0f, 0.0f};
 
-    _v4sf ncx2  = __builtin_ia32_shufps(nodeCNTRorCOM, nodeCNTRorCOM, 0x00);
-    _v4sf ncy2  = __builtin_ia32_shufps(nodeCNTRorCOM, nodeCNTRorCOM, 0x55);
-    _v4sf ncz2  = __builtin_ia32_shufps(nodeCNTRorCOM, nodeCNTRorCOM, 0xaa);
+    _v4sf ncx2  = VECPERMUTE(nodeCNTRorCOM, nodeCNTRorCOM, 0x00);
+    _v4sf ncy2  = VECPERMUTE(nodeCNTRorCOM, nodeCNTRorCOM, 0x55);
+    _v4sf ncz2  = VECPERMUTE(nodeCNTRorCOM, nodeCNTRorCOM, 0xaa);
 
     _v4sf bcx   =  (boxCenter[0]);
     _v4sf bcy   =  (boxCenter[1]);
@@ -268,126 +396,48 @@ inline _v4sf split_node_grav_sph_impbh_box4a( // takes 4 tree nodes and returns 
     _v4sf bsw   =  (boxSize[3]);
     _v4sf_transpose(bsx, bsy, bsz, bsw);
 
-    _v4sf size;
     if(SPHCheck)
     {
-        _v4sf nsx    = __builtin_ia32_shufps(nodeSIZE, nodeSIZE, 0x00);
-        _v4sf nsy    = __builtin_ia32_shufps(nodeSIZE, nodeSIZE, 0x55);
-        _v4sf nsz    = __builtin_ia32_shufps(nodeSIZE, nodeSIZE, 0xaa);
+        _v4sf nsx    = VECPERMUTE(nodeSIZE, nodeSIZE, 0x00);
+        _v4sf nsy    = VECPERMUTE(nodeSIZE, nodeSIZE, 0x55);
+        _v4sf nsz    = VECPERMUTE(nodeSIZE, nodeSIZE, 0xaa);
 
         bsx += nsx;
         bsy += nsy;
         bsz += nsz;
     }
 
-    for(int ix=xP.x; ix <= xP.y; ix++)     //Periodic around X
+    for(int ix=xP.x; ix <= xP.y; ix++)         //Periodic around X
     {
-      for(int iy=yP.x; iy <= yP.y; iy++)   //Periodic around Y
-      {
-          for(int iz=zP.x; iz <= zP.y; iz++) //Periodic around Z
-          {
-              _v4sf ncx = __builtin_ia32_addps(ncx2,  _mm_set_ps1(periodicBoundaries.x*ix));
-              _v4sf ncy = __builtin_ia32_addps(ncy2,  _mm_set_ps1(periodicBoundaries.y*iy));
-              _v4sf ncz = __builtin_ia32_addps(ncz2,  _mm_set_ps1(periodicBoundaries.z*iz));
-
+        for(int iy=yP.x; iy <= yP.y; iy++)     //Periodic around Y
+        {
+            for(int iz=zP.x; iz <= zP.y; iz++) //Periodic around Z
+            {
+              _v4sf ncx = ADD(ncx2,  SPLATS(periodicBoundaries.x*ix));
+              _v4sf ncy = ADD(ncy2,  SPLATS(periodicBoundaries.y*iy));
+              _v4sf ncz = ADD(ncz2,  SPLATS(periodicBoundaries.z*iz));
 
               _v4sf dx = __abs(bcx - ncx) - (bsx);
               _v4sf dy = __abs(bcy - ncy) - (bsy);
               _v4sf dz = __abs(bcz - ncz) - (bsz);
 
-
-              dx = __builtin_ia32_maxps(dx, zero);
-              dy = __builtin_ia32_maxps(dy, zero);
-              dz = __builtin_ia32_maxps(dz, zero);
+              dx = VECMAX(dx, zero);
+              dy = VECMAX(dy, zero);
+              dz = VECMAX(dz, zero);
 
               const _v4sf ds2 = dx*dx + dy*dy + dz*dz;
 
               //Test all 4 distances against 4 smoothing lengths and or with previous result
-              ret =  _mm_or_ps (ret,__builtin_ia32_cmpleps(ds2, checkValue));
+              ret =  OR(ret,VECCMPLE(ds2, checkValue));
 
               //Test if all 4 bits are set (then all groups active ) this is 4 lower bits set to 1: 1+2+4+8=15
               //Early out if this is the case since we won't learn anything new :)
-              if(__builtin_ia32_movmskps(ret) == 15) return ret;
-          }//iz
-      }//iy
+              if(VECTEST(ret) == 15) return ret;
+            }//iz
+        }//iy
     }//ix
-
     return ret;
 }
-
-
-template<bool TRANSPOSE, bool SPHCheck>
-inline int split_node_grav_sph_impbh_box4simd1_periodic( // takes 4 tree nodes and returns 4-bit integer
-    const _v4sf  ncx2,
-    const _v4sf  ncy2,
-    const _v4sf  ncz2,
-    const _v4sf  nsx,
-    const _v4sf  nsy,
-    const _v4sf  nsz,
-    const _v4sf  checkValue,
-    const _v4sf  boxCenter[4],
-    const _v4sf  boxSize  [4],
-    const float3 periodicBoundaries,
-    int2 xP, int2 yP, int2 zP)
-{
-  const _v4sf zero = {0.0, 0.0, 0.0, 0.0};
-
-  _v4sf bcx =  (boxCenter[0]);
-  _v4sf bcy =  (boxCenter[1]);
-  _v4sf bcz =  (boxCenter[2]);
-  _v4sf bcw =  (boxCenter[3]);
-
-  _v4sf bsx =  (boxSize[0]);
-  _v4sf bsy =  (boxSize[1]);
-  _v4sf bsz =  (boxSize[2]);
-  _v4sf bsw =  (boxSize[3]);
-
-  int ret = 0;
-
-  if (TRANSPOSE)
-  {
-    _v4sf_transpose(bcx, bcy, bcz, bcw);
-    _v4sf_transpose(bsx, bsy, bsz, bsw);
-  }
-
-  if(SPHCheck)
-  {
-      bsx +=nsx;
-      bsy +=nsy;
-      bsz +=nsz;
-  }
-
-
-  for(int ix=xP.x; ix <= xP.y; ix++)     //Periodic around X
-  {
-    for(int iy=yP.x; iy <= yP.y; iy++)   //Periodic around Y
-    {
-      for(int iz=zP.x; iz <= zP.y; iz++) //Periodic around Z
-      {
-          _v4sf ncx = __builtin_ia32_addps(ncx2,  _mm_set_ps1(periodicBoundaries.x*ix));
-          _v4sf ncy = __builtin_ia32_addps(ncy2,  _mm_set_ps1(periodicBoundaries.y*iy));
-          _v4sf ncz = __builtin_ia32_addps(ncz2,  _mm_set_ps1(periodicBoundaries.z*iz));
-
-          _v4sf dx = __abs(bcx - ncx) - (bsx);
-          _v4sf dy = __abs(bcy - ncy) - (bsy);
-          _v4sf dz = __abs(bcz - ncz) - (bsz);
-
-          dx = __builtin_ia32_maxps(dx, zero);
-          dy = __builtin_ia32_maxps(dy, zero);
-          dz = __builtin_ia32_maxps(dz, zero);
-
-          const _v4sf ds2 = dx*dx + dy*dy + dz*dz;
-
-          ret = __builtin_ia32_movmskps(__builtin_ia32_cmpleps(ds2, checkValue));
-          if(ret) return ret;
-      }//iz
-    }//iy
-  }//ix
-
-  return ret;
-}
-
-
 
 
 #ifdef USE_AVX
@@ -461,6 +511,82 @@ inline _v8sf split_node_grav_sph_impbh_box8a( // takes 4 tree nodes and returns 
   }//ix
   return ret;
 }
+
+#endif
+
+
+template<bool TRANSPOSE, bool SPHCheck>
+inline int split_node_grav_sph_impbh_box4simd1_periodic( // takes 4 tree nodes and returns 4-bit integer
+    const _v4sf  ncx2,
+    const _v4sf  ncy2,
+    const _v4sf  ncz2,
+    const _v4sf  nsx,
+    const _v4sf  nsy,
+    const _v4sf  nsz,
+    const _v4sf  checkValue,
+    const _v4sf  boxCenter[4],
+    const _v4sf  boxSize  [4],
+    const float3 periodicBoundaries,
+    int2 xP, int2 yP, int2 zP)
+{
+  const _v4sf zero = {0.0, 0.0, 0.0, 0.0};
+
+  _v4sf bcx =  (boxCenter[0]);
+  _v4sf bcy =  (boxCenter[1]);
+  _v4sf bcz =  (boxCenter[2]);
+  _v4sf bcw =  (boxCenter[3]);
+
+  _v4sf bsx =  (boxSize[0]);
+  _v4sf bsy =  (boxSize[1]);
+  _v4sf bsz =  (boxSize[2]);
+  _v4sf bsw =  (boxSize[3]);
+
+  int ret = 0;
+
+  if (TRANSPOSE)
+  {
+    _v4sf_transpose(bcx, bcy, bcz, bcw);
+    _v4sf_transpose(bsx, bsy, bsz, bsw);
+  }
+
+  if(SPHCheck)
+  {
+      bsx +=nsx;
+      bsy +=nsy;
+      bsz +=nsz;
+  }
+
+
+  for(int ix=xP.x; ix <= xP.y; ix++)     //Periodic around X
+  {
+    for(int iy=yP.x; iy <= yP.y; iy++)   //Periodic around Y
+    {
+      for(int iz=zP.x; iz <= zP.y; iz++) //Periodic around Z
+      {
+          _v4sf ncx = ADD(ncx2,  SPLATS(periodicBoundaries.x*ix));
+          _v4sf ncy = ADD(ncy2,  SPLATS(periodicBoundaries.y*iy));
+          _v4sf ncz = ADD(ncz2,  SPLATS(periodicBoundaries.z*iz));
+
+          _v4sf dx = __abs(bcx - ncx) - (bsx);
+          _v4sf dy = __abs(bcy - ncy) - (bsy);
+          _v4sf dz = __abs(bcz - ncz) - (bsz);
+
+          dx = VECMAX(dx, zero);
+          dy = VECMAX(dy, zero);
+          dz = VECMAX(dz, zero);
+
+          const _v4sf ds2 = dx*dx + dy*dy + dz*dz;
+
+          ret = VECTEST(VECCMPLE(ds2, checkValue));
+          if(ret) return ret;
+      }//iz
+    }//iy
+  }//ix
+  return ret;
+}
+
+
+#ifdef USE_AVX
 
 template<bool TRANSPOSE, bool SPHCheck>
 inline int split_node_grav_sph_impbh_box8simd1_periodic( // takes 4 tree nodes and returns 4-bit integer
@@ -1014,7 +1140,6 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys2,    int  nSa
 //since it is not used in this function/hash-method
 void octree::sendCurrentRadiusInfo(real4 &rmin, real4 &rmax)
 {
-
   sampleRadInfo curProcState;
 
   int nsample               = 0; //Place holder to just use same datastructure
@@ -1474,19 +1599,6 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree
   devContext->writeLogEvent(buff5);
 
 #endif
-
-//  localTree.bodies_Ppos.d2h();
-//  localTree.bodies_pos.d2h();
-
-//  for(int i=0; i < tree.n; i++)
-//  {
-//	  LOGF(stderr,"CURRENT: %d %f %f  \t %f %f\n",
-//			  i,
-//			  localTree.bodies_pos[i].x, localTree.bodies_pos[i].y,
-//			  localTree.bodies_Ppos[i].x, localTree.bodies_Ppos[i].y);
-//  }
-
-
   return 0;
 }
 
@@ -1510,8 +1622,6 @@ int octree::gpu_exchange_particles_with_overflow_check_SFC2(tree_structure &tree
 int4 octree::getSearchPropertiesBoundaryTrees()
 {
     int searchDepthUsed = 99;
-
-
     const int maxNLarge = 512;  //Maximum number of processes to which we send the full group tree.
 
 
@@ -1521,7 +1631,6 @@ int4 octree::getSearchPropertiesBoundaryTrees()
 
     //TODO This does the tuning of when to send the full group tree and when to send only
     //the small group. This is based on the previous iteration statistics on what is send
-
     //TODO this version stops tuning after iteration 16. Adjust method to make
     //this a per-process tuning
 
@@ -1643,7 +1752,6 @@ int4 octree::getSearchPropertiesBoundaryTrees()
       }
     }
 
-    return make_int4(smallTreeStart, smallTreeEnd, 0, 0); //TODO remove, testing only, force a small Grp tree
     return make_int4(smallTreeStart, smallTreeEnd, searchDepthUsed, 0);
 }
 
@@ -1653,7 +1761,7 @@ void octree::updateCurrentInfoGrpTree()
     //This function will send updated smoothing values in order to upgrade
     //the existing boundary trees.
 
-assert(0); //This has to be double checked that the new indices are correct now that we also send dens and hydro props of partiles
+assert(0); //This has to be double checked that the new indices are correct now that we also send dens and hydro props of particles
 
 
     //Launch GPU kernel to extract and copy updates values to host
@@ -1888,7 +1996,6 @@ void octree::sendCurrentInfoGrpTree()
   }
 
 
-
   for(int i=0; i < nProcs; i++)
   {
       float4 header = globalGrpTreeCntSize[displacement[i]/sizeof(real4)];
@@ -1927,7 +2034,6 @@ void octree::sendCurrentInfoGrpTree()
       LOGF(stderr,"Receiving from: %d size: %d Offset: %d \n", src, globalGroupSizeArrayRecv[src].x, offset);
     }
   }
-  fprintf(stderr,"Full send, nreq: %d\n", nreq);
   MPI_Waitall(nreq, req, stat);
 
   //Rerun the loop to build the list of receive properties
@@ -1997,8 +2103,6 @@ int getLEToptQuickTreevsTree(
     const int    selectionMethod,
     const int    LETMethod)
 {
-  double tStart = get_time2();
-
   depth = 0;
 
   const _v4sf*          nodeSizeV = (const _v4sf*)nodeSize;
@@ -2042,7 +2146,6 @@ int getLEToptQuickTreevsTree(
   for (int cell = cellBeg; cell < cellEnd; cell++)
     levelList.first().push_back((uint4){(uint)cell, 0, (uint)levelGroups.first().size(),0});
 
-  double tPrep = get_time2();
 
   while (!levelList.first().empty())
   {
@@ -2057,11 +2160,11 @@ int getLEToptQuickTreevsTree(
       const float nodeSmth   = fabs(openings.y);
 
       const uint  nodeInfo_y       = host_float_as_int(nodeSize[nodeIdx].w);
-      const _v4sf nodeCOM          = __builtin_ia32_vec_set_v4sf(multipoleV[nodeIdx*3], nodeInfo_x, 3);
+      const _v4sf nodeCOM          = VECINSERT(nodeInfo_x, multipoleV[nodeIdx*3], 3);
 
       //SPH uses physical center and size of the box to test overlap and distance
       const _v4sf nodeSIZE = nodeSizeV  [nodeIdx];
-      const _v4sf nodeCNTR = __builtin_ia32_vec_set_v4sf(nodeCentreV[nodeIdx], nodeSmth, 3); //Move smoothing to the .w of cntr
+      const _v4sf nodeCNTR = VECINSERT(nodeSmth,nodeCentreV[nodeIdx],  3); //Move smoothing to the .w of cntr
 
 #ifdef USE_AVX
       _v8sf checkValueGrav = {nodeInfo_x, nodeInfo_x, nodeInfo_x, nodeInfo_x,nodeInfo_x, nodeInfo_x, nodeInfo_x, nodeInfo_x};
@@ -2070,7 +2173,6 @@ int getLEToptQuickTreevsTree(
 #else
       _v4sf checkValueGrav = {nodeInfo_x, nodeInfo_x, nodeInfo_x, nodeInfo_x};
             checkValueGrav = __abs(checkValueGrav);
-       //nodeSmth
       _v4sf checkValueSPH  = {nodeSmth, nodeSmth, nodeSmth, nodeSmth};
 #endif
 
@@ -2097,10 +2199,10 @@ int getLEToptQuickTreevsTree(
               float max_distance = std::max(nodeSmth,grpSmth);
               switch(laneIdx)
               {
-                case 0: checkValueSPH = __builtin_ia32_vec_set_v4sf(checkValueSPH, max_distance, 0); break;
-                case 1: checkValueSPH = __builtin_ia32_vec_set_v4sf(checkValueSPH, max_distance, 1); break;
-                case 2: checkValueSPH = __builtin_ia32_vec_set_v4sf(checkValueSPH, max_distance, 2); break;
-                case 3: checkValueSPH = __builtin_ia32_vec_set_v4sf(checkValueSPH, max_distance, 3); break;
+                case 0: checkValueSPH = VECINSERT(max_distance, checkValueSPH, 0); break;
+                case 1: checkValueSPH = VECINSERT(max_distance, checkValueSPH, 1); break;
+                case 2: checkValueSPH = VECINSERT(max_distance, checkValueSPH, 2); break;
+                case 3: checkValueSPH = VECINSERT(max_distance, checkValueSPH, 3); break;
 #ifdef USE_AVX
                 case 4: checkValueSPH = __builtin_ia32_vec_set_v8sf(checkValueSPH, max_distance, 4); break;
                 case 5: checkValueSPH = __builtin_ia32_vec_set_v8sf(checkValueSPH, max_distance, 5); break;
@@ -2117,17 +2219,16 @@ int getLEToptQuickTreevsTree(
 #ifdef AVXIMBH
         _v8sf resGrav = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
 
-        if(selectionMethod & SELECT_GRAV) resGrav = split_node_grav_sph_impbh_box8a<false>(resGrav,checkValueGrav, nodeCOM,  nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
-        if(selectionMethod & SELECT_SPH)  resGrav = split_node_grav_sph_impbh_box8a<true >(resGrav,checkValueSPH,  nodeCNTR, nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
+        if(selectionMethod & SELECT_GRAV) resGrav = split_node_grav_sph_impbh_box8a<false>(resGrav,checkValueGrav, nodeCOM,  nodeSIZE, centre, size, periodicDomainSize, xP, yP, zP);
+        if(selectionMethod & SELECT_SPH)  resGrav = split_node_grav_sph_impbh_box8a<true >(resGrav,checkValueSPH,  nodeCNTR, nodeSIZE, centre, size, periodicDomainSize, xP, yP, zP);
 
         const _v4sf ret1 = __builtin_ia32_vextractf128_ps256(resGrav, 0);
         const _v4sf ret2 = __builtin_ia32_vextractf128_ps256(resGrav, 1);
         bufferStruct.groupSplitFlag.push_back(std::make_pair(ret1,ret2));
 #else
-
        _v4sf resGrav = {0.0f, 0.0f, 0.0f, 0.0f};
-       if(selectionMethod & SELECT_GRAV) resGrav = split_node_grav_sph_impbh_box4a<false>(resGrav, checkValueGrav, nodeCOM,  nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
-       if(selectionMethod & SELECT_SPH)  resGrav = split_node_grav_sph_impbh_box4a<true >(resGrav, checkValueSPH,  nodeCNTR, nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
+       if(selectionMethod & SELECT_GRAV) resGrav = split_node_grav_sph_impbh_box4a<false>(resGrav, checkValueGrav, nodeCOM,  nodeSIZE, centre, size, periodicDomainSize, xP, yP, zP);
+       if(selectionMethod & SELECT_SPH)  resGrav = split_node_grav_sph_impbh_box4a<true >(resGrav, checkValueSPH,  nodeCNTR, nodeSIZE, centre, size, periodicDomainSize, xP, yP, zP);
        bufferStruct.groupSplitFlag.push_back(resGrav);
 #endif
       }
@@ -2150,8 +2251,7 @@ int getLEToptQuickTreevsTree(
               const int gchild  =   childinfoGrp & 0x0FFFFFFF;
               const int gnchild = ((childinfoGrp & 0xF0000000) >> 28) ;
 
-              //for (int i = gchild; i <= gchild+gnchild; i++) //old tree
-              for (int i = gchild; i < gchild+gnchild; i++) //GPU-tree TODO JB: I think this is the correct one, verify in treebuild code
+              for (int i = gchild; i < gchild+gnchild; i++)
               {
                 levelGroups.second().push_back(i);
               }
@@ -2257,7 +2357,6 @@ int3 getLET1(
 
   Swap<std::vector<int> > levelList(bufferStruct.currLevelVecI, bufferStruct.nextLevelVecI);
 
-  //const int nGroupsV = ((nGroups-1)/SIMDW + 1)*SIMDW;
   const int nGroupsV = ((nGroups-1)/SIMDW2 + 1)*SIMDW2;
 
   //We need a bunch of buffers to act as swap space
@@ -2343,28 +2442,28 @@ int3 getLET1(
       const uint  nodeInfo_y = host_float_as_int(nodeSize[nodeIdx].w);
 
       _v4sf nodeCOM = multipoleV[nodeIdx*3];
-      nodeCOM       = __builtin_ia32_vec_set_v4sf (nodeCOM, nodeInfo_x, 3);
+      nodeCOM       = VECINSERT (nodeInfo_x, nodeCOM, 3);
 
       _v4sf checkValue = {0.0,0.0,0.0,0.0};
 
 
       //Gravity uses COM
-      const _v4sf vncx  = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0x00);
-      const _v4sf vncy  = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0x55);
-      const _v4sf vncz  = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0xaa);
-      const _v4sf vncw  = __builtin_ia32_shufps(nodeCOM, nodeCOM, 0xff);
+      const _v4sf vncx  = VECPERMUTE(nodeCOM, nodeCOM, 0x00);
+      const _v4sf vncy  = VECPERMUTE(nodeCOM, nodeCOM, 0x55);
+      const _v4sf vncz  = VECPERMUTE(nodeCOM, nodeCOM, 0xaa);
+      const _v4sf vncw  = VECPERMUTE(nodeCOM, nodeCOM, 0xff);
       checkValue        = __abs(vncw);
 
 
       //SPH uses physical box center and box size to test overlap and distance
       _v4sf nodeCNTR = nodeCentreV[nodeIdx];
       _v4sf nodeSIZE = nodeSizeV  [nodeIdx];
-      const _v4sf vnsx    = __builtin_ia32_shufps(nodeSIZE, nodeSIZE, 0x00);
-      const _v4sf vnsy    = __builtin_ia32_shufps(nodeSIZE, nodeSIZE, 0x55);
-      const _v4sf vnsz    = __builtin_ia32_shufps(nodeSIZE, nodeSIZE, 0xaa);
-      const _v4sf vncntrx = __builtin_ia32_shufps(nodeCNTR, nodeCNTR, 0x00);
-      const _v4sf vncntry = __builtin_ia32_shufps(nodeCNTR, nodeCNTR, 0x55);
-      const _v4sf vncntrz = __builtin_ia32_shufps(nodeCNTR, nodeCNTR, 0xaa);
+      const _v4sf vnsx    = VECPERMUTE(nodeSIZE, nodeSIZE, 0x00);
+      const _v4sf vnsy    = VECPERMUTE(nodeSIZE, nodeSIZE, 0x55);
+      const _v4sf vnsz    = VECPERMUTE(nodeSIZE, nodeSIZE, 0xaa);
+      const _v4sf vncntrx = VECPERMUTE(nodeCNTR, nodeCNTR, 0x00);
+      const _v4sf vncntry = VECPERMUTE(nodeCNTR, nodeCNTR, 0x55);
+      const _v4sf vncntrz = VECPERMUTE(nodeCNTR, nodeCNTR, 0xaa);
 
       int split     = false;
 
@@ -2406,10 +2505,10 @@ int3 getLET1(
                   }
               }
 
-              checkValue       = __builtin_ia32_vec_set_v4sf (checkValue, temp_smth[0], 0);
-              checkValue       = __builtin_ia32_vec_set_v4sf (checkValue, temp_smth[1], 1);
-              checkValue       = __builtin_ia32_vec_set_v4sf (checkValue, temp_smth[2], 2);
-              checkValue       = __builtin_ia32_vec_set_v4sf (checkValue, temp_smth[3], 3);
+              checkValue       = VECINSERT (temp_smth[0], checkValue, 0);
+              checkValue       = VECINSERT (temp_smth[1], checkValue, 1);
+              checkValue       = VECINSERT (temp_smth[2], checkValue, 2);
+              checkValue       = VECINSERT (temp_smth[3], checkValue, 3);
 
               #ifdef USE_AVX
                              split |= split_node_grav_sph_impbh_box8simd1_periodic<TRANSPOSE_SPLIT, true>(
@@ -2520,8 +2619,8 @@ int3 getLET1(
 
           //Do not use the 4 lines below if above we set #if 1
           _v4sf dens = {0.0f,0.0f,0.0f,0.0f};
-          dens = __builtin_ia32_vec_set_v4sf(dens, bodies_dens[idx].x, 0); //Move density to the .x component
-          dens = __builtin_ia32_vec_set_v4sf(dens, bodies_dens[idx].y, 1); //Move density to the .y component
+          dens = VECINSERT(bodies_dens[idx].x, dens, 0); //Move density to the .x component
+          dens = VECINSERT(bodies_dens[idx].y, dens, 1); //Move density to the .y component
           vLETBuffer[2*nExportPtcl+i] = dens;
 
 
@@ -2536,7 +2635,7 @@ int3 getLET1(
       const int2 packed_idx = bufferStruct.LETBuffer_node[i];
       const int idx         = packed_idx.x;
       const float sizew     = host_int_as_float(packed_idx.y);
-      const _v4sf size      = __builtin_ia32_vec_set_v4sf(nodeSizeV[idx], sizew, 3);
+      const _v4sf size      = VECINSERT(sizew, nodeSizeV[idx], 3);
 
 
       vLETBuffer[nStoreIdx+nExportCell] = nodeCentreV[idx];     /* centre */
@@ -2553,8 +2652,8 @@ int3 getLET1(
 }
 
 
-//April 3, 2014. JB: Disabled the copy/creation of tree. Since we don't do alltoallV sends
-//it now only counts/tests
+//April 3, 2014. JB: Disabled the copy/creation of tree.
+//Since we don't do alltoallV sends it now only counts/tests
 int getLEToptQuickFullTree(
     GETLETBUFFERS   &bufferStruct,
     const int        NCELLMAX,
@@ -2580,8 +2679,6 @@ int getLEToptQuickFullTree(
     const int    selectionMethod,
     const int    LETMethod)
 {
-  double tStart = get_time2();
-
   int depth = 0;
   nflops    = 0;
 
@@ -2635,8 +2732,6 @@ int getLEToptQuickFullTree(
   for (int cell = cellBeg; cell < cellEnd; cell++)
     levelList.first().push_back((uint4){(uint)cell, 0, (uint)levelGroups.first().size(),0});
 
-  double tPrep = get_time2();
-
   while (!levelList.first().empty())
   {
     const int csize = levelList.first().size();
@@ -2659,7 +2754,7 @@ int getLEToptQuickFullTree(
 
       const uint  nodeInfo_y       = host_float_as_int(nodeSize[nodeIdx].w);
 
-      const _v4sf nodeCOM          = __builtin_ia32_vec_set_v4sf(multipoleV[nodeIdx*3], nodeInfo_x, 3);
+      const _v4sf nodeCOM          = VECINSERT(nodeInfo_x, multipoleV[nodeIdx*3], 3);
       const bool lleaf             = nodeInfo_x <= 0.0f;
 
       const _v4sf nodeSIZE         = nodeSizeV  [nodeIdx];
@@ -2704,10 +2799,10 @@ int getLEToptQuickFullTree(
               }
 
 
-              if(laneIdx == 0) checkValueSPH0 = __builtin_ia32_vec_set_v4sf(checkValueSPH0, grpSmth, 0); //Set smoothing distance
-              if(laneIdx == 1) checkValueSPH0 = __builtin_ia32_vec_set_v4sf(checkValueSPH0, grpSmth, 1); //Set smoothing distance
-              if(laneIdx == 2) checkValueSPH0 = __builtin_ia32_vec_set_v4sf(checkValueSPH0, grpSmth, 2); //Set smoothing distance
-              if(laneIdx == 3) checkValueSPH0 = __builtin_ia32_vec_set_v4sf(checkValueSPH0, grpSmth, 3); //Set smoothing distance
+              if(laneIdx == 0) checkValueSPH0 = VECINSERT(grpSmth, checkValueSPH0, 0); //Set smoothing distance
+              if(laneIdx == 1) checkValueSPH0 = VECINSERT(grpSmth, checkValueSPH0, 1); //Set smoothing distance
+              if(laneIdx == 2) checkValueSPH0 = VECINSERT(grpSmth, checkValueSPH0, 2); //Set smoothing distance
+              if(laneIdx == 3) checkValueSPH0 = VECINSERT(grpSmth, checkValueSPH0, 3); //Set smoothing distance
 #ifdef USE_AVX
               if(laneIdx == 4) checkValueSPH1 = __builtin_ia32_vec_set_v4sf(checkValueSPH1, grpSmth, 0); //Set smoothing distance
               if(laneIdx == 5) checkValueSPH1 = __builtin_ia32_vec_set_v4sf(checkValueSPH1, grpSmth, 1); //Set smoothing distance
@@ -2729,10 +2824,10 @@ int getLEToptQuickFullTree(
         const _v4sf ret2 = __builtin_ia32_vextractf128_ps256(resGrav, 1);
         bufferStruct.groupSplitFlag.push_back(std::make_pair(ret1,ret2));
 #else
-        _v4sf resGrav = {0.0f, 0.0f, 0.0f, 0.0f};
+       _v4sf resGrav = {0.0f, 0.0f, 0.0f, 0.0f};
        if(selectionMethod & SELECT_GRAV) resGrav = split_node_grav_sph_impbh_box4a<false>(resGrav, checkValueGrav, nodeCOM,  nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
        if(selectionMethod & SELECT_SPH)  resGrav = split_node_grav_sph_impbh_box4a<true >(resGrav, checkValueSPH0, nodeCNTR, nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
-        bufferStruct.groupSplitFlag.push_back(resGrav);
+       bufferStruct.groupSplitFlag.push_back(resGrav);
 #endif
       }
 
@@ -2749,7 +2844,6 @@ int getLEToptQuickFullTree(
           if (!lleaf)
           {
             bool gleaf = groupCentreInfo[group].w <= 0.0f; //This one does not go down leaves
-            //const bool gleaf = groupCentreInfo[group].w == 0.0f; //Old tree This one goes up to including actual groups
             //const bool gleaf = groupCentreInfo[group].w == -1; //GPU-tree This one goes up to including actual groups
 
             //Do an extra check on size.w to test if this is an end-point. If it is an end-point
@@ -2765,9 +2859,7 @@ int getLEToptQuickFullTree(
               const int gchild  =   childinfoGrp & 0x0FFFFFFF;
               const int gnchild = ((childinfoGrp & 0xF0000000) >> 28) ;
 
-
-              //for (int i = gchild; i <= gchild+gnchild; i++) //old tree
-              for (int i = gchild; i < gchild+gnchild; i++) //GPU-tree TODO JB: I think this is the correct one, verify in treebuild code
+              for (int i = gchild; i < gchild+gnchild; i++) //GPU-tree
               {
                 levelGroups.second().push_back(i);
               }
@@ -2814,66 +2906,12 @@ int getLEToptQuickFullTree(
     levelGroups.second().clear();
   }
 
-  double tCalc = get_time2();
+//  double tCalc = get_time2();
   // LOGF(stderr,"getLETOptQuick P: %d N: %d  Calc took: %lg Prepare: %lg Copy: %lg Total: %lg \n",nExportPtcl, nExportCell, tCalc-tStart, tPrep - tStart, tEnd-tCalc, tEnd-tStart);
   //  fprintf(stderr,"[Proc: %d ] getLETOptQuick P: %d N: %d  Calc took: %lg Prepare: %lg (calc: %lg ) Copy: %lg Total: %lg \n",
   //    procId, nExportPtcl, nExportCell, tCalc-tStart, tPrep - tStart, tCalc-tPrep,  tEnd-tCalc, tEnd-tStart);
 
     return  1 + nExportPtcl + 5*nExportCell;
-
-#if 0 //Disabled tree-copy
-  assert((int)bufferStruct.LETBuffer_ptcl.size() == nExportPtcl);
-  assert((int)bufferStruct.LETBuffer_node.size() == nExportCell);
-
-  /* now copy data into LETBuffer */
-  {
-    _v4sf *vLETBuffer;
-    {
-      const size_t oldSize     = LETBuffer.size();
-      const size_t oldCapacity = LETBuffer.capacity();
-      LETBuffer.resize(oldSize + 1 + nExportPtcl + 5*nExportCell);
-      const size_t newCapacity = LETBuffer.capacity();
-      /* make sure memory is not reallocated */
-      assert(oldCapacity == newCapacity);
-
-      /* fill tree info */
-      real4 &data4 = *(real4*)(&LETBuffer[oldSize]);
-      data4.x      = host_int_as_float(nExportPtcl);
-      data4.y      = host_int_as_float(nExportCell);
-      data4.z      = host_int_as_float(cellBeg);
-      data4.w      = host_int_as_float(cellEnd);
-
-      //LOGF(stderr, "LET res for: %d  P: %d  N: %d old: %ld  Size in byte: %d\n",procId, nExportPtcl, nExportCell, oldSize, (int)(( 1 + nExportPtcl + 5*nExportCell)*sizeof(real4)));
-      vLETBuffer = (_v4sf*)(&LETBuffer[oldSize+1]);
-    }
-
-    int nStoreIdx     = nExportPtcl;
-    int multiStoreIdx = nStoreIdx + 2*nExportCell;
-    for (int i = 0; i < nExportPtcl; i++)
-    {
-      const int idx = bufferStruct.LETBuffer_ptcl[i];
-      vLETBuffer[i] = bodiesV[idx];
-    }
-    for (int i = 0; i < nExportCell; i++)
-    {
-      const int2 packed_idx = bufferStruct.LETBuffer_node[i];
-      const int idx = packed_idx.x;
-      const float sizew = host_int_as_float(packed_idx.y);
-      const _v4sf size = __builtin_ia32_vec_set_v4sf(nodeSizeV[idx], sizew, 3);
-
-      vLETBuffer[nStoreIdx+nExportCell] = nodeCentreV[idx];     /* centre */
-      vLETBuffer[nStoreIdx            ] = size;                 /*  size  */
-
-      vLETBuffer[multiStoreIdx++      ] = multipoleV[3*idx+0];  /* multipole com */
-      vLETBuffer[multiStoreIdx++      ] = multipoleV[3*idx+1];  /* multipole q0 */
-      vLETBuffer[multiStoreIdx++      ] = multipoleV[3*idx+2];  /* multipole q1 */
-      nStoreIdx++;
-    } //for
-  } //now copy data into LETBuffer
-
-  time = get_time2() - tStart;
-  double tEnd = get_time2();
-#endif
 }
 
 
@@ -2981,7 +3019,7 @@ int3 getLEToptFullTree(
 
       const uint  nodeInfo_y = host_float_as_int(nodeSize[nodeIdx].w);
 
-      const _v4sf nodeCOM  = __builtin_ia32_vec_set_v4sf(multipoleV[nodeIdx*3], nodeInfo_x, 3); //Set opening angle
+      const _v4sf nodeCOM  = VECINSERT(nodeInfo_x, multipoleV[nodeIdx*3], 3); //Set opening angle
       const bool lleaf     = nodeInfo_x <= 0.0f;
 
 
@@ -3018,15 +3056,15 @@ int3 getLEToptFullTree(
                   smth = std::max(nodeSmth, smth); //For hydro we need mutual forces so take the longest distance
               }
 
-              if(laneIdx == 0) checkValueSPH0 = __builtin_ia32_vec_set_v4sf(checkValueSPH0, smth, 0); //Set smoothing distance
-              if(laneIdx == 1) checkValueSPH0 = __builtin_ia32_vec_set_v4sf(checkValueSPH0, smth, 1); //Set smoothing distance
-              if(laneIdx == 2) checkValueSPH0 = __builtin_ia32_vec_set_v4sf(checkValueSPH0, smth, 2); //Set smoothing distance
-              if(laneIdx == 3) checkValueSPH0 = __builtin_ia32_vec_set_v4sf(checkValueSPH0, smth, 3); //Set smoothing distance
+              if(laneIdx == 0) checkValueSPH0 = VECINSERT(smth, checkValueSPH0, 0); //Set smoothing distance
+              if(laneIdx == 1) checkValueSPH0 = VECINSERT(smth, checkValueSPH0, 1); //Set smoothing distance
+              if(laneIdx == 2) checkValueSPH0 = VECINSERT(smth, checkValueSPH0, 2); //Set smoothing distance
+              if(laneIdx == 3) checkValueSPH0 = VECINSERT(smth, checkValueSPH0, 3); //Set smoothing distance
 #ifdef USE_AVX
-              if(laneIdx == 4) checkValueSPH1 = __builtin_ia32_vec_set_v4sf(checkValueSPH1, smth, 0); //Set smoothing distance
-              if(laneIdx == 5) checkValueSPH1 = __builtin_ia32_vec_set_v4sf(checkValueSPH1, smth, 1); //Set smoothing distance
-              if(laneIdx == 6) checkValueSPH1 = __builtin_ia32_vec_set_v4sf(checkValueSPH1, smth, 2); //Set smoothing distance
-              if(laneIdx == 7) checkValueSPH1 = __builtin_ia32_vec_set_v4sf(checkValueSPH1, smth, 3); //Set smoothing distance
+              if(laneIdx == 4) checkValueSPH1 = VECINSERT(smth, checkValueSPH1, 0); //Set smoothing distance
+              if(laneIdx == 5) checkValueSPH1 = VECINSERT(smth, checkValueSPH1, 1); //Set smoothing distance
+              if(laneIdx == 6) checkValueSPH1 = VECINSERT(smth, checkValueSPH1, 2); //Set smoothing distance
+              if(laneIdx == 7) checkValueSPH1 = VECINSERT(smth, checkValueSPH1, 3); //Set smoothing distance
               checkValueSPH01 = pack_2xmm(checkValueSPH0,checkValueSPH1);
 #endif
           }
@@ -3075,7 +3113,6 @@ int3 getLEToptFullTree(
               const int gchild  =   childinfoGrp & 0x0FFFFFFF;
               const int gnchild = ((childinfoGrp & 0xF0000000) >> 28) ;
 
-              //for (int i = gchild; i <= gchild+gnchild; i++)
               for (int i = gchild; i < gchild+gnchild; i++)
               {
                 levelGroups.second().push_back(i);
@@ -3174,10 +3211,10 @@ int3 getLEToptFullTree(
             int idx2             = bufferStruct.LETBuffer_ptcl[std::min(i+1, nExportPtcl-1)];
 
             _v4sf dens = {0.0f,0.0f,0.0f,0.0f};
-            dens = __builtin_ia32_vec_set_v4sf(dens, bodies_dens[idx1].x, 0); //Move density to the .x component
-            dens = __builtin_ia32_vec_set_v4sf(dens, bodies_dens[idx1].y, 1); //Move smth to the .y component
-            dens = __builtin_ia32_vec_set_v4sf(dens, bodies_dens[idx2].x, 2); //Move density to the .z component
-            dens = __builtin_ia32_vec_set_v4sf(dens, bodies_dens[idx2].y, 3); //Move smth to the .w component
+            dens = VECINSERT(bodies_dens[idx1].x, dens, 0); //Move density to the .x component
+            dens = VECINSERT(bodies_dens[idx1].y, dens, 1); //Move smth to the .y component
+            dens = VECINSERT(bodies_dens[idx2].x, dens, 2); //Move density to the .z component
+            dens = VECINSERT(bodies_dens[idx2].y, dens, 3); //Move smth to the .w component
             vLETBuffer[2*nExportPtcl+storeIdx] = dens;
             storeIdx++;
         }
@@ -3189,10 +3226,9 @@ int3 getLEToptFullTree(
 
           //Uncomment this if the above #if 1 is set to #if 0
           _v4sf dens = {0.0f,0.0f,0.0f,0.0f};
-          dens = __builtin_ia32_vec_set_v4sf(dens, bodies_dens[idx].x, 0); //Move density to the .x component
-          dens = __builtin_ia32_vec_set_v4sf(dens, bodies_dens[idx].y, 1); //Move density to the .y component
+          dens = VECINSERT(bodies_dens[idx].x, dens, 0); //Move density to the .x component
+          dens = VECINSERT(bodies_dens[idx].y, dens, 1); //Move density to the .y component
           vLETBuffer[2*nExportPtcl+i] = dens;
-
 
           vLETBuffer[3*nExportPtcl+i] = bodiesHydroV[idx];
         }
@@ -3203,8 +3239,7 @@ int3 getLEToptFullTree(
       const int2 packed_idx = bufferStruct.LETBuffer_node[i];
       const int idx         = packed_idx.x;
       const float sizew     = host_int_as_float(packed_idx.y);
-      const _v4sf size      = __builtin_ia32_vec_set_v4sf(nodeSizeV[idx], sizew, 3);
-
+      const _v4sf size      = VECINSERT(sizew, nodeSizeV[idx], 3);
 
       vLETBuffer[nStoreIdx+nExportCell] = nodeCentreV[idx];     /* centre */
       vLETBuffer[nStoreIdx            ] = size;                 /*  size  */
@@ -3302,7 +3337,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
   localTree.boxSmoothing.waitForCopyEvent();
   localTree.multipole.waitForCopyEvent();
 
-
+  // TODO(jbedorf) move this outside the function and make it a parameter
   const float3 periodicDomainSize =  {6.8593750000000000, 4.0594940802395563E-002f, 3.8273277230987154E-002f};   //Hardcoded for phantom tube
 //  const float3 periodicDomainSize = {1.0f, 0.125f, 0.125f};   //Hardcoded for our testing IC
 //  const float3 periodicDomainSize = {100.0f, 100.0f, 100.0f};   //Hardcoded for our testing IC
@@ -3387,10 +3422,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
   int nSendOut        = 0;
   int nToSend	      = 0;
 
-  //Use getLETQuick instead of recursiveTopLevelCheck
-  //#define doGETLETQUICK
-
-
   const int NCELLMAX  = 1024;
   const int NDEPTHMAX = 30;
   const int NPROCMAX  = 32768;
@@ -3400,10 +3431,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
   const static int MAX_THREAD = 64;
   assert(MAX_THREAD >= omp_get_num_threads());
   static __attribute__(( aligned(64) )) GETLETBUFFERS getLETBuffers[MAX_THREAD];
-
-
-//  static std::vector<v4sf> quickCheckData[NPROCMAX];
-
 
   std::vector<int> communicationStatus(nProcs);
   for(int i=0; i < nProcs; i++) communicationStatus[i] = 0;
@@ -3485,7 +3512,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         }//tid == 0
 
         #pragma omp critical
-          currentTicket = omp_ticket++; //Get a unique ticket to determine which process to build the LET for
+          currentTicket = omp_ticket++; //Get a unique ticket to determine for which process to build the LET
 
         if(currentTicket >= (nProcs-1)) //Break out if we processed all nodes
           break;
@@ -3493,8 +3520,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         bool doQuickLETCheck = (currentTicket < (nProcs - 1));
         int ib               = (nProcs-1)-(currentTicket%nProcs);
         int ibox             = (ib+procId)%nProcs; //index to send...
-        //Above could be replaced by a priority list, based on previous
-        //loops (eg nearest neighbours first)
+        //Above could be replaced by a priority list, based on previous loops (eg nearest neighbours first)
 
 
         //Group info for this process
@@ -3506,7 +3532,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         {
             unsigned long long nflops;
 
-
             int nbody = host_float_as_int(grpCenter[0].x);
             int nnode = std::abs(host_float_as_int(grpCenter[0].y));
 
@@ -3517,7 +3542,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
             //The return value sizeTree is used to determine for which processes we have to make
             //proper LETs without having to wait on communication.
-            //If the tree becomes too big or too deep then we will do direct LET for sure, otherwise
+            //If the tree becomes too big or too deep we always do direct LET, otherwise
             //it depends on what the other side tells us.
 
             //Test if we have to send data to the remote process?
@@ -3525,7 +3550,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
             double bla3;
             int sizeTree =  getLEToptQuickFullTree(
                                             getLETBuffers[tid],
-                                            256, //NCELLMAX,
+                                            NCELLMAX,
                                             NDEPTHMAX,
                                             &nodeCenterInfo[0],
                                             &nodeSizeInfo[0],
@@ -3703,7 +3728,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         #ifdef USE_GROUP_TREE
           std::vector<float4> boundaryCentres;
           std::vector<float4> boundarySizes;
-          std::vector<float4> boundarySmoothing;
+          std::vector<float4> boundarySmoothing; //TODO(jbedorf) Remote these smoothing arrays
 
           boundarySizes.reserve(endGrp);
           boundaryCentres.reserve(endGrp);
@@ -3867,8 +3892,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
           nComputedLETs++;
         }
 
-
-
         devContext->popNVTX();
 
         if(tid == 0)
@@ -3882,13 +3905,11 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
 
       //ALL LET-trees are built and sent to remote domains/MPI thread
-
       if(tid != 0) tStatsEndGetLET = get_time(); //TODO delete
-
       if(tid == 0) devContext->popNVTX();
 
 
-      //All data that has to be send out is computed
+      //All data that has to be send to external processes has been computed
       if(tid == 0)
       {
         devContext->pushNVTX("WaitOnAndProcessIncommingData");
@@ -3932,7 +3953,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
       }
 
       tStatsEndWaitOnQuickCheck = get_time();
-      mpiSync(); //TODO DELETE
+//      mpiSync(); //TODO DELETE
       tStatsStartAlltoAll = get_time();
 
 
@@ -3952,7 +3973,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         if(quickCheckRecvSizes[i].y == 1)
         { //Clear the size/data
           quickCheckSendSizes[i].x = 0;
-          quickCheckSendOffset[i] = 0;
+          quickCheckSendOffset[i]  = 0;
           nQuickBoundaryOk++;
 
           //Mark as we can use small boundary
@@ -3983,13 +4004,10 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
           quickCheckRecvSizes[i].x = 0;
         }
 
-
         quickCheckRecvOffset[i]   = recvCountItems*sizeof(real4);
         recvCountItems           += quickCheckRecvSizes[i].x;
         quickCheckRecvSizes[i].x  = quickCheckRecvSizes[i].x*sizeof(real4);
       } //for i
-
-
 
 
       expectedLETCount -= 1; //Don't count ourself
@@ -4123,6 +4141,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
         if(sleepAtTheEnd)   usleep(10); //Only sleep when we did not send or receive anything
       } //while (1) surrounding the thread-id==1 code
 
+
       //Wait till all outgoing sends have been completed
       MPI_Status waitStatus;
       for(int i=0; i < nSendOut; i++)
@@ -4161,7 +4180,6 @@ tAlltoAll: %lg tGetLETSend: %lg tTotal: %lg mbSize-a2a: %f nA2AQsend: %d nA2AQre
      //ZA1, nQuickCheckSends, nQuickRecv, nBoundaryOk);
    devContext->writeLogEvent(buff5); //TODO DELETE
 
-//  if(recvAllToAllBuffer) delete[] recvAllToAllBuffer;
   delete[] treeBuffersSource;
   delete[] computedLETs;
   delete[] treeBuffers;
@@ -4332,7 +4350,7 @@ void octree::mergeAndLaunchLETStructures(
 
   int bodyPropsCount = 1;                            //Position
   if(METHOD == LET_METHOD_DRVT) bodyPropsCount +=1;  //Position and Velocity
-  if(METHOD == LET_METHOD_HYDR) bodyPropsCount +=3;  //Position, Velocity, Dens and Hydro TODO
+  if(METHOD == LET_METHOD_HYDR) bodyPropsCount +=3;  //Position, Velocity, Dens and Hydro
 
 
   int nParticlesCounted   = 0;
@@ -4347,7 +4365,7 @@ void octree::mergeAndLaunchLETStructures(
     int nodes     = host_float_as_int(treeBuffers[procTrees+i][0].y);
 
     int bodyPropsCountSource = bodyPropsCount;
-    if(treeBuffersSource[procTrees+i] == 2) bodyPropsCountSource = 4; //Boundary tree is a full tree with all particle properties
+    if(treeBuffersSource[procTrees+i] == 2) bodyPropsCountSource = 4; //Boundary tree is a full tree with all particle properties (pos,vel,dens,hydro)
 
     nParticlesCounted += particles;
     nNodesCounted     += nodes;
@@ -4357,7 +4375,7 @@ void octree::mergeAndLaunchLETStructures(
     // - Process this one anyway and hope we have enough memory, do this if nProcsProcessed == 0
     //   otherwise we would make no progress
 
-    int localLimit   =  tree.n                           + 5*tree.n_nodes; //TODO should this include the bodyPropsCount factor?
+    int localLimit   =  bodyPropsCountSource*tree.n            + 5*tree.n_nodes;
     int currentCount =  bodyPropsCountSource*nParticlesCounted + 5*nNodesCounted;
 
     if(currentCount > localLimit)
@@ -4549,7 +4567,7 @@ void octree::mergeAndLaunchLETStructures(
   //has to be aligned with a certain amount of bytes, so nodeInformation*sizeof(real4) has to be
   //increased by an offset, so that the node data starts at aligned byte boundary
   //this is already done on the sending process, but since we modify the structure
-  //it has to be done again
+  //it has to be redone for the new combined tree.
   int nodeTextOffset = getTextureAllignmentOffset(totalNodes+totalTopNodes+topTree_n_nodes, sizeof(real4));
   int partTextOffset = getTextureAllignmentOffset(totalParticles                          , sizeof(real4));
 
@@ -4558,9 +4576,7 @@ void octree::mergeAndLaunchLETStructures(
   //Compute the total size of the buffer
   int bufferSize     = bodyPropsCount*(totalParticles) + 5*(totalNodes+totalTopNodes+topTree_n_nodes + nodeTextOffset);
 
-
   double t1 = get_time();
-
 
   thisPartLETExTime += get_time() - tStart;
   //Allocate memory on host and device to store the merged tree-structure
@@ -4580,7 +4596,6 @@ void octree::mergeAndLaunchLETStructures(
   double t2 = get_time();
 
   //First copy the properties of the top_tree nodes and the original top-nodes
-
 #ifndef DO_NOT_USE_TOP_TREE
   //The top-tree node properties
   //Sizes
@@ -4657,7 +4672,6 @@ void octree::mergeAndLaunchLETStructures(
 #endif
             memcpy(&combinedRemoteTree[3*totalParticles+particleSumOffsets[i]],         //Write hydro after the density
                    &treeBuffers[i+procTrees][1+3*remoteP], sizeof(real4)*remoteP);      //Read after the density
-
         }
     }
 
@@ -4693,7 +4707,7 @@ void octree::mergeAndLaunchLETStructures(
        First  the top nodes
        Second the normal nodes
        Has to be done in two steps since they are not continuous in memory if NPROCS > 2
-       */
+     */
 
     //Modify the non-top nodes for this process
     int modStart =  totalTopNodes + topTree_n_nodes + nodeSumOffsets[i] + bodyPropsCount*(totalParticles);
@@ -4744,8 +4758,6 @@ void octree::mergeAndLaunchLETStructures(
       treeBuffers[i+procTrees] = NULL;
     }
 #endif
-
-
   } //for PROCS
 
 
@@ -4757,8 +4769,7 @@ void octree::mergeAndLaunchLETStructures(
      topNodeMultT1, topNodeMultT2,..., topNodeMultT2 | nodeMultT1, nodeMultT2, ...nodeMultT3
 
      NOTE that the Multi-pole data consists of 3 float4 values per node
-     */
-  //     fprintf(stderr,"Modifying the LET took: %g \n", get_time()-t1);
+  */
 
   LOGF(stderr,"Number of local bodies: %d number LET bodies: %d number LET nodes: %d top nodes: %d Processed trees: %d (%d) \n",
       tree.n, totalParticles, totalNodes, totalTopNodes, PROCS, procTrees);
@@ -4786,11 +4797,8 @@ void octree::mergeAndLaunchLETStructures(
   delete[] startNodeSumOffsets;
   delete[] nodesBegEnd;
 
-
-
   thisPartLETExTime += get_time() - tStart;
 
-  //procTrees = recvTree;
   procTrees += PROCS; //Changed since PROCS can be smaller than total number that can be processed
 
 
@@ -4844,7 +4852,6 @@ void octree::mergeAndLaunchLETStructures(
   sprintf(buff5, "LETXTIME-%d Iter: %d Processed: %d topTree: %lg Alloc: %lg  Copy/Update: %lg TotalC: %lg Wait: %lg TotalRun: %lg \n",
                   procId, iter, procTrees, t1-t0, t2-t1,t3-t2,t3-t0, t4-t3, t4-t0);
   devContext->writeLogEvent(buff5); //TODO DELETE
-
   devContext->popNVTX();
 }
 

@@ -5,8 +5,6 @@
 #endif
 
 
-#define USE_MPI
-
 #ifdef USE_MPI
 
 
@@ -30,7 +28,26 @@ struct v4sf
 
 };
 
-//#endif
+#if 1
+static inline float2 extract_opening_criteria(float val)
+{
+    __half2 temp = *((__half2*)&val);
+    float2 res = {_cvtsh_ss(temp.x), _cvtsh_ss(temp.y)};
+    return res;
+}
+
+static inline __half2 encode_opening_criteria(float cellOp, float maxSmth)
+{
+    __half2 newCellOpSmth;
+    newCellOpSmth.x = _cvtss_sh((float)(cellOp*cellOp),0); //GRAVITY
+    newCellOpSmth.y = _cvtss_sh(maxSmth*maxSmth,0);        //SPH
+    return newCellOpSmth;
+}
+#else
+
+// Future Power8 version
+
+#endif
 
 #define LEVEL_MIN_GRP_TREE 2
 
@@ -285,7 +302,6 @@ void octree::build_GroupTree(int n_bodies,
   ***/
 
 
-// #ifdef PRINTERR
 #if 0
   //Not required just for stats
   int n_leaves0 = 0;
@@ -458,8 +474,6 @@ void octree::build_NewTopLevels(int n_bodies,
 
   node_levels[n_levels] = n_nodes;
 
-
-
   startNode = node_levels[level_min];
   endNode   = node_levels[level_min+1];
 
@@ -510,7 +524,6 @@ void octree::build_NewTopLevels(int n_bodies,
   ***/
 
 
-// #ifdef PRINTERR
 #if 0
   //Not required just for stats
   int n_leaves0 = 0;
@@ -604,9 +617,8 @@ void octree::computeProps_TopLevelTree(
           cellSmth = std::max(cellSmth , std::fabs(sourceCenter[k].w));
 #else
           //Smoothing length is encoded in the higher bits of 32
-          __half2 temp = *((__half2*)&sourceCenter[k].w);
-          cellSmth = _cvtsh_ss(temp.y);
-//          cellSmth = std::max(cellSmth , std::fabs(cellSmthx));
+          float2 temp_opening = extract_opening_criteria(sourceCenter[k].w);
+          cellSmth = temp_opening.y;
 #endif
 
 
@@ -750,10 +762,8 @@ void octree::computeProps_TopLevelTree(
         cellOp  *= 1.01;
         maxSmth *= 1.01;
 
-        __half2 newCellOpSmth;
-        newCellOpSmth.x = _cvtss_sh((float)(cellOp*cellOp),0); //GRAVITY
-        newCellOpSmth.y = _cvtss_sh(maxSmth*maxSmth,0);        //SPH
-        *((__half2*)&boxCenter.w) = newCellOpSmth;
+        //Combine the tree and SPH criteria in a single float32
+        *((__half2*)&boxCenter.w) = encode_opening_criteria(cellOp, maxSmth);
 
 
         topTreeCenters[j]  = boxCenter;
@@ -804,7 +814,6 @@ void octree::computeProps_TopLevelTree(
           topTreeMultipole[3*i+2].x,topTreeMultipole[3*i+2].y,topTreeMultipole[3*i+2].z);
     }
 #endif
-
   }//end function/section
 
 
