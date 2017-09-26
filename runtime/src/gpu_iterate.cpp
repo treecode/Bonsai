@@ -1746,7 +1746,7 @@ double octree::compute_energies(tree_structure &tree)
   }
 
 
-  if(isnan(Etot)){
+  if(::isnan(Etot)){
       LOGF(stderr,"NaN detected, exit\n");
       exit(0);
   }

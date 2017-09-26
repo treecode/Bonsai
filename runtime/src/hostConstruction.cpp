@@ -9,9 +9,49 @@
 
 
 #ifdef __ALTIVEC__
-    #include <altivec.h>
+    #include "host_fp16.h"
+    static inline float2 extract_opening_criteria(float val)
+    {
+        //Power8 does not have native instructions, use CPU implementation
+        //to decode the half values
+        __half2 *t = (__half2*)&val;
+
+        float2 res;
+        res.x = Eigen::half_impl::half_to_float(Eigen::half_impl::raw_uint16_to_half(t->x));
+        res.y = Eigen::half_impl::half_to_float(Eigen::half_impl::raw_uint16_to_half(t->y));
+        return res;
+    }
+    static inline __half2 encode_opening_criteria(float cellOp, float maxSmth)
+    {
+        __half2 temp2;
+        Eigen::half_impl::__half_raw e;
+        e  = Eigen::half_impl::float_to_half_rtne(cellOp*cellOp);
+        temp2.x = e.x;
+        e  = Eigen::half_impl::float_to_half_rtne(maxSmth*maxSmth);
+        temp2.y = e.x;
+
+        return temp2;
+    }
 #else
     #include <xmmintrin.h>
+
+    static inline float2 extract_opening_criteria(float val)
+    {
+        __half2 temp = *((__half2*)&val);
+        float2 res = {_cvtsh_ss(temp.x), _cvtsh_ss(temp.y)};
+        return res;
+    }
+
+    static inline __half2 encode_opening_criteria(float cellOp, float maxSmth)
+    {
+        __half2 newCellOpSmth;
+        newCellOpSmth.x = _cvtss_sh((float)(cellOp*cellOp),0); //GRAVITY
+        newCellOpSmth.y = _cvtss_sh(maxSmth*maxSmth,0);        //SPH
+        return newCellOpSmth;
+        //TODO(jbedorf) verify if imm here is same as:
+        //https://software.intel.com/en-us/articles/performance-benefits-of-half-precision-floats    
+        //https://clang.llvm.org/doxygen/f16cintrin_8h_source.html lines 69-75
+    }
 #endif
 
 
@@ -28,26 +68,7 @@ struct v4sf
 
 };
 
-#if 1
-static inline float2 extract_opening_criteria(float val)
-{
-    __half2 temp = *((__half2*)&val);
-    float2 res = {_cvtsh_ss(temp.x), _cvtsh_ss(temp.y)};
-    return res;
-}
 
-static inline __half2 encode_opening_criteria(float cellOp, float maxSmth)
-{
-    __half2 newCellOpSmth;
-    newCellOpSmth.x = _cvtss_sh((float)(cellOp*cellOp),0); //GRAVITY
-    newCellOpSmth.y = _cvtss_sh(maxSmth*maxSmth,0);        //SPH
-    return newCellOpSmth;
-}
-#else
-
-// Future Power8 version
-
-#endif
 
 #define LEVEL_MIN_GRP_TREE 2
 
