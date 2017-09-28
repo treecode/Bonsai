@@ -46,7 +46,7 @@
     {
         __half2 newCellOpSmth;
         newCellOpSmth.x = _cvtss_sh((float)(cellOp*cellOp),0); //GRAVITY
-        newCellOpSmth.y = _cvtss_sh(maxSmth*maxSmth,0);        //SPH
+        newCellOpSmth.y = _cvtss_sh((float)(maxSmth*maxSmth), 0);        //SPH
         return newCellOpSmth;
         //TODO(jbedorf) verify if imm here is same as:
         //https://software.intel.com/en-us/articles/performance-benefits-of-half-precision-floats    
@@ -653,12 +653,12 @@ void octree::computeProps_TopLevelTree(
           r_max.z = max(curRmax.z, r_max.z);
 
           double smth = sqrt(abs(cellSmth));
-          r_minSPH.x = min(curRmin.x-smth, r_min.x);
-          r_minSPH.y = min(curRmin.y-smth, r_min.y);
-          r_minSPH.z = min(curRmin.z-smth, r_min.z);
-          r_maxSPH.x = max(curRmax.x+smth, r_max.x);
-          r_maxSPH.y = max(curRmax.y+smth, r_max.y);
-          r_maxSPH.z = max(curRmax.z+smth, r_max.z);
+          r_minSPH.x = min(curRmin.x-smth, r_minSPH.x);
+          r_minSPH.y = min(curRmin.y-smth, r_minSPH.y);
+          r_minSPH.z = min(curRmin.z-smth, r_minSPH.z);
+          r_maxSPH.x = max(curRmax.x+smth, r_maxSPH.x);
+          r_maxSPH.y = max(curRmax.y+smth, r_maxSPH.y);
+          r_maxSPH.z = max(curRmax.z+smth, r_maxSPH.z);
 
           //Compute monopole and quadrupole
           if(nodes[j].y == 1)

@@ -534,7 +534,8 @@ public:
           lastGPUGravTimeLocal(0), lastGPUGravTimeLET(0),
           lastLETCommTime(0), totalLETCommTime(0),
           totalDomUp(0), totalDomEx(0), totalDomWait(0),
-          totalPredCor(0){}
+          totalPredCor(0), totalDensityTime(0),
+          totalHydroTime(0){}
 
       int    Nact_since_last_tree_rebuild;
       double totalGravTime; //CPU timers, includes any non-hidden communication cost
@@ -556,6 +557,8 @@ public:
       double totalDomEx;
       double totalDomWait;
       double totalPredCor;
+      double totalDensityTime;
+      double totalHydroTime;
   };
 
   void iterate_setup(IterationData &idata); 
