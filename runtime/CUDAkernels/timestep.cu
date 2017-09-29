@@ -134,6 +134,7 @@ typedef unsigned long long ullong;
 KERNEL_DECLARE(predict_particles)(const int 	n_bodies,
 										float 	tc,
 										float 	tp,
+										domainInformation domainInfo,
 										real4 	*pos,
 										real4 	*vel,
 										real4 	*acc,
@@ -190,9 +191,6 @@ KERNEL_DECLARE(predict_particles)(const int 	n_bodies,
   hydro[idx].z += dt_cb*a.w;
 
   //Adjust the particle position for periodic boundaries
-  domainInformation domainInfo;
-  domainInfo.domainSize =  {6.8593750000000000, 4.0594940802395563E-002f, 3.8273277230987154E-002f};   //Hardcoded for phantom tube
-
   float3 low, high;
   low.x = -(domainInfo.domainSize.x / 2.0f); low.y  = -(domainInfo.domainSize.y / 2.0f); low.z  = -(domainInfo.domainSize.z / 2.0f);
   high.x = (domainInfo.domainSize.x / 2.0f); high.y =  (domainInfo.domainSize.y / 2.0f); high.z =  (domainInfo.domainSize.z / 2.0f);

@@ -141,7 +141,6 @@ void octree::compute_properties(tree_structure &tree) {
        tree.fullBoundaryTree. d2h(boundaryTreeDimensions.y, false, LETDataToHostStream->s());
     }
 
-
 #if 0
     cudaDeviceSynchronize();
 
@@ -180,6 +179,29 @@ void octree::compute_properties(tree_structure &tree) {
 
 
 #if 0
+
+    tree.boxSizeInfo.d2h();
+    tree.boxCenterInfo.d2h();
+    for(int i=0; i < tree.n_levels; i++)
+    {
+      for(int j=tree.level_list[i].x; j < tree.level_list[i].y; j++)
+      {
+         float cellSize = tree.boxSizeInfo[j].w;
+
+         const int cellData   = host_float_as_int(cellSize);
+         const int firstChild =  cellData & 0x0FFFFFFF;
+         const int nChildren  = (cellData & 0xF0000000) >> 28;
+         const bool isNode = cellSize > 0.0f;
+
+         printf("LEVEL: %d\tNode: %d Info: %f node: %d first: %d %d\n", i, j,
+            isNode, firstChild, firstChild+nChildren);
+      }//for j
+    }//for i
+
+
+
+
+
    if(procId == 0){
 
    {

@@ -5,6 +5,12 @@
 
 #include "treewalk_includes.h"
 
+#define PERIODIC_X 1
+#define PERIODIC_Y 2
+#define PERIODIC_Z 4
+
+
+
 __constant__ bodyProps group_body_props;
 
 #if 0
@@ -431,8 +437,9 @@ uint2 approximate_sph(
     /**********************************************/
     /* split cells that satisfy opening condition */
     /**********************************************/
+    const bool isNode = openxy.x > 0.0f;
+//    const bool isNode = cellPos.w > 0.0f;
 
-    const bool isNode = cellPos.w > 0.0f;
 
     {
       bool splitNode  = isNode && splitCell && useCell;
@@ -600,6 +607,7 @@ bool treewalk_control(
     const float      eps2,
     const uint2      node_begend,
     const bool       isFinalLaunch,
+    const domainInformation domainInfo,
     const int       *active_groups,
     const bodyProps &group_body,
     const float4    *groupSizeInfo,
@@ -711,13 +719,11 @@ bool treewalk_control(
 #endif
 
   //For periodic boundaries, mirror the group and body positions along the periodic axis
-  //float3 domainSize = {1.0f, 0.125f, 0.125f};   //Hardcoded for our testing IC
 
-  domainInformation domainInfo;
-  domainInfo.domainSize =  {6.8593750000000000, 4.0594940802395563E-002f, 3.8273277230987154E-002f};   //Hardcoded for phantom tube
-  domainInfo.xrange = { 0, 0};
-  domainInfo.yrange = {-1, 1};
-  domainInfo.zrange = {-1, 1};
+  int2 xP = {0,0}, yP = {0,0}, zP = {0,0};
+  if(((int)domainInfo.domainSize.w) & PERIODIC_X) { xP = {-1,1}; }
+  if(((int)domainInfo.domainSize.w) & PERIODIC_Y) { yP = {-1,1}; }
+  if(((int)domainInfo.domainSize.w) & PERIODIC_Z) { zP = {-1,1}; }
 
   long long int startC = clock64();
 
@@ -725,11 +731,11 @@ bool treewalk_control(
 
 
   //TODO use templates or parameterize this at some point
-  for(int ix=domainInfo.xrange.x; ix <= domainInfo.xrange.y; ix++)     //Periodic around X
+  for(int ix=xP.x; ix <= xP.y; ix++)     //Periodic around X
   {
-    for(int iy=domainInfo.yrange.x; iy <= domainInfo.yrange.y; iy++)   //Periodic around Y
+    for(int iy=yP.x; iy <= yP.y; iy++)   //Periodic around Y
     {
-      for(int iz=domainInfo.zrange.x; iz <= domainInfo.zrange.y; iz++) //Periodic around Z
+      for(int iz=zP.x; iz <= zP.y; iz++) //Periodic around Z
       {
           float4 pGroupPos   = group_pos;
           float4 pBodyPos[2] = {pos_i[0], pos_i[1]};
@@ -1059,6 +1065,7 @@ void approximate_SPH_main(
     float     eps2,
     uint2     node_begend,
     bool      isFinalLaunch,
+    const domainInformation domainInfo,
     int      *active_groups,
     bodyProps &group_body,
     int      *active_inout,
@@ -1136,6 +1143,7 @@ void approximate_SPH_main(
                                     eps2,
                                     node_begend,
                                     isFinalLaunch,
+                                    domainInfo,
                                     active_groups,
                                     group_body,
                                     groupSizeInfo,
@@ -1226,6 +1234,7 @@ void approximate_SPH_main(
                                               eps2,
                                               node_begend,
                                               isFinalLaunch,
+                                              domainInfo,
                                               active_groups,
                                               group_body,
                                               groupSizeInfo,
@@ -1265,6 +1274,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
           float     eps2,
           uint2     node_begend,
           bool      isFinalLaunch,
+          const domainInformation domainInfo,
           int       *active_groups,
           bodyProps group_body,                //The i-particles
           int       *active_inout,
@@ -1288,6 +1298,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
            eps2,
            node_begend,
            isFinalLaunch,
+           domainInfo,
            active_groups,
            group_body,
            active_inout,
@@ -1316,6 +1327,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
           float     eps2,
           uint2     node_begend,
           bool      isFinalLaunch,
+          const domainInformation domainInfo,
           int       *active_groups,
           bodyProps group_body,
           int       *active_inout,
@@ -1340,6 +1352,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
           eps2,
           node_begend,
           isFinalLaunch,
+          domainInfo,
           active_groups,
           group_body,
           active_inout,
@@ -1775,6 +1788,7 @@ dev_sph_derivative(
         uint2     node_begend,
         bool      isFinalLaunch,
         int       *active_groups,
+        const domainInformation domainInfo,
 
         real4     *group_body_pos,           //This can be different from body_pos
         real4     *group_body_vel,
@@ -1824,6 +1838,7 @@ approximate_SPH_main<false, NTHREAD2, SPH::derivative::directOperator>(
          eps2,
          node_begend,
          isFinalLaunch,
+         domainInfo,
          active_groups,
          group_body,
          active_inout,

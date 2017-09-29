@@ -304,6 +304,7 @@ class tree_structure
     bodyProps group_body;
 
 
+
     //Combined buffers:
     /*
       Buffer1 used during: Sorting, Tree-construction, and Tree-traverse:
@@ -369,6 +370,9 @@ protected:
   float theta;
 
   bool  useDirectGravity;
+
+
+  domainInformation periodicDomainInfo;
 
   //Simulation statistics
   double Ekin, Ekin0, Ekin1;
@@ -793,6 +797,11 @@ public:
   float get_t_current() const       { return t_current; }
   void setUseDirectGravity(bool s)  { useDirectGravity = s;    }
   bool getUseDirectGravity() const  { return useDirectGravity; }
+
+  void setPeriodicDomain(domainInformation domain)
+  {
+      this->periodicDomainInfo = domain;
+  }
 
   octree(const MPI_Comm &comm,
          my_dev::context *devContext_,

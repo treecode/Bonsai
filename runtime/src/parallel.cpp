@@ -111,10 +111,23 @@
     //Note that parameter order is different between x86_64 and PPC
     #define VECINSERT(a,b,c) vec_insert(a,b,c);
 
+    #include "host_fp16.h"
+    static inline float2 extract_opening_criteria(float val)
+    {
+        //Power8 does not have native instructions, use CPU implementation
+        //to decode the half values
+        __half2 *t = (__half2*)&val;
+
+        float2 res;
+        res.x = Eigen::half_impl::half_to_float(Eigen::half_impl::raw_uint16_to_half(t->x));
+        res.y = Eigen::half_impl::half_to_float(Eigen::half_impl::raw_uint16_to_half(t->y));
+        return res;
+    }
 
     #undef vector
     #undef bool
     #undef pixel
+
 
 #else
     //Uncomment the below to use 256 (AVX) bit instructions instead of 128 (SSE)
@@ -139,6 +152,17 @@
     #define VECCMPLE         __builtin_ia32_cmpleps
     #define VECTEST          __builtin_ia32_movmskps
     #define VECINSERT(a,b,c) __builtin_ia32_vec_set_v4sf(b,a,c);
+
+
+    static inline float2 extract_opening_criteria(float val)
+    {
+        __half2 temp = *((__half2*)&val);
+        float2 res = {_cvtsh_ss(temp.x), _cvtsh_ss(temp.y)};
+        return res;
+    }
+
+
+#endif
 #endif
 
 
@@ -253,9 +277,6 @@ MPIComm *myComm;
 //  if (MPI_V4SF) MPI_Type_free(&MPI_V4SF);
 //}
 
-#endif //USE_MPI
-
-
 
 inline int host_float_as_int(float val)
 {
@@ -275,20 +296,6 @@ inline float host_int_as_float(int val)
 //SSE stuff for local tree-walk
 #ifdef USE_MPI
 
-
-
-#if 1
-static inline float2 extract_opening_criteria(float val)
-{
-    __half2 temp = *((__half2*)&val);
-    float2 res = {_cvtsh_ss(temp.x), _cvtsh_ss(temp.y)};
-    return res;
-}
-#else
-
-// Future Power8 version
-
-#endif
 
 static inline _v4sf __abs(const _v4sf x)
 {
@@ -3337,11 +3344,9 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
   localTree.boxSmoothing.waitForCopyEvent();
   localTree.multipole.waitForCopyEvent();
 
-  // TODO(jbedorf) move this outside the function and make it a parameter
-  const float3 periodicDomainSize =  {6.8593750000000000, 4.0594940802395563E-002f, 3.8273277230987154E-002f};   //Hardcoded for phantom tube
-//  const float3 periodicDomainSize = {1.0f, 0.125f, 0.125f};   //Hardcoded for our testing IC
-//  const float3 periodicDomainSize = {100.0f, 100.0f, 100.0f};   //Hardcoded for our testing IC
-  const int    periodicMethod     = PERIODIC_X | PERIODIC_Y | PERIODIC_Z;
+
+  const float3 periodicDomainSize = {this->periodicDomainInfo.domainSize.x,this->periodicDomainInfo.domainSize.y, this->periodicDomainInfo.domainSize.z};
+  const int    periodicMethod     = (int)periodicDomainInfo.domainSize.w;
   const int    selectionMethod    = SELECT_SPH;//GRAV;
   const int    nBodyProps         = 4; //Position, velocity, density and hydro props per particle
 
