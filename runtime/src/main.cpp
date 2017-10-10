@@ -20,9 +20,18 @@ http://github.com/treecode/Bonsai
  * Close BonsaiIO on destruction to properly close open File handles
  * Fix the block time stepping
  * Add block time-stepping to the multi-GPU code
+ * Main priority:
+ * - Fix gravity and combine with SPH
+ * - Run other tests
+ * - Find better method for group creation (smaller sizes to reduce difference between min/max interaction counts)
+ * - Find better method for node determination (smaller sizes)
+ * - Support for multiple particle types such that we can treat gas particles different from gravity only particles
+ * - Verify that the way we treat boundaries is correct
  *
- * Figure out of Smoothing info should be included with the particles that are part of the boundary tree
- *
+ * Think about the multi-GPU data-exchange. For the SPH code we should not have to send data to all our neighbours
+ * but only to ones we have talked to before. So the alltoall can be made more efficient. Maybe only send top level
+ * and do point-to-point for the ones with which we have overlap
+
  */
 
 #include <iostream>
@@ -773,6 +782,14 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     tree->localTree.bodies_pos[i]   = bodyPositions[i];
 
     //tree->localTree.bodies_pos[i].x += double(rand())/RAND_MAX;
+    if(bodyIDs[i] < 10 || bodyIDs[i] == 100000000 )
+    {
+        fprintf(stderr,"START %d\t%lld\t xyz: %f %f %f vxyz: %f %f %f \trho,h: %.16f  %.16lg \n",
+                i, bodyIDs[i],
+                bodyPositions[i].x, bodyPositions[i].y, bodyPositions[i].z,
+                bodyVelocities[i].x, bodyVelocities[i].y, bodyVelocities[i].z,
+                bodyDensity[i].x, bodyDensity[i].y);
+    }
 
 
     tree->localTree.bodies_Ppos[i]  = bodyPositions[i];
@@ -792,6 +809,15 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   tree->localTree.bodies_ids.  h2d();
   tree->localTree.bodies_dens. h2d();
   tree->localTree.bodies_hydro.h2d();
+
+  domainInformation domain;
+  float tempX =  PERIODIC_Y | PERIODIC_Z;
+//  tempX = 0;
+
+//  domain.domainSize =  {6.8593750000000000, 4.0594940802395563E-002f, 3.8273277230987154E-002f, tempX}; //Hardcoded for 256 phantom tube
+ domain.domainSize =  {3.9296875000000000, 2.0297470401197781E-002f, 1.9136638615493577E-002f, tempX}; //Hardcoded for 512 tube
+//  domain.domainSize =  { 2.46484375, 0.01014873478, 0.00956831966, tempX}; //Hardcoded for 1024 tube
+  tree->setPeriodicDomain(domain);
 
 
   #ifdef USE_MPI
@@ -849,7 +875,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
           const float t_current = ioSharedData.t_current;
 
           bool distributed = true;
-          string fileName; fileName.resize(256);
+          std::string fileName; fileName.resize(256);
           sprintf(&fileName[0], "%s_%010.4f-%d", snapshotFile.c_str(), t_current, procId);
 
 

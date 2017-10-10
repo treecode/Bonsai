@@ -197,16 +197,21 @@ void countInteractions(tree_structure &tree, MPI_Comm mpiCommWorld, int procId)
   int minOps = 10e6, maxOps = 0;
   long long int interactionUsefull = 0;
   long long int interactionTotal   = 0;
+  int minUsefull = 10e6, maxUsefull = 0;
+  int minInteract = 10e6, maxInteract = 0;
   for(int i=0; i < tree.n; i++) {
       openingTestSum     += tree.interactions[i].x; distanceTestSum     += tree.interactions[i].y;
       minOps = min(minOps, tree.interactions[i].y); maxOps = max(maxOps, tree.interactions[i].y);
       interactionTotal   += (int) tree.bodies_grad[i].z;  interactionUsefull   += (int)tree.bodies_grad[i].y;
-//      fprintf(stderr,"Body: %d\t\t%d\t%d\n", i, tree.interactions[i].x, tree.interactions[i].y);
+      minInteract = min(minInteract, (int)tree.bodies_grad[i].z); maxInteract = max(maxInteract, (int)tree.bodies_grad[i].z);
+      minUsefull  = min(minUsefull, (int)tree.bodies_grad[i].y); maxUsefull = max(maxUsefull, (int)tree.bodies_grad[i].y);
+//      fprintf(stderr,"Body: %d\t\t%d\t%d\tClocks: %d\n", i, tree.interactions[i].x, tree.interactions[i].y, (int)tree.bodies_grad[i].w);
   }
-  fprintf(stderr,"Number of opening angle checks: %lld [ %lld ] distance test: %lld [ Avg: %lld Min: %d Max: %d ] Interactions: avg-total: %lld avg-useful: %lld Total useful: %lld\n",
+  fprintf(stderr,"Node-checks: %lld [ %lld ] Direct: %lld [ Avg: %lld Min: %d Max: %d ] Interactions: [avg,min,max] %d %d %d useful: [avg,min,max]: %d %d %d Total useful: %lld\n",
           openingTestSum,  openingTestSum  / tree.n,
           distanceTestSum, distanceTestSum / tree.n, minOps, maxOps,
-          interactionTotal / tree.n, interactionUsefull / tree.n,
+          (int)(interactionTotal / tree.n), minInteract, maxInteract,
+          (int)(interactionUsefull / tree.n), minUsefull, maxUsefull,
           interactionUsefull);
 
   unsigned long long tmp  = 0, tmpb = 0;
@@ -472,8 +477,9 @@ bool octree::iterate_once(IterationData &idata) {
         countInteractions(this->localTree, mpiCommWorld, procId);
         mpiSync();
 
-#if 0
-        if(0)
+#if 1
+        //if(1)
+        if(iter == -1)
         {
          this->localTree.bodies_dens_out.d2h();
          this->localTree.bodies_grad.d2h();
@@ -481,6 +487,7 @@ bool octree::iterate_once(IterationData &idata) {
          this->localTree.bodies_acc1.d2h();
          this->localTree.bodies_ids.d2h();
          this->localTree.bodies_Pvel.d2h();
+         this->localTree.bodies_Ppos.d2h();
 
          for(int j=0; j < this->nProcs; j++) {
              mpiSync();
@@ -490,7 +497,7 @@ bool octree::iterate_once(IterationData &idata) {
          for(int i=0; i < this->localTree.n; i++)
          {
              ullong tempID = this->localTree.bodies_ids[i] >= 100000000 ? this->localTree.bodies_ids[i]-100000000 : this->localTree.bodies_ids[i];
-             if(tempID < 10 || std::isinf(this->localTree.bodies_acc1[i].x))
+//             if(tempID < 10 || std::isinf(this->localTree.bodies_acc1[i].x))
                  LOGF(stderr,"Rho out: %d %lld || Pos: %f %f %f %lg\t || Vel: %f %f %f gradh: %f || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
                      i,
                      tempID, //this->localTree.bodies_ids[i],
@@ -519,9 +526,10 @@ bool octree::iterate_once(IterationData &idata) {
          }
          }//for j
 //         if(t_current > 0)
+         if(iter == 1)
          {
              mpiSync();
-//             exit(0);
+             exit(0);
          }
         }
 #endif
@@ -1006,7 +1014,7 @@ void octree::approximate_density    (tree_structure &tree)
         //wait on the LET to finish before we start the interaction computations
         gravStream->sync();
 
-        countInteractions(tree, mpiCommWorld, procId);
+//        countInteractions(tree, mpiCommWorld, procId);
     } //For i
 }
 

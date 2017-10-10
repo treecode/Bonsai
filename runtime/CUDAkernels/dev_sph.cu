@@ -949,7 +949,6 @@ bool treewalk_control(
               //This stores the time-step/dt
               body_grad_out[addr].x = max(body_grad_out[addr].x,  derivative_i[0].x);
 
-
               if(isFinalLaunch)
               {
                   const float C_CFL = 0.3; //Default is 0.3
@@ -960,6 +959,7 @@ bool treewalk_control(
               //TODO remove, this records interaction stats
               body_grad_out[addr].z += derivative_i[i].z;
               body_grad_out[addr].y += derivative_i[i].y;
+//              body_grad_out[addr].w += endC-startC; //Clock cycles for this group
           }
         }
         active_inout[addr] = 1;

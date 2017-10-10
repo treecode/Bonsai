@@ -1102,7 +1102,7 @@ namespace hydroforce
           const float4 MV = (FULL || ptclIdx >= 0) ? body_jvel [ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
           const float4 MH = (FULL || ptclIdx >= 0) ? body_hydro[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
           const float2 MD = (FULL || ptclIdx >= 0) ? body_jdens[ptclIdx] : make_float2(0.0f, 0.0f);
-          const int  IDjx = (FULL || ptclIdx >= 0) ? IDs[ptclIdx] : 0;
+          const int  IDjx = (FULL || ptclIdx >= 0) ? IDs[ptclIdx] : -1;
 
           const int NGROUPTemp = NCRIT;
           const int offset     = NGROUPTemp*(laneId / NGROUPTemp);
@@ -1124,19 +1124,25 @@ namespace hydroforce
 
             const float2 jD      = make_float2(__shfl(MD.x, j), __shfl(MD.y, j));
             //
-            const float ith_abs_gradW = kernel.abs_gradW(r, pos_i[0].w);
-            const float jth_abs_gradW = (jD.y != 0) ? kernel.abs_gradW(r, jD.y) : 0.0f; //Returns NaN if smthj is 0 which happens if we do not use the particle, so 'if' for now
+            float ith_abs_gradW = kernel.abs_gradW(r, pos_i[0].w);
+            float jth_abs_gradW = (jD.y != 0) ? kernel.abs_gradW(r, jD.y) : 0.0f; //Returns NaN if smthj is 0 which happens if we do not use the particle, so 'if' for now
+            ith_abs_gradW *= omegai;
+            jth_abs_gradW *= omegaj;
+
+
+            const int IDj = __shfl(IDjx, j);
+
             const float abs_gradW     = 0.5f * (ith_abs_gradW + jth_abs_gradW);
-            const float4 gradW        = (r > 0) ? make_float4(abs_gradW * dr.x / r, abs_gradW * dr.y / r, abs_gradW * dr.z / r, 0.0f)
-                                                : make_float4(0.0f,0.0f,0.0f,0.0f);
+        //    const float4 gradW        = (r > 0) ? make_float4(abs_gradW * dr.x / r, abs_gradW * dr.y / r, abs_gradW * dr.z / r, 0.0f)
+        //                                        : make_float4(0.0f,0.0f,0.0f,0.0f);
 
             //AV
             const float4 jH       = make_float4(__shfl(MH.x, j), __shfl(MH.y, j), __shfl(MH.z,j), __shfl(MH.w,j)); //OLD: Note w in z location
 
 #if 1
-            const float aAV       = 1.0f; //Alpha parameter for artificial viscosity
-            const float bAV       = 2.0f; //Beta parameter for artificial viscosity
-            const float aC        = 1.0f; //Artificial Conductivity parameter
+            const float aAV       = 1.0f; //1.0f; //Alpha parameter for artificial viscosity
+            const float bAV       = 2.0f; //2.0f; //Beta parameter for artificial viscosity
+            const float aC        = 1.0f; //1.0f; //Artificial Conductivity parameter
 
             const float v_sigi     = aAV*hydro_i[0].y - bAV * projv; //a*csi - b*drdv
             const float v_sigj     = aAV*jH.y         - bAV * projv; //a*csj - b*drdv
@@ -1146,9 +1152,6 @@ namespace hydroforce
             //Determine the maximum for the dt variable
             const float v_sig = max(v_sigi,v_sigj);
             v_sig_max = (v_sig_max < v_sig) ? v_sig : v_sig_max;
-
-
-
 
 //                  float AV        = - 0.5f * v_sig * w_ij / (0.5f * (density_i[0].dens + jD.x));
 //                  AV             *= 0.5f * (hydro_i[0].w + jH.w);   //Eq 63
@@ -1177,31 +1180,36 @@ namespace hydroforce
                AVi = 0.5f*(1.0 / density_i[0].dens)*v_sigi*projv;
                AVj = 0.5f*(1.0 / jD.x)*v_sigj*projv;
 
+               if(IDj == 147470 && IDi == 16577500)
+               {
+                   printf("ON DEVXX2b: %.16f %.16f %.16f AVi: %.16f PAi: %.16f\n",  1.0 / density_i[0].dens, v_sigi, projv, 0.5f*(1.0 / density_i[0].dens)*v_sigi*projv);
+               }
+
                //Multiply with the Balsara switch
-               AVi *= hydro_i[0].w;
-               AVj *= jH.w;
+//               AVi *= hydro_i[0].w;
+//               AVj *= jH.w;
            }
 
            //Force according to equation 120 , with the addition of the Artificial Viscosity
-           PA   = jM0.w*(PAi-AVi)*omegai*ith_abs_gradW;
-           PB2  = jM0.w*(PAj-AVj)*omegaj*jth_abs_gradW;
+           PA   = jM0.w*(PAi-AVi)*ith_abs_gradW;
+           PB2  = jM0.w*(PAj-AVj)*jth_abs_gradW;
 
 
            float PB = PA+PB2;
-
            //Scale by distance
            const float4 gradW2 = (r > 0) ? make_float4(PB * dr.x / r, PB * dr.y / r, PB * dr.z / r, 0.0f)
                                                            : make_float4(0.0f,0.0f,0.0f,0.0f);
 
 
-
             //TODO the PAi part can be moved to outside the loop
             //Energy following equation, Rosswog 2009, eq 119
             //                     (      grkerni      )
-            float du = jM0.w*PAi*projv*omegai*ith_abs_gradW;
+//            float du = jM0.w*PAi*projv*omegai*ith_abs_gradW;
+           float du = jM0.w*PAi*projv*ith_abs_gradW;
 
             //Add AV to the energy, Rosswog eq 62 / Phantom eq 40
-            du += -AVi*jM0.w*projv*omegai*ith_abs_gradW;
+//            du += -AVi*jM0.w*projv*omegai*ith_abs_gradW;
+           du += -AVi*jM0.w*projv*ith_abs_gradW;
 
             //Add conductivity to the energy, Phantom eq 40.
 
@@ -1211,7 +1219,8 @@ namespace hydroforce
             float autermj = aC*0.5f*jM0.w *(1.0f/jD.x);
             float denij   = hydro_i[0].z - jH.z;
 
-            float AVC = vsigu*denij*(autermi*omegai*ith_abs_gradW + autermj*omegaj*jth_abs_gradW); //Phantom Eq 40
+//            float AVC = vsigu*denij*(autermi*omegai*ith_abs_gradW + autermj*omegaj*jth_abs_gradW); //Phantom Eq 40
+            float AVC = vsigu*denij*(autermi*ith_abs_gradW + autermj*jth_abs_gradW); //Phantom Eq 40
 
             du += AVC;
 
@@ -1219,22 +1228,67 @@ namespace hydroforce
 
              //Older work
 
-            const int IDj = __shfl(IDjx, j);
+         //   const int IDj = __shfl(IDjx, j);
 
 
 //                if(IDi == 148739 && gradW2.x != 0)
                 //if(IDi == 64767 && gradW2.x != 0)
 //            if(IDi == 100863 && IDj != 0)
-            if(IDi == 148737 && IDj != 0)
+//            if(IDi == 16577500  && IDj != 999999)
 //                if(0)
                 {
-                    int tempID = (IDj >= 100000000 ? IDj-100000000 : IDj);
-                    int boundary  = (IDj >= 100000000 ? 1 : 0);
-                    const float hi = 1.0f/pos_i[0].w;
-                    const float hi21 = hi*hi;
-                    const float hi41 = hi21*hi21;
-                    float cnormk = 1./(120.*M_PI);
-                    const float cnormkh2 = cnormk*hi41; //Quintic kernel
+//                    int tempID = (IDj >= 100000000 ? IDj-100000000 : IDj);
+//                    int boundary  = (IDj >= 100000000 ? 1 : 0);
+//                    const float hi = 1.0f/pos_i[0].w;
+//                    const float hi21 = hi*hi;
+//                    const float hi41 = hi21*hi21;
+//                    float cnormk = 1./(120.*M_PI);
+//                    const float cnormkh2 = cnormk*hi41; //Quintic kernel
+//
+//                    if(fabs(gradW2.x) > 0.0f)
+//                    printf("ON DEV: %d\tj: %d\tForce: %.16f %.16f %.16f\n",
+//                            (int)IDi, IDj,
+//                            acc_i[0].x, gradW2.x, acc_i[0].x - gradW2.x);
+//
+
+
+//                    if(IDj == 147470)
+//                    {
+//                        float cnormk = 1./(120.*M_PI);
+
+//                        float hi2= (1.0f/pos_i[0].w)*(1.0f/pos_i[0].w);
+//                        float hj2= (1.0f/jD.y)*(1.0f/jD.y);
+
+//                        float tempi = kernel.abs_gradWJB(r, pos_i[0].w);
+//                        float tempj = kernel.abs_gradWJB(r, jD.y);
+//
+//
+//                        float tempi2 = tempi*hi2*hi2*cnormk*omegai;
+//                        float tempj2 = tempj*hj2*hj2*cnormk*omegaj;
+//
+////                        float tempj2 = tempi*temp*temp*cnormk*omegai;
+//
+//                        double dti2 = tempi*hi2*hi2*cnormk*omegai;
+//                        double dtj2 = tempj*hj2*hj2*cnormk*omegaj;
+//
+//                        printf("ON DEVX: %d\tj: %d\tForce: %.16f | %f %f | PA: %f %f | %f %f %f %.16f\n",
+//                                 (int)IDi, IDj,gradW2.x,
+//                                 ith_abs_gradW, jth_abs_gradW,
+//                                 PA, PB2,
+//                                 PAi, AVi, w_ij, jM0.w );
+
+//                        printf("ON DEVX: %d\tj: %d\tForce: %.16f | %f %f | %f %f | %f %f | %f %f | %f %f | %f %f | %f %f | %f %f\n",
+//                                (int)IDi, IDj,gradW2.x,
+//                                ith_abs_gradW, jth_abs_gradW,
+//                                pos_i[0].w, jD.y,
+//                                density_i[0].dens, jD.x,
+//                                omegai, omegaj,
+//                                r, jD.y,
+//                                tempi, tempj,
+//                                tempi2, dti2,
+//                                tempj2, dtj2);
+
+//                    }
 
 //                    if(AVC != 0)
 //                    printf("ON DEV, %d\t%d\t%d\t\told:  %f %f\t%.16f\n",

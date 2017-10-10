@@ -190,43 +190,65 @@ KERNEL_DECLARE(predict_particles)(const int 	n_bodies,
 
   hydro[idx].z += dt_cb*a.w;
 
+  pVel[idx] = v;
+
+  //If no periodic boundaries just store the just predicted value
+  if(domainInfo.domainSize.w ==  0)
+  {
+      pPos[idx] = p;
+      return;
+  }
+
   //Adjust the particle position for periodic boundaries
+
   float3 low, high;
   low.x = -(domainInfo.domainSize.x / 2.0f); low.y  = -(domainInfo.domainSize.y / 2.0f); low.z  = -(domainInfo.domainSize.z / 2.0f);
   high.x = (domainInfo.domainSize.x / 2.0f); high.y =  (domainInfo.domainSize.y / 2.0f); high.z =  (domainInfo.domainSize.z / 2.0f);
 
+  #define PERIODIC_X 1
+  #define PERIODIC_Y 2
+  #define PERIODIC_Z 4
   if(posOutsideDomain(low, high, p) ){
-      while(p.x < low.x){
-          p.x += domainInfo.domainSize.x;
+      if(((int)domainInfo.domainSize.w) & PERIODIC_X)
+      {
+          while(p.x < low.x){
+              p.x += domainInfo.domainSize.x;
+          }
+          while(p.x > high.x){
+              p.x -= domainInfo.domainSize.x;
+          }
+          if(p.x == high.x){
+              p.x = low.x;
+          }
       }
-      while(p.x > high.x){
-          p.x -= domainInfo.domainSize.x;
+      if(((int)domainInfo.domainSize.w) & PERIODIC_Y)
+      {
+          while(p.y < low.y){
+              p.y += domainInfo.domainSize.y;
+          }
+          while(p.y >= high.y){
+              p.y -= domainInfo.domainSize.y;
+          }
+          if(p.y == high.y){
+              p.y = low.y;
+          }
       }
-      if(p.x == high.x){
-          p.x = low.x;
-      }
-      while(p.y < low.y){
-          p.y += domainInfo.domainSize.y;
-      }
-      while(p.y >= high.y){
-          p.y -= domainInfo.domainSize.y;
-      }
-      if(p.y == high.y){
-          p.y = low.y;
-      }
-      while(p.z < high.z){
-          p.z += domainInfo.domainSize.z;
-      }
-      while(p.z >= high.z){
-          p.z -= domainInfo.domainSize.z;
-      }
-      if(p.z == high.z){
-          p.z = low.z;
+      if(((int)domainInfo.domainSize.w) & PERIODIC_Z)
+      {
+          while(p.z < high.z){
+              p.z += domainInfo.domainSize.z;
+          }
+          while(p.z >= high.z){
+              p.z -= domainInfo.domainSize.z;
+          }
+          if(p.z == high.z){
+              p.z = low.z;
+          }
       }
   }
 
   pPos[idx] = p;
-  pVel[idx] = v;
+
 }
 
 

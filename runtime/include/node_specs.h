@@ -44,10 +44,7 @@ typedef float4 real4;
 
 struct domainInformation
 {
-    float3 domainSize;
-    int2   xrange;
-    int2   yrange;
-    int3   zrange;
+    float4 domainSize;
 };
 
 
