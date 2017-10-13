@@ -1,5 +1,7 @@
 #include "octree.h"
 
+#define USE_MPI
+
 
 #ifdef USE_MPI
 #include "radix.h"
@@ -2107,7 +2109,6 @@ int getLEToptQuickTreevsTree(
     double &timeFunction, int &depth,
     const float3 periodicDomainSize,
     const int    periodicMethod,
-    const int    selectionMethod,
     const int    LETMethod)
 {
   depth = 0;
@@ -2129,11 +2130,10 @@ int getLEToptQuickTreevsTree(
       const int SIMDW  = 4; //#define SSEIMBH
 #endif
 
-  bool usePeriodic = false;
   int2 xP = {0,0}, yP = {0,0}, zP = {0,0};
-  if(periodicMethod & 1) { xP = {-1,1}; usePeriodic = true;}
-  if(periodicMethod & 2) { yP = {-1,1}; usePeriodic = true;}
-  if(periodicMethod & 4) { zP = {-1,1}; usePeriodic = true;}
+  if(periodicMethod & 1) { xP = {-1,1};}
+  if(periodicMethod & 2) { yP = {-1,1};}
+  if(periodicMethod & 4) { zP = {-1,1};}
 
   bufferStruct.LETBuffer_node.clear();
   bufferStruct.LETBuffer_ptcl.clear();
@@ -2226,16 +2226,16 @@ int getLEToptQuickTreevsTree(
 #ifdef AVXIMBH
         _v8sf resGrav = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
 
-        if(selectionMethod & SELECT_GRAV) resGrav = split_node_grav_sph_impbh_box8a<false>(resGrav,checkValueGrav, nodeCOM,  nodeSIZE, centre, size, periodicDomainSize, xP, yP, zP);
-        if(selectionMethod & SELECT_SPH)  resGrav = split_node_grav_sph_impbh_box8a<true >(resGrav,checkValueSPH,  nodeCNTR, nodeSIZE, centre, size, periodicDomainSize, xP, yP, zP);
+        if(LETMethod == LET_METHOD_GRAV) resGrav = split_node_grav_sph_impbh_box8a<false>(resGrav,checkValueGrav, nodeCOM,  nodeSIZE, centre, size, periodicDomainSize, xP, yP, zP);
+        if(LETMethod  > LET_METHOD_GRAV)  resGrav = split_node_grav_sph_impbh_box8a<true >(resGrav,checkValueSPH,  nodeCNTR, nodeSIZE, centre, size, periodicDomainSize, xP, yP, zP);
 
         const _v4sf ret1 = __builtin_ia32_vextractf128_ps256(resGrav, 0);
         const _v4sf ret2 = __builtin_ia32_vextractf128_ps256(resGrav, 1);
         bufferStruct.groupSplitFlag.push_back(std::make_pair(ret1,ret2));
 #else
        _v4sf resGrav = {0.0f, 0.0f, 0.0f, 0.0f};
-       if(selectionMethod & SELECT_GRAV) resGrav = split_node_grav_sph_impbh_box4a<false>(resGrav, checkValueGrav, nodeCOM,  nodeSIZE, centre, size, periodicDomainSize, xP, yP, zP);
-       if(selectionMethod & SELECT_SPH)  resGrav = split_node_grav_sph_impbh_box4a<true >(resGrav, checkValueSPH,  nodeCNTR, nodeSIZE, centre, size, periodicDomainSize, xP, yP, zP);
+       if(LETMethod == LET_METHOD_GRAV) resGrav = split_node_grav_sph_impbh_box4a<false>(resGrav, checkValueGrav, nodeCOM,  nodeSIZE, centre, size, periodicDomainSize, xP, yP, zP);
+       if(LETMethod  > LET_METHOD_GRAV)  resGrav = split_node_grav_sph_impbh_box4a<true >(resGrav, checkValueSPH,  nodeCNTR, nodeSIZE, centre, size, periodicDomainSize, xP, yP, zP);
        bufferStruct.groupSplitFlag.push_back(resGrav);
 #endif
       }
@@ -2324,7 +2324,6 @@ int3 getLET1(
           unsigned long long &nflops,
     const float3             periodicDomainSize,
     const int                periodicMethod,
-    const int                selectionMethod,
     const int                LETMethod)
 {
   bufferStruct.LETBuffer_node.clear();
@@ -2382,12 +2381,10 @@ int3 getLET1(
 
   bufferStruct.groupSIMDkeys.resize((int)(1.10*(nGroupsV/SIMDW)));
 
-  bool usePeriodic = false;
   int2 xP = {0,0}, yP = {0,0}, zP = {0,0};
-  if(periodicMethod & 1) { xP = {-1,1}; usePeriodic = true;}
-  if(periodicMethod & 2) { yP = {-1,1}; usePeriodic = true;}
-  if(periodicMethod & 4) { zP = {-1,1}; usePeriodic = true;}
-
+  if(periodicMethod & 1) { xP = {-1,1};}
+  if(periodicMethod & 2) { yP = {-1,1};}
+  if(periodicMethod & 4) { zP = {-1,1};}
 
 #if 1
   const bool TRANSPOSE_SPLIT = false;
@@ -2444,6 +2441,7 @@ int3 getLET1(
 
       const float2 openings  = extract_opening_criteria(nodeCentre[nodeIdx].w);
       const float nodeInfo_x = openings.x;
+//      const float nodeInfo_x = nodeCentre[nodeIdx].w;
       const float nodeSmth   = fabs(openings.y);
 
       const uint  nodeInfo_y = host_float_as_int(nodeSize[nodeIdx].w);
@@ -2478,7 +2476,7 @@ int3 getLET1(
       for (int ib = 0; ib < nGroupsV && !split; ib += SIMDW2)
       {
 //          //Gravity test
-          if(selectionMethod & SELECT_GRAV)
+          if(LETMethod  == LET_METHOD_GRAV)
           {
 #ifdef USE_AVX
              split |= split_node_grav_sph_impbh_box8simd1_periodic<TRANSPOSE_SPLIT, false>(
@@ -2496,7 +2494,7 @@ int3 getLET1(
           if(split) break;
 
           //SPH test if distance between boxes is smaller than the smoothing range
-          if(selectionMethod & SELECT_SPH)
+          if(LETMethod > LET_METHOD_GRAV)
           {
               float temp_smth[4] = {0.0,0.0,0.0,0.0};
 
@@ -2529,7 +2527,7 @@ int3 getLET1(
                                                                    (_v4sf*)&bufferStruct.groupSizeSIMD[ib],
                                                                    periodicDomainSize,
                                                                    xP,yP,zP);
-          } //if (selectionMethod & SELECT_SPH)
+          } //if (LETMethod > LET_METHOD_GRAV)
       } //for nGroupsV
 
       /**************/
@@ -2591,7 +2589,7 @@ int3 getLET1(
       const int idx = bufferStruct.LETBuffer_ptcl[i];
       vLETBuffer[i] = bodies_posV[idx];
     }
-    if(LETMethod == LET_METHOD_DRVT ||LETMethod == LET_METHOD_HYDR)
+    if(LETMethod == LET_METHOD_DRVT || LETMethod == LET_METHOD_HYDR)
     {
         for (int i = 0; i < nExportPtcl; i++)
         {
@@ -2683,7 +2681,6 @@ int getLEToptQuickFullTree(
     double &time,
     const float3 periodicDomainSize,
     const int    periodicMethod,
-    const int    selectionMethod,
     const int    LETMethod)
 {
   int depth = 0;
@@ -2710,11 +2707,10 @@ int getLEToptQuickFullTree(
       const int SIMDW  = 4;
 #endif
 
-  bool usePeriodic = false;
   int2 xP = {0,0}, yP = {0,0}, zP = {0,0};
-  if(periodicMethod & 1) { xP = {-1,1}; usePeriodic = true;}
-  if(periodicMethod & 2) { yP = {-1,1}; usePeriodic = true;}
-  if(periodicMethod & 4) { zP = {-1,1}; usePeriodic = true;}
+  if(periodicMethod & 1) { xP = {-1,1};}
+  if(periodicMethod & 2) { yP = {-1,1};}
+  if(periodicMethod & 4) { zP = {-1,1};}
 
 
   bufferStruct.LETBuffer_node.clear();
@@ -2794,7 +2790,7 @@ int getLEToptQuickFullTree(
           const int group     = levelGroups.first()[std::min(ib+laneIdx, groupEnd-1)];
           size  [laneIdx]     = grpNodeSizeInfoV[group];
           centre[laneIdx]     = grpNodeCenterInfoV[group];
-          if(selectionMethod & SELECT_SPH)
+          if(LETMethod > LET_METHOD_GRAV)
           {
               const float2 openings  = extract_opening_criteria(groupCentreInfo[laneIdx].w);
               float grpSmth          = fabs(openings.y);
@@ -2824,16 +2820,16 @@ int getLEToptQuickFullTree(
         checkValueSPH01 = pack_2xmm(checkValueSPH0,checkValueSPH1);
         _v8sf resGrav   = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
 
-        if(selectionMethod & SELECT_GRAV) resGrav = split_node_grav_sph_impbh_box8a<false>(resGrav,checkValueGrav,   nodeCOM,  nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
-        if(selectionMethod & SELECT_SPH)  resGrav = split_node_grav_sph_impbh_box8a<true >(resGrav,checkValueSPH01,  nodeCNTR, nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
+        if(LETMethod == LET_METHOD_GRAV) resGrav = split_node_grav_sph_impbh_box8a<false>(resGrav,checkValueGrav,   nodeCOM,  nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
+        if(LETMethod > LET_METHOD_GRAV) resGrav = split_node_grav_sph_impbh_box8a<true >(resGrav,checkValueSPH01,  nodeCNTR, nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
 
         const _v4sf ret1 = __builtin_ia32_vextractf128_ps256(resGrav, 0);
         const _v4sf ret2 = __builtin_ia32_vextractf128_ps256(resGrav, 1);
         bufferStruct.groupSplitFlag.push_back(std::make_pair(ret1,ret2));
 #else
        _v4sf resGrav = {0.0f, 0.0f, 0.0f, 0.0f};
-       if(selectionMethod & SELECT_GRAV) resGrav = split_node_grav_sph_impbh_box4a<false>(resGrav, checkValueGrav, nodeCOM,  nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
-       if(selectionMethod & SELECT_SPH)  resGrav = split_node_grav_sph_impbh_box4a<true >(resGrav, checkValueSPH0, nodeCNTR, nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
+       if(LETMethod == LET_METHOD_GRAV) resGrav = split_node_grav_sph_impbh_box4a<false>(resGrav, checkValueGrav, nodeCOM,  nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
+       if(LETMethod > LET_METHOD_GRAV)  resGrav = split_node_grav_sph_impbh_box4a<true >(resGrav, checkValueSPH0, nodeCNTR, nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
        bufferStruct.groupSplitFlag.push_back(resGrav);
 #endif
       }
@@ -2951,7 +2947,6 @@ int3 getLEToptFullTree(
     unsigned long long &nflops,
     const float3     periodicDomainSize,
     const int        periodicMethod,
-    const int        selectionMethod,
     const int        LETMethod)
 {
   bufferStruct.LETBuffer_node.clear();
@@ -2988,11 +2983,10 @@ int3 getLEToptFullTree(
 #endif
 
 
-  bool usePeriodic = false;
   int2 xP = {0,0}, yP = {0,0}, zP = {0,0};
-  if(periodicMethod & PERIODIC_X) { xP = {-1,1}; usePeriodic = true;}
-  if(periodicMethod & PERIODIC_Y) { yP = {-1,1}; usePeriodic = true;}
-  if(periodicMethod & PERIODIC_Z) { zP = {-1,1}; usePeriodic = true;}
+  if(periodicMethod & PERIODIC_X) { xP = {-1,1}; }
+  if(periodicMethod & PERIODIC_Y) { yP = {-1,1}; }
+  if(periodicMethod & PERIODIC_Z) { zP = {-1,1}; }
 
 
   Swap<std::vector<uint4> > levelList  (bufferStruct.currLevelVecUI4,   bufferStruct.nextLevelVecUI4);
@@ -3052,7 +3046,7 @@ int3 getLEToptFullTree(
           const int group  = levelGroups.first()[std::min(ib+laneIdx, groupEnd-1)];
           centre[laneIdx]  = grpNodeCenterInfoV[group];
           size  [laneIdx]  =   grpNodeSizeInfoV[group];
-          if(selectionMethod & SELECT_SPH)
+          if(LETMethod > LET_METHOD_GRAV)
           {
               const float2 openings  = extract_opening_criteria(groupCentreInfo[laneIdx].w);
               float smth   = fabs(openings.y); //This is for density computation, there we do not use the distance of the node
@@ -3082,16 +3076,16 @@ int3 getLEToptFullTree(
         _v8sf resGrav = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
         _v8sf check2 = pack_2xmm(checkValueGrav,checkValueGrav);
 
-        if(selectionMethod & SELECT_GRAV) resGrav = split_node_grav_sph_impbh_box8a<false>(resGrav,check2, nodeCOM,  nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
-        if(selectionMethod & SELECT_SPH)  resGrav = split_node_grav_sph_impbh_box8a<true >(resGrav,checkValueSPH01,  nodeCNTR, nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
+        if(LETMethod == LET_METHOD_GRAV) resGrav = split_node_grav_sph_impbh_box8a<false>(resGrav,check2, nodeCOM,  nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
+        if(LETMethod > LET_METHOD_GRAV)  resGrav = split_node_grav_sph_impbh_box8a<true >(resGrav,checkValueSPH01,  nodeCNTR, nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
 
         const _v4sf ret1 = __builtin_ia32_vextractf128_ps256(resGrav, 0);
         const _v4sf ret2 = __builtin_ia32_vextractf128_ps256(resGrav, 1);
         bufferStruct.groupSplitFlag.push_back(std::make_pair(ret1,ret2));
 #else
           _v4sf resGrav = {0.0f, 0.0f, 0.0f, 0.0f};
-          if(selectionMethod & SELECT_GRAV) resGrav = split_node_grav_sph_impbh_box4a<false>(resGrav,checkValueGrav, nodeCOM,  nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
-          if(selectionMethod & SELECT_SPH)  resGrav = split_node_grav_sph_impbh_box4a<true >(resGrav,checkValueSPH0,  nodeCNTR, nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
+          if(LETMethod == LET_METHOD_GRAV) resGrav = split_node_grav_sph_impbh_box4a<false>(resGrav,checkValueGrav, nodeCOM,  nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
+          if(LETMethod > LET_METHOD_GRAV)  resGrav = split_node_grav_sph_impbh_box4a<true >(resGrav,checkValueSPH0,  nodeCNTR, nodeSIZE, centre, size,periodicDomainSize, xP, yP,zP);
           bufferStruct.groupSplitFlag.push_back(resGrav);
 #endif
       }
@@ -3347,7 +3341,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
   const float3 periodicDomainSize = {this->periodicDomainInfo.domainSize.x,this->periodicDomainInfo.domainSize.y, this->periodicDomainInfo.domainSize.z};
   const int    periodicMethod     = (int)periodicDomainInfo.domainSize.w;
-  const int    selectionMethod    = SELECT_SPH;//GRAV;
   const int    nBodyProps         = 4; //Position, velocity, density and hydro props per particle
 
   double t0         = get_time();
@@ -3572,9 +3565,8 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                             procId, ibox,
                                             nflops, bla3,
                                             periodicDomainSize, periodicMethod,
-                                            selectionMethod,
                                             LETMethod);
-
+//            int sizeTree = -1;
             //Test if the boundary tree sent by the remote tree is sufficient for us
             double tBoundaryCheck;
             int depthSearch = 0;
@@ -3592,7 +3584,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                               ibox,
                                               tBoundaryCheck, depthSearch,
                                               periodicDomainSize, periodicMethod,
-                                              selectionMethod,
                                               LETMethod);
 //            int resultTree = 1; //TODO remove once we updated the boundary tree to contain velocity information
 
@@ -3804,7 +3795,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
         int2 usedStartEndNode = {(int)node_begend.x, (int)node_begend.y};
 
-#if 0
+#if 1
         tz = get_time();
         assert(startGrp == 0);
         int3  nExport = getLET1(getLETBuffers[tid],
@@ -3822,12 +3813,11 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                 endGrp,
                                 tree.n_nodes, nflops,
                                 periodicDomainSize, periodicMethod,
-                                selectionMethod,
                                 LETMethod);
 #endif
 
 
-#if 1
+#if 0
         real4 *grpCenter2    =  &globalGrpTreeCntSize[globalGrpTreeOffsets[ibox]];
         int start            = host_float_as_int(grpCenter2[0].z);
         int end              = host_float_as_int(grpCenter2[0].w);
@@ -3858,7 +3848,6 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
                                          grpSize, grpCenter2,
                                          start, end, tree.n_nodes, nflops,
                                          periodicDomainSize, periodicMethod,
-                                         selectionMethod,
                                          LETMethod);
 #endif
 

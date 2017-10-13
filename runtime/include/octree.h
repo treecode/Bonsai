@@ -98,10 +98,6 @@ struct __half2 { unsigned short x,y; };
 #define PERIODIC_Z 4
 #define PERIODIC_XYZ  (PERIODIC_X+PERIODIC_Y+PERIODIC_Z)
 
-#define SELECT_GRAV 1
-#define SELECT_SPH  2
-#define SELECT_SPHGRAV (SELECT_GRAV+SELECT_SPH)
-
 #define LET_METHOD_GRAV 1
 #define LET_METHOD_DENS 2
 #define LET_METHOD_DRVT 3

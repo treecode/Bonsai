@@ -497,22 +497,22 @@ extern "C"  __global__ void compute_dt(const int n_bodies,
 
   dt = 1.0f/(1 << power);
   while(fmodf(tc, dt) != 0.0f) dt *= 0.5f;      // could be slow!
-
+#endif
 //  dt = 0.015625;
 //  dt = 1.0f/(1 << 8);
 //  dt = 1.0f/(1 << 6);
 //  dt = 1.0f/(1 << 7);
-  dt = timeStep;
-  time[idx].x = tc;
-  time[idx].y = tc + dt;
-#else
+//  dt = timeStep;
+//  time[idx].x = tc;
+//  time[idx].y = tc + dt;
+
   float dt    = time[idx].y;
-
-  dt = bodies_grad[idx].x;
+  dt = bodies_grad[idx].x;      //Dynamic SPH step
+  dt = timeStep;                //Constant gravity step
 
   time[idx].x = tc;
   time[idx].y = tc + dt;
-#endif
+
 }
 
 

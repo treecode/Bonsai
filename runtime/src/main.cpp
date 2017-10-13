@@ -22,11 +22,14 @@ http://github.com/treecode/Bonsai
  * Add block time-stepping to the multi-GPU code
  * Main priority:
  * - Fix gravity and combine with SPH
+ * - Fix energy/correctness check ekin/epot/etc
  * - Run other tests
  * - Find better method for group creation (smaller sizes to reduce difference between min/max interaction counts)
  * - Find better method for node determination (smaller sizes)
  * - Support for multiple particle types such that we can treat gas particles different from gravity only particles
  * - Verify that the way we treat boundaries is correct
+ * - Think of a ORB type of domain decomposition, which might be more efficient for SPHs local nature
+ * - Make the iterations to find density smarter and group based instead of doing it X times for ALL groups
  *
  * Think about the multi-GPU data-exchange. For the SPH code we should not have to send data to all our neighbours
  * but only to ones we have talked to before. So the alltoall can be made more efficient. Maybe only send top level
@@ -812,10 +815,10 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 
   domainInformation domain;
   float tempX =  PERIODIC_Y | PERIODIC_Z;
-//  tempX = 0;
+  tempX = 0;
 
 //  domain.domainSize =  {6.8593750000000000, 4.0594940802395563E-002f, 3.8273277230987154E-002f, tempX}; //Hardcoded for 256 phantom tube
- domain.domainSize =  {3.9296875000000000, 2.0297470401197781E-002f, 1.9136638615493577E-002f, tempX}; //Hardcoded for 512 tube
+// domain.domainSize =  {3.9296875000000000, 2.0297470401197781E-002f, 1.9136638615493577E-002f, tempX}; //Hardcoded for 512 tube
 //  domain.domainSize =  { 2.46484375, 0.01014873478, 0.00956831966, tempX}; //Hardcoded for 1024 tube
   tree->setPeriodicDomain(domain);
 

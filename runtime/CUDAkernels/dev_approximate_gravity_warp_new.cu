@@ -31,6 +31,52 @@ PROF_MODULE(dev_approximate_gravity);
 #define _QUADRUPOLE_
 #endif
 
+#if 1
+#if defined(__CUDACC_RTC__)
+#define __CUDA_FP16_DECL__ __host__ __device__
+#else /* !__CUDACC_RTC__ */
+#define __CUDA_FP16_DECL__ static __device__ __inline__
+#endif /* __CUDACC_RTC__ */
+
+
+typedef struct __align__(4) {
+   unsigned int x;
+} __half2;
+typedef struct __align__(2) {
+   unsigned short x;
+} __half;
+
+typedef __half2 half2;
+__CUDA_FP16_DECL__ __half2 __halves2half2(const __half l, const __half h)
+{
+   __half2 val;
+   asm("{  mov.b32 %0, {%1,%2};}\n"
+       : "=r"(val.x) : "h"(l.x), "h"(h.x));
+   return val;
+}
+__CUDA_FP16_DECL__ __half __float2half(const float f)
+{
+   __half val;
+   asm volatile("{  cvt.rn.f16.f32 %0, %1;}\n" : "=h"(val.x) : "f"(f));
+   return val;
+}
+
+__CUDA_FP16_DECL__ float2 __half22float2(const __half2 l)
+{
+   float hi_float;
+   float lo_float;
+   asm("{.reg .f16 low,high;\n"
+       "  mov.b32 {low,high},%1;\n"
+       "  cvt.f32.f16 %0, low;}\n" : "=f"(lo_float) : "r"(l.x));
+
+   asm("{.reg .f16 low,high;\n"
+       "  mov.b32 {low,high},%1;\n"
+       "  cvt.f32.f16 %0, high;}\n" : "=f"(hi_float) : "r"(l.x));
+
+   return make_float2(lo_float, hi_float);
+}
+#endif
+
 /***********************************/
 /***** DENSITY   ******************/
 
@@ -233,7 +279,8 @@ static __device__ __forceinline__ float4 add_acc(
 
   const float r2     = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
   const float r2eps  = r2 + eps2;
-  const float rinv   = (r2 == 0) ? 0 : rsqrtf(r2eps); //JB hack for 0 eps tests
+//  const float rinv   = (r2 == 0) ? 0 : rsqrtf(r2eps); //JB hack for 0 eps tests
+  const float rinv   = rsqrtf(r2eps);
   const float rinv2  = rinv*rinv;
   const float mrinv  = massj * rinv;
   const float mrinv3 = mrinv * rinv2;
@@ -470,16 +517,21 @@ uint2 approximate_gravity(
 
     /* read from gmem cell's info */
     const float4 cellSize = tex1Dfetch(texNodeSize,   cellIdx);
-    const float4 cellPos  = tex1Dfetch(texNodeCenter, cellIdx);
+    float4 cellPos  = tex1Dfetch(texNodeCenter, cellIdx);
 
 #if 1
     const float4 cellCOM  = tex1Dfetch(texMultipole,  cellIdx+cellIdx+cellIdx);
+
+    //fp16 conversion of opening criteria
+    __half2 openings =  *(__half2*)(&cellPos.w);
+    float2 openxy    = __half22float2(openings);    //Tree-code opening is in X, SPH max smoothing is in Y
+    cellPos.w = openxy.x;
 
     /* check if cell opening condition is satisfied */
     const float4 cellCOM1 = make_float4(cellCOM.x, cellCOM.y, cellCOM.z, cellPos.w);
     bool splitCell = split_node_grav_impbh(cellCOM1, groupPos, groupSize);
 
-    interactionCounters.x += 1;
+    //interactionCounters.x += 1; //Placing it here counts opening-checks
 
 #else /*added by egaburov, see compute_propertiesD.cu for matching code */
     bool splitCell = split_node_grav_impbh(cellPos, groupPos, groupSize);
@@ -567,7 +619,8 @@ uint2 approximate_gravity(
         const int scatterIdx = approxCounter + approxScatter.x - approxScatter.y;
         if (approxCell && scatterIdx >= 0)
           tmpList[scatterIdx] = cellIdx;
-        //if (INTCOUNT)  interactionCounters.x += WARP_SIZE*NI;
+        if (INTCOUNT)
+          interactionCounters.x += WARP_SIZE*NI;
       }
       approxCellIdx = tmpList[laneIdx];
     }
@@ -652,7 +705,8 @@ uint2 approximate_gravity(
   if (approxCounter > 0)
   {
     approxAcc<NI,false>(acc_i, pos_i, dens_i, laneIdx < approxCounter ? approxCellIdx : -1, eps2);
-    //if (INTCOUNT) interactionCounters.x += approxCounter * NI;
+    if (INTCOUNT)
+        interactionCounters.x += approxCounter * NI;
     approxCounter = 0;
   }
 
