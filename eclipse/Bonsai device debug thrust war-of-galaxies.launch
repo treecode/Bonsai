@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<launchConfiguration type="org.eclipse.cdt.launch.applicationLaunchType">
+<booleanAttribute key="breakOnError" value="false"/>
+<booleanAttribute key="lc.enable.memcheck" value="false"/>
+<booleanAttribute key="lc.extrapolate" value="true"/>
+<booleanAttribute key="lc.kernelevents" value="false"/>
+<booleanAttribute key="org.eclipse.cdt.dsf.gdb.AUTO_SOLIB" value="true"/>
+<listAttribute key="org.eclipse.cdt.dsf.gdb.AUTO_SOLIB_LIST"/>
+<stringAttribute key="org.eclipse.cdt.dsf.gdb.DEBUG_NAME" value="${cuda_tk_bin:/Bonsai}/cuda-gdb"/>
+<stringAttribute key="org.eclipse.cdt.dsf.gdb.GDB_INIT" value=".cuda-gdbinit"/>
+<listAttribute key="org.eclipse.cdt.dsf.gdb.SOLIB_PATH"/>
+<booleanAttribute key="org.eclipse.cdt.dsf.gdb.UPDATE_THREADLIST_ON_SUSPEND" value="false"/>
+<intAttribute key="org.eclipse.cdt.launch.ATTR_BUILD_BEFORE_LAUNCH_ATTR" value="2"/>
+<stringAttribute key="org.eclipse.cdt.launch.COREFILE_PATH" value=""/>
+<stringAttribute key="org.eclipse.cdt.launch.DEBUGGER_ID" value="gdb"/>
+<stringAttribute key="org.eclipse.cdt.launch.DEBUGGER_START_MODE" value="run"/>
+<booleanAttribute key="org.eclipse.cdt.launch.DEBUGGER_STOP_AT_MAIN" value="true"/>
+<stringAttribute key="org.eclipse.cdt.launch.DEBUGGER_STOP_AT_MAIN_SYMBOL" value="main"/>
+<stringAttribute key="org.eclipse.cdt.launch.PROGRAM_ARGUMENTS" value="--war-of-galaxies ${env_var:ESO_DATA}/galaxy_types/available&#10;--port 50008&#10;--del-radius-factor 0.3&#10;-i ${env_var:ESO_DATA}/galaxy_types/model3_child_compact_reduce50.tipsy"/>
+<stringAttribute key="org.eclipse.cdt.launch.PROGRAM_NAME" value="build_device_debug_gnu_thrust/bonsai2_slowdust"/>
+<stringAttribute key="org.eclipse.cdt.launch.PROJECT_ATTR" value="Bonsai"/>
+<booleanAttribute key="org.eclipse.cdt.launch.PROJECT_BUILD_CONFIG_AUTO_ATTR" value="true"/>
+<stringAttribute key="org.eclipse.cdt.launch.PROJECT_BUILD_CONFIG_ID_ATTR" value="com.nvidia.cuda.ide.toolchain.base.1360504251.318148432.1348211635"/>
+<listAttribute key="org.eclipse.debug.core.MAPPED_RESOURCE_PATHS">
+<listEntry value="/Bonsai"/>
+</listAttribute>
+<listAttribute key="org.eclipse.debug.core.MAPPED_RESOURCE_TYPES">
+<listEntry value="4"/>
+</listAttribute>
+<stringAttribute key="org.eclipse.dsf.launch.MEMORY_BLOCKS" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot; standalone=&quot;no&quot;?&gt;&#10;&lt;memoryBlockExpressionList context=&quot;reserved-for-future-use&quot;/&gt;&#10;"/>
+<stringAttribute key="process_factory_id" value="org.eclipse.cdt.dsf.gdb.GdbProcessFactory"/>
+</launchConfiguration>
