@@ -14,26 +14,34 @@ http://github.com/treecode/Bonsai
 
 */
 
+/*
+ *
+ * TODO
+ * Close BonsaiIO on destruction to properly close open File handles
+ * Fix the block time stepping
+ * Add block time-stepping to the multi-GPU code
+ *
+ */
+
+
 #ifdef WIN32
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <Windows.h>
-#include <process.h>
-#define M_PI        3.14159265358979323846264338328
+  #define WIN32_LEAN_AND_MEAN
+  #define NOMINMAX
+  #include <Windows.h>
+  #include <process.h>
+  #define M_PI        3.14159265358979323846264338328
 
-#include <stdlib.h>
-#include <time.h>
-void srand48(const long seed)
-{
-  srand(seed);
-}
-//JB This is not a proper work around but just to get things compiled...
-double drand48()
-{
-  return double(rand())/RAND_MAX;
-}
-
-
+  #include <stdlib.h>
+  #include <time.h>
+  void srand48(const long seed)
+  {
+    srand(seed);
+  }
+  //JB This is not a proper work around but just to get things compiled...
+  double drand48()
+  {
+    return double(rand())/RAND_MAX;
+  }
 #endif
 
 
@@ -47,15 +55,18 @@ double drand48()
 #include <vector>
 #include <fstream>
 #include <sstream>
+#include <thread>
+#include <chrono>
+#include <sys/time.h>
+#include <omp.h>
 #include "log.h"
 #include "anyoption.h"
 #include "renderloop.h"
-#include "plummer.h"
-#include "disk_shuffle.h"
-#include "FileIO.h"
-#ifdef GALACTICS
-#include "galactics.h"
-#endif
+
+#include <array>
+
+#include <FileIO.h>
+#include <ICGenerators.h>
 
 
 #if ENABLE_LOG
@@ -90,6 +101,7 @@ extern void displayTimers()
 #ifndef CUXTIMER_DISABLE
   // Display all timing info on the way out
   build_tree_display();
+  
   compute_propertiesD_display();
   //dev_approximate_gravity_display();
   //parallel_display();
@@ -146,52 +158,6 @@ void read_dumbp_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyV
   
   char fullFileName[256];
   sprintf(fullFileName, "%s", fileName.c_str());
-
-  LOG("Trying to read file: %s \n", fullFileName);
-
-  ifstream inputFile(fullFileName, ios::in);
-
-  if(!inputFile.is_open())
-  {
-    LOG("Can't open input file \n");
-    exit(0);
-  }
-  
-  int NTotal;
-  int idummy;
-  real4 positions;
-  real4 velocity;
-
-  #ifndef INDSOFT
-     inputFile >> idummy >> positions.w;
-     inputFile.seekg(0, ios::beg); //Reset file pointer
-     NTotal = (int)(1 / positions.w);
-  #else
-     //Read the Ntotal from the file header
-     inputFile >> NTotal >> NFirst >> NSecond >> NThird;
-  #endif
-  
-  
-  
-  //Rough divide
-  uint perProc = NTotal / procs;
-  bodyPositions.reserve(perProc+10);
-  bodyVelocities.reserve(perProc+10);
-  bodiesIDs.reserve(perProc+10);
-  perProc -= 1;
-
-  //Start reading
-  int particleCount = 0;
-  int procCntr = 1;
-
-  int globalParticleCount = 0;
-
-  while(!inputFile.eof()) {
-    
-    inputFile >> idummy
-              >> positions.w >> positions.x >> positions.y >> positions.z
-              >> velocity.x >> velocity.y >> velocity.z;    
-
 	globalParticleCount++;
 
 	if( globalParticleCount % reduce_bodies_factor == 0 ) 
@@ -386,236 +352,90 @@ void euler(vector<real4> &bodyPositions,
 
 
 
-double centerGalaxy(vector<real4> &bodyPositions,
-                    vector<real4> &bodyVelocities)
+double get_time_main()
 {
-    size_t nobj = bodyPositions.size();
-    float xc, yc, zc, vxc, vyc, vzc, mtot;
-  
+  struct timeval Tvalue;
+  struct timezone dummy;
 
-    mtot = 0;
-    xc = yc = zc = vxc = vyc = vzc = 0;
-    for(uint i=0; i< nobj; i++) {
-            xc   += bodyPositions[i].w*bodyPositions[i].x;
-            yc   += bodyPositions[i].w*bodyPositions[i].y;
-            zc   += bodyPositions[i].w*bodyPositions[i].z;
-            vxc  += bodyPositions[i].w*bodyVelocities[i].x;
-            vyc  += bodyPositions[i].w*bodyVelocities[i].y;
-            vzc  += bodyPositions[i].w*bodyVelocities[i].z;
-            mtot += bodyPositions[i].w;
-    }
-    xc /= mtot;
-    yc /= mtot;
-    zc /= mtot;
-    vxc /= mtot;
-    vyc /= mtot;
-    vzc /= mtot;
-    for(uint i=0; i< nobj; i++)
-    {
-      bodyPositions[i].x  -= xc;
-      bodyPositions[i].y  -= yc;
-      bodyPositions[i].z  -= zc;
-      bodyVelocities[i].x -= vxc;
-      bodyVelocities[i].y -= vyc;
-      bodyVelocities[i].z -= vzc;
-    }
-    
-    return mtot;
+  gettimeofday(&Tvalue,&dummy);
+  return ((double) Tvalue.tv_sec +1.e-6*((double) Tvalue.tv_usec));
+}
+
+
+/*
+ * This thread watches if the simulation progresses or if it 'hangs'
+ * this sometime happens (for unknown) reasons on large runs with file writing.
+ * To prevent usage of precious compute cycles this thread kills the program 
+ * after 360 seconds of no progress.
+ */
+void watchThread(octree *bonsai)
+{
+	double tCurrent = 0;
+	do 
+	{
+	  std::this_thread::sleep_for(std::chrono::seconds(360));
+	  double tNew = bonsai->getTime();
+	  if(tNew != tCurrent)
+	  {
+		tCurrent = tNew;
+	  }
+	  else
+	  {
+		fprintf(stderr,"No progress detected for 360 seconds, the program will now exit!\n");
+		::exit(0);
+	  }
+	}
+	while(true);
 }
 
 
 
-
-int setupMergerModel(vector<real4> &bodyPositions1,
-                     vector<real4> &bodyVelocities1,
-                     vector<int>   &bodyIDs1,
-                     vector<real4> &bodyPositions2,
-                     vector<real4> &bodyVelocities2,
-                     vector<int>   &bodyIDs2){
-        uint i;
-        double ds=1.0, vs, ms=1.0;
-        double mu1, mu2, vp;
-        double b=1.0, rsep=10.0;
-        double x, y, vx, vy, x1, y1, vx1, vy1 ,  x2, y2, vx2, vy2;
-        double theta, tcoll;
-        double inc1=0, omega1=0;
-        double inc2=0, omega2=0;
-        
-        
-        ds = 1.52;
-        ms = 1.0;
-        b = 10;
-        rsep = 168;
-        inc1 = 0;
-        omega1 = 0;
-        inc2 = 180;
-        omega2 = 0;
-
-
-        if(ds < 0)
-        {
-          cout << "Enter size ratio (for gal2): ";
-          cin >> ds;
-          cout << "Enter mass ratio (for gal2): ";
-          cin >> ms;
-          cout << "Enter relative impact parameter: ";
-          cin >> b;
-          
-          cout << "Enter initial separation: ";
-          cin >> rsep;
-          cout << "Enter Euler angles for first galaxy:\n";
-          cout << "Enter inclination: ";
-          cin >> inc1;
-          cout << "Enter omega: ";
-          cin >> omega1;
-          cout << "Enter Euler angles for second galaxy:\n";
-          cout << "Enter inclination: ";
-          cin >> inc2;
-          cout << "Enter omega: ";
-          cin >> omega2;
-        }
-
-
-        double inc1_inp, inc2_inp, om2_inp, om1_inp;
-        
-        inc1_inp = inc1;
-        inc2_inp = inc2;
-        om1_inp = omega1;
-        om2_inp = omega1;
-
-
-        inc1   *= M_PI/180.;
-        inc2   *= M_PI/180.;
-        omega1 *= M_PI/180.;
-        omega2 *= M_PI/180.;
-        omega1 += M_PI;
-
-        fprintf(stderr,"Size ratio: %f Mass ratio: %f \n", ds, ms);
-        fprintf(stderr,"Relative impact par: %f Initial sep: %f \n", b, rsep);
-        fprintf(stderr,"Euler angles first: %f %f Second: %f %f \n",
-                        inc1, omega1,inc2,omega2);
-
-        vs = sqrt(ms/ds); /* adjustment for internal velocities */
-
-
-        //Center everything in galaxy 1 and galaxy 2
-        double galaxyMass1 = centerGalaxy(bodyPositions1, bodyVelocities1);
-        double galaxyMass2 = centerGalaxy(bodyPositions2, bodyVelocities2);
-
-
-        galaxyMass2 = ms*galaxyMass2;             //Adjust total mass
-
-        mu1 =  galaxyMass2/(galaxyMass1 + galaxyMass2);
-        mu2 = -galaxyMass1/(galaxyMass1 + galaxyMass2);
-        
-        double m1 = galaxyMass1;
-        double m2 = galaxyMass2;
-
-        
-        /* Relative Parabolic orbit - anti-clockwise */
-        if( b > 0 ) {
-                vp = sqrt(2.0*(m1 + m2)/b);
-                x = 2*b - rsep;  y = -2*sqrt(b*(rsep-b));
-                vx = sqrt(b*(rsep-b))*vp/rsep; vy = b*vp/rsep;
-        }
-        else {
-                b = 0;
-                x = - rsep; y = 0.0;
-                vx = sqrt(2.0*(m1 + m2)/rsep); vy = 0.0;
-        }
-
-        /* Calculate collison time */
-        if( b > 0 ) {
-                theta = atan2(y,x);
-                tcoll = (0.5*tan(0.5*theta) + pow(tan(0.5*theta),3.0)/6.)*4*b/vp;
-                fprintf(stderr,"Collision time is t=%g\n",tcoll);
-        }
-        else {
-                tcoll = -pow(rsep,1.5)/(1.5*sqrt(2.0*(m1+m2)));
-                fprintf(stderr,"Collision time is t=%g\n",tcoll);
-        }
-
-        /* These are the orbital adjustments for a parabolic encounter */
-        /* Change to centre of mass frame */
-        x1  =  mu1*x;  x2   =  mu2*x;     
-        y1  =  mu1*y;  y2   =  mu2*y;
-        vx1 =  mu1*vx; vx2  =  mu2*vx;
-        vy1 =  mu1*vy; vy2  =  mu2*vy;
-
-
-        /* Rotate the galaxies */
-        euler(bodyPositions1, bodyVelocities1, inc1,omega1);
-        euler(bodyPositions2, bodyVelocities2, inc2,omega2);
-
-        for(i=0; i< bodyPositions1.size(); i++) {
-                bodyPositions1[i].x  = (float) (bodyPositions1[i].x  + x1);
-                bodyPositions1[i].y  = (float) (bodyPositions1[i].y  + y1);
-                bodyVelocities1[i].x = (float) (bodyVelocities1[i].x + vx1);
-                bodyVelocities1[i].y = (float) (bodyVelocities1[i].y + vy1);
-        }
-        /* Rescale and reset the second galaxy */
-        for(i=0; i< bodyPositions2.size(); i++) {
-                bodyPositions2[i].w = (float) ms*bodyPositions2[i].w;
-                bodyPositions2[i].x = (float) (ds*bodyPositions2[i].x + x2);
-                bodyPositions2[i].y = (float) (ds*bodyPositions2[i].y + y2);
-                bodyPositions2[i].z = (float) ds*bodyPositions2[i].z;
-                bodyVelocities2[i].x = (float) (vs*bodyVelocities2[i].x + vx2);
-                bodyVelocities2[i].y = (float) (vs*bodyVelocities2[i].y + vy2);
-                bodyVelocities2[i].z = (float) vs*bodyVelocities2[i].z;
-        }
-
-
-        //Put them into one 
-        bodyPositions1.insert(bodyPositions1.end(),  bodyPositions2.begin(), bodyPositions2.end());
-        bodyVelocities1.insert(bodyVelocities1.end(), bodyVelocities2.begin(), bodyVelocities2.end());
-        bodyIDs1.insert(bodyIDs1.end(), bodyIDs2.begin(), bodyIDs2.end());
-  
-
-        return 0;
-}
-
+//Buffers and flags used for the IO thread
+volatile IOSharedData_t ioSharedData;
 
 long long my_dev::base_mem::currentMemUsage;
 long long my_dev::base_mem::maxMemUsage;
 
-int main(int argc, char** argv)
+int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 {
   my_dev::base_mem::currentMemUsage = 0;
   my_dev::base_mem::maxMemUsage     = 0;
 
-  vector<real4> bodyPositions;
-  vector<real4> bodyVelocities;
-  vector<int>   bodyIDs;
+  vector<real4>   bodyPositions;
+  vector<real4>   bodyVelocities;
+  vector<ullong>  bodyIDs;
 
-  vector<real4> dustPositions;
-  vector<real4> dustVelocities;
-  vector<int>   dustIDs;  
-  
-
+ 
   float eps      = 0.05f;
   float theta    = 0.75f;
   float timeStep = 1.0f / 16.0f;
   float tEnd     = 1;
   int   iterEnd  = (1 << 30);
-  devID      = 0;
-  renderDevID = 0;
+  devID          = 0;
+  renderDevID    = 0;
 
-  string fileName       =  "";
-  string logFileName    = "gpuLog.log";
-  string snapshotFile   = "snapshot_";
-  float snapshotIter     = -1;
-  float  remoDistance   = -1.0;
-  int    snapShotAdd    =  0;
-  int rebuild_tree_rate = 2;
+  string fileName          =  "";
+  string logFileName       = "gpuLog.log";
+  string snapshotFile      = "snapshot_";
+  std::string bonsaiFileName;
+  float snapshotIter       = -1;
+  float  remoDistance      = -1.0;
+  int rebuild_tree_rate    = 1;
   int reduce_bodies_factor = 1;
-  int reduce_dust_factor = 1;
-  string gameModeString = "";
+  int reduce_dust_factor   = 1;
+  string fullScreenMode    = "";
+  bool direct     = false;
   bool fullscreen = false;
   bool direct = false;
   bool displayFPS = false;
-  bool diskmode = false;
-  bool stereo   = false;
-  bool restartSim  = false;
+  bool diskmode   = false;
+  bool stereo     = false;
+  bool restartSim = false;
+
+  float quickDump  = 0.0;
+  float quickRatio = 0.1;
+  bool  quickSync  = true;
+  bool  useMPIIO = false;
 
 #if ENABLE_LOG
   ENABLE_RUNTIME_LOG = false;
@@ -626,9 +446,18 @@ int main(int argc, char** argv)
 	TstartGlow = 0.0;
 	dTstartGlow = 1.0;
 #endif
+        
+  double tStartupStart = get_time_main();       
+  double tStartModel   = 0;
+  double tEndModel     = 0;
+
+  bool mpiRenderMode = false;
+  
+  
 
   int nPlummer  = -1;
   int nSphere   = -1;
+  int nCube     = -1;
   int nMilkyWay = -1;
   int nMWfork   =  4;
 
@@ -637,6 +466,16 @@ int main(int argc, char** argv)
   real wogCameraDistance = 500.0;
   real wogDeletionRadiusFactor = 1.0;
 
+  int galSeed   =  0;
+  std::string taskVar;
+//#define TITAN_G
+//#define SLURM_G
+#ifdef TITAN_G
+  //Works for both Titan and Piz Daint
+  taskVar = std::string("PMI_FORK_RANK");
+#elif defined SLURM_G
+  taskVar = std::string("SLURM_PROCID");
+#endif
 	/************** beg - command line arguments ********/
 #if 1
 	{
@@ -644,34 +483,38 @@ int main(int argc, char** argv)
 
 #define ADDUSAGE(line) {{std::stringstream oss; oss << line; opt.addUsage(oss.str());}}
 
-		ADDUSAGE(" ");
-		ADDUSAGE("Usage");
-		ADDUSAGE(" ");
-		ADDUSAGE(" -h  --help                 Prints this help ");
-		ADDUSAGE(" -i  --infile #             Input snapshot filename ");
-		ADDUSAGE("     --restart              Let each process restart from a snapshot as specified by 'infile'");
-		ADDUSAGE("     --logfile #            Log filename [" << logFileName << "]");
-		ADDUSAGE("     --dev #                Device ID [" << devID << "]");
-		ADDUSAGE("     --renderdev #          Rendering Device ID [" << renderDevID << "]");
-		ADDUSAGE(" -t  --dt #                 time step [" << timeStep << "]");
-		ADDUSAGE(" -T  --tend #               N-body end time [" << tEnd << "]");
-		ADDUSAGE(" -I  --iend #               N-body end iteration [" << iterEnd << "]");
-		ADDUSAGE(" -e  --eps #                softening (will be squared) [" << eps << "]");
-		ADDUSAGE(" -o  --theta #              opening angle (theta) [" <<theta << "]");
-		ADDUSAGE("     --snapname #           snapshot base name (N-body time is appended in 000000 format) [" << snapshotFile << "]");
-		ADDUSAGE("     --snapiter #           snapshot iteration (N-body time) [" << snapshotIter << "]");
-		ADDUSAGE("     --rmdist #             Particle removal distance (-1 to disable) [" << remoDistance << "]");
-		ADDUSAGE("     --valueadd #           value to add to the snapshot [" << snapShotAdd << "]");
-		ADDUSAGE(" -r  --rebuild #            rebuild tree every # steps [" << rebuild_tree_rate << "]");
-		ADDUSAGE("     --reducebodies #       cut down bodies dataset by # factor ");
+
+ 		ADDUSAGE("Bonsai command line usage:");
+ 		ADDUSAGE("                  ");
+		ADDUSAGE(" -h  --help             Prints this help ");
+		ADDUSAGE(" -i  --infile #         Input snapshot filename in Tipsy format");
+		ADDUSAGE(" -f  --bonsaifile #     Input snapshot filename in Bonsai format [muse be used with --usempiio]");
+		ADDUSAGE("     --restart          Let each process restart from a snapshot as specified by 'infile'");
+		ADDUSAGE("     --logfile #        Log filename [" << logFileName << "]");
+		ADDUSAGE("     --dev #            Device ID [" << devID << "]");
+		ADDUSAGE("     --renderdev #      Rendering Device ID [" << renderDevID << "]");
+		ADDUSAGE(" -t  --dt #             time step [" << timeStep << "]");
+		ADDUSAGE(" -T  --tend #           N-body end time [" << tEnd << "]");
+		ADDUSAGE(" -I  --iend #           N-body end iteration [" << iterEnd << "]");
+		ADDUSAGE(" -e  --eps #            softening (will be squared) [" << eps << "]");
+		ADDUSAGE(" -o  --theta #          opening angle (theta) [" <<theta << "]");
+		ADDUSAGE("     --snapname #       snapshot base name (N-body time is appended in 000000 format) [" << snapshotFile << "]");
+		ADDUSAGE("     --snapiter #       snapshot iteration (N-body time) [" << snapshotIter << "]");
+		ADDUSAGE("     --quickdump  #     how ofter to dump quick output (N-body time) [" << quickDump << "]");
+		ADDUSAGE("     --quickratio #     which fraction of data to dump (fraction) [" << quickRatio << "]");
+        ADDUSAGE("     --noquicksync      disable syncing for quick dumping ");
+        ADDUSAGE("     --usempiio         use MPI-IO [disabled]");
+		ADDUSAGE("     --rmdist #         Particle removal distance (-1 to disable) [" << remoDistance << "]");
+		ADDUSAGE(" -r  --rebuild #        rebuild tree every # steps [" << rebuild_tree_rate << "]");
+		ADDUSAGE("     --reducebodies #   cut down bodies dataset by # factor ");
 #ifdef USE_DUST
-        ADDUSAGE("     --reducedust #         cut down dust dataset by # factor ");
+        ADDUSAGE("     --reducedust #     cut down dust dataset by # factor ");
 #endif
 #if ENABLE_LOG
         ADDUSAGE("     --log                  enable logging ");
         ADDUSAGE("     --prepend-rank         prepend the MPI rank in front of the log-lines ");
 #endif
-        ADDUSAGE("     --direct               enable N^2 direct gravitation [" << (direct ? "on" : "off") << "]");
+    ADDUSAGE("     --direct           enable N^2 direct gravitation [" << (direct ? "on" : "off") << "]");
 #ifdef USE_OPENGL
 		ADDUSAGE("     --fullscreen           set fullscreen");
 		ADDUSAGE("     --gameMode #           set game mode string");
@@ -680,25 +523,31 @@ int main(int argc, char** argv)
 		ADDUSAGE("     --dTglow  #            reach full brightness in @ # Myr [" << dTstartGlow << "]");
 		ADDUSAGE("     --stereo               enable stereo rendering");
 #endif
-
-
-		ADDUSAGE("     --plummer  #           use plummer model with # particles per proc");
 #ifdef GALACTICS
-		ADDUSAGE("     --milkyway #           use Milky Way model with # particles per proc");
-		ADDUSAGE("     --mwfork   #           fork Milky Way generator into # processes [" << nMWfork << "]");
+		ADDUSAGE("     --milkyway #       use Milky Way model with # particles per proc");
+		ADDUSAGE("     --mwfork   #       fork Milky Way generator into # processes [" << nMWfork << "]");
+		ADDUSAGE("     --seed     #       seed to use for the Milky Way  [" << galSeed  << "]");
+    ADDUSAGE("     --taskvar  #       variable name to obtain task id [for randoms seed] before MPI_Init. \n");
 #endif
-		ADDUSAGE("     --sphere   #           use spherical model with # particles per proc");
-        ADDUSAGE("     --diskmode             use diskmode to read same input file all MPI taks and randomly shuffle its positions");
-        ADDUSAGE("     --war-of-galaxies #    input path for WarOfGalaxies");
-        ADDUSAGE("     --port #               Port for WarOfGalaxies");
-        ADDUSAGE("     --camera-distance #    OpenGL camera distance for WarOfGalaxies");
-        ADDUSAGE("     --del-radius-factor #  Scaling factor of deletion sphere for WarOfGalaxies");
+    ADDUSAGE("     --plummer  #       use Plummer model with # particles per proc");
+		ADDUSAGE("     --sphere   #       use spherical model with # particles per proc");
+		ADDUSAGE("     --cube     #       use cube model with # particles per proc");
+    ADDUSAGE("     --diskmode         use diskmode to read same input file all MPI taks and randomly shuffle its positions");
+    ADDUSAGE("     --mpirendermode    use MPI to communicate with the renderer. Must only be used with bonsai_driver. [disabled]");
+#ifdef WAR_OF_GALAXIES
+    ADDUSAGE("     --war-of-galaxies #    input path for WarOfGalaxies");
+    ADDUSAGE("     --port #               Port for WarOfGalaxies");
+    ADDUSAGE("     --camera-distance #    OpenGL camera distance for WarOfGalaxies");
+    ADDUSAGE("     --del-radius-factor #  Scaling factor of deletion sphere for WarOfGalaxies");
+#endif
 		ADDUSAGE(" ");
 
 
 		opt.setFlag( "help" ,   'h');
 		opt.setFlag( "diskmode");
+		opt.setFlag( "mpirendermode");
 		opt.setOption( "infile",  'i');
+		opt.setOption( "bonsaifile",  'f');
 		opt.setFlag  ( "restart");
 		opt.setOption( "dt",      't' );
 		opt.setOption( "tend",    'T' );
@@ -710,19 +559,24 @@ int main(int argc, char** argv)
 #ifdef GALACTICS
     opt.setOption( "milkyway");
     opt.setOption( "mwfork");
+    opt.setOption( "taskvar");
+    opt.setOption( "seed");
 #endif
     opt.setOption( "sphere");
+    opt.setOption( "cube");
     opt.setOption( "dev" );
     opt.setOption( "renderdev" );
     opt.setOption( "logfile" );
     opt.setOption( "snapname");
     opt.setOption( "snapiter");
+    opt.setOption( "quickdump");
+    opt.setOption( "quickratio");
+    opt.setFlag  ( "usempiio");
+    opt.setFlag  ( "noquicksync");
     opt.setOption( "rmdist");
     opt.setOption( "valueadd");
     opt.setOption( "reducebodies");
-#ifdef USE_DUST
-    opt.setOption( "reducedust");
-#endif /* USE_DUST */
+
 #if ENABLE_LOG
     opt.setFlag("log");
     opt.setFlag("prepend-rank");
@@ -744,22 +598,20 @@ int main(int argc, char** argv)
     opt.processCommandArgs( argc, argv );
 
 
-    if( ! opt.hasOptions()) { /* print usage if no options */
-      opt.printUsage();
-      exit(0);
-    }
-
-    if( opt.getFlag( "help" ) || opt.getFlag( 'h' ) ) 
+    if( ! opt.hasOptions() ||  opt.getFlag( "help" ) || opt.getFlag( 'h' ) )
     {
+      /* print usage if no options or requested help */
       opt.printUsage();
-      exit(0);
+      ::exit(0);
     }
 
-    if (opt.getFlag("direct"))     direct = true;
-    if (opt.getFlag("restart"))    restartSim = true;
-    if (opt.getFlag("displayfps")) displayFPS = true;
-    if (opt.getFlag("diskmode"))   diskmode = true;
-    if (opt.getFlag("stereo"))     stereo = true;
+    if (opt.getFlag("direct"))          direct        = true;
+    if (opt.getFlag("restart"))         restartSim    = true;
+    if (opt.getFlag("displayfps"))      displayFPS    = true;
+    if (opt.getFlag("diskmode"))        diskmode      = true;
+    if (opt.getFlag("mpirendermode"))   mpiRenderMode = true;
+    if(opt.getFlag("stereo"))           stereo        = true;
+
 #if ENABLE_LOG
     if (opt.getFlag("log"))           ENABLE_RUNTIME_LOG = true;
     if (opt.getFlag("prepend-rank"))  PREPEND_RANK       = true;
@@ -769,27 +621,34 @@ int main(int argc, char** argv)
 #endif
 
     char *optarg = NULL;
-    if ((optarg = opt.getValue("infile")))            fileName                = string(optarg);
-    if ((optarg = opt.getValue("plummer")))           nPlummer                = atoi(optarg);
-    if ((optarg = opt.getValue("milkyway")))          nMilkyWay               = atoi(optarg);
-    if ((optarg = opt.getValue("mwfork")))            nMWfork                 = atoi(optarg);
-    if ((optarg = opt.getValue("sphere")))            nSphere                 = atoi(optarg);
-    if ((optarg = opt.getValue("logfile")))           logFileName             = string(optarg);
-    if ((optarg = opt.getValue("dev")))               devID                   = atoi(optarg);
+    if ((optarg = opt.getValue("infile")))       fileName           = string(optarg);
+    if ((optarg = opt.getValue("bonsaifile")))   bonsaiFileName     = std::string(optarg);
+    if ((optarg = opt.getValue("plummer")))      nPlummer           = atoi(optarg);
+    if ((optarg = opt.getValue("milkyway")))     nMilkyWay          = atoi(optarg);
+    if ((optarg = opt.getValue("mwfork")))       nMWfork            = atoi(optarg);
+    if ((optarg = opt.getValue("seed")))         galSeed            = atoi(optarg);
+    if ((optarg = opt.getValue("taskvar")))      taskVar            = std::string(optarg);
+    if ((optarg = opt.getValue("sphere")))       nSphere            = atoi(optarg);
+    if ((optarg = opt.getValue("cube")))         nCube              = atoi(optarg);
+    if ((optarg = opt.getValue("logfile")))      logFileName        = string(optarg);
+    if ((optarg = opt.getValue("dev")))          devID              = atoi  (optarg);
     renderDevID = devID;
-    if ((optarg = opt.getValue("renderdev")))         renderDevID             = atoi(optarg);
-    if ((optarg = opt.getValue("dt")))                timeStep                = (float)atof(optarg);
-    if ((optarg = opt.getValue("tend")))              tEnd                    = (float)atof(optarg);
-    if ((optarg = opt.getValue("iend")))              iterEnd                 = atoi(optarg);
-    if ((optarg = opt.getValue("eps")))               eps                     = (float)atof(optarg);
-    if ((optarg = opt.getValue("theta")))             theta                   = (float)atof(optarg);
-    if ((optarg = opt.getValue("snapname")))          snapshotFile            = string(optarg);
-    if ((optarg = opt.getValue("snapiter")))          snapshotIter            = (float)atof(optarg);
-    if ((optarg = opt.getValue("rmdist")))            remoDistance            = (float)atof(optarg);
-    if ((optarg = opt.getValue("valueadd")))          snapShotAdd             = atoi(optarg);
-    if ((optarg = opt.getValue("rebuild")))           rebuild_tree_rate       = atoi(optarg);
-    if ((optarg = opt.getValue("reducebodies")))      reduce_bodies_factor    = atoi(optarg);
-    if ((optarg = opt.getValue("reducedust")))	      reduce_dust_factor      = atoi(optarg);
+    if ((optarg = opt.getValue("renderdev")))    renderDevID        = atoi  (optarg);
+    if ((optarg = opt.getValue("dt")))           timeStep           = (float) atof  (optarg);
+    if ((optarg = opt.getValue("tend")))         tEnd               = (float) atof  (optarg);
+    if ((optarg = opt.getValue("iend")))         iterEnd            = atoi  (optarg);
+    if ((optarg = opt.getValue("eps")))          eps                = (float) atof  (optarg);
+    if ((optarg = opt.getValue("theta")))        theta              = (float) atof  (optarg);
+    if ((optarg = opt.getValue("snapname")))     snapshotFile       = string(optarg);
+    if ((optarg = opt.getValue("snapiter")))     snapshotIter       = (float) atof  (optarg);
+    if ((optarg = opt.getValue("quickdump")))    quickDump          = (float) atof  (optarg);
+    if ((optarg = opt.getValue("quickratio")))   quickRatio         = (float) atof  (optarg);
+    if (opt.getValue("usempiio")) useMPIIO = true;
+    if (opt.getValue("noquicksync")) quickSync = false;
+    if ((optarg = opt.getValue("rmdist")))       remoDistance       = (float) atof  (optarg);
+    if ((optarg = opt.getValue("rebuild")))      rebuild_tree_rate  = atoi  (optarg);
+    if ((optarg = opt.getValue("reducebodies"))) reduce_bodies_factor = atoi  (optarg);
+    if ((optarg = opt.getValue("reducedust")))	 reduce_dust_factor = atoi  (optarg);
     if ((optarg = opt.getValue("war-of-galaxies")))   wogPath                 = string(optarg);
     if ((optarg = opt.getValue("port")))              wogPort                 = atoi(optarg);
     if ((optarg = opt.getValue("camera-distance")))   wogCameraDistance       = atof(optarg);
@@ -800,11 +659,15 @@ int main(int argc, char** argv)
     if ((optarg = opt.getValue("dTglow")))	          dTstartGlow             = (float)atof(optarg);
     dTstartGlow = std::max(dTstartGlow, 1.0f);
 #endif
-
-    if (fileName.empty() && nPlummer == -1 && nSphere == -1 && nMilkyWay == -1)
+    if (bonsaiFileName.empty() && fileName.empty() && nPlummer == -1 && nSphere == -1 && nMilkyWay == -1 && nCube == -1)
     {
       opt.printUsage();
-      exit(0);
+      ::exit(0);
+    }
+    if (!bonsaiFileName.empty() && !useMPIIO)
+    {
+      opt.printUsage();
+      ::exit(0);
     }
 
     /// WarOfGalaxies: Deactivate unneeded flags if WarOfGalaxies path will be used
@@ -817,25 +680,60 @@ int main(int argc, char** argv)
 #undef ADDUSAGE
   }
 #endif
+
+
+
+  /********** init galaxy before MPI initialization to prevent problems with forking **********/
+  const char * argVal = getenv(taskVar.c_str());
+  if (argVal == NULL)
+  {
+    fprintf(stderr, " Unknown ENV_VARIABLE: %s  -- Falling to basic forking method after MPI_Init, unsafe!\n", taskVar.c_str());
+    taskVar = std::string();
+  }
+  if (nMilkyWay >= 0 && !taskVar.empty())
+  {
+    assert(argVal != NULL);
+    const int procId = atoi(argVal);
+    //    fprintf(stderr, " taskVar= %s , value= %d\n", taskVar.c_str(), procId);
+    #ifdef GALACTICS
+        tStartModel = get_time_main();
+        //Use 32768*7 for nProcs to create independent seeds for all processes we use
+        //do not scale until we know the number of processors
+        generateGalacticsModel(procId, 32768*7, galSeed, nMilkyWay, nMWfork,
+                               false, bodyPositions, bodyVelocities,
+                               bodyIDs);
+        tEndModel   = get_time_main();
+    #else
+        assert(0);
+    #endif
+  }
+
+  /*********************************/
+
   /************** end - command line arguments ********/
 
-  int NTotal, NFirst, NSecond, NThird;
-  NTotal = NFirst = NSecond = NThird = 0;
+  /* Overrule settings for the device */
+  //  const char * tempRankStr = getenv("OMPI_COMM_WORLD_RANK");
+  //  devID = renderDevID = atoi(tempRankStr);
+  //  fprintf(stderr,"Overruled ids: %d ", devID);
+  /* End overrule */
+
 
 #ifdef USE_OPENGL
   // create OpenGL context first, and register for interop
-  initGL(argc, argv, gameModeString.c_str(), stereo, fullscreen);
-  cudaGLSetGLDevice(devID);
+  initGL(argc, argv, fullScreenMode.c_str(), stereo);
+  cudaGLSetGLDevice(devID); //TODO should this not be renderDev?
 #endif
 
   initTimers();
 
-  int pid = -1;
 #ifdef WIN32
-  pid = _getpid();
+  int pid = _getpid();
 #else
-  pid = (int)getpid();
+  int pid = (int)getpid();
 #endif
+
+#if 0
   //Used for profiler, note this has to be done before initing to
   //octree otherwise it has no effect...Therefore use pid instead of mpi procId
   char *gpu_prof_log;
@@ -843,44 +741,120 @@ int main(int argc, char** argv)
   if(gpu_prof_log){
     char tmp[50];
     sprintf(tmp,"process_%d_%s",pid,gpu_prof_log);
-#ifdef WIN32
-    //        SetEnvironmentVariable("CUDA_PROFILE_LOG", tmp);
-#else
-    //        setenv("CUDA_PROFILE_LOG",tmp,1);
-    LOGF(stderr, "TESTING log on proc: %d val: %s \n", pid, tmp);
-#endif
+    #ifdef WIN32
+                SetEnvironmentVariable("CUDA_PROFILE_LOG", tmp);
+    #else
+                setenv("CUDA_PROFILE_LOG",tmp,1);
+        LOGF(stderr, "TESTING log on proc: %d val: %s \n", pid, tmp);
+    #endif
   }
+#endif
+
+  int mpiInitialized =  0;
+  int procId         = -1;
+  int nProcs         = -1;
+  
+#ifdef USE_MPI  
+      MPI_Initialized(&mpiInitialized);
+      MPI_Comm mpiCommWorld = MPI_COMM_WORLD;
+      if (!mpiInitialized)
+      {
+        #ifdef _MPIMT
+            int provided;
+            MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
+            assert(MPI_THREAD_MULTIPLE == provided);
+        #else
+            MPI_Init(&argc, &argv);
+        #endif
+        shrMemPID = 0;
+      }
+      else
+      {
+        //MPI environment initialized by the driver program
+        mpiCommWorld = comm;
+      }
+
+      MPI_Comm_size(mpiCommWorld, &nProcs);
+      MPI_Comm_rank(mpiCommWorld, &procId);
+#else
+    MPI_Comm mpiCommWorld = 0;
+    procId                = 0;
+    nProcs                = 1;
+#endif
+#if ENABLE_LOG
+  PREPEND_RANK_PROCID = procId;
+  PREPEND_RANK_NPROCS = nProcs;
+#endif
+
+    if (mpiRenderMode) assert(mpiInitialized); //The external renderer requires a working MPI environment
 
 
-  //Creat the octree class and set the properties
-  octree *tree = new octree(argv, devID, theta, eps, snapshotFile, snapshotIter,  timeStep, tEnd, iterEnd, (int)remoDistance, snapShotAdd, rebuild_tree_rate, direct);
+    if(nProcs > 1)
+    {
+      logFileName.append("-");
+      char buff[16];
+      sprintf(buff,"%d-%d", nProcs, procId);
+      logFileName.append(buff);
+    }
+
+    //Use a string stream buffer, only write data at the end of the run
+    std::stringstream logStream;
+    ostream &logFile = logStream;
+
+    my_dev::context cudaContext;
+
+    if(nProcs > 1) devID = procId % getNumberOfCUDADevices();
+
+    cudaContext.create(logFile, false); //Do logging to file and enable timing (false = enabled)
+    cudaContext.createQueue(devID);
+
+    char logPretext[64];
+    sprintf(logPretext, "PROC-%05d ", procId);
+    cudaContext.setLogPreamble(logPretext);
+
+
+
+
+    //Create the octree class and set the properties
+    octree *tree = new octree(  mpiCommWorld,
+                                &cudaContext,
+                                argv, devID, theta, eps,
+                                snapshotFile, snapshotIter,
+                                quickDump, quickRatio, quickSync,
+                                useMPIIO,mpiRenderMode,
+                                timeStep,
+                                tEnd, iterEnd,
+                                rebuild_tree_rate, direct, shrMemPID);
+
+
+
 
   double tStartup = tree->get_time();
 
-  //Get parallel processing information  
-  int procId = tree->mpiGetRank();
-  int nProcs = tree->mpiGetNProcs();
 
   if (procId == 0)
   {
-    //NOte cant use LOGF here since MPI isnt initialized yet
+    //Note can't use LOGF here since MPI isn't initialized yet
     cerr << "[INIT]\tUsed settings: \n";
-    cerr << "[INIT]\tInput filename " << fileName << endl;
-    cerr << "[INIT]\tLog filename " << logFileName << endl;
-    cerr << "[INIT]\tTheta: \t\t"             << theta        << "\t\teps: \t\t"          << eps << endl;
-    cerr << "[INIT]\tTimestep: \t"          << timeStep     << "\t\ttEnd: \t\t"         << tEnd << endl;
-    cerr << "[INIT]\titerEnd: \t" << iterEnd << endl;
-    cerr << "[INIT]\tsnapshotFile: \t"      << snapshotFile << "\tsnapshotIter: \t" << snapshotIter << endl;
+    cerr << "[INIT]\tInput  filename "      << fileName                                                      << endl;
+    cerr << "[INIT]\tBonsai filename "      << bonsaiFileName                                                << endl;
+    cerr << "[INIT]\tLog filename "         << logFileName                                                   << endl;
+    cerr << "[INIT]\tTheta: \t\t"           << theta                << "\t\teps: \t\t"      << eps           << endl;
+    cerr << "[INIT]\tTimestep: \t"          << timeStep             << "\t\ttEnd: \t\t"     << tEnd          << endl;
+    cerr << "[INIT]\titerEnd: \t"           << iterEnd                                                       << endl;
+    cerr << "[INIT]\tUse MPI-IO: \t"        << (useMPIIO ? "YES" : "NO")                                     << endl;
+    cerr << "[INIT]\tsnapshotFile: \t"      << snapshotFile          << "\tsnapshotIter: \t" << snapshotIter << endl;
+    if (useMPIIO)
+    {
+      cerr << "[INIT]\t  quickDump: \t"      << quickDump << "\t\tquickRatio: \t" << quickRatio << endl;
+    }
     cerr << "[INIT]\tInput file: \t"        << fileName     << "\t\tdevID: \t\t"        << devID << endl;
     cerr << "[INIT]\tRemove dist: \t"   << remoDistance << endl;
-    cerr << "[INIT]\tSnapshot Addition: \t"  << snapShotAdd << endl;
     cerr << "[INIT]\tRebuild tree every " << rebuild_tree_rate << " timestep\n";
 
 
-    if( reduce_bodies_factor > 1 )
-      cout << "[INIT]\tReduce number of non-dust bodies by " << reduce_bodies_factor << " \n";
-    if( reduce_dust_factor > 1 )
-      cout << "[INIT]\tReduce number of dust bodies by " << reduce_dust_factor << " \n";
+    if( reduce_bodies_factor > 1 ) cerr << "[INIT]\tReduce number of non-dust bodies by " << reduce_bodies_factor << " \n";
+    if( reduce_dust_factor   > 1 ) cerr << "[INIT]\tReduce number of dust bodies by " << reduce_dust_factor << " \n";
 
 #if ENABLE_LOG
     if (ENABLE_RUNTIME_LOG)
@@ -900,116 +874,100 @@ int main(int argc, char** argv)
     cerr << "[INIT]\tCode is built WITHOUT MPI Support \n";
 #endif
   }
+  assert(quickRatio > 0 && quickRatio <= 1);
 
 #ifdef USE_MPI
-#if 1
-  omp_set_num_threads(16);
-#pragma omp parallel
+
+  //Used on Titan and Piz Daint
+  #if 1
+    omp_set_num_threads(16);
+  #pragma omp parallel
+    {
+      int tid = omp_get_thread_num();
+      cpu_set_t cpuset;
+      CPU_ZERO(&cpuset);
+      pthread_getaffinity_np(pthread_self()  , sizeof( cpu_set_t ), &cpuset );
+
+      int num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+
+      int i, set=-1;
+      for (i = 0; i < CPU_SETSIZE; i++)
+        if (CPU_ISSET(i, &cpuset))
+          set = i;
+      //    fprintf(stderr,"[Proc: %d ] Thread %d bound to: %d Total cores: %d\n",
+      //        procId, tid,  set, num_cores);
+    }
+  #endif
+
+
+  #if 0
+    omp_set_num_threads(4);
+    //default
+    // int cpulist[] = {0,1,2,3,8,9,10,11};
+    int cpulist[] = {0,1,2,3, 8,9,10,11, 4,5,6,7, 12,13,14,15}; //HA-PACS
+    //int cpulist[] = {0,1,2,3,4,5,6,7};
+    //int cpulist[] = {0,2,4,6, 8,10,12,14};
+    //int cpulist[] = {1,3,5,7, 9,11,13,15};
+    //int cpulist[] = {1,9,5,11, 3,7,13,15};
+    //int cpulist[] = {1,15,3,13, 2,4,6,8};
+    //int cpulist[] = {1,1,1,1, 1,1,1,1};
+
+
+  #pragma omp parallel
+    {
+      int tid = omp_get_thread_num();
+      //int core_id = procId*4+tid;
+      int core_id = (procId%4)*4+tid;
+      core_id     = cpulist[core_id];
+
+      int num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+
+      cpu_set_t cpuset;
+      CPU_ZERO(&cpuset);
+      CPU_SET(core_id, &cpuset);
+      pthread_t current_thread = pthread_self();
+      int return_val = pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset);
+
+      CPU_ZERO(&cpuset);
+      pthread_getaffinity_np(pthread_self()  , sizeof( cpu_set_t ), &cpuset );
+
+      int i, set=-1;
+      for (i = 0; i < CPU_SETSIZE; i++)
+        if (CPU_ISSET(i, &cpuset))
+          set = i;
+      //printf("CPU2: CPU %d\n", i);
+
+      fprintf(stderr,"Binding thread: %d of rank: %d to cpu: %d CHECK: %d Total cores: %d\n",
+          tid, procId, core_id, set, num_cores);
+    }
+  #endif
+#endif
+
+
+
+  double tStartup2 = tree->get_time();  
+
+  if (!bonsaiFileName.empty() && useMPIIO)
   {
-    int tid = omp_get_thread_num();
-    cpu_set_t cpuset;
-    CPU_ZERO(&cpuset);
-    pthread_getaffinity_np(pthread_self()  , sizeof( cpu_set_t ), &cpuset );
-
-
-    int num_cores = sysconf(_SC_NPROCESSORS_ONLN);
-
-    int i, set=-1;
-    for (i = 0; i < CPU_SETSIZE; i++)
-      if (CPU_ISSET(i, &cpuset))
-        set = i;
-    //    fprintf(stderr,"[Proc: %d ] Thread %d bound to: %d Total cores: %d\n",
-    //        procId, tid,  set, num_cores);
+#ifdef USE_MPI        
+    //Read a BonsaiIO file
+    const MPI_Comm &comm = mpiCommWorld;
+    float tCurrent = 0;
+    tree->lReadBonsaiFile(
+        bodyPositions, 
+        bodyVelocities,
+        bodyIDs,
+        tCurrent,
+        bonsaiFileName,
+        procId, nProcs, comm,
+        restartSim,
+        reduce_bodies_factor);
+    tree->set_t_current(tCurrent);
+#else
+    fprintf(stderr,"Usage of these options requires to code to be built with MPI support!\n"); exit(0);
+#endif      
   }
-#endif
-
-
-
-
-#if 0
-  omp_set_num_threads(4);
-  //default
-  // int cpulist[] = {0,1,2,3,8,9,10,11};
-  int cpulist[] = {0,1,2,3, 8,9,10,11, 4,5,6,7, 12,13,14,15}; //HA-PACS
-  //int cpulist[] = {0,1,2,3,4,5,6,7};
-  //int cpulist[] = {0,2,4,6, 8,10,12,14};
-  //int cpulist[] = {1,3,5,7, 9,11,13,15};
-  //int cpulist[] = {1,9,5,11, 3,7,13,15};
-  //int cpulist[] = {1,15,3,13, 2,4,6,8};
-  //int cpulist[] = {1,1,1,1, 1,1,1,1};
-
-
-#pragma omp parallel
-  {
-    int tid = omp_get_thread_num();
-    //int core_id = procId*4+tid;
-    int core_id = (procId%4)*4+tid;
-    core_id = cpulist[core_id];
-
-    int num_cores = sysconf(_SC_NPROCESSORS_ONLN);
-    //    if (core_id >= num_cores)
-
-    cpu_set_t cpuset;
-    CPU_ZERO(&cpuset);
-    CPU_SET(core_id, &cpuset);
-    pthread_t current_thread = pthread_self();
-    int return_val = pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset);
-
-    CPU_ZERO(&cpuset);
-    pthread_getaffinity_np(pthread_self()  , sizeof( cpu_set_t ), &cpuset );
-
-    int i, set=-1;
-    for (i = 0; i < CPU_SETSIZE; i++)
-      if (CPU_ISSET(i, &cpuset))
-        set = i;
-    //printf("CPU2: CPU %d\n", i);
-
-
-    fprintf(stderr,"Binding thread: %d of rank: %d to cpu: %d CHECK: %d Total cores: %d\n",
-        tid, procId, core_id, set, num_cores);
-
-  }
-#endif
-#endif
-
-
-
-
-
-#if ENABLE_LOG
-#ifdef USE_MPI
-  PREPEND_RANK_PROCID = procId;
-  PREPEND_RANK_NPROCS = nProcs;
-#endif
-#endif
-
-
-  if(nProcs > 1)
-  {
-    logFileName.append("-");
-
-    char buff[16];
-    sprintf(buff,"%d-%d", nProcs, procId);
-    logFileName.append(buff);
-  }
-
-  //ofstream logFile(logFileName.c_str());
-  //Use a string stream buffer, only write at end of the run
-  std::stringstream logStream;
-  ostream &logFile = logStream;
-
-  tree->set_context(logFile, false); //Do logging to file and enable timing (false = enabled)
-
-  if(restartSim)
-  {
-    //The input snapshot file are many files with each process reading its own
-    //particles
-    read_tipsy_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName,
-        procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
-        dustPositions, dustVelocities, dustIDs, reduce_bodies_factor, reduce_dust_factor, true);
-
-  }
-  else if (nPlummer == -1 && nSphere == -1 && !diskmode && nMilkyWay == -1)
+  else if ((nPlummer == -1 && nSphere == -1  && nCube == -1 && !diskmode && nMilkyWay == -1) || restartSim)
   {
     if(procId == 0)
     {
@@ -1083,222 +1041,73 @@ int main(int argc, char** argv)
     {
       tree->ICRecv(0, bodyPositions, bodyVelocities,  bodyIDs);
     }
+
+    float sTime = 0;
+    tree->fileIO->readFile(mpiCommWorld, bodyPositions, bodyVelocities, bodyIDs, fileName,
+                           procId, nProcs, sTime, reduce_bodies_factor, restartSim);
+    tree->set_t_current((float) sTime);
+    #if USE_MPI
+        float tCurrent = tree->get_t_current();
+        MPI_Bcast(&tCurrent, 1, MPI_FLOAT, 0,mpiCommWorld);
+        tree->set_t_current(tCurrent);
+    #endif
   }
   else if(nMilkyWay >= 0)
   {
-#ifdef GALACTICS
-    if (procId == 0) printf("Using MilkyWay model with n= %d per proc, forked %d times \n", nMilkyWay, nMWfork);
-    assert(nMilkyWay > 0);
-    assert(nMWfork > 0);
- 
+    #ifdef GALACTICS
+        if (taskVar.empty())
+        {
+          tStartModel   = get_time_main();
 
-#if 1 /* in this setup all particles will be of equal mass (exact number are galactic-depednant)  */
-    const float fdisk  = 15.1; 
-    const float fbulge = 5.1;   
-    const float fhalo  = 242.31; 
-#else  /* here, bulge & mw particles have the same mass, but halo particles is 32x heavier */
-    const float fdisk  = 15.1; 
-    const float fbulge = 5.1; 
-    const float fhalo  = 7.5; 
-#endif
-
-    const float fsum = fdisk + fhalo + fbulge;
-
-    const int ndisk  = (int)(nMilkyWay * fdisk/fsum);
-    const int nbulge = (int)(nMilkyWay * fbulge/fsum);
-    const int nhalo  = (int)(nMilkyWay * fhalo/fsum);
-
-    assert(ndisk  > 0);
-    assert(nbulge > 0);
-    assert(nhalo  > 0);
-
-    const double t0 = tree->get_time();
-    const Galactics g(procId, nProcs, ndisk, nbulge, nhalo, nMWfork);
-    const double dt = tree->get_time() - t0;
-    if (procId == 0)
-      printf("  ndisk= %d  nbulge= %d  nhalo= %d :: ntotal= %d in %g sec\n",
-          g.get_ndisk(), g.get_nbulge(), g.get_nhalo(), g.get_ntot(), dt);
-
-    const int ntot = g.get_ntot();
-    bodyPositions.resize(ntot);
-    bodyVelocities.resize(ntot);
-    bodyIDs.resize(ntot);
-    for (int i= 0; i < ntot; i++)
-    {
-      assert(!std::isnan(g[i].x));
-      assert(!std::isnan(g[i].y));
-      assert(!std::isnan(g[i].z));
-      assert(g[i].mass > 0.0);
-      bodyIDs[i] = g[i].id;
-
-      bodyPositions[i].x = g[i].x;
-      bodyPositions[i].y = g[i].y;
-      bodyPositions[i].z = g[i].z;
-      bodyPositions[i].w = g[i].mass * 1.0/(double)nProcs;
-      
-      assert(!std::isnan(g[i].vx));
-      assert(!std::isnan(g[i].vy));
-      assert(!std::isnan(g[i].vz));
-
-      bodyVelocities[i].x = g[i].vx;
-      bodyVelocities[i].y = g[i].vy;
-      bodyVelocities[i].z = g[i].vz;
-      bodyVelocities[i].w = 0.0;
-    }
-#else
-    assert(0);
-#endif
+          generateGalacticsModel(procId, nProcs, galSeed, nMilkyWay, nMWfork,
+                                 true, bodyPositions, bodyVelocities, bodyIDs);
+          tEndModel   = get_time_main();
+        }
+        else
+        {
+          //Scale mass of previously generated model
+          const int ntot = bodyPositions.size();
+          for (int i= 0; i < ntot; i++)
+            bodyPositions[i].w *= 1.0/(double)nProcs;
+        }
+    #else
+          assert(0);
+    #endif
   }
   else if(nPlummer >= 0)
   {
-    if (procId == 0) printf("Using plummer model with n= %d per proc \n", nPlummer);
-    assert(nPlummer > 0);
-    const int seed = 19810614 + procId;
-    const Plummer m(nPlummer, procId, seed);
-    bodyPositions.resize(nPlummer);
-    bodyVelocities.resize(nPlummer);
-    bodyIDs.resize(nPlummer);
-    for (int i= 0; i < nPlummer; i++)
-    {
-
-      assert(!std::isnan(m.pos[i].x));
-      assert(!std::isnan(m.pos[i].y));
-      assert(!std::isnan(m.pos[i].z));
-      assert(m.mass[i] > 0.0);
-      bodyIDs[i]   = nPlummer*procId + i;
-
-      bodyPositions[i].x = m.pos[i].x;
-      bodyPositions[i].y = m.pos[i].y;
-      bodyPositions[i].z = m.pos[i].z;
-      bodyPositions[i].w = m.mass[i] * 1.0/nProcs;
-
-      bodyVelocities[i].x = m.vel[i].x;
-      bodyVelocities[i].y = m.vel[i].y;
-      bodyVelocities[i].z = m.vel[i].z;
-      bodyVelocities[i].w = 0;
-    }
+    generatePlummerModel(bodyPositions, bodyVelocities, bodyIDs, procId, nProcs, nPlummer);
   }
   else if (nSphere >= 0)
   {
-    //Sphere
-    if (procId == 0) printf("Using Spherical model with n= %d per proc \n", nSphere);
-    assert(nSphere >= 0);
-    bodyPositions.resize(nSphere);
-    bodyVelocities.resize(nSphere);
-    bodyIDs.resize(nSphere);
-
-    srand48(procId+19840501);
-
-    /* generate uniform sphere */
-    int np = 0;
-    while (np < nSphere)
-    {
-      const double x = 2.0*drand48()-1.0;
-      const double y = 2.0*drand48()-1.0;
-      const double z = 2.0*drand48()-1.0;
-      const double r2 = x*x+y*y+z*z;
-      if (r2 < 1)
-      {
-        bodyIDs[np]   = nSphere*procId + np;
-
-        bodyPositions[np].x = x;
-        bodyPositions[np].y = y;
-        bodyPositions[np].z = z;
-        bodyPositions[np].w = (1.0/nSphere) * 1.0/nProcs;
-
-        bodyVelocities[np].x = 0;
-        bodyVelocities[np].y = 0;
-        bodyVelocities[np].z = 0;
-        bodyVelocities[np].w = 0;
-        np++;
-      }//if
-    }//while
+    generateSphereModel(bodyPositions, bodyVelocities, bodyIDs, procId, nProcs, nSphere);
+  }//else
+  else if (nCube >= 0)
+  {
+    generateCubeModel(bodyPositions, bodyVelocities, bodyIDs, procId, nProcs, nCube);
   }//else
   else if (diskmode)
   {
-    if (procId == 0) printf("Using diskmode with filename %s\n", fileName.c_str());
-    const int seed = procId+19840501;
-    srand48(seed);
-    const DiskShuffle disk(fileName);
-    const int np = disk.get_ntot();
-    bodyPositions.resize(np);
-    bodyVelocities.resize(np);
-    bodyIDs.resize(np);
-    for (int i= 0; i < np; i++)
-    {
-      bodyIDs[i]   = np*procId + i;
-
-      bodyPositions[i].x = disk.pos(i).x;
-      bodyPositions[i].y = disk.pos (i).y;
-      bodyPositions[i].z = disk.pos (i).z;
-      bodyPositions[i].w = disk.mass(i) * 1.0/nProcs;
-
-      bodyVelocities[i].x = disk.vel(i).x;
-      bodyVelocities[i].y = disk.vel(i).y;
-      bodyVelocities[i].z = disk.vel(i).z;
-      bodyVelocities[i].w = 0;
-    }
+    generateShuffledDiskModel(bodyPositions, bodyVelocities, bodyIDs, procId, nProcs, fileName);
   }
   else
     assert(0);
 
   tree->mpiSync();
 
+  //Sanity check
+  double mass = 0;
+  for(unsigned int i=0; i < bodyPositions.size(); i++) { mass += bodyPositions[i].w; }
+  double totalMass = tree->SumOnRootRank(mass);
 
-#ifdef TIPSYOUTPUT
-  LOGF(stderr, " t_current = %g\n", tree->get_t_current());
-#endif
+  tree->mpiSumParticleCount((int)bodyPositions.size());
 
-
-  //#define SETUP_MERGER
-#ifdef SETUP_MERGER
-  vector<real4> bodyPositions2;
-  vector<real4> bodyVelocities2;
-  vector<int>   bodyIDs2;  
-
-  bodyPositions2.insert(bodyPositions2.begin(),   bodyPositions.begin(),  bodyPositions.end());
-  bodyVelocities2.insert(bodyVelocities2.begin(), bodyVelocities.begin(), bodyVelocities.end());
-  bodyIDs2.insert(bodyIDs2.begin(), bodyIDs.begin(), bodyIDs.end());
-
-
-  setupMergerModel(bodyPositions,  bodyVelocities,  bodyIDs,
-      bodyPositions2, bodyVelocities2, bodyIDs2);
-
-  NTotal *= 2;
-  NFirst *= 2;
-  NSecond *= 2;
-  NThird *= 2;
-#endif
-
-
-  //Set the properties of the data set, it only is really used by process 0, which does the 
-  //actual file I/O  
-  tree->setDataSetProperties(NTotal, NFirst, NSecond, NThird);
-
-  if(procId == 0)  
-    LOG("Dataset particle information: Ntotal: %d\tNFirst: %d\tNSecond: %d\tNThird: %d \n",
-        NTotal, NFirst, NSecond, NThird);
-
-
-  //Sanity check for standard plummer spheres
-  double mass = 0, totalMass;
-  for(unsigned int i=0; i < bodyPositions.size(); i++)
-  {
-    mass += bodyPositions[i].w;
-  }
-
+  LOGF(stderr, "t_current = %g nLocal %d massLocal: %f Combined Mass: %f nGlobal: %llu \n",
+                tree->get_t_current(), (int)bodyPositions.size(),
+                mass, totalMass, tree->nTotalFreq_ull);
+  fprintf(stderr,"Proc: %d Bootup times: Tree/MPI: %lg Threads/log: %lg IC-model: %lg \n",
+                 procId, tStartup-tStartupStart, tStartup2-tStartup, tEndModel - tStartModel);
   tree->load_kernels();
-
-#ifdef USE_MPI
-  MPI_Reduce(&mass,&totalMass,1, MPI_DOUBLE, MPI_SUM,0, MPI_COMM_WORLD);
-#else
-  totalMass = mass;
-#endif
-
-  if(procId == 0)   LOGF(stderr, "Combined Mass: %f \tNTotal: %d \n", totalMass, NTotal);
-
-  LOG("Starting! Bootup time: %lg \n", tree->get_time()-tStartup);
-
 
   double t0 = tree->get_time();
 
@@ -1308,61 +1117,25 @@ int main(int argc, char** argv)
   //Load data onto the device
   for(uint i=0; i < bodyPositions.size(); i++)
   {
-    tree->localTree.bodies_pos[i] = bodyPositions[i];
-    tree->localTree.bodies_vel[i] = bodyVelocities[i];
-    tree->localTree.bodies_ids[i] = bodyIDs[i];
-
+    tree->localTree.bodies_pos[i]  = bodyPositions[i];
     tree->localTree.bodies_Ppos[i] = bodyPositions[i];
+    tree->localTree.bodies_vel[i]  = bodyVelocities[i];
     tree->localTree.bodies_Pvel[i] = bodyVelocities[i];
+    tree->localTree.bodies_ids[i]  = bodyIDs[i];
     tree->localTree.bodies_time[i] = make_float2(tree->get_t_current(), tree->get_t_current());
   }
 
   tree->localTree.bodies_time.h2d();
-  tree->localTree.bodies_pos.h2d();
-  tree->localTree.bodies_vel.h2d();
+  tree->localTree.bodies_pos. h2d();
+  tree->localTree.bodies_vel. h2d();
   tree->localTree.bodies_Ppos.h2d();
   tree->localTree.bodies_Pvel.h2d();
-  tree->localTree.bodies_ids.h2d();
-
-  //fprintf(stderr,"Send data to device proc: %d \n", procId);
-  //  tree->devContext.writeLogEvent("Send data to device\n");
+  tree->localTree.bodies_ids. h2d();
 
 
-
-#ifdef USE_MPI
-  //Use sampling particles, determine frequency
-  tree->mpiSumParticleCount(tree->localTree.n); //Determine initial frequency
-#endif
-
-
-  //If required set the dust particles
-#ifdef USE_DUST
-  if( (int)dustPositions.size() > 0)
-  {
-    LOGF(stderr, "Allocating dust properties for %d dust particles \n",
-        (int)dustPositions.size());   
-    tree->localTree.setNDust((int)dustPositions.size());
-    tree->allocateDustMemory(tree->localTree);
-
-    //Load dust data onto the device
-    for(uint i=0; i < dustPositions.size(); i++)
-    {
-      tree->localTree.dust_pos[i] = dustPositions[i];
-      tree->localTree.dust_vel[i] = dustVelocities[i];
-      tree->localTree.dust_ids[i] = dustIDs[i];
-    }
-
-    tree->localTree.dust_pos.h2d();
-    tree->localTree.dust_vel.h2d();
-    tree->localTree.dust_ids.h2d();    
-  }
-#endif //ifdef USE_DUST
-
-
-#ifdef USE_MPI
-  //Startup the OMP threads
-  omp_set_num_threads(4);
-#endif
+  #ifdef USE_MPI
+    omp_set_num_threads(4); //Startup the OMP threads to be used during LET phase
+  #endif
 
 
   //Start the integration
@@ -1373,55 +1146,115 @@ int main(int argc, char** argv)
   LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
 #else
   tree->mpiSync();
-  if (procId==0)
-    fprintf(stderr, " Starting iterating\n");
-  tree->mpiSync();
+  if (procId==0) fprintf(stderr, " Start iterating\n");
 
-  //Catch exceptions to add some extra print info
-  try
+
+  bool simulationFinished = false;
+  ioSharedData.writingFinished       = true;
+
+  //Uncomment this to have a monitor thread that can kill the 
+  //program when no activity is detected
+  //std::thread watcher(watchThread, tree);
+  //watcher.detach();
+
+
+
+  /* w/o MPI-IO use async fwrite, so use 2 threads otherwise, use 1 threads
+   */
+#pragma omp parallel num_threads(1+ (!useMPIIO))
   {
-      tree->iterate();
+    const int tid = omp_get_thread_num();
+    if (tid == 0)
+    {
+      //Catch exceptions to add some extra print info
+      try
+      {
+        tree->iterate();
+      }
+      catch(const std::exception &exc)
+      {
+        std::cerr << "Process: "  << procId << "\t" << exc.what() <<std::endl;
+        if(nProcs > 1) ::abort();
+      }
+      catch(...)
+      {
+        std::cerr << "Unknown exception on process: " << procId << std::endl;
+        if(nProcs > 1) ::abort();
+      }
+      simulationFinished = true;
+    }
+    else
+    {
+      assert(!useMPIIO);
+      /* IO */
+      sleep(1);
+      while(!simulationFinished)
+      {
+        if(ioSharedData.writingFinished == false)
+        {
+          const float t_current = ioSharedData.t_current;
+
+          bool distributed = true;
+          string fileName; fileName.resize(256);
+          sprintf(&fileName[0], "%s_%010.4f-%d", snapshotFile.c_str(), t_current, procId);
+
+
+          if(nProcs <= 16)
+          {
+//              distributed = false;
+//              sprintf(&fileName[0], "%s_%010.4f", snapshotFile.c_str(), t_current);
+          }
+
+          tree->fileIO->writeFile(ioSharedData.Pos, ioSharedData.Vel,
+                                  ioSharedData.IDs, ioSharedData.nBodies,
+                                  fileName.c_str(), t_current,
+                                  procId, nProcs, mpiCommWorld, distributed) ;
+
+          ioSharedData.free();
+          assert(ioSharedData.writingFinished == false);
+          ioSharedData.writingFinished = true;
+        }
+        else
+        {
+          usleep(100);
+        }
+      }
+    }
   }
-  catch(const std::exception &exc)
-  {
-      std::cerr << "Process: "  << procId << "\t" << exc.what() <<std::endl;
-  }
-  catch(...)
-  {
-      std::cerr << "Unknown exception on process: " << procId << std::endl;
-  }
+
+  if (useMPIIO) tree->terminateIO();
 
   LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
 
 
-  double t1w = tree->get_time();
-  ofstream logFile2(logFileName.c_str());
-  logFile2 <<  logStream.rdbuf();
-  logFile2 << "Writing log data took: " << tree->get_time()-t1w << std::endl;
-  logFile2.close();
-
-
-
-#ifdef USE_MPI
-  MPI_Finalize();
-#endif
+  std::stringstream sstemp;
+  sstemp << "Finished total took: " << tree->get_time()-t0 << std::endl;
+  std::string stemp = sstemp.str();
+  tree->writeLogData(stemp);
+  tree->writeLogToFile();//Final write in case anything is left in the buffers
 
   if(tree->procId == 0)
   {
-    LOGF(stderr, "TOTAL:   Time spent between the start of 'iterate' and the final time-step (very first step is not accounted)\n",0);
-    LOGF(stderr, "Grav:    Time spent to compute gravity, including communication (wall-clock time)\n",0);
-    LOGF(stderr, "GPUgrav: Time spent ON the GPU to compute local and LET gravity\n",0);
-    LOGF(stderr, "LET Com: Time spent in exchanging and building LET data\n",0);
-    LOGF(stderr, "Build:   Time spent in constructing the tree (incl sorting, making groups, etc.)\n",0);
-    LOGF(stderr, "Domain:  Time spent in computing new domain decomposition and exchanging particles between nodes.\n",0);
-    LOGF(stderr, "Wait:    Time spent in waiting on other processes after the gravity part.\n",0);
+    LOGF(stderr, "TOTAL:   Time spent between the start of 'iterate' and the final time-step (very first step is not accounted)\n");
+    LOGF(stderr, "Grav:    Time spent to compute gravity, including communication (wall-clock time)\n");
+    LOGF(stderr, "GPUgrav: Time spent ON the GPU to compute local and LET gravity\n");
+    LOGF(stderr, "LET Com: Time spent in exchanging and building LET data\n");
+    LOGF(stderr, "Build:   Time spent in constructing the tree (incl sorting, making groups, etc.)\n");
+    LOGF(stderr, "Domain:  Time spent in computing new domain decomposition and exchanging particles between nodes.\n");
+    LOGF(stderr, "Wait:    Time spent in waiting on other processes after the gravity part.\n");
   }
 
 
   delete tree;
   tree = NULL;
+
 #endif
 
   displayTimers();
+
+#ifdef USE_MPI
+  //Finalize MPI if we initialized it ourselves, otherwise the driver will do it.
+  if (!mpiInitialized) MPI_Finalize();
+#endif
   return 0;
 }

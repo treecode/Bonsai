@@ -1,0 +1,13 @@
+9230 194 575
+
+#First line should contain three numbers that will be used
+#to compute the final particle numbers used
+#First number:  number of halo particles
+#Second number: number of bulge particles
+#Third number:  number of disk particles
+#Note that the ratio's are used so you do not need the accurate numbers for example:
+90 2 8 
+Will create 90% dark-matter, 2% bulge and 8% disk particles
+
+
+

@@ -27,6 +27,60 @@ PROF_MODULE(dev_approximate_gravity);
 #define _QUADRUPOLE_
 #endif
 
+
+
+/***********************************/
+
+static __device__ __forceinline__ float Wkernel(const float q)
+{
+  const float sigma = 8.0f/M_PI;
+
+  const float qm = 1.0f - q;
+  if (q < 0.5f) return sigma * (1.0f + (-6.0f)*q*q*qm);
+  else if (q < 1.0f) return sigma * 2.0f*qm*qm*qm;
+
+  return 0.0f;
+}
+
+static __device__ __forceinline__  float computePartialDensity(
+    const float h, 
+    const float r2, 
+    const float mass)
+{
+  const float r     =  sqrtf(r2); //Can we combine this with the force sqrt?
+  const float hinv  =  1.0f/h; //Can we precompute this and keep in register?
+  const float q     =  r * hinv;
+  const float hinv3 =  hinv*hinv*hinv;
+
+//  printf("ON DEV: Kernel: %f\tq: %f\tr: %f\thinv: %f\n",  Wkernel(q), q, r, hinv);
+
+
+  return mass * Wkernel(q) * hinv3;
+}
+
+static __device__ __forceinline__ void computeDensityAndNgb(
+    const float r2, const float h, const float mass, 
+    float &density, float &nb)
+{
+  if (h*h > r2)
+  {
+    nb++;
+    density += computePartialDensity(h,r2,mass);
+  }
+}
+
+static __device__ __forceinline__ float adjustH(const float h_old, const float nnb)
+{
+	const float nbDesired 	= 42;
+	const float f      	= 0.5f * (1.0f + cbrtf(nbDesired / nnb));
+	const float fScale 	= max(min(f, 1.2), 0.8);
+	return (h_old*fScale);
+}
+
+
+
+
+
 /************************************/
 /*********   PREFIX SUM   ***********/
 /************************************/
@@ -174,7 +228,7 @@ const void* getTexturePointer(const char* name)
 __device__ __forceinline__ float4 add_acc(
     float4 acc,  const float4 pos,
     const float massj, const float3 posj,
-    const float eps2)
+    const float eps2, float2 &density)
 {
 #if 1  /* to test performance of a tree-walk */
   const float3 dr = make_float3(posj.x - pos.x, posj.y - pos.y, posj.z - pos.z);
@@ -190,6 +244,9 @@ __device__ __forceinline__ float4 add_acc(
   acc.y += mrinv3 * dr.y;
   acc.z += mrinv3 * dr.z;
 #endif
+  
+  //Density
+  computeDensityAndNgb(r2,pos.w,massj,density.x,density.y);
 
   return acc;
 }
@@ -214,7 +271,7 @@ __device__ __forceinline__ float4 add_acc(
     float4 acc, 
     const float4 pos,
     const float mass, const float3 com,
-    const float4 Q0,  const float4 Q1, float eps2) 
+    const float4 Q0,  const float4 Q1, float eps2, float2 &density) 
 {
   const float3 dr = make_float3(pos.x - com.x, pos.y - com.y, pos.z - com.z);
   const float  r2 = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z + eps2;
@@ -225,6 +282,10 @@ __device__ __forceinline__ float4 add_acc(
   const float mrinv3 = rinv2*mrinv;
   const float mrinv5 = rinv2*mrinv3; 
   const float mrinv7 = rinv2*mrinv5;   // 16
+  
+  
+  //Density
+  computeDensityAndNgb(r2,pos.w,mass,density.x,density.y);
 
 #if 0
   float  D0  =  mrinv;
@@ -364,7 +425,7 @@ void approximate_gravity(
     float4 groupSize,
     volatile float4 *boxCenterInfo,
     float group_eps,
-    real4 acc_i[NI])
+    real4 acc_i[NI], float2 dens_i[NI])
 {
 
 
@@ -398,6 +459,10 @@ void approximate_gravity(
 
   int n_approx = 0;
   int n_direct = 0;
+
+#pragma unroll 1
+  for (int i = 0; i < NI; i++)
+    dens_i[i] = make_float2(0,0);
 
 
   for (int root_node = node_begend.x; root_node < node_begend.y; root_node += WARP_SIZE) 
@@ -607,7 +672,7 @@ void approximate_gravity(
             const float4  Q0  = tex1Dfetch(texMultipole, address + 1);
             const float4  Q1  = tex1Dfetch(texMultipole, address + 2);
             for (int k = 0; k < NI; k++)
-              acc_i[k] = add_acc(acc_i[k], pos_i[k], sh_mass[i], sh_pos[i], Q0, Q1, eps2);
+              acc_i[k] = add_acc(acc_i[k], pos_i[k], sh_mass[i], sh_pos[i], Q0, Q1, eps2, dens_i[k]);
           }
 #endif /* _QUADRUPOLE_ */
           apprCount += WARP_SIZE*NI;
@@ -687,7 +752,7 @@ void approximate_gravity(
             
             for (int i = 0; i < WARP_SIZE; i++)
               for (int k = 0; k < NI; k++)
-                acc_i[k] = add_acc(acc_i[k], pos_i[k], sh_mass[i], sh_pos[i], eps2);
+                acc_i[k] = add_acc(acc_i[k], pos_i[k], sh_mass[i], sh_pos[i], eps2, dens_i[k]);
             direCount += WARP_SIZE*NI;
           }
 
@@ -750,7 +815,7 @@ void approximate_gravity(
 #ifndef _QUADRUPOLE_
     for (int i = 0; i < WARP_SIZE; i++)
       for (int k = 0; k < NI; k++)
-        acc_i[k] = add_acc(acc_i[k], pos_i[k], sh_mass[i], sh_pos[i],eps2);
+        acc_i[k] = add_acc(acc_i[k], pos_i[k], sh_mass[i], sh_pos[i],eps2, dens_i[k]);
 #else
     for (int i = 0; i < WARP_SIZE; i++)
     {
@@ -763,7 +828,7 @@ void approximate_gravity(
         Q1 = tex1Dfetch(texMultipole, address + 2);
       }
       for (int k = 0; k < NI; k++)
-        acc_i[k] = add_acc(acc_i[k], pos_i[k], sh_mass[i], sh_pos[i], Q0, Q1, eps2);
+        acc_i[k] = add_acc(acc_i[k], pos_i[k], sh_mass[i], sh_pos[i], Q0, Q1, eps2, dens_i[k]);
     }
 #endif
     apprCount += WARP_SIZE*NI;
@@ -787,7 +852,7 @@ void approximate_gravity(
 
     for (int i = 0; i < WARP_SIZE; i++) 
       for (int k = 0; k < NI; k++)
-        acc_i[k] = add_acc(acc_i[k], pos_i[k], sh_mass[i], sh_pos[i], eps2);
+        acc_i[k] = add_acc(acc_i[k], pos_i[k], sh_mass[i], sh_pos[i], eps2, dens_i[k]);
     direCount += WARP_SIZE*NI;
   }
 }
@@ -815,7 +880,8 @@ __launch_bounds__(NTHREAD)
       float4  *boxCenterInfo,
       float4  *groupCenterInfo,
       real4   *body_vel,
-      int     *MEM_BUF) 
+      int     *MEM_BUF,
+      float *body_h, float2 *body_dens_out) 
 {
   const int blockDim2 = NTHREAD2;
   const int shMemSize = 10 * (1 << blockDim2);
@@ -868,10 +934,14 @@ __launch_bounds__(NTHREAD)
 
     float4 pos_i[2];
     float4 acc_i[2];
+    float2 dens_i[2];  
 
-    pos_i[0] = group_body_pos[body_i[0]];
-    if(ni > 1) //Only read if we actually have ni == 2
-      pos_i[1] = group_body_pos[body_i[1]];
+    pos_i[0]   = group_body_pos[body_i[0]];
+    pos_i[0].w = body_h[body_i[0]];
+    if(ni > 1){ //Only read if we actually have ni == 2
+      pos_i[1]   = group_body_pos[body_i[1]];
+      pos_i[1].w = body_h[body_i[1]];
+    }
 
 
     acc_i[0] = acc_i[1] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
@@ -890,7 +960,7 @@ __launch_bounds__(NTHREAD)
           multipole_data, body_pos,
           shmem, lmem, ngb_i, apprCount, direCount, boxSizeInfo, curGroupSize, boxCenterInfo,
           group_eps, 
-          acc_i);
+          acc_i, dens_i);
     else
       approximate_gravity<0, blockDim2, 2>(
           pos_i, group_pos,
@@ -898,7 +968,7 @@ __launch_bounds__(NTHREAD)
           multipole_data, body_pos,
           shmem, lmem, ngb_i, apprCount, direCount, boxSizeInfo, curGroupSize, boxCenterInfo,
           group_eps, 
-          acc_i);
+          acc_i, dens_i);
 
 #if 1 /* this increase lmem spill count */
     if(apprCount < 0)
@@ -932,7 +1002,7 @@ __launch_bounds__(NTHREAD)
             multipole_data, body_pos,
             shmem, lmem, ngb_i, apprCount, direCount, boxSizeInfo, curGroupSize, boxCenterInfo,
             group_eps, 
-            acc_i);
+            acc_i, dens_i);
       else
         approximate_gravity<8, blockDim2, 2>(
             pos_i, group_pos,
@@ -940,7 +1010,7 @@ __launch_bounds__(NTHREAD)
             multipole_data, body_pos,
             shmem, lmem, ngb_i, apprCount, direCount, boxSizeInfo, curGroupSize, boxCenterInfo,
             group_eps, 
-            acc_i);
+            acc_i, dens_i);
 
       lmem = &MEM_BUF[blockIdx.x*(LMEM_STACK_SIZE*blockDim.x + LMEM_EXTRA_SIZE)];
 
@@ -960,6 +1030,10 @@ __launch_bounds__(NTHREAD)
       active_inout[addr] = 1;
       interactions[addr].x = apprCount / ni;
       interactions[addr].y = direCount / ni;
+      
+      body_dens_out[addr] = dens_i[0];
+      body_h[addr] = adjustH(body_h[addr], dens_i[0].y);
+
       if (ni == 2)
       {
         const int addr = body_i[1];
@@ -969,6 +1043,9 @@ __launch_bounds__(NTHREAD)
         active_inout[addr] = 1;     
         interactions[addr].x = apprCount / ni;
         interactions[addr].y = direCount / ni;
+      
+	body_dens_out[addr] = dens_i[1];
+        body_h[addr] = adjustH(body_h[addr], dens_i[1].y);
       }
     }
   }     //end while
@@ -997,7 +1074,8 @@ __launch_bounds__(NTHREAD)
       float4  *boxCenterInfo,
       float4  *groupCenterInfo,
       real4   *body_vel,
-      int     *MEM_BUF) 
+      int     *MEM_BUF,
+      float *body_h, float2 *body_dens_out) 
 {
   const int blockDim2 = NTHREAD2;
   const int shMemSize = 10 * (1 << blockDim2);
@@ -1050,10 +1128,14 @@ __launch_bounds__(NTHREAD)
 
     float4 pos_i[2];
     float4 acc_i[2];
+    float2 dens_i[2];
 
-    pos_i[0] = group_body_pos[body_i[0]];
-    if(ni > 1) //Only read if we actually have ni == 2
-      pos_i[1] = group_body_pos[body_i[1]];
+    pos_i[0]   = group_body_pos[body_i[0]];
+    pos_i[0].w = body_h[body_i[0]];
+    if(ni > 1){ //Only read if we actually have ni == 2
+      pos_i[1]   = group_body_pos[body_i[1]];
+      pos_i[1].w = body_h[body_i[1]];
+    }
 
     acc_i[0] = acc_i[1] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
 
@@ -1071,7 +1153,7 @@ __launch_bounds__(NTHREAD)
           multipole_data, body_pos,
           shmem, lmem, ngb_i, apprCount, direCount, boxSizeInfo, curGroupSize, boxCenterInfo,
           group_eps, 
-          acc_i);
+          acc_i, dens_i);
     else
       approximate_gravity<0, blockDim2, 2>(
           pos_i, group_pos,
@@ -1079,7 +1161,7 @@ __launch_bounds__(NTHREAD)
           multipole_data, body_pos,
           shmem, lmem, ngb_i, apprCount, direCount, boxSizeInfo, curGroupSize, boxCenterInfo,
           group_eps, 
-          acc_i);
+          acc_i, dens_i);
 
 #if 1 /* this increase lmem spill count */
     if(apprCount < 0)
@@ -1113,7 +1195,7 @@ __launch_bounds__(NTHREAD)
             multipole_data, body_pos,
             shmem, lmem, ngb_i, apprCount, direCount, boxSizeInfo, curGroupSize, boxCenterInfo,
             group_eps, 
-            acc_i);
+            acc_i, dens_i);
       else
         approximate_gravity<8, blockDim2, 2>(
             pos_i, group_pos,
@@ -1121,7 +1203,7 @@ __launch_bounds__(NTHREAD)
             multipole_data, body_pos,
             shmem, lmem, ngb_i, apprCount, direCount, boxSizeInfo, curGroupSize, boxCenterInfo,
             group_eps, 
-            acc_i);
+            acc_i, dens_i);
 
       lmem = &MEM_BUF[blockIdx.x*(LMEM_STACK_SIZE*blockDim.x + LMEM_EXTRA_SIZE)];
 
@@ -1144,6 +1226,10 @@ __launch_bounds__(NTHREAD)
       active_inout[addr] = 1;
       interactions[addr].x += apprCount / ni;
       interactions[addr].y += direCount / ni;
+      
+      body_dens_out[addr].x += dens_i[0].x;
+      body_dens_out[addr].y += dens_i[0].y;
+
       if (ni == 2)
       {
         const int addr = body_i[1];
@@ -1156,6 +1242,9 @@ __launch_bounds__(NTHREAD)
         active_inout[addr] = 1;     
         interactions[addr].x += apprCount / ni;
         interactions[addr].y += direCount / ni;
+      
+	body_dens_out[addr].x += dens_i[1].x;
+        body_dens_out[addr].y += dens_i[1].y;
       }
     }
   }     //end while

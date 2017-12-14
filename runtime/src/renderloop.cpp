@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include "renderloop.h"
 
 #ifdef WIN32
 #define NOMINMAX
@@ -22,7 +23,7 @@
 #include <vector>
 #include <cassert>
 
-#include "renderloop.h"
+
 #include "render_particles.h"
 #include "SmokeRenderer.h"
 #include "vector_math.h"
@@ -35,6 +36,11 @@
 float TstartGlow;
 float dTstartGlow;
 
+#define WINDOWW 1920
+#define WINDOWH 1200
+
+//#define WINDOWW 1024
+//#define WINDOWH 768
 #define DEG2RAD(a) ((a)/57.295)
 //for stereo
 enum EYE
@@ -301,7 +307,7 @@ void glPrintf(float x, float y, const char* format, ...)
 }
 
 // reducing to improve perf
-#define MAX_PARTICLES 700000
+#define MAX_PARTICLES 5700000
 
 class BonsaiDemo
 {
@@ -309,8 +315,8 @@ public:
   BonsaiDemo(octree *tree, octree::IterationData &idata,
     std::string const& wogPath, int wogPort, real wogCameraDistance, real wogDeletionRadiusFactor)
     : m_tree(tree), m_idata(idata), iterationsRemaining(true),
-      //m_renderer(tree->localTree.n + tree->localTree.n_dust),
-      m_renderer(tree->localTree.n + tree->localTree.n_dust, MAX_PARTICLES),
+//       m_renderer(tree->localTree.n + tree->localTree.n_dust),
+      m_renderer(tree->localTree.n, MAX_PARTICLES),
       //m_displayMode(ParticleRenderer::PARTICLE_SPRITES_COLOR),
 	  m_displayMode(SmokeRenderer::VOLUMETRIC),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.2f),
@@ -349,8 +355,9 @@ public:
       m_enableStats(true),
 #endif
       m_wogManager(tree, wogPath, wogPort, 1024, 768, m_fov, m_farZ, wogCameraDistance, wogDeletionRadiusFactor)
+      m_densityRange(100)
   {
-    m_windowDims = make_int2(1024, 768);
+    m_windowDims = make_int2(WINDOWW, WINDOWH);
     m_cameraTrans = make_float3(0, -2, -100);
     m_cameraTransLag = m_cameraTrans;
     m_cameraRot = make_float3(0, 0, 0);
@@ -361,12 +368,11 @@ public:
 	  float color[4] = { 1.0f, 1.0f, 1.0f, 1.0f};
     //m_renderer.setBaseColor(color);
     //m_renderer.setPointSize(0.00001f);
-    tree->iterate_setup(m_idata);
+    tree->iterate_setup();
 
    
     int arraySize = tree->localTree.n;
-    arraySize    += tree->localTree.n_dust;
- 
+
     //m_particleColors  = new float4[arraySize];
     m_particleColors  = new float4[MAX_PARTICLES];  
     cudaMalloc( &m_particleColorsDev, MAX_PARTICLES * sizeof(float4)); 
@@ -451,7 +457,6 @@ public:
       return;
 
     int bodies = m_tree->localTree.n;
-    int dust = m_tree->localTree.n_dust;
 
     beginDeviceCoords();
     glScalef(0.25f, 0.25f, 1.0f);
@@ -472,7 +477,7 @@ public:
     glPrintf(x, y, "MYears:    %.2f", Myr);
     y -= lineSpacing;
 
-    glPrintf(x, y, "BODIES:    %d", bodies + dust);
+    glPrintf(x, y, "BODIES:    %d", bodies);
     y -= lineSpacing;
 
     if (m_displayBodiesSec) {
@@ -491,8 +496,8 @@ public:
     endWinCoords();
 
     char str[256];
-    sprintf(str, "Bonsai N-Body Tree Code (%d bodies, %d dust): %0.1f fps",
-            bodies, dust, fps);
+    sprintf(str, "Bonsai N-Body Tree Code (%d bodies): %0.1f fps",
+            bodies, fps);
 
     glutSetWindowTitle(str);
   }
@@ -586,10 +591,10 @@ public:
     if (m_renderingEnabled)
     {
       //Check if we need to update the number of particles
-      if((m_tree->localTree.n + m_tree->localTree.n_dust) > m_renderer.getNumberOfParticles())
+      if((m_tree->localTree.n) > m_renderer.getNumberOfParticles())
       {
         //Update the particle count in the renderer
-        m_renderer.setNumberOfParticles(m_tree->localTree.n + m_tree->localTree.n_dust);
+        m_renderer.setNumberOfParticles(m_tree->localTree.n);
         fitCamera(); //Try to get the model back in view
       }
       
@@ -1177,7 +1182,7 @@ public:
 
   void initBodyColors()
   {
-    int n = m_tree->localTree.n + m_tree->localTree.n_dust;   
+    int n = m_tree->localTree.n;
     for(int i=0; i<n; i++) {
       m_particleColors[i] = make_float4(1.0f, 1.0f, 1.0f, 1.0f);
     }
@@ -1185,16 +1190,32 @@ public:
 
   void getBodyData() {
 
-   int n = m_tree->localTree.n + m_tree->localTree.n_dust;   
-   //Above is safe since it is 0 if we dont use dust
+   int n = m_tree->localTree.n;
 
-    #ifdef USE_DUST
-     //We move the dust data into the position data (on the device :) )
-     m_tree->localTree.bodies_pos.copy_devonly(m_tree->localTree.dust_pos,
-                           m_tree->localTree.n_dust, m_tree->localTree.n); 
-     m_tree->localTree.bodies_ids.copy_devonly(m_tree->localTree.dust_ids,
-                           m_tree->localTree.n_dust, m_tree->localTree.n);
-    #endif    
+     //HACK to get max density
+     float maxDensity = -1000;
+     float minDensity = 1000;
+
+#if 0
+     m_tree->localTree.bodies_dens.d2h();
+     for(int i=0; i < m_tree->localTree.n; i++) 
+     {
+	     maxDensity = max(maxDensity, log10(m_tree->localTree.bodies_dens[i].x));
+	     minDensity = min(minDensity, log10(m_tree->localTree.bodies_dens[i].x));
+//	     printf("%d\t%f\t%f\n",
+//			     i, 
+//			     m_tree->localTree.bodies_dens[i].x,
+//			     m_tree->localTree.bodies_dens[i].y);
+     }
+
+
+     float range = minDensity - maxDensity;
+     //fprintf(stderr,"Test: %f  %f\t %f \n", minDensity, maxDensity, range);
+
+     maxDensity += (range/100)*m_densityRange;
+
+  //   maxDensity = log10(maxDensity);
+#endif
 
 	  float4 color2 = make_float4(starColor2.x*starColor2.w, starColor2.y*starColor2.w, starColor2.z*starColor2.w, 1.0f);
     float4 color3 = make_float4(starColor3.x*starColor3.w, starColor3.y*starColor3.w, starColor3.z*starColor3.w, 1.0f);
@@ -1285,7 +1306,8 @@ public:
 		m_renderer.setColors((float*)colors);
 #else  /* eg: assign colours on the device */
 		const float Tcurrent = m_tree->get_t_current() * 9.78f;
-		assignColors( m_particleColorsDev, (int*)m_tree->localTree.bodies_ids.d(), n, 
+		assignColors( m_particleColorsDev, (ulonglong1*)m_tree->localTree.bodies_ids.d(), n,
+	(float2*)  m_tree->localTree.bodies_dens.d(), maxDensity,
 				color2, color3, color4, starColor, bulgeColor, darkMatterColor, dustColor, m_brightFreq, 
 				make_float4(
 					Tcurrent, TstartGlow,
@@ -1296,7 +1318,7 @@ public:
 		m_renderer.setColorsDevice( (float*)m_particleColorsDev );
 #endif
 
-    m_renderer.setNumParticles( m_tree->localTree.n + m_tree->localTree.n_dust);    
+    m_renderer.setNumParticles( m_tree->localTree.n);
     m_renderer.setPositionsDevice((float*) m_tree->localTree.bodies_pos.d());   // use d2d copy
     //m_tree->localTree.bodies_pos.d2h(); m_renderer.setPositions((float *) &m_tree->localTree.bodies_pos[0]);
     
@@ -1388,6 +1410,7 @@ public:
     //dustColor = make_float4(0.0f, 0.0f, 0.0f, 0.0f);  // black
 
     darkMatterColor = make_float4(0.0f, 0.2f, 0.4f, 3.0f);      // blue
+    //darkMatterColor = make_float4(0.0f, 0.2f, 0.4f, 0.0f);      // blue
 
     m_colorParams = new ParamListGL("colors");
 #if 0
@@ -1405,6 +1428,7 @@ public:
     m_colorParams->AddParam(new Param<float>("screen Z", m_screenZ, 100.0, 2000.0, 450.0, &m_screenZ)); //I know  the scene bounds
     m_colorParams->AddParam(new Param<float>("iod", m_IOD, 1.0f, 20.0f, 4.0, &m_IOD));
     m_colorParams->AddParam(new Param<float>("cursor size", m_cursorSize, 0.0, 5.0, 0.5, &m_cursorSize));
+    m_colorParams->AddParam(new Param<int>("Density perc", m_densityRange, 0, 100, 1, &m_densityRange));
 
   }
 
@@ -1452,6 +1476,8 @@ public:
   float m_farZ;
   float m_screenZ;
   bool m_stereoEnabled;
+
+  int m_densityRange; //Density percentage range (0 to 100)
 
   bool m_paused;
   bool m_displayBoxes;
@@ -1843,7 +1869,8 @@ void initGL(int argc, char** argv, const char *gameMode, bool &stereo, bool full
           exit(-1);
       }
   } else {
-    glutInitWindowSize(1024, 768);
+    //glutInitWindowSize(1024, 768);
+    glutInitWindowSize(WINDOWW, WINDOWH);
     glutCreateWindow("Bonsai Tree-code Gravitational N-body Simulation");
     if (fullscreen) {
       glutFullScreen();

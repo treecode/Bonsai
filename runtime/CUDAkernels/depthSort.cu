@@ -170,7 +170,9 @@ class StarSampler
 		}
 };
 
-KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles, 
+KERNEL_DECLARE(assignColorsKernel) (float4 *colors, ulonglong1 *ids, 
+		int numParticles,
+		float2 *density, float maxDensity,
 		float4 color2, float4 color3, float4 color4, 
 		float4 starColor, float4 bulgeColor, float4 darkMatterColor, float4 dustColor,
 		int m_brightFreq, float4 t_current)
@@ -178,7 +180,7 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles,
 	int tid = blockIdx.x * blockDim.x + threadIdx.x;
 	if( tid >= numParticles ) return;
 
-	int id =  ids[tid];
+	unsigned long long id =  ids[tid].x;
 
 	float r = frand(id);
 	//float4 color = { r, 1-r, 0.5f, 1.0f };
@@ -258,7 +260,7 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles,
 
 	float4 color;
 
-	if (id >= 0 && id < 40000000)     //Disk
+	if (id < 40000000)     //Disk
 	{
 		color = ((id % m_brightFreq) != 0) ? 
 			starColor :
@@ -300,11 +302,13 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles,
 	{
 		color = dustColor * make_float4(r, r, r, 1.0f);
 	} 
-	else if (id >= 70000000 && id < 100000000) // Glow massless dust particles
+	else if (id >= 70000000 && id < 2000000000000000000) // Glow massless dust particles
+	//else if (id >= 70000000 && id < 100000000) // Glow massless dust particles
 	{
 		color = color3;  /*  adds glow in purple */
 	}
-	else if (id >= 100000000 && id < 200000000) //Bulge
+	else if (id >= 2000000000000000000 && id < 3000000000000000000) //Bulge
+	//else if (id >= 100000000 && id < 200000000) //Bulge
 	{
 		//colors[i] = starColor;
 		color = bulgeColor;
@@ -315,7 +319,7 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles,
 		color = Cstar * make_float4(fdim, fdim, fdim, 2.0f);
 #endif
 	} 
-	else //>= 200000000, Dark matter
+	else //>= 3000000000000000000, Dark matter
 	{
 		color = darkMatterColor;
 		//colors[i] = darkMatterColor * make_float4(r, r, r, 1.0f);
@@ -323,17 +327,35 @@ KERNEL_DECLARE(assignColorsKernel) (float4 *colors, int *ids, int numParticles,
 
 
 	colors[tid] = color;
+
+	//Density hack, turn particles with density less than
+	//some limit into dark-matter (disables rendering)
+	//float tempDens = log10(density[tid].x);
+//	float tempDens = density[tid].x;
+//	tempDens /= maxDensity;
+//	int densTest = (int) tempDens* 100; //percentage
+//	if(tid == 0) printf("Limit: %d cur: %f  %f\n",	densLimit, density[tid].x, maxDensity);
+
+//  if(log10(tempDens) < maxDensity)
+//	{
+//		colors[tid].w = 3.0f;
+//  }
+
+
+
 }
 #endif
 
 	extern "C"
-void assignColors(float4 *colors, int *ids, int numParticles, 
+void assignColors(float4 *colors, ulonglong1 *ids, int numParticles,
+		float2 *density, float maxDensity, 
 		float4 color2, float4 color3, float4 color4, 
 		float4 starColor, float4 bulgeColor, float4 darkMatterColor, float4 dustColor,
 		int m_brightFreq, float4  t_current)
 {
 	int numThreads = 256;
 	int numBlocks = (numParticles + numThreads - 1) / numThreads;
-	assignColorsKernel<<< numBlocks, numThreads >>>(colors, ids, numParticles, 
+	assignColorsKernel<<< numBlocks, numThreads >>>(colors, ids, numParticles,
+		        density, maxDensity, 	
 			color2, color3, color4, starColor, bulgeColor, darkMatterColor, dustColor, m_brightFreq, t_current);
 }

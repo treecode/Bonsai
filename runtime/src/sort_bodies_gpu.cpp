@@ -1,33 +1,49 @@
 #include "octree.h"
+#include "nvToolsExt.h"
+
+//External imports in order to call thrust or cub functions which have been compiled by nvcc
+extern "C" void thrustDataReorderU4 (const int N, my_dev::dev_mem<uint> &permutation, my_dev::dev_mem<uint4>  &dIn, my_dev::dev_mem<uint4>  &dOut);
+extern "C" void thrustDataReorderF4 (const int N, my_dev::dev_mem<uint> &permutation, my_dev::dev_mem<float4> &dIn, my_dev::dev_mem<float4> &dOut);
+extern "C" void thrustDataReorderF2 (const int N, my_dev::dev_mem<uint> &permutation, my_dev::dev_mem<float2> &dIn, my_dev::dev_mem<float2> &dOut);
+extern "C" void thrustDataReorderULL(const int N, my_dev::dev_mem<uint> &permutation, my_dev::dev_mem<ullong> &dIn, my_dev::dev_mem<ullong> &dOut);
+extern "C" void thrustDataReorderF1 (const int N, my_dev::dev_mem<uint> &permutation, my_dev::dev_mem<float>  &dIn, my_dev::dev_mem<float>  &dOut);
+
+extern "C" void thrustSort(my_dev::dev_mem<uint4> &srcKeys,
+                           my_dev::dev_mem<uint>  &permutation_buffer,
+                           my_dev::dev_mem<uint>  &temp_buffer,
+                           int N);
+extern "C" void  cubSort(my_dev::dev_mem<uint4>  &srcKeys,
+                         my_dev::dev_mem<uint>   &outPermutation,
+                         my_dev::dev_mem<char>   &tempBuffer,
+                         my_dev::dev_mem<uint>   &tempB,
+                         my_dev::dev_mem<uint>   &tempC,
+                         my_dev::dev_mem<uint>   &tempD,
+                         int  N) ;
+
 
 void octree::getBoundaries(tree_structure &tree, real4 &r_min, real4 &r_max)
 {
-
   //Start reduction to get the boundary's of the system
-  boundaryReduction.set_arg<int>(0, &tree.n);
-  boundaryReduction.set_arg<cl_mem>(1, tree.bodies_Ppos.p());
-  boundaryReduction.set_arg<cl_mem>(2, devMemRMIN.p());
-  boundaryReduction.set_arg<cl_mem>(3, devMemRMAX.p());
-
   boundaryReduction.setWork(tree.n, NTHREAD_BOUNDARY, NBLOCK_BOUNDARY);  //256 threads and 120 blocks in total
-  boundaryReduction.execute(execStream->s());
+  boundaryReduction.set_args(0, &tree.n, tree.bodies_Ppos.p(), devMemRMIN.p(), devMemRMAX.p());
+  boundaryReduction.execute2(execStream->s());
+
+  devMemRMIN.d2h();
+  devMemRMAX.d2h();
   
-   
-  devMemRMIN.d2h();     //Need to be defined and initialized somewhere outside this function
-  devMemRMAX.d2h();     //Need to be defined and initialized somewhere outside this function
-  r_min = make_real4(+1e10, +1e10, +1e10, +1e10); 
-  r_max = make_real4(-1e10, -1e10, -1e10, -1e10);   
-  
+  r_min = make_real4(+1e10, +1e10, +1e10, +1e10);
+  r_max = make_real4(-1e10, -1e10, -1e10, -1e10);
+
   //Reduce the blocks, done on host since its
   //A faster and B we need the results anyway
-  for (int i = 0; i < 120; i++) {    
+  for (int i = 0; i < 120; i++) {
     r_min.x = std::min(r_min.x, devMemRMIN[i].x);
     r_min.y = std::min(r_min.y, devMemRMIN[i].y);
     r_min.z = std::min(r_min.z, devMemRMIN[i].z);
-    
+
     r_max.x = std::max(r_max.x, devMemRMAX[i].x);
     r_max.y = std::max(r_max.y, devMemRMAX[i].y);
-    r_max.z = std::max(r_max.z, devMemRMAX[i].z);    
+    r_max.z = std::max(r_max.z, devMemRMAX[i].z);
   }
   
   rMinLocalTree = r_min;
@@ -35,38 +51,46 @@ void octree::getBoundaries(tree_structure &tree, real4 &r_min, real4 &r_max)
   
   LOG("Found boundarys, number of particles %d : \n", tree.n);
   LOG("min: %f\t%f\t%f\tmax: %f\t%f\t%f \n", r_min.x,r_min.y,r_min.z,r_max.x,r_max.y,r_max.z);
+
+  //  FILE *fout = fopen("boundaries.txt","w");
+  //  tree.bodies_Ppos.d2h();
+  //  fprintf(fout,"#items %d\n", tree.n);
+  //  fprintf(fout,"#idx\tX\tY\tZ\n");
+  //  for(int i=0; i < tree.n; i++)
+  //  {
+  //    fprintf(fout,"%f\t%f\t%f\n", tree.bodies_Ppos[i].x, tree.bodies_Ppos[i].y, tree.bodies_Ppos[i].z);
+  //  }
+  //  fprintf(fout,"#results minx miny minz maxx maxy maxz\n");
+  //  fprintf(fout,"%f\t%f\t%f\t%f\t%f\t%f\n", r_min.x,r_min.y,r_min.z,r_max.x,r_max.y,r_max.z);
+  //  fclose(fout);
+//    exit(0);
 }
 
 void octree::getBoundariesGroups(tree_structure &tree, real4 &r_min, real4 &r_max)
 {
   //Start reduction to get the boundary's of the system
-  boundaryReductionGroups.set_arg<int>(0, &tree.n_groups);
-  boundaryReductionGroups.set_arg<cl_mem>(1, tree.groupCenterInfo.p());
-  boundaryReductionGroups.set_arg<cl_mem>(2, tree.groupSizeInfo.p());
-  boundaryReductionGroups.set_arg<cl_mem>(3, devMemRMIN.p());
-  boundaryReductionGroups.set_arg<cl_mem>(4, devMemRMAX.p());
-
-  boundaryReductionGroups.setWork(tree.n_groups, NTHREAD_BOUNDARY, NBLOCK_BOUNDARY);  //256 threads and 120 blocks in total
-  boundaryReductionGroups.execute(execStream->s());
-
+  boundaryReductionGroups.setWork(tree.n_groups, NTHREAD_BOUNDARY, NBLOCK_BOUNDARY);
+  boundaryReductionGroups.set_args(0, &tree.n_groups, tree.groupCenterInfo.p(), tree.groupSizeInfo.p(), devMemRMIN.p(), devMemRMAX.p());
+  boundaryReductionGroups.execute2(execStream->s());
    
-  devMemRMIN.d2h();     //Need to be defined and initialized somewhere outside this function
-  devMemRMAX.d2h();     //Need to be defined and initialized somewhere outside this function
-  r_min = make_real4(+1e10f, +1e10f, +1e10f, +1e10f); 
-  r_max = make_real4(-1e10f, -1e10f, -1e10f, -1e10f);   
+  devMemRMIN.d2h();
+  devMemRMAX.d2h();
+  r_min = make_real4(+1e10f, +1e10f, +1e10f, +1e10f);
+  r_max = make_real4(-1e10f, -1e10f, -1e10f, -1e10f);
+
   
   //Reduce the blocks, done on host since its
   //A faster and B we need the results anyway
-  for (int i = 0; i < 120; i++) {    
+  for (int i = 0; i < 120; i++) {
     r_min.x = std::min(r_min.x, devMemRMIN[i].x);
     r_min.y = std::min(r_min.y, devMemRMIN[i].y);
     r_min.z = std::min(r_min.z, devMemRMIN[i].z);
-    
+
     r_max.x = std::max(r_max.x, devMemRMAX[i].x);
     r_max.y = std::max(r_max.y, devMemRMAX[i].y);
-    r_max.z = std::max(r_max.z, devMemRMAX[i].z);    
+    r_max.z = std::max(r_max.z, devMemRMAX[i].z);
   }
-  
+//
   LOG("Found group boundarys before increase, number of groups %d : \n", tree.n_groups);
   LOG("min: %f\t%f\t%f\tmax: %f\t%f\t%f \n", r_min.x,r_min.y,r_min.z,r_max.x,r_max.y,r_max.z);
   
@@ -86,16 +110,14 @@ void octree::getBoundariesGroups(tree_structure &tree, real4 &r_min, real4 &r_ma
   r_max.z = (float)((r_max.z < 0) ? r_max.z * smallFac1 : r_max.z * smallFac2);
   
   
-  LOG("Found group boundarys after increase, number of groups %d : \n", tree.n_groups);
+  LOG("Found group boundary's after increase, number of groups %d : \n", tree.n_groups);
   LOG("min: %f\t%f\t%f\tmax: %f\t%f\t%f \n", r_min.x,r_min.y,r_min.z,r_max.x,r_max.y,r_max.z);
 }
 
+void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate, bool doFullShuffle) {
 
-
-void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
-
-  //We assume the bodies are already onthe GPU
-  devContext.startTiming(execStream->s());
+  //We assume the bodies are already on the GPU
+  devContext->startTiming(execStream->s());
   real4 r_min = {+1e10, +1e10, +1e10, +1e10}; 
   real4 r_max = {-1e10, -1e10, -1e10, -1e10};   
   
@@ -103,17 +125,14 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
   {
     getBoundaries(tree, r_min, r_max);  
     //Sync the boundary over the various processes
-    if(this->mpiGetNProcs() > 1)
-    {
-      this->sendCurrentRadiusInfo(r_min, r_max);
-    }
+    if(this->mpiGetNProcs() > 1) { this->sendCurrentRadiusInfo(r_min, r_max); }
     rMinGlobal = r_min;    rMaxGlobal = r_max;
   }
   
   r_min = rMinGlobal;
   r_max = rMaxGlobal;
   
-  //Compute the boundarys of the tree  
+  //Compute the boundary's of the tree
   real size     = 1.001f*std::max(r_max.z - r_min.z,
                          std::max(r_max.y - r_min.y, r_max.x - r_min.x));
   
@@ -121,255 +140,189 @@ void octree::sort_bodies(tree_structure &tree, bool doDomainUpdate) {
                              0.5f*(r_min.y + r_max.y) - 0.5f*size,
                              0.5f*(r_min.z + r_max.z) - 0.5f*size, size); 
        
-  tree.domain_fac   = size/(1 << MAXLEVELS);
-  
-  
-  float idomain_fac = 1.0f/tree.domain_fac;
-  float domain_fac  = tree.domain_fac;
-  
-  tree.corner.w = domain_fac;  
-  
-  LOG("Corner: %f %f %f idomain fac: %f domain_fac: %f\n", 
-         tree.corner.x, tree.corner.y, tree.corner.z, idomain_fac, domain_fac);
-  LOG("domain fac: %f idomain_fac: %f size: %f MAXLEVELS: %d \n", domain_fac, idomain_fac, size, MAXLEVELS);
+  tree.domain_fac = size/(1 << MAXLEVELS);
+  tree.corner.w   = tree.domain_fac;
 
-  //Call the GPUSort function, since we made it general 
-  //into a uint4 so we can extend the tree to 96bit key
-  //we have to convert to 64bit key to a 96bit for sorting
-  //and back from 96 to 64    
-  my_dev::dev_mem<uint4>  srcValues(devContext);  
-  
-  //The generalBuffer1 has size uint*4*N*3
-  //this buffer gets part: 0-uint*4*N
-  srcValues.cmalloc_copy(tree.generalBuffer1, tree.n, 0);
-  
-  //Compute the keys directly into srcValues 
-  // will be sorted into tree.bodies_key below
-  build_key_list.set_arg<cl_mem>(0,   srcValues.p());
-  build_key_list.set_arg<cl_mem>(1,   tree.bodies_Ppos.p());
-  build_key_list.set_arg<int>(2,      &tree.n);
-  build_key_list.set_arg<real4>(3,    &tree.corner);
-  
-  build_key_list.setWork(tree.n, 128); //128 threads per block
-  build_key_list.execute(execStream->s());  
-  
+
+  LOG("Corner: %f %f %f idomain fac: %f domain_fac: %f\n", 
+         tree.corner.x, tree.corner.y, tree.corner.z, 1.0f/tree.domain_fac, tree.domain_fac);
+  LOG("size: %f MAXLEVELS: %d \n", size, MAXLEVELS);
+
+  //Call the GPUSort function, and give it the to be sorted arrays and scratch space
+  my_dev::dev_mem<uint4>  srcValues;
+
+  my_dev::dev_mem<uint> tempB, tempC,  tempD;
+  my_dev::dev_mem<char> tempE;
+  //The generalBuffer1 has size uint*4*N*3 = uint*12*N
+  int genBufOffset2 = 0;
+
+  genBufOffset2 = srcValues.cmalloc_copy(tree.generalBuffer1, tree.n, 0);  //uint*N -uint5*N
+  genBufOffset2 = tempB    .cmalloc_copy(tree.generalBuffer1, tree.n, genBufOffset2); //uint5*N-uint6*N
+  genBufOffset2 = tempC    .cmalloc_copy(tree.generalBuffer1, tree.n, genBufOffset2); //uint6*N-uint7*N
+  genBufOffset2 = tempD    .cmalloc_copy(tree.generalBuffer1, tree.n, genBufOffset2); //uint7*N-uint8*N
+  genBufOffset2 = tempE    .cmalloc_copy(tree.generalBuffer1, tree.n, genBufOffset2); //uint8*N-uint9*N
+
+  //Compute the keys directly into srcValues which then will be sorted into tree.bodies_key below
+  build_key_list.setWork(tree.n, 128);
+  build_key_list.set_args(0, srcValues.p(), tree.bodies_Ppos.p(), &tree.n, &tree.corner);
+  build_key_list.execute2(execStream->s());
+
+#if 0
+  //  execStream->sync();
+  srcValues.d2h();
+  for(int i=0; i < tree.n; i++)
+  {
+      fprintf(stderr,"PRE: %d\t\t%d\t%d\t%d\t%d\n",
+          i, srcValues[i].x,srcValues[i].y, srcValues[i].z, srcValues[i].w);
+      if(i > 10) break;
+  }
+#endif
+
   // If srcValues and buffer are different, then the original values
   // are preserved, if they are the same srcValues will be overwritten
-  if(tree.n > 0)
-    gpuSort(devContext, srcValues, tree.bodies_key,srcValues, tree.n, 32, 3, tree);
+  if(tree.n > 0) gpuSort(srcValues, tree.oriParticleOrder, tempB, tempC, tempD, tempE, tree.n);
+  dataReorder(tree.n, tree.oriParticleOrder, srcValues, tree.bodies_key, true, true);
 
-  devContext.stopTiming("Sorting", 0, execStream->s());  
+#if 0
+  tree.bodies_key.d2h();
+  for(int i=0; i < tree.n; i++)
+  {
+      fprintf(stderr,"Out-ori: %d\t\t%d\t%d\t%d\t%d\n",
+          i, tree.bodies_key[i].x,tree.bodies_key[i].y, tree.bodies_key[i].z, tree.bodies_key[i].w);
+      if(i > 10) break;
+  }
+//  exit(0);
+#endif
+
+
+  devContext->stopTiming("Sorting", 0, execStream->s());
 
   //Call the reorder data functions
-  devContext.startTiming(execStream->s());
-  
-  static int oneRunFull = 0;
+  devContext->startTiming(execStream->s());
 
-  //JB this if statement is required untill I fix the order 
+  //JB this if statement is required until I fix the order
   //of functions in main.cpp  
-  if(oneRunFull == 1)
+
+  if(!doFullShuffle)
   {
-    my_dev::dev_mem<real4>  real4Buffer1(devContext);
-    my_dev::dev_mem<int>    intBuffer1(devContext);
+    my_dev::dev_mem<real4>  real4Buffer1;
+    my_dev::dev_mem<ullong> ullBuffer;
+    my_dev::dev_mem<float>  realBuffer;
 
-    
-    int genBufOffset = real4Buffer1.cmalloc_copy(tree.generalBuffer1, tree.n, 0);
-        genBufOffset = intBuffer1.cmalloc_copy(tree.generalBuffer1, tree.n, genBufOffset);
+    real4Buffer1.cmalloc_copy(tree.generalBuffer1, tree.n, 0);
+    ullBuffer.   cmalloc_copy(tree.generalBuffer1, tree.n, 0);
+    realBuffer.  cmalloc_copy(tree.generalBuffer1, tree.n, 0);
 
-    
-    dataReorderR4.set_arg<int>(0,      &tree.n);
-    dataReorderR4.set_arg<cl_mem>(1,   tree.bodies_key.p());  
-    dataReorderR4.setWork(tree.n, 512);   
-
-    //Position, velocity and acc0
-    dataReorderR4.set_arg<cl_mem>(2,   tree.bodies_Ppos.p());
-    dataReorderR4.set_arg<cl_mem>(3,   real4Buffer1.p()); 
-    dataReorderR4.set_arg<cl_mem>(4,   tree.bodies_ids.p()); 
-    dataReorderR4.set_arg<cl_mem>(5,   intBuffer1.p()); 
-    dataReorderR4.set_arg<cl_mem>(6,   tree.oriParticleOrder.p()); 
-    dataReorderR4.execute(execStream->s());
-    
-//    tree.bodies_Ppos.copy(real4Buffer1,  tree.n);
-//    tree.bodies_ids.copy (intBuffer1,    tree.n);
-    tree.bodies_Ppos.copy_devonly(real4Buffer1,  tree.n);
-    tree.bodies_ids.copy_devonly (intBuffer1,    tree.n);
+    dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_Ppos, real4Buffer1, true, true);
+    dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_ids,  ullBuffer,    true, true);
+    dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_h,    realBuffer,   true, true);          //Density values
   }
   else
   {
-    oneRunFull = 1;
     //Call the reorder data functions
-    //First generate some memory buffers
     //generalBuffer is always at least 3xfloat4*N
-    my_dev::dev_mem<real4>  real4Buffer1(devContext);
-    my_dev::dev_mem<real4>  real4Buffer2(devContext);
-    my_dev::dev_mem<real4>  real4Buffer3(devContext);
-    
-    int genBufOffset1 = real4Buffer1.cmalloc_copy(tree.generalBuffer1, tree.n, 0);
-        genBufOffset1 = real4Buffer2.cmalloc_copy(tree.generalBuffer1, tree.n, genBufOffset1);    
-        genBufOffset1 = real4Buffer3.cmalloc_copy(tree.generalBuffer1, tree.n, genBufOffset1);         
-    
+    my_dev::dev_mem<real4>    real4Buffer1;
+    my_dev::dev_mem<float2>   float2Buffer;
+    my_dev::dev_mem<ullong>   ullBuffer;
+    my_dev::dev_mem<float>    realBuffer;
+    real4Buffer1.cmalloc_copy(tree.generalBuffer1, tree.n, 0);
+    float2Buffer.cmalloc_copy(tree.generalBuffer1, tree.n, 0);
+    ullBuffer.   cmalloc_copy(tree.generalBuffer1, tree.n, 0);
+    realBuffer.  cmalloc_copy(tree.generalBuffer1, tree.n, 0);
 
-    
-    dataReorderCombined.set_arg<int>(0,      &tree.n);
-    dataReorderCombined.set_arg<cl_mem>(1,   tree.bodies_key.p());  
-    dataReorderCombined.setWork(tree.n, 512);   
-  //   dataReorderCombined.setWork(tree.n, 512, 240);  //256 threads and 120 blocks in total
-    
-    
     //Position, velocity and acc0
-    dataReorderCombined.set_arg<cl_mem>(2,   tree.bodies_pos.p());
-    dataReorderCombined.set_arg<cl_mem>(3,   real4Buffer1.p()); 
-    dataReorderCombined.set_arg<cl_mem>(4,   tree.bodies_vel.p()); 
-    dataReorderCombined.set_arg<cl_mem>(5,   real4Buffer2.p()); 
-    dataReorderCombined.set_arg<cl_mem>(6,   tree.bodies_acc0.p()); 
-    dataReorderCombined.set_arg<cl_mem>(7,   real4Buffer3.p()); 
-    dataReorderCombined.execute(execStream->s());
-    tree.bodies_pos.copy(real4Buffer1,  tree.n);
-    tree.bodies_vel.copy(real4Buffer2,  tree.n);
-    tree.bodies_acc0.copy(real4Buffer3, tree.n);
-    
+    dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_pos, real4Buffer1);
+    dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_vel, real4Buffer1);
+    dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_acc0, real4Buffer1);
+
     //Acc1, Predicted position and velocity
-    dataReorderCombined.set_arg<cl_mem>(2,   tree.bodies_acc1.p()); 
-    dataReorderCombined.set_arg<cl_mem>(3,   real4Buffer1.p()); 
-    dataReorderCombined.set_arg<cl_mem>(4,   tree.bodies_Ppos.p());
-    dataReorderCombined.set_arg<cl_mem>(5,   real4Buffer2.p()); 
-    dataReorderCombined.set_arg<cl_mem>(6,   tree.bodies_Pvel.p()); 
-    dataReorderCombined.set_arg<cl_mem>(7,   real4Buffer3.p());   
-    dataReorderCombined.execute(execStream->s());
+    dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_acc1, real4Buffer1);
+    dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_Ppos, real4Buffer1);
+    dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_Pvel, real4Buffer1);
+    dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_time, float2Buffer);
+    dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_ids, ullBuffer);
 
-    tree.bodies_acc1.copy(real4Buffer1, tree.n);
-    tree.bodies_Ppos.copy(real4Buffer2,  tree.n);
-    tree.bodies_Pvel.copy(real4Buffer3, tree.n);   
-
-
-    //These can reuse the real4Buffer1 space :-)
-    my_dev::dev_mem<float2>  float2Buffer(devContext);
-    my_dev::dev_mem<int> sortPermutation(devContext);
-    genBufOffset1 = float2Buffer.cmalloc_copy(tree.generalBuffer1, tree.n, 0);
-    genBufOffset1 = sortPermutation.cmalloc_copy(tree.generalBuffer1, tree.n, genBufOffset1);
-    
-    
-    dataReorderF2.set_arg<int>(0,      &tree.n);
-    dataReorderF2.set_arg<cl_mem>(1,   tree.bodies_key.p());  
-    
-    dataReorderF2.set_arg<cl_mem>(2,   tree.bodies_time.p());
-    dataReorderF2.set_arg<cl_mem>(3,   float2Buffer.p()); //Reuse as destination1
-    dataReorderF2.set_arg<cl_mem>(4,   tree.bodies_ids.p()); 
-    dataReorderF2.set_arg<cl_mem>(5,   sortPermutation.p()); //Reuse as destination2  
-    dataReorderF2.setWork(tree.n, 512);   
-    dataReorderF2.execute(execStream->s());
-    
-    
-    tree.bodies_time.copy(float2Buffer, float2Buffer.get_size()); 
-    tree.bodies_ids.copy(sortPermutation, sortPermutation.get_size());  
+    //Density values
+    dataReorder(tree.n, tree.oriParticleOrder, tree.bodies_h, realBuffer);
 
   } //end if
   
-  devContext.stopTiming("Data-reordering", 1, execStream->s());   
+  devContext->stopTiming("Data-reordering", 1, execStream->s());
+
+//  exit(0);
+}
+//iter=15 : time= 1  Etot= -0.2453192142  Ekin= 0.242805   Epot= -0.488124 : de= -6.43185e-05 ( 6.43185e-05 ) d(de)= -0 ( 6.76109e-06 ) t_sim=  2.52183 sec
 
 
-#if 0
 
-  //Items = 11078474
-  //Valid = 6558113
-  //Buff = 236720128
+/*
+Sort an array of int4, the idea is that the key is somehow moved into x/y/z and the
+value is put in w...
+Sorts values based on the last item so order becomes something like:
+z y x
+2 2 1
+2 1 2
+2 3 3
+2 5 3
 
-   if(procId == 0)
-   {
-     const int nExportParticles = 6558113;
-
-     bool doInOneGo              = true;
-     bodyStruct *extraBodyBuffer = NULL;
-
-     localTree.generalBuffer1.cresize(236720128, true);
+*/
 
 
-    my_dev::dev_mem<uint2>  validList2(devContext);
-    my_dev::dev_mem<uint2>  validList3(devContext);
-    int tempOffset1 = validList2.  cmalloc_copy(localTree.generalBuffer1, localTree.n, 0);
-        tempOffset1 = validList3.  cmalloc_copy(localTree.generalBuffer1, localTree.n, tempOffset1);
+//Input keys, output a permutation that presents the new order
+void octree::gpuSort(my_dev::dev_mem<uint4> &srcKeys,
+                     my_dev::dev_mem<uint>  &permutation, //For 32bit values
+                     my_dev::dev_mem<uint>  &tempB,       //For 32bit values
+                     my_dev::dev_mem<uint>  &tempC,       //For 32bit keys
+                     my_dev::dev_mem<uint>  &tempD,       //For 32bit keys
+                     my_dev::dev_mem<char>  &tempE,       //For sorting space
+                     int N)
+{
+//#define USE_CUB
+  #ifdef USE_CUB
+    cubSort(srcKeys, permutation, tempE, tempB, tempC, tempD, N);
+  #else
+    thrustSort(srcKeys,permutation, tempB, N);
+  #endif
+}
 
 
-    //Check if the memory size, of the generalBuffer is large enough to store the exported particles
-    //if not allocate more but make sure that the copy of compactList survives
-    int validCount = nExportParticles;
-    //int tempSize   = localTree.generalBuffer1.get_size() - (4*localTree.n); //4* = 2x uint2 validList2/3
-    int tempSize   = localTree.generalBuffer1.get_size() - tempOffset1; //4* = 2x uint2 validList2/3
-    int stepSize   = (tempSize / (sizeof(bodyStruct) / sizeof(int)))-512; //Available space in # of bodyStructs
+//Pass the buffers on to the thrust::gather functions
+template<typename T> void octree::dataReorder(const int              N,
+                                              my_dev::dev_mem<uint> &permutation,
+                                              my_dev::dev_mem<T>    &dIn,
+                                              my_dev::dev_mem<T>    &scratch,
+                                              bool                   overwrite,
+                                              bool                   devOnly)
+{
+  dataReorder2(N, permutation, dIn, scratch);
+  if(overwrite)
+  {
+      if(devOnly) dIn.copy_devonly(scratch,  N);
+      else        dIn.copy        (scratch,  N);
+  }
+}
 
-    if(stepSize > nExportParticles)
-    {
-      doInOneGo = true; //We can do it in one go
-    }
-    else
-    {
-      doInOneGo       = false; //We need an extra CPU buffer
-      extraBodyBuffer = new bodyStruct[validCount];
-      assert(extraBodyBuffer != NULL);
-    }
+//Predefined templates to point to the correct external functions
+template<> void octree::dataReorder2<uint4>(const int N, my_dev::dev_mem<uint> &permutation,
+                                 my_dev::dev_mem<uint4>  &dIn, my_dev::dev_mem<uint4>  &dOut) {
+  thrustDataReorderU4(N, permutation, dIn, dOut);
+}
+template<> void octree::dataReorder2<float4>(const int N, my_dev::dev_mem<uint> &permutation,
+                                  my_dev::dev_mem<float4>  &dIn, my_dev::dev_mem<float4>  &dOut) {
+  thrustDataReorderF4(N, permutation, dIn, dOut);
+}
 
+template<> void octree::dataReorder2<float2>(const int N, my_dev::dev_mem<uint> &permutation,
+                                  my_dev::dev_mem<float2>  &dIn, my_dev::dev_mem<float2>  &dOut) {
+  thrustDataReorderF2(N, permutation, dIn, dOut);
+}
+template<> void octree::dataReorder2<float>(const int N, my_dev::dev_mem<uint> &permutation,
+                                 my_dev::dev_mem<float>  &dIn, my_dev::dev_mem<float>  &dOut) {
+  thrustDataReorderF1(N, permutation, dIn, dOut);
+}
 
-    my_dev::dev_mem<bodyStruct>  bodyBuffer(devContext);
-    int memOffset1 = bodyBuffer.cmalloc_copy(localTree.generalBuffer1, stepSize, tempOffset1);
-
-    for(int i=0; i < validCount; i++)
-      validList2[i] = make_uint2(i,i);
-    validList2.h2d();
-
-    FILE *out = fopen("temp-1.txt", "w");
-
-
-    int extractOffset = 0;
-    for(unsigned int i=0; i < validCount; i+= stepSize)
-    {
-      int items = min(stepSize, (int)(validCount-i));
-
-      if(items > 0)
-      {
-
-        LOGF(stderr, "extractOffset: %d items: %d stepSize: %d validCount: %d validList2.size: %d tempSize: %d buff: %d  i %d onego: %d tempOffset1: %d memOffset1: %d\n",
-                     extractOffset, items, stepSize, validCount, validList2.get_size(),
-                     tempSize, localTree.generalBuffer1.get_size(), i, doInOneGo,
-                     tempOffset1, memOffset1);
-
-        double t1 = get_time();
-        extractOutOfDomainParticlesAdvancedSFC2.set_arg<int>(0,    &extractOffset);
-        extractOutOfDomainParticlesAdvancedSFC2.set_arg<int>(1,    &items);
-        extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(2, validList2.p());
-        extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(3, localTree.bodies_Ppos.p());
-        extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(4, localTree.bodies_Pvel.p());
-        extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(5, localTree.bodies_pos.p());
-        extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(6, localTree.bodies_vel.p());
-        extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(7, localTree.bodies_acc0.p());
-        extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(8, localTree.bodies_acc1.p());
-        extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(9, localTree.bodies_time.p());
-        extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(10, localTree.bodies_ids.p());
-        extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(11, localTree.bodies_key.p());
-        extractOutOfDomainParticlesAdvancedSFC2.set_arg<cl_mem>(12, bodyBuffer.p());
-        extractOutOfDomainParticlesAdvancedSFC2.setWork(items, 128);
-        extractOutOfDomainParticlesAdvancedSFC2.printWorkSize();
-        extractOutOfDomainParticlesAdvancedSFC2.execute(execStream->s());
-        execStream->sync();
-        double t2 = get_time();
-
-        LOGF(stderr,"EXTR: %d \t %lg  size of body buf: %d Step: %d \n", items, t2-t1, sizeof(bodyStruct), i);
-
-        bodyBuffer.d2h(items); // validCount);
-        for(int i=0; i < items; i++)
-        {
-          fprintf(out,"%d\tPos: %f %f %f %f\tVel: %f %f %f %f\tKey: %d %d %d %d \n",
-              i,
-              bodyBuffer[i].pos.x,bodyBuffer[i].pos.y,bodyBuffer[i].pos.z,bodyBuffer[i].pos.w,
-              bodyBuffer[i].vel.x,bodyBuffer[i].vel.y,bodyBuffer[i].vel.z,bodyBuffer[i].vel.w,
-              bodyBuffer[i].key.x,bodyBuffer[i].key.y,bodyBuffer[i].key.z,bodyBuffer[i].key.w);
-        }
-
-      }
-    }
-    fclose(out);
-   }
-   
-   MPI_Finalize(); exit(0);
-#endif
+template<> void octree::dataReorder2<ullong>(const int N, my_dev::dev_mem<uint> &permutation,
+                                  my_dev::dev_mem<ullong>  &dIn, my_dev::dev_mem<ullong>  &dOut) {
+  thrustDataReorderULL(N, permutation, dIn, dOut);
 }
 

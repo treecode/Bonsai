@@ -1,5 +1,4 @@
 #include "bonsai.h"
-#undef USE_THRUST
 #include "support_kernels.cu"
 #include <stdio.h>
 
@@ -102,7 +101,9 @@ KERNEL_DECLARE(compute_leaf)( const int n_leafs,
                               real4 *nodeLowerBounds,
                               real4 *nodeUpperBounds,
                               real4  *body_vel,
-                              uint *body_id) {
+                              ulonglong1 *body_id,
+			      real  *body_h, 
+			      const float h_min) {
 
   CUXTIMER("compute_leaf");
   const uint bid = blockIdx.y * gridDim.x + blockIdx.x;
@@ -183,6 +184,103 @@ KERNEL_DECLARE(compute_leaf)( const int n_leafs,
   //Store the node boundaries
   nodeLowerBounds[nodeID] = make_float4(r_min.x, r_min.y, r_min.z, 0.0f);
   nodeUpperBounds[nodeID] = make_float4(r_max.x, r_max.y, r_max.z, 1.0f);  //4th parameter is set to 1 to indicate this is a leaf
+
+
+
+#if 0
+  //Addition for density computation, we require seperate search radii
+  //for star particles and dark-matter particles. Note that we could 
+  //combine most of this with the loops above. But for clarity
+  //I kept them seperate untill it all is tested and functions correctly
+
+  ulonglong1 DARKMATTERID;
+  DARKMATTERID.x = 3000000000000000000ULL;
+
+  float3 r_minS, r_maxS, r_minD, r_maxD;
+  r_minS = make_float3(+1e10f, +1e10f, +1e10f);
+  r_maxS = make_float3(-1e10f, -1e10f, -1e10f);
+  r_minD = make_float3(+1e10f, +1e10f, +1e10f);
+  r_maxD = make_float3(-1e10f, -1e10f, -1e10f);
+
+  int nStar = 0;
+  int nDark = 0;
+  for(int i=firstChild; i < lastChild; i++)
+  {
+    p             = body_pos[i];
+    ulonglong1 id = body_id[i];
+
+    if(id.x >= DARKMATTERID.x)
+    {
+      compute_bounds(r_minD, r_maxD, p);
+      nDark++;
+    }
+    else
+    {
+
+	compute_bounds(r_minS, r_maxS, p);
+	nStar++;
+    }
+  }
+  
+  float fudgeFactor = 1;
+
+  r_maxS.x -= r_minS.x;  r_maxS.y -= r_minS.y;  r_maxS.z -= r_minS.z;
+  r_maxD.x -= r_minD.x;  r_maxD.y -= r_minD.y;  r_maxD.z -= r_minD.z;
+
+#if 0
+  float volumeS = fudgeFactor*cbrtf(r_maxS.x*r_maxS.y*r_maxS.z); //pow(x,1.0/3);
+  float volumeD = fudgeFactor*cbrtf(r_maxD.x*r_maxD.y*r_maxD.z); //, 1.0/3);
+#else
+  const float maxS = max(max(r_maxS.x, r_maxS.y), r_maxS.z);
+  const float maxD = max(max(r_maxD.x, r_maxD.y), r_maxD.z);
+  const float volS = maxS*maxS*maxS;
+  const float volD = maxD*maxD*maxD;
+  const int   npS  = lastChild - firstChild;
+  const int   npD  = npS;  /* must have correct count for npS & npD */
+  const int   nbS = 32;
+  const int   nbD = 64;
+  const float roS = float(npS) / volS;
+  const float roD = float(npD) / volD;
+  const float volumeS = cbrtf(nbS / roS);
+  const float volumeD = cbrtf(nbD / roD);
+//  assert(volumeS >= 0.0f);
+//  assert(volumeD >= 0.0f);
+#endif
+
+  for(int i=firstChild; i < lastChild; i++)
+  {
+    ulonglong1 id = body_id[i];
+    if(id.x >= DARKMATTERID.x)
+    {
+//	    assert(0);
+	    body_h[i] = volumeD;
+    }
+    else
+    {
+//	    if(i == 0) printf("STATD I goes from: %f  to %f gives: %f \n", body_h[i], volumeS, 0.5f*(volumeS + body_h[i]));
+	    if(body_h[i] >= 0) 
+	      body_h[i] = body_h[i]; // 0.5f*(volumeS + body_h[i]);
+	    else
+	      body_h[i] = max(h_min,volumeS);
+    }
+  }
+#else
+  {
+    const float3 len = make_float3(r_max.x-r_min.x, r_max.y-r_min.y, r_max.z-r_min.z);
+    const float  vol = cbrtf(len.x*len.y*len.z);
+    float hp  = 0;
+    if (vol > 0.0f)
+    {
+      const float nd  = float(lastChild - firstChild) / vol;
+      hp  = cbrtf(42.0f / nd);
+    }
+    hp = max(hp, h_min);
+    for(int i=firstChild; i < lastChild; i++)
+      if(body_h[i] < 0)
+        body_h[i] = hp;
+  }
+#endif
+
 
   return;
 }
@@ -497,6 +595,9 @@ KERNEL_DECLARE(gpu_setPHGroupData)(const int n_groups,
   } //end tid == 0
 }//end copyNode2grp
 
+
+
+#if 0
 //Compute the properties for the groups
 KERNEL_DECLARE(gpu_setPHGroupDataGetKey)(const int n_groups,
                                           const int n_particles,
@@ -654,5 +755,5 @@ KERNEL_DECLARE(gpu_setPHGroupDataGetKey2)(const int n_groups,
 
 }//end copyNode2grp
 
-
+#endif
 

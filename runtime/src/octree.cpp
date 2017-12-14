@@ -1,8 +1,21 @@
 #include "octree.h"
 
+#include "FileIO.h"
+
+#include "SharedMemory.h"
+#include "BonsaiSharedData.h"
+
 #ifndef WIN32
-#include <sys/time.h>
+    #include <sys/time.h>
 #endif
+
+
+#include "IDType.h"
+
+#ifdef USE_MPI
+    #include "BonsaiIO.h"
+#endif
+
 
 /*********************************/
 /*********************************/
@@ -34,8 +47,6 @@ double octree::get_time() {
   return ((double) Tvalue.tv_sec +1.e-6*((double) Tvalue.tv_usec));
 #endif
 }
-
-
 
 int octree::getAllignmentOffset(int n)
 {
@@ -72,669 +83,538 @@ int octree::getTextureAllignmentOffset(int n, int size)
 }   
 
 
+
+
 /*********************************/
+/******** Output functions  ******/
 /*********************************/
-/*********************************/
+
 
 /*
-void octree::write_dumbp_snapshot(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName) {
-  char fullFileName[256];
-  sprintf(fullFileName, "%s", fileName.c_str());
+ * BonsaiIO output routines
+ *
+ */
 
-  cerr << "Trying to write to file: " << fullFileName << endl;
+using ShmQHeader = SharedMemoryServer<BonsaiSharedQuickHeader>;
+using ShmQData   = SharedMemoryServer<BonsaiSharedQuickData>;
+using ShmSHeader = SharedMemoryServer<BonsaiSharedSnapHeader>;
+using ShmSData   = SharedMemoryServer<BonsaiSharedSnapData>;
 
-  ofstream outputFile(fullFileName, ios::out);
-  
-  if(!outputFile.is_open())
-  {
-    cout << "Can't open output file \n";
-    exit(0);
-  }
-  
-  for(int i=0; i < n ; i++)
-  {
-    outputFile << bodyIds[i] << "\t" << bodyPositions[i].w << "\t" << bodyPositions[i].x << "\t" <<
-                       bodyPositions[i].y << "\t" << bodyPositions[i].z << "\t" <<
-                       bodyVelocities[i].x << "\t" << bodyVelocities[i].y << "\t" <<
-                       bodyVelocities[i].z  << endl;
-  }
+static ShmQHeader *shmQHeader = NULL;
+static ShmQData   *shmQData   = NULL;
+static ShmSHeader *shmSHeader = NULL;
+static ShmSData   *shmSData   = NULL;
 
+/*
+ *  Signal the IO process that we're finished (this is when tCurrent == -1) *
+ *
+ */
 
-  outputFile.close();
-
-  fprintf(stderr, "Wrote %d bodies to dump file \n", n);
-};
-*/
-
-//Version that writes the BD dump format
-void octree::write_dumbp_snapshot(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName) {
-  char fullFileName[256];
-  sprintf(fullFileName, "%s", fileName.c_str());
-
-  cout << "Trying to write to file: " << fullFileName << endl;
-
-  ofstream outputFile(fullFileName, ios::out);
-  
-  if(!outputFile.is_open())
-  {
-    cout << "Can't open output file \n";
-    exit(0);
-  }
-  
-  outputFile.precision(16);
-  
-  //Write the header                                                                                                                                        
-  outputFile << NTotal << "\t" << NFirst << "\t" << NSecond << "\t" << NThird << endl;   
-  
-  for(int i=0; i < n ; i++)
-  {
-    outputFile << bodyIds[i] << "\t" << bodyPositions[i].w << "\t" << bodyPositions[i].x << "\t" <<
-                       bodyPositions[i].y       << "\t" << bodyPositions[i].z << "\t" <<
-                       bodyVelocities[i].x      << "\t" << bodyVelocities[i].y << "\t" <<
-                       bodyVelocities[i].z      << "\t" << bodyVelocities[i].w << endl;
-  }
-
-
-  outputFile.close();
-
-  fprintf(stdout, "Wrote %d bodies to dump file \n", n);
-};
-
-void octree::write_snapshot_per_process(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName, float time)
+void octree::terminateIO() const
 {
-    NTotal = n;
-    NFirst = NSecond = NThird = 0;
+  {
+    auto &header = *shmQHeader;
+    header.acquireLock();
+    header[0].tCurrent = -1;
+    header[0].done_writing = false;
+    header.releaseLock();
+  }
+  {
+    auto &header = *shmSHeader;
+    header.acquireLock();
+    header[0].tCurrent = -1;
+    header[0].done_writing = false;
+    header.releaseLock();
+  }
+}
 
-    for(int i=0; i < n; i++)
+
+#ifdef USE_MPI
+/*
+ *
+ * Send the particle data over MPI to another process.
+ * Note only works for nQuickDump data
+ */
+
+void octree::dumpDataMPI()
+{
+  static MPI_Datatype MPI_Header = 0;
+  static MPI_Datatype MPI_Data   = 0;
+  if (!MPI_Header)
+  {
+    int ss = sizeof(BonsaiSharedHeader) / sizeof(char);
+    assert(0 == sizeof(BonsaiSharedHeader) % sizeof(char));
+    MPI_Type_contiguous(ss, MPI_BYTE, &MPI_Header);
+    MPI_Type_commit(&MPI_Header);
+  }
+  if (!MPI_Data)
+  {
+    int ss = sizeof(BonsaiSharedData) / sizeof(char);
+    assert(0 == sizeof(BonsaiSharedData) % sizeof(char));
+    MPI_Type_contiguous(ss, MPI_BYTE, &MPI_Data);
+    MPI_Type_commit(&MPI_Data);
+  }
+
+  BonsaiSharedHeader header;
+  std::vector<BonsaiSharedData> data;
+
+  if (t_current >= nextQuickDump && quickDump > 0)
+  {
+    localTree.bodies_pos.d2h();
+    localTree.bodies_vel.d2h();
+    localTree.bodies_ids.d2h();
+    localTree.bodies_h.d2h();
+    localTree.bodies_dens.d2h();
+
+    nextQuickDump += quickDump;
+    nextQuickDump  = std::max(nextQuickDump, t_current);
+
+    if (procId == 0) fprintf(stderr, "-- quickdumpMPI: nextQuickDump= %g  quickRatio= %g\n", nextQuickDump, quickRatio);
+
+    const std::string fileNameBase = snapshotFile + "_quickMPI";
+    const float ratio = quickRatio;
+    assert(!quickSync);
+
+    char fn[1024];
+    sprintf(fn, "%s_%010.4f.bonsai", fileNameBase.c_str(), t_current);
+
+    const size_t nSnap = localTree.n;
+    const size_t dn    = static_cast<size_t>(1.0/ratio);
+    assert(dn >= 1);
+    size_t nQuick = 0;
+    for (size_t i = 0; i < nSnap; i += dn)
+      nQuick++;
+
+
+    header.tCurrent = t_current;
+    header.nBodies  = nQuick;
+    for (int i = 0; i < 1024; i++)
     {
-      //Specific for JB his files
-      if(bodyIds[i] >= 0         && bodyIds[i] < 100000000) NThird++;
-      if(bodyIds[i] >= 100000000 && bodyIds[i] < 200000000) NSecond++;
-      if(bodyIds[i] >= 200000000 && bodyIds[i] < 300000000) NFirst++;
+      header.fileName[i] = fn[i];
+      if (fn[i] == 0)
+        break;
     }
 
-    //Sync them to process 0
-    int NCombTotal, NCombFirst, NCombSecond, NCombThird;
-    NCombTotal  = (NTotal);
-    NCombFirst  = (NFirst);
-    NCombSecond = (NSecond);
-    NCombThird  = (NThird);
-
-    //Since the dust and disk particles are star particles
-    //lets add them
-    NCombSecond += NCombThird;
-
-
-    ofstream outputFile;
-    outputFile.open(fileName.c_str(), ios::out | ios::binary);
-
-    dump  h;
-
-    if(!outputFile.is_open())
+    data.resize(nQuick);
+#pragma omp parallel for schedule(static)
+    for (size_t i = 0; i < nSnap; i += dn)
     {
-      cout << "Can't open output file: "<< fileName << std::endl;
-      exit(0);
+      auto &p = data[i/dn];
+      p.x    = localTree.bodies_pos[i].x;
+      p.y    = localTree.bodies_pos[i].y;
+      p.z    = localTree.bodies_pos[i].z;
+      p.mass = localTree.bodies_pos[i].w;
+      p.vx   = localTree.bodies_vel[i].x;
+      p.vy   = localTree.bodies_vel[i].y;
+      p.vz   = localTree.bodies_vel[i].z;
+      p.vw   = localTree.bodies_vel[i].w;
+      p.rho  = localTree.bodies_dens[i].x;
+      p.h    = localTree.bodies_h[i];
+      p.ID   = lGetIDType(localTree.bodies_ids[i]);
     }
 
-    //Create tipsy header
-    h.time = time;
-    h.nbodies = NCombTotal;
-    h.ndim = 3;
-    h.ndark = NCombFirst;
-    h.nstar = NCombSecond;    //Incase of disks we have to finish this
-    h.nsph = 0;
-    outputFile.write((char*)&h, sizeof(h));
+    static int worldRank = -1;
 
-    //Frist write the dark matter particles
-    for(int i=0; i < NCombTotal ; i++)
+    static MPI_Request  req[2];
+    static MPI_Status status[2];
+
+    int ready2send = 1;
+    if (worldRank != -1)
     {
-      if(bodyIds[i] >= 200000000 && bodyIds[i] < 300000000)
-      {
-        //Set particle properties
-        dark_particle d;
-        d.eps = bodyVelocities[i].w;
-        d.mass = bodyPositions[i].w;
-        d.pos[0] = bodyPositions[i].x;
-        d.pos[1] = bodyPositions[i].y;
-        d.pos[2] = bodyPositions[i].z;
-        d.vel[0] = bodyVelocities[i].x;
-        d.vel[1] = bodyVelocities[i].y;
-        d.vel[2] = bodyVelocities[i].z;
-        d.phi = bodyIds[i];      //Custom change to tipsy format
-
-        outputFile.write((char*)&d, sizeof(d));
-      } //end if
-    } //end i loop
-
-    //Next write the star particles
-    for(int i=0; i < NCombTotal ; i++)
+      int ready2sendHeader;
+      int ready2sendData;
+      MPI_Test(&req[0], &ready2sendHeader, &status[0]);
+      MPI_Test(&req[1], &ready2sendData,   &status[1]);
+      ready2send = ready2sendHeader && ready2sendData;
+    }
+    else
     {
-      if(bodyIds[i] >= 0 && bodyIds[i] < 200000000)
-      {
-        //Set particle properties
-        star_particle s;
-        s.eps = bodyVelocities[i].w;
-        s.mass = bodyPositions[i].w;
-        s.pos[0] = bodyPositions[i].x;
-        s.pos[1] = bodyPositions[i].y;
-        s.pos[2] = bodyPositions[i].z;
-        s.vel[0] = bodyVelocities[i].x;
-        s.vel[1] = bodyVelocities[i].y;
-        s.vel[2] = bodyVelocities[i].z;
-        s.phi = bodyIds[i];      //Custom change to tipsy format
+      MPI_Comm_rank(MPI_COMM_WORLD, &worldRank);
+    }
+    assert(worldRank%2 == 0);
 
-        s.metals = 0;
-        s.tform = 0;
-        outputFile.write((char*)&s, sizeof(s));
-//         outputFile << s;
-     } //end if
-    } //end i loop
+    const int destRank = worldRank + 1;
 
-    outputFile.close();
+    int ready2sendGlobal;
+    MPI_Allreduce(&ready2send, &ready2sendGlobal, 1, MPI_INT, MPI_MIN, mpiCommWorld);
 
-    LOGF(stderr,"Wrote %d bodies to tipsy file \n", NCombTotal);
+    if (ready2sendGlobal)
+    {
+      static BonsaiSharedHeader            header2send;
+      static std::vector<BonsaiSharedData> data2send;
 
+      header2send = std::move(header);
+      data2send   = std::move(data);
+
+      static int sendCount = 0;
+      const int tagBase    = 42;
+      MPI_Isend(&header2send,                 1, MPI_Header, destRank, tagBase+2*sendCount+0, MPI_COMM_WORLD, &req[0]);
+      MPI_Isend(&data2send[0], data2send.size(), MPI_Data,   destRank, tagBase+2*sendCount+1, MPI_COMM_WORLD, &req[1]);
+      sendCount++;
+      sendCount = sendCount % 4 ;  /* permit only 4 buffer */
+    }
+  }//if (t_current >= nextQuickDump && quickDump > 0)
 }
 
 
 
 
-
-void octree::write_dumbp_snapshot_parallel_tipsy(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName,
-                                                 int NCombTotal, int NCombFirst, int NCombSecond, int NCombThird, float time) 
+/*
+ * Function that is called by the output data routines that write sampled or full snapshots
+ * the function puts the data in shared memory buffers which are then written by the IO threads.
+ */
+template<typename THeader, typename TData>
+void octree::dumpDataCommon(
+    SharedMemoryBase<THeader> &header, SharedMemoryBase<TData> &data,
+    const std::string &fileNameBase,
+    const float ratio,
+    const bool sync)
 {
-  #ifdef TIPSYOUTPUT  
-  //Rank 0 does the writing
-  if(mpiGetRank() == 0)
-  {
-    ofstream outputFile;
-    outputFile.open(fileName.c_str(), ios::out | ios::binary);
+  /********/
 
-    dump  h;
- 
-    if(!outputFile.is_open())
-    {
-      cout << "Can't open output file: "<< fileName << std::endl;
-      exit(0);
-    }
-      
-    //Create tipsy header
-    h.time = time;
-    h.nbodies = NCombTotal;
-    h.ndim = 3;
-    h.ndark = NCombFirst;
-    h.nstar = NCombSecond;    //Incase of disks we have to finish this
-    h.nsph = 0;
-
-    outputFile.write((char*)&h, sizeof(h));
-    
-    //Buffer to store complete snapshot
-    vector<real4> allPositions;
-    vector<real4> allVelocities;
-    vector<int> allIds;
-    
-    allPositions.insert(allPositions.begin(), &bodyPositions[0], &bodyPositions[n]);
-    allVelocities.insert(allVelocities.begin(), &bodyVelocities[0], &bodyVelocities[n]);
-    allIds.insert(allIds.begin(), &bodyIds[0], &bodyIds[n]);
-    
-    //Now receive the data from the other processes
-    vector<real4> extPositions;
-    vector<real4> extVelocities;
-    vector<int>   extIds;
-    
-    for(int recvFrom=1; recvFrom < mpiGetNProcs(); recvFrom++)
-    {
-      ICRecv(recvFrom, extPositions, extVelocities,  extIds);
-      
-      allPositions.insert(allPositions.end(), extPositions.begin(), extPositions.end());
-      allVelocities.insert(allVelocities.end(), extVelocities.begin(), extVelocities.end());
-      allIds.insert(allIds.end(), extIds.begin(), extIds.end());     
-    }
-    
-    //Frist write the dark matter particles
-    for(int i=0; i < NCombTotal ; i++)
-    {
-      if(allIds[i] >= 200000000 && allIds[i] < 300000000)
-      {
-        //Set particle properties
-        dark_particle d;
-        d.eps = allVelocities[i].w;
-        d.mass = allPositions[i].w;
-        d.pos[0] = allPositions[i].x;
-        d.pos[1] = allPositions[i].y;
-        d.pos[2] = allPositions[i].z;
-        d.vel[0] = allVelocities[i].x;
-        d.vel[1] = allVelocities[i].y;
-        d.vel[2] = allVelocities[i].z;
-        d.phi = allIds[i];      //Custom change to tipsy format
-        
-        outputFile.write((char*)&d, sizeof(d));
-      } //end if 
-    } //end i loop
-    
-    
-    //Next write the star particles
-    for(int i=0; i < NCombTotal ; i++)
-    {
-//       if(allIds[i] >= 100000000 && allIds[i] < 200000000)
-      if(allIds[i] >= 0 && allIds[i] < 200000000)
-      {
-        //Set particle properties
-        star_particle s;
-        s.eps = allVelocities[i].w;
-        s.mass = allPositions[i].w;
-        s.pos[0] = allPositions[i].x;
-        s.pos[1] = allPositions[i].y;
-        s.pos[2] = allPositions[i].z;
-        s.vel[0] = allVelocities[i].x;
-        s.vel[1] = allVelocities[i].y;
-        s.vel[2] = allVelocities[i].z;
-        s.phi = allIds[i];      //Custom change to tipsy format
-
-        s.metals = 0;
-        s.tform = 0;
-        outputFile.write((char*)&s, sizeof(s));
-//         outputFile << s;
-     } //end if
-    } //end i loop
-    
-    outputFile.close();
-
-    fprintf(stdout, "Wrote %d bodies to tipsy file \n", NCombTotal);
-  }
+  if (sync)
+    while (!header[0].done_writing);
   else
   {
-    //All other ranks send their data to proess 0
-    ICSend(0,  bodyPositions, bodyVelocities,  bodyIds, n);
+    static bool first = true;
+    if (first)
+    {
+      first = false;
+      header[0].done_writing = true;
+    }
+    int ready = header[0].done_writing;
+    int readyGlobal;
+    MPI_Allreduce(&ready, &readyGlobal, 1, MPI_INT, MPI_MIN, mpiCommWorld);
+    if (!readyGlobal)
+      return;
   }
- #endif
+
+  /* write header */
+
+  char fn[1024];
+  sprintf(fn, "%s_%010.4f.bonsai", fileNameBase.c_str(), t_current);
+
+  const size_t nSnap = localTree.n;
+  const size_t dn = static_cast<size_t>(1.0/ratio);
+  assert(dn >= 1);
+  size_t nQuick = 0;
+  for (size_t i = 0; i < nSnap; i += dn)
+    nQuick++;
+
+  header.acquireLock();
+  header[0].tCurrent = t_current;
+  header[0].nBodies  = nQuick;
+  for (int i = 0; i < 1024; i++)
+  {
+    header[0].fileName[i] = fn[i];
+    if (fn[i] == 0)
+      break; //TODO replace by strcopy
+  }
+
+  data.acquireLock();
+  if (!data.resize(nQuick))
+  {
+    std::cerr << "rank= "   << procId << ": failed to resize. ";
+    std::cerr << "Request " << nQuick << " but capacity is  " << data.capacity() << "." << std::endl;
+    MPI_Finalize();
+    ::exit(0);
+  }
+#pragma omp parallel for schedule(static)
+  for (size_t i = 0; i < nSnap; i += dn)
+  {
+    auto &p = data[i/dn];
+    p.x    = localTree.bodies_pos[i].x;
+    p.y    = localTree.bodies_pos[i].y;
+    p.z    = localTree.bodies_pos[i].z;
+    p.mass = localTree.bodies_pos[i].w;
+    p.vx   = localTree.bodies_vel[i].x;
+    p.vy   = localTree.bodies_vel[i].y;
+    p.vz   = localTree.bodies_vel[i].z;
+    p.vw   = localTree.bodies_vel[i].w;
+    p.rho  = localTree.bodies_dens[i].x;
+    p.h    = localTree.bodies_h[i];
+    p.ID   = lGetIDType(localTree.bodies_ids[i]);
+  }
+  data.releaseLock();
+
+  header[0].done_writing = false;
+  header.releaseLock();
 }
 
-void octree::write_dumbp_snapshot_parallel(real4 *bodyPositions, real4 *bodyVelocities, int* bodyIds, int n, string fileName, float time) 
+/*
+ *
+ * Send the particle data to a file
+ * Works for both full snapshots and quickdump files
+ */
+void octree::dumpData()
 {
-  
-  //If we use individual softening then first sync the particle types
-  //#ifdef INDSOFT  
-    NTotal = n;
-    NFirst = NSecond = NThird = 0;
-    
-    for(int i=0; i < n; i++)
-    { 
-      //Specific for JB his files
-      if(bodyIds[i] >= 0         && bodyIds[i] < 100000000) NThird++;
-      if(bodyIds[i] >= 100000000 && bodyIds[i] < 200000000) NSecond++;
-      if(bodyIds[i] >= 200000000 && bodyIds[i] < 300000000) NFirst++;        
-    }
-    
-    //Sync them to process 0
-    int NCombTotal, NCombFirst, NCombSecond, NCombThird;
-    NCombTotal  = SumOnRootRank(NTotal);
-    NCombFirst  = SumOnRootRank(NFirst);
-    NCombSecond = SumOnRootRank(NSecond);
-    NCombThird  = SumOnRootRank(NThird);
-  //#endif
-    
-    //Since the dust and disk particles are star particles
-    //lets add them
-    NCombSecond += NCombThird;    
-  
-  #ifdef TIPSYOUTPUT
-  //#ifdef INDSOFT
-    char fullFileName[256];
-    sprintf(fullFileName, "%s", fileName.c_str());
-    string tempName; tempName.assign(fullFileName);
-    write_dumbp_snapshot_parallel_tipsy(bodyPositions, bodyVelocities, bodyIds, n, tempName,
-                                        NCombTotal, NCombFirst, NCombSecond, NCombThird, time);
-    return;
-  #endif
-  //#endif
-  //Rank 0 does the writing
-  if(mpiGetRank() == 0)
+  if (shmQHeader == NULL)
   {
-    char fullFileName[256];
-    sprintf(fullFileName, "%s", fileName.c_str());
+    const size_t capacity  = min(4*localTree.n, 24*1024*1024);
 
-    cout << "Trying to write to file: " << fullFileName << endl;
+    shmQHeader = new ShmQHeader(ShmQHeader::type::sharedFile(procId,sharedPID), 1);
+    shmQData   = new ShmQData  (ShmQData  ::type::sharedFile(procId,sharedPID), capacity);
 
-    ofstream outputFile(fullFileName, ios::out);
-    outputFile.precision(16);
-  
-    if(!outputFile.is_open())
-    {
-      cout << "Can't open output file: "<< fullFileName << std::endl;
-      exit(0);
-    }
-  
-    #ifdef INDSOFT
-      //Write the header                                                                                                                                        
-      outputFile << NCombTotal << "\t" << NCombFirst << "\t" << NCombSecond << "\t" << NCombThird << endl;   
-    #endif
-    
-    //Now receive the data from the other processes
-    vector<real4> extPositions;
-    vector<real4> extVelocities;
-    vector<int>   extIds;
-    
-    int particleCount = 0;    
-    for(int recvFrom=1; recvFrom < mpiGetNProcs(); recvFrom++)
-    {
-      ICRecv(recvFrom, extPositions, extVelocities,  extIds);
-      
-      for(unsigned int i=0; i < extPositions.size() ; i++)
-      {
-        outputFile << extIds[i] << "\t" << extPositions[i].w << "\t" << extPositions[i].x << "\t" <<
-                      extPositions[i].y << "\t" << extPositions[i].z << "\t" <<
-                          extVelocities[i].x      << "\t" << extVelocities[i].y << "\t" <<
-                          #ifdef INDSOFT
-                            extVelocities[i].z      << "\t" << extVelocities[i].w << endl;
-                          #else
-                            extVelocities[i].z << endl;
-                          #endif
-      }
-      particleCount += (int)extPositions.size();
-    }
-    
-    for(int i=0; i < n ; i++)
-    {
-      outputFile << bodyIds[i] << "\t" << bodyPositions[i].w << "\t" << bodyPositions[i].x << "\t" <<
-                        bodyPositions[i].y       << "\t" << bodyPositions[i].z << "\t" <<
-                        bodyVelocities[i].x      << "\t" << bodyVelocities[i].y << "\t" <<
-                        #ifdef INDSOFT                        
-                          bodyVelocities[i].z      << "\t" << bodyVelocities[i].w << endl;
-                        #else
-                          bodyVelocities[i].z << endl;                        
-                        #endif
-    }
-    particleCount += n;
-    
-    
-    outputFile.close();
-
-    fprintf(stdout, "Wrote %d bodies to dump file \n", particleCount);
+    shmSHeader = new ShmSHeader(ShmSHeader::type::sharedFile(procId,sharedPID), 1);
+    shmSData   = new ShmSData  (ShmSData  ::type::sharedFile(procId,sharedPID), capacity);
   }
-  else
+
+  if ((t_current >= nextQuickDump && quickDump    > 0) ||
+      (t_current >= nextSnapTime  && snapshotIter > 0))
   {
-    //All other ranks send their data to proess 0
-    ICSend(0,  bodyPositions, bodyVelocities,  bodyIds, n);
+    localTree.bodies_pos.d2h();
+    localTree.bodies_vel.d2h();
+    localTree.bodies_ids.d2h();
+    localTree.bodies_h.d2h();
+    localTree.bodies_dens.d2h();
   }
-};
 
-/*********************************/
-/*********************************/
-/*********************************/
 
-//Some old utility functions
-
-void octree::to_binary(int key) {
-  char binary[128];
-  int n = sizeof(key)*8;
-  sprintf(binary, "0b00 000 000 000 000 000 000 000 000 000 000 ");
-  for (int i = n-1; i >= 0; i--) {
-    if (i%3 == 2) 
-      sprintf(binary, "%s ", binary);
-    if (key & (1 << i)) {
-      sprintf(binary, "%s1", binary);
-    } else {
-      sprintf(binary, "%s0", binary);
+  if (t_current >= nextQuickDump && quickDump > 0)
+  {
+    static bool handShakeQ = false;
+    if (!handShakeQ && quickDump > 0 && quickSync)
+    {
+      auto &header = *shmQHeader;
+      header[0].tCurrent     = t_current;
+      header[0].done_writing = true;
+      lHandShake(header);
+      handShakeQ = true;
     }
-  }
-}
 
-void octree::to_binary(uint2 key) {
-  char binary[256];
-  int n = sizeof(key.x)*8;
-  sprintf(binary, "0b");
-  for (int i = n-1; i >= 0; i--) {
-    if (i%3 == 2) 
-      sprintf(binary, "%s ", binary);
-    if (key.x & (1 << i)) {
-      sprintf(binary, "%s1", binary);
-    } else {
-      sprintf(binary, "%s0", binary);
+    nextQuickDump += quickDump;
+    nextQuickDump = std::max(nextQuickDump, t_current);
+    if (procId == 0) fprintf(stderr, "-- quickdump: nextQuickDump= %g  quickRatio= %g\n", nextQuickDump, quickRatio);
+    dumpDataCommon(*shmQHeader, *shmQData, snapshotFile + "_quick", quickRatio, quickSync);
+  }
+
+  if (t_current >= nextSnapTime && snapshotIter > 0)
+  {
+    static bool handShakeS = false;
+    if (!handShakeS && snapshotIter > 0)
+    {
+      auto &header           = *shmSHeader;
+      header[0].tCurrent     = t_current;
+      header[0].done_writing = true;
+      lHandShake(header);
+      handShakeS             = true;
     }
+
+    nextSnapTime += snapshotIter;
+    nextSnapTime = std::max(nextSnapTime, t_current);
+    if (procId == 0)  fprintf(stderr, "-- snapdump: nextSnapDump= %g  %d\n", nextSnapTime, localTree.n);
+
+    dumpDataCommon(
+        *shmSHeader, *shmSData,
+        snapshotFile,
+        1.0,  /* fraction of particles to store */
+        true  /* force sync between IO and simulator */);
   }
-  sprintf(binary, "%s ", binary);
-  for (int i = n-1; i >= 0; i--) {
-    if (i%3 == 2) 
-      sprintf(binary, "%s ", binary);
-    if (key.x & (1 << i)) {
-      sprintf(binary, "%s1", binary);
-    } else {
-      sprintf(binary, "%s0", binary);
+}
+
+
+
+
+    /*
+     *
+     * Functions to read the MPI-IO based file format
+     *
+     *
+     */
+
+    template<typename T>
+    static inline T& lBonsaiSafeCast(BonsaiIO::DataTypeBase* ptrBase)
+    {
+    T* ptr = dynamic_cast<T*>(ptrBase);
+    assert(ptr != NULL);
+    return *ptr;
     }
-  }
-}
-
-/*********************************/
-/*********************************/
-/*********************************/
-
-uint2 octree::dilate3(int value) {
-  unsigned int x;
-  uint2 key;
-  
-  // dilate first 10 bits
-
-  x = value & 0x03FF;
-  x = ((x << 16) + x) & 0xFF0000FF;
-  x = ((x <<  8) + x) & 0x0F00F00F;
-  x = ((x <<  4) + x) & 0xC30C30C3;
-  x = ((x <<  2) + x) & 0x49249249;
-  key.y = x;
-
-  // dilate second 10 bits
-
-  x = (value >> 10) & 0x03FF;
-  x = ((x << 16) + x) & 0xFF0000FF;
-  x = ((x <<  8) + x) & 0x0F00F00F;
-  x = ((x <<  4) + x) & 0xC30C30C3;
-  x = ((x <<  2) + x) & 0x49249249;
-  key.x = x;
-
-  return key;
-}
-
-int octree::undilate3(uint2 key) {
-  int x, value = 0;
-  
-  key.x = key.x & 0x09249249;
-  key.y = key.y & 0x09249249;
-  
-  // undilate first 10 bits
-
-  x = key.y & 0x3FFFF;
-  x = ((x <<  4) + (x << 2) + x) & 0x0E070381;
-  x = ((x << 12) + (x << 6) + x) & 0x0FF80001;
-  x = ((x << 18) + x) & 0x0FFC0000;
-  value = value | (x >> 18);
-  
-  x = (key.y >> 18) & 0x3FFFF;
-  x = ((x <<  4) + (x << 2) + x) & 0x0E070381;
-  x = ((x << 12) + (x << 6) + x) & 0x0FF80001;
-  x = ((x << 18) + x) & 0x0FFC0000;
-  value = value | (x >> 12);
-  
-
-  // undilate second 10 bits
-
-  x = key.x & 0x3FFFF;
-  x = ((x <<  4) + (x << 2) + x) & 0x0E070381;
-  x = ((x << 12) + (x << 6) + x) & 0x0FF80001;
-  x = ((x << 18) + x) & 0x0FFC0000;
-  value = value | ((x >> 18) << 10);
-  
-  x = (key.x >> 18) & 0x3FFFF;
-  x = ((x <<  4) + (x << 2) + x) & 0x0E070381;
-  x = ((x << 12) + (x << 6) + x) & 0x0FF80001;
-  x = ((x << 18) + x) & 0x0FFC0000;
-  value = value | ((x >> 12) << 10);
-  
-  return value;
-}
 
 
-/*********************************/
-/*********************************/
-/*********************************/
+    static double lReadBonsaiFields(
+        const int rank, const MPI_Comm &comm,
+        const std::vector<BonsaiIO::DataTypeBase*> &data,
+        BonsaiIO::Core &in,
+        const int reduce,
+        const bool restartFlag = true)
+    {
+        double dtRead = 0;
+        for (auto &type : data)
+        {
+            double t0 = MPI_Wtime();
+            if (rank == 0)
+            fprintf(stderr, " Reading %s ...\n", type->getName().c_str());
+            if (in.read(*type, restartFlag, reduce))
+            {
+                long long int nLoc = type->getNumElements();
+                long long int nGlb;
+                MPI_Allreduce(&nLoc, &nGlb, 1, MPI_DOUBLE, MPI_SUM, comm);
+                if (rank == 0)
+                {
+                    fprintf(stderr, " Read %lld of type %s\n", nGlb, type->getName().c_str());
+                    fprintf(stderr, " ---- \n");
+                }
+            }
+            else
+            {
+                if (rank == 0)
+                {
+                    fprintf(stderr, " %s  is not found, skipping\n", type->getName().c_str());
+                    fprintf(stderr, " ---- \n");
+                }
+            }
 
-uint2 octree::get_key(int3 crd) {
-  uint2 key, key1;
-  key  = dilate3(crd.x);
+            dtRead += MPI_Wtime() - t0;
+        }
 
-  key1 = dilate3(crd.y);
-  key.x = key.x | (key1.x << 1);
-  key.y = key.y | (key1.y << 1);
-
-  key1 = dilate3(crd.z);
-  key.x = key.x | (key1.x << 2);
-  key.y = key.y | (key1.y << 2);
-
-  return key;
-}
-
-int3 octree::get_crd(uint2 key) {
-
-  int3 crd = make_int3(undilate3(key),
-	                   undilate3(make_uint2(key.x >> 1, key.y >> 1)),
-	                   undilate3(make_uint2(key.x >> 2, key.y >> 2)));
-
-  return crd;
-}
-
-real4 octree::get_pos(uint2 key, real size, tree_structure &tree) {
-  real4 pos;
-  pos.w = size;
-  
-  int3 crd = get_crd(key);
-  pos.x = crd.x*tree.domain_fac + tree.corner.x;
-  pos.y = crd.y*tree.domain_fac + tree.corner.y;
-  pos.z = crd.z*tree.domain_fac + tree.corner.z;
-
-  return pos;
-}
-
-/*********************************/
-/*********************************/
-/*********************************/
-
-//uint4 octree::get_mask(int level) {
-//  int mask_levels = 3*std::max(MAXLEVELS - level, 0);
-//  uint4 mask = {0x3FFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,0xFFFFFFFF};
-//
-//  if (mask_levels > 60)
-//  {
-//    mask.z = 0;
-//    mask.y = 0;
-//    mask.x = (mask.x >> (mask_levels - 60)) << (mask_levels - 60);
-//  }
-//  else if (mask_levels > 30) {
-//    mask.z = 0;
-//    mask.y = (mask.y >> (mask_levels - 30)) << (mask_levels - 30);
-//  } else {
-//    mask.z = (mask.z >> mask_levels) << mask_levels;
-//  }
-//
-//  return mask;
-//}
-
-//int octree::cmp_uint4(uint4 a, uint4 b) {
-//  if      (a.x < b.x) return -1;
-//  else if (a.x > b.x) return +1;
-//  else {
-//    if       (a.y < b.y) return -1;
-//    else  if (a.y > b.y) return +1;
-//    else {
-//      if       (a.z < b.z) return -1;
-//      else  if (a.z > b.z) return +1;
-//      return 0;
-//    } //end z
-//  }  //end y
-//} //end x, function
-//
-////Binary search of the key within certain bounds (cij.x, cij.y)
-//int octree::find_key(uint4 key, uint2 cij, uint4 *keys) {
-//  int l = cij.x;
-//  int r = cij.y - 1;
-//  while (r - l > 1) {
-//    int m = (r + l) >> 1;
-//    int cmp = cmp_uint4(keys[m], key);
-//    if (cmp == -1) {
-//      l = m;
-//    } else {
-//      r = m;
-//    }
-//  }
-//  if (cmp_uint4(keys[l], key) >= 0) return l;
-//
-//  return r;
-//}
-
-
-
-/*
-uint2 octree::get_mask(int level) {
-  int mask_levels = 3*max(MAXLEVELS - level, 0);
-  uint2 mask = {0x3FFFFFFF, 0xFFFFFFFF};
-    
-  if (mask_levels > 30) {
-    mask.y = 0;
-    mask.x = (mask.x >> (mask_levels - 30)) << (mask_levels - 30);
-  } else {
-    mask.y = (mask.y >> mask_levels) << mask_levels;
-  }
-  
-  return mask;
-}
-
-uint2 octree::get_imask(uint2 mask) {
-  return make_uint2(0x3FFFFFFF ^ mask.x, 0xFFFFFFFF ^ mask.y);
-}
-*/
-/*********************************/
-/*********************************/
-/*********************************/
-/*
-int octree::find_key(uint2          key, 
-		     vector<uint2> &keys,
-		     int l,
-		     int r) {
-  r--;
-  while (r - l > 1) {
-    int m = (r + l) >> 1;
-    int cmp = cmp_uint2(keys[m], key);
-    if (cmp == -1) {
-      l = m;
-    } else { 
-      r = m;
+        return dtRead;
     }
-  }
-  
-  if (cmp_uint2(keys[l], key) >= 0) return l;
-  
-  return r;
-}
 
-int octree::find_key(uint2                  key, 
-		     vector<morton_struct> &keys,
-		     int l,
-		     int r) {
-  r--;
-  while (r - l > 1) {
-    int m = (r + l) >> 1;
-    int cmp = cmp_uint2(keys[m].key, key);
-    if (cmp == -1) {
-      l = m;
-    } else { 
-      r = m;
+
+    void octree::lReadBonsaiFile(std::vector<real4 > &bodyPositions,
+                                 std::vector<real4 > &bodyVelocities,
+                                 std::vector<ullong> &bodyIDs,
+                                 float &t_current,
+                                 const std::string &fileName,
+                                 const int rank, const int nrank,
+                                 const MPI_Comm &comm,
+                                 const bool restart,
+                                 const int reduceFactor)
+    {
+        if (rank == 0)
+            std::cerr << " >>> Reading Bonsai file format : " << fileName <<  std::endl;
+
+        BonsaiIO::Core *in;
+        try
+        {
+            in = new BonsaiIO::Core(rank, nrank, comm, BonsaiIO::READ, fileName);
+        }
+        catch (const std::exception &e)
+        {
+            if (rank == 0)
+            fprintf(stderr, "Something went wrong: %s \n", e.what());
+            MPI_Finalize();
+            ::exit(0);
+        }
+
+        if (rank == 0)
+            in->getHeader().printFields();
+
+        std::vector<BonsaiIO::DataTypeBase*> data;
+        typedef float float3[3];
+        typedef float float2[2];
+
+        using IDType = BonsaiIO::DataType<IDType>;
+        using Pos    = BonsaiIO::DataType<real4>;
+        using Vel    = BonsaiIO::DataType<float3>;
+        using RhoH   = BonsaiIO::DataType<float2>;
+        data.push_back(new IDType("DM:IDType"));
+        data.push_back(new Pos   ("DM:POS:real4"));
+        data.push_back(new Vel   ("DM:VEL:float[3]"));
+        data.push_back(new IDType("Stars:IDType"));
+        data.push_back(new Pos   ("Stars:POS:real4"));
+        data.push_back(new Vel   ("Stars:VEL:float[3]"));
+
+        const double dtRead = lReadBonsaiFields(rank, comm, data, *in, reduceFactor, restart);
+
+        const auto &DM_IDType = lBonsaiSafeCast<IDType>(data[0]);
+        const auto &DM_Pos    = lBonsaiSafeCast<Pos   >(data[1]);
+        const auto &DM_Vel    = lBonsaiSafeCast<Vel   >(data[2]);
+        const auto &S_IDType  = lBonsaiSafeCast<IDType>(data[3]);
+        const auto &S_Pos     = lBonsaiSafeCast<Pos   >(data[4]);
+        const auto &S_Vel     = lBonsaiSafeCast<Vel   >(data[5]);
+
+        const size_t nDM = DM_IDType.size();
+        assert(nDM == DM_Pos.size());
+        assert(nDM == DM_Vel.size());
+
+        const size_t nS = S_IDType.size();
+        assert(nS == S_Pos.size());
+        assert(nS == S_Vel.size());
+
+
+        //NFirst  = static_cast<std::remove_reference<decltype(NFirst )>::type>(nDM);
+        //NSecond = static_cast<std::remove_reference<decltype(NSecond)>::type>(nS);
+
+
+        bodyPositions.resize(nDM+nS);
+        bodyVelocities.resize(nDM+nS);
+        bodyIDs.resize(nDM+nS);
+
+        /* store DM */
+
+        constexpr int ntypecount = 10;
+        std::array<size_t,ntypecount> ntypeloc, ntypeglb;
+        std::fill(ntypeloc.begin(), ntypeloc.end(), 0);
+        for (int i = 0; i < nDM; i++)
+        {
+            ntypeloc[0]++;
+            auto &pos = bodyPositions[i];
+            auto &vel = bodyVelocities[i];
+            auto &ID  = bodyIDs[i];
+            pos = DM_Pos[i];
+            pos.w *= reduceFactor;
+            vel = make_float4(DM_Vel[i][0], DM_Vel[i][1], DM_Vel[i][2],0.0f);
+            ID  = DM_IDType[i].getID() + DARKMATTERID;
+        }
+
+        for (int i = 0; i < nS; i++)
+        {
+            auto &pos = bodyPositions[nDM+i];
+            auto &vel = bodyVelocities[nDM+i];
+            auto &ID  = bodyIDs[nDM+i];
+            pos = S_Pos[i];
+            pos.w *= reduceFactor;
+            vel = make_float4(S_Vel[i][0], S_Vel[i][1], S_Vel[i][2],0.0f);
+            ID  = S_IDType[i].getID();
+            switch (S_IDType[i].getType())
+            {
+            case 1:  /*  Bulge */
+                ID += BULGEID;
+                break;
+            case 2:  /*  Disk */
+                ID += DISKID;
+                break;
+            }
+            if (S_IDType[i].getType() < ntypecount)
+            ntypeloc[S_IDType[i].getType()]++;
+        }
+
+        MPI_Reduce(&ntypeloc, &ntypeglb, ntypecount, MPI_LONG_LONG, MPI_SUM, 0, comm);
+        if (rank == 0)
+        {
+            size_t nsum = 0;
+            for (int type = 0; type < ntypecount; type++)
+            {
+            nsum += ntypeglb[type];
+            if (ntypeglb[type] > 0)
+                fprintf(stderr, "bonsai-read: ptype= %d:  np= %zu \n",type, ntypeglb[type]);
+            }
+            assert(nsum > 0);
+        }
+
+
+        LOGF(stderr,"Read time from snapshot: %f \n", in->getTime());
+
+        if(static_cast<float>(in->getTime()) > 10e10 ||
+            static_cast<float>(in->getTime()) < -10e10){
+            //tree->set_t_current(0);
+            t_current = 0;
+        }
+        else{
+            //tree->set_t_current(static_cast<float>(in->getTime()));
+            t_current = static_cast<float>(in->getTime());
+        }
+
+        in->close();
+        const double bw = in->computeBandwidth()/1e6;
+        for (auto d : data)
+            delete d;
+        delete in;
+        if (rank == 0)
+            fprintf(stderr, " :: dtRead= %g  sec readBW= %g MB/s \n", dtRead, bw);
     }
-  }
-  
-  if (cmp_uint2(keys[l].key, key) >= 0) return l;
-  
-  return r;
-}*/
 
-/*********************************/
-/*********************************/
-/*********************************/
+#endif
+
 

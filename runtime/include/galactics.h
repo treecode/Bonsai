@@ -38,7 +38,7 @@ struct Galactics
   int get_ntot() const { return ndisk+nbulge+nhalo; }
   const Particle& operator[](const int i) const {return ptcl[i];}
 
-  Galactics(const int procId, const int nProc, const int _ndisk, int _nbulge, int _nhalo, const int NCHILD = 4) : 
+  Galactics(const int procId, const int nProc, const int randomSeed, const int _ndisk, int _nbulge, int _nhalo, int NCHILD = 4) : 
     ndisk(_ndisk/NCHILD), nbulge(_nbulge/NCHILD), nhalo(_nhalo/NCHILD), childId(0)
   {
     const int nptcl = ndisk + nbulge + nhalo;
@@ -78,7 +78,13 @@ struct Galactics
         exit(EXIT_FAILURE);
       } 
       else if (pid == 0)
+      {
+#if 0  /* for testing, when fork fails */
+        if (procId == 1)
+          exit(-1);
+#endif
         break;
+      }
       childId++;
     }
 
@@ -115,9 +121,9 @@ struct Galactics
 
       const int verbose = (childId == 0) && (procId == 0);
       const int stride = nProc * NCHILD;
-      gen_disk (ndisk,  0*stride + NCHILD*procId+childId, (float*)&data[0           ], verbose);
-      gen_bulge(nbulge, 1*stride + NCHILD*procId+childId, (float*)&data[ndisk       ], verbose);
-      gen_halo (nhalo,  2*stride + NCHILD*procId+childId, (float*)&data[ndisk+nbulge], verbose);
+      gen_disk (ndisk, randomSeed +  0*stride + NCHILD*procId+childId, (float*)&data[0           ], verbose);
+      gen_bulge(nbulge, randomSeed + 1*stride + NCHILD*procId+childId, (float*)&data[ndisk       ], verbose);
+      gen_halo (nhalo,  randomSeed + 2*stride + NCHILD*procId+childId, (float*)&data[ndisk+nbulge], verbose);
 
       exit(EXIT_SUCCESS);
     }
@@ -126,15 +132,35 @@ struct Galactics
 
     if (pid > 0)
     {
+      bool forkFail = false;
       int status;
       for (int i = 0; i < NCHILD; i++)
       {
         int wpid = wait(&status);
-        if (procId == 0)
-          fprintf(stderr,"Child pid= %d done with status= %d \n", wpid, status);
+        if (status != EXIT_SUCCESS)
+        {
+          fprintf(stderr,"procId= %d Child pid= %d done with status= %d \n", procId, wpid, status);
+          forkFail = true;
+        }
+      }
+      if (forkFail) /* hack if fork() fails */
+      {
+        fprintf(stderr, " -- forking failed, falling back to serial: procId= %d\n", procId);
+        childId = 0;
+        Particle *data = &((Particle*)data_ptr)[nptcl*childId];
+
+        /* generate galaxy */
+
+        const int verbose = (childId == 0) && (procId == 0);
+        const int stride = nProc * NCHILD;
+        gen_disk (ndisk,  0*stride + NCHILD*procId+childId, (float*)&data[0           ], verbose);
+        gen_bulge(nbulge, 1*stride + NCHILD*procId+childId, (float*)&data[ndisk       ], verbose);
+        gen_halo (nhalo,  2*stride + NCHILD*procId+childId, (float*)&data[ndisk+nbulge], verbose);
+        NCHILD = 1;
       }
       if (procId == 0)
         fprintf(stderr,"\n parent :: Galaxy generation complete \n");
+
       const Particle *ptcl_list = (Particle*)data_ptr;
 
       /* collect the results from child processes */
