@@ -63,6 +63,8 @@ http://github.com/treecode/Bonsai
 #include "anyoption.h"
 #include "renderloop.h"
 
+#include "read_tipsy_file_parallel.h"
+
 #include <array>
 
 #include <FileIO.h>
@@ -134,221 +136,6 @@ void throw_if_option_is_used(AnyOption const& opt, std::vector<std::string> argu
 }
 #endif
 
-void read_dumbp_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyVelocities,  vector<int> &bodiesIDs,  float eps2,
-                     string fileName, int rank, int procs, int &NTotal2, int &NFirst, int &NSecond, int &NThird, octree *tree, int reduce_bodies_factor)  
-{
-  //Process 0 does the file reading and sends the data
-  //to the other processes
-  
-  //Now we have different types of files, try to determine which one is used
-  /*****
-  If individual softening is on there is only one option:
-  Header is formatted as follows: 
-  N     #       #       #
-  so read the first number and compute how particles should be distributed
-  
-  If individual softening is NOT enabled, i can be anything, but for ease I assume standard dumbp files:
-  no Header
-  ID mass x y z vx vy vz
-  now the next step is risky, we assume mass adds up to 1, so number of particles will be : 1 / mass
-  use this as initial particle distribution
-  
-  */
-  
-  
-  char fullFileName[256];
-  sprintf(fullFileName, "%s", fileName.c_str());
-	globalParticleCount++;
-
-	if( globalParticleCount % reduce_bodies_factor == 0 ) 
-		positions.w *= reduce_bodies_factor;
-
-	if( globalParticleCount % reduce_bodies_factor != 0 )
-		continue;
-
-    #ifndef INDSOFT
-      velocity.w = sqrt(eps2);
-    #else
-      inputFile >> velocity.w; //Read the softening from the input file
-    #endif
-    
-    bodyPositions.push_back(positions);
-    bodyVelocities.push_back(velocity);
-    
-    #ifndef INDSOFT    
-      idummy = particleCount;
-    #endif
-    
-    bodiesIDs.push_back(idummy);  
-    
-    particleCount++;
-  
-  
-    if(bodyPositions.size() > perProc && procCntr != procs)
-    {       
-      tree->ICSend(procCntr,  &bodyPositions[0], &bodyVelocities[0],  &bodiesIDs[0], (int)bodyPositions.size());
-      procCntr++;
-      
-      bodyPositions.clear();
-      bodyVelocities.clear();
-      bodiesIDs.clear();
-    }
-  }//end while
-  
-  inputFile.close();
-  
-  //Clear the last one since its double
-  bodyPositions.resize(bodyPositions.size()-1);  
-  NTotal2 = particleCount-1;
-  
-  LOGF(stderr, "NTotal:  %d\tper proc: %d\tFor ourself: %d \n", NTotal, perProc, (int)bodiesIDs.size());
-}
-
-void read_generate_cube(vector<real4> &bodyPositions, vector<real4> &bodyVelocities,
-                              vector<int> &bodiesIDs,  float eps2, string fileName, 
-                              int rank, int procs, int &NTotal2, int &NFirst, 
-                              int &NSecond, int &NThird, octree *tree,
-                              vector<real4> &dustPositions, vector<real4> &dustVelocities,
-                              vector<int> &dustIDs, int reduce_bodies_factor,
-                              int reduce_dust_factor)  
-{
-  //Process 0 does the file reading and sends the data
-  //to the other processes
-  /* 
-
-     Read in our custom version of the tipsy file format.
-     Most important change is that we store particle id on the 
-     location where previously the potential was stored.
-  */
-  
-
-  int NTotal;
-  int idummy;
-  real4 positions;
-  real4 velocity;
-
-     
-  //Read tipsy header  
-  NTotal        = (int)std::pow(2.0, 22);
-  NFirst        = NTotal;
-  NSecond       = 0;
-  NThird        = 0;
-
-  fprintf(stderr,"Going to generate a random cube , number of particles: %d \n", NTotal);
-
-  tree->set_t_current((float) 0);
-  
-  //Rough divide
-  uint perProc = NTotal / procs;
-  bodyPositions.reserve(perProc+10);
-  bodyVelocities.reserve(perProc+10);
-  bodiesIDs.reserve(perProc+10);
-  perProc -= 1;
-
-  //Start reading
-  int particleCount = 0;
-  int procCntr = 1;
-  
-
-  int globalParticleCount = 0;
-
-  float mass = 1.0  / NTotal;
-  
-  for(int i=0; i < NTotal; i++)
-  {
-      velocity.w        = 0;
-      positions.w       = mass;
-      positions.x       = drand48();
-      positions.y       = drand48();
-      positions.z       = drand48();
-      velocity.x        = 0.001*drand48();
-      velocity.y        = 0.001*drand48();
-      velocity.z        = 0.001*drand48();
-
-      globalParticleCount++;
-      bodyPositions.push_back(positions);
-      bodyVelocities.push_back(velocity);
-      bodiesIDs.push_back(globalParticleCount);  
-  
-    if(bodyPositions.size() > perProc && procCntr != procs)
-    { 
-      tree->ICSend(procCntr,  &bodyPositions[0], &bodyVelocities[0],  &bodiesIDs[0], (int)bodyPositions.size());
-      procCntr++;
-      
-      bodyPositions.clear();
-      bodyVelocities.clear();
-      bodiesIDs.clear();
-    }
-  }//end while
-  
-  //Clear the last one since its double
-//   bodyPositions.resize(bodyPositions.size()-1);  
-//   NTotal2 = particleCount-1;
-  NTotal2 = NTotal;
-  LOGF(stderr,"NTotal: %d\tper proc: %d\tFor ourself: %d \tNDust: %d \n",
-               NTotal, perProc, (int)bodiesIDs.size(), (int)dustPositions.size());
-}
-
-
-double rot[3][3];
-
-void rotmat(double i,double w)
-{
-    rot[0][0] = cos(w);
-    rot[0][1] = -cos(i)*sin(w);
-    rot[0][2] = -sin(i)*sin(w);
-    rot[1][0] = sin(w);
-    rot[1][1] = cos(i)*cos(w);
-    rot[1][2] = sin(i)*cos(w);
-    rot[2][0] = 0.0;
-    rot[2][1] = -sin(i);
-    rot[2][2] = cos(i);
-    fprintf(stderr,"%g %g %g\n",rot[0][0], rot[0][1], rot[0][2]);
-    fprintf(stderr,"%g %g %g\n",rot[1][0], rot[1][1], rot[1][2]);
-    fprintf(stderr,"%g %g %g\n",rot[2][0], rot[2][1], rot[2][2]);
-}
-
-void rotate(double rot[3][3],float *vin)
-{
-    static double vout[3];
-
-    for(int i=0; i<3; i++) {
-      vout[i] = 0;
-      for(int j=0; j<3; j++)
-        vout[i] += rot[i][j] * vin[j]; 
-      /* Remember the rotation matrix is the transpose of rot */
-    }
-    for(int i=0; i<3; i++)
-            vin[i] = (float) vout[i];
-}
-
-void euler(vector<real4> &bodyPositions,
-           vector<real4> &bodyVelocities,
-           double inc, double omega)
-{
-  rotmat(inc,omega);
-  size_t nobj = bodyPositions.size();
-  for(uint i=0; i < nobj; i++)
-  {
-      float r[3], v[3];
-      r[0] = bodyPositions[i].x;
-      r[1] = bodyPositions[i].y;
-      r[2] = bodyPositions[i].z;
-      v[0] = bodyVelocities[i].x;
-      v[1] = bodyVelocities[i].y;
-      v[2] = bodyVelocities[i].z;
-
-      rotate(rot,r);
-      rotate(rot,v);
-
-      bodyPositions[i].x = r[0]; 
-      bodyPositions[i].y = r[1]; 
-      bodyPositions[i].z = r[2]; 
-      bodyVelocities[i].x = v[0];
-      bodyVelocities[i].y = v[1];
-      bodyVelocities[i].z = v[2];
-  }
-}
 
 
 
@@ -423,10 +210,9 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   int rebuild_tree_rate    = 1;
   int reduce_bodies_factor = 1;
   int reduce_dust_factor   = 1;
-  string fullScreenMode    = "";
+  std::string gameModeString = "";
   bool direct     = false;
   bool fullscreen = false;
-  bool direct = false;
   bool displayFPS = false;
   bool diskmode   = false;
   bool stereo     = false;
@@ -511,14 +297,14 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
         ADDUSAGE("     --reducedust #     cut down dust dataset by # factor ");
 #endif
 #if ENABLE_LOG
-        ADDUSAGE("     --log                  enable logging ");
-        ADDUSAGE("     --prepend-rank         prepend the MPI rank in front of the log-lines ");
+    ADDUSAGE("     --log              enable logging ");
+    ADDUSAGE("     --prepend-rank     prepend the MPI rank in front of the log-lines ");
 #endif
     ADDUSAGE("     --direct           enable N^2 direct gravitation [" << (direct ? "on" : "off") << "]");
 #ifdef USE_OPENGL
-		ADDUSAGE("     --fullscreen           set fullscreen");
-		ADDUSAGE("     --gameMode #           set game mode string");
-        ADDUSAGE("     --displayfps           enable on-screen FPS display");
+                ADDUSAGE("     --fullscreen           set fullscreen");
+                ADDUSAGE("     --gameMode #           set game mode string");
+                ADDUSAGE("     --displayfps           enable on-screen FPS display");
 		ADDUSAGE("     --Tglow  #             enable glow @ # Myr [" << TstartGlow << "]");
 		ADDUSAGE("     --dTglow  #            reach full brightness in @ # Myr [" << dTstartGlow << "]");
 		ADDUSAGE("     --stereo               enable stereo rendering");
@@ -721,7 +507,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 
 #ifdef USE_OPENGL
   // create OpenGL context first, and register for interop
-  initGL(argc, argv, fullScreenMode.c_str(), stereo);
+  initGL(argc, argv, gameModeString.c_str(), stereo, fullscreen);
   cudaGLSetGLDevice(devID); //TODO should this not be renderDev?
 #endif
 
@@ -969,13 +755,6 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   }
   else if ((nPlummer == -1 && nSphere == -1  && nCube == -1 && !diskmode && nMilkyWay == -1) || restartSim)
   {
-    if(procId == 0)
-    {
-#ifdef TIPSYOUTPUT
-      read_tipsy_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, 
-          procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
-          dustPositions, dustVelocities, dustIDs, reduce_bodies_factor, reduce_dust_factor, false);
-
 #ifdef WAR_OF_GALAXIES
       std::cout << "WarOfGalaxies: Input file is used as dummy particles." << std::endl;
       for (auto & id : bodyIDs) id = id - id % 10 + 9;
@@ -1026,22 +805,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
         v.y -= total_velocity.y;
         v.z -= total_velocity.z;
       }
-
 #endif
-
-      //      read_generate_cube(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, 
-      //                               procId, nProcs, NTotal, NFirst, NSecond, NThird, tree,
-      //                              dustPositions, dustVelocities, dustIDs, reduce_bodies_factor, reduce_dust_factor);    
-
-#else
-      read_dumbp_file_parallel(bodyPositions, bodyVelocities, bodyIDs, eps, fileName, procId, nProcs, NTotal, NFirst, NSecond, NThird, tree, reduce_bodies_factor);
-#endif
-    }
-    else
-    {
-      tree->ICRecv(0, bodyPositions, bodyVelocities,  bodyIDs);
-    }
-
     float sTime = 0;
     tree->fileIO->readFile(mpiCommWorld, bodyPositions, bodyVelocities, bodyIDs, fileName,
                            procId, nProcs, sTime, reduce_bodies_factor, restartSim);

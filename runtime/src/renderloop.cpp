@@ -354,7 +354,7 @@ public:
 #else
       m_enableStats(true),
 #endif
-      m_wogManager(tree, wogPath, wogPort, 1024, 768, m_fov, m_farZ, wogCameraDistance, wogDeletionRadiusFactor)
+      m_wogManager(tree, wogPath, wogPort, 1024, 768, m_fov, m_farZ, wogCameraDistance, wogDeletionRadiusFactor),
       m_densityRange(100)
   {
     m_windowDims = make_int2(WINDOWW, WINDOWH);

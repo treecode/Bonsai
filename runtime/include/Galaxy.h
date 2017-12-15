@@ -5,11 +5,12 @@
  *      Author: Bernd Doser <bernd.doser@h-its.org>
  */
 
-#ifndef GALAXY_H_
-#define GALAXY_H_
+#pragma once
 
 #include <my_cuda_rt.h>
 #include <vector>
+
+typedef unsigned long long ullong;
 
 /// One defined galaxy
 struct Galaxy
@@ -34,11 +35,9 @@ struct Galaxy
 
   std::vector<real4> pos;
   std::vector<real4> vel;
-  std::vector<int> ids;
+  std::vector<ullong> ids;
 
   std::vector<real4> pos_dust;
   std::vector<real4> vel_dust;
-  std::vector<int> ids_dust;
+  std::vector<ullong> ids_dust;
 };
-
-#endif /* GALAXY_H_ */

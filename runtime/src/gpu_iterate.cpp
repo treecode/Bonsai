@@ -69,51 +69,7 @@ extern int setupMergerModel(vector<real4> &bodyPositions1,      vector<real4> &b
                             vector<int>   &bodyIDs1,            vector<real4> &bodyPositions2,
                             vector<real4> &bodyVelocities2,     vector<int>   &bodyIDs2);
 
-bool octree::addGalaxy(int galaxyID)
-{
-    //To add an galaxy we need to have read it in from the host
-    #ifdef USE_DUST
-      //We move the dust data into the position data (on the device :) )
-      localTree.bodies_pos.copy_devonly(localTree.dust_pos, localTree.n_dust, localTree.n);
-      localTree.bodies_vel.copy_devonly(localTree.dust_vel, localTree.n_dust, localTree.n);
-      localTree.bodies_ids.copy_devonly(localTree.dust_ids, localTree.n_dust, localTree.n);
-    #endif
-  
-    this->localTree.bodies_pos.d2h();
-    this->localTree.bodies_vel.d2h();
-    this->localTree.bodies_ids.d2h();
-    
-    vector<real4> newGalaxy_pos;
-    vector<real4> newGalaxy_vel;
-    vector<int> newGalaxy_ids;
-    vector<real4> currentGalaxy_pos;
-    vector<real4> currentGalaxy_vel;
-    vector<int>   currentGalaxy_ids;    
 
-    int n_particles = this->localTree.n + this->localTree.n_dust;
-    currentGalaxy_pos.insert(currentGalaxy_pos.begin(), &this->localTree.bodies_pos[0],
-                          &this->localTree.bodies_pos[0]+n_particles);
-    currentGalaxy_vel.insert(currentGalaxy_vel.begin(), &this->localTree.bodies_vel[0],
-                          &this->localTree.bodies_vel[0]+n_particles);
-    currentGalaxy_ids.insert(currentGalaxy_ids.begin(), &this->localTree.bodies_ids[0],
-                          &this->localTree.bodies_ids[0]+n_particles);    
-    
-    vector<real4> newGalaxy_pos_dust;
-    vector<real4> newGalaxy_vel_dust;
-    vector<int> newGalaxy_ids_dust;    
-    
-    //string fileName = "model3_child_compact.tipsy";
-    //string fileName = "modelC30kDust.bin";
-    string fileName = "/local/doserbd/projects/ESO/war-of-galaxies/testSolar_5M_galaxy2.tipsy";
-    int rank = 0;
-    int procs = 1;
-    int NTotal, NFirst, NSecond, Nthird = 0;
-    int reduce_bodies = 50;
-    read_tipsy_file_parallel(newGalaxy_pos, newGalaxy_vel, newGalaxy_ids, 0, fileName, 
-                             rank, procs, NTotal, NFirst, NSecond, NThird, this,
-                             newGalaxy_pos_dust, newGalaxy_vel_dust, newGalaxy_ids_dust,
-                             reduce_bodies, 1, false);
-    
 void octree::iterate_setup() {
 
   if(execStream == NULL)

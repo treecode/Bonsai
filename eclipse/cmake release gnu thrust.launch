@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<launchConfiguration type="org.eclipse.ui.externaltools.ProgramLaunchConfigurationType">
-<stringAttribute key="org.eclipse.ui.externaltools.ATTR_LAUNCH_CONFIGURATION_BUILD_SCOPE" value="${none}"/>
-<stringAttribute key="org.eclipse.ui.externaltools.ATTR_LOCATION" value="${env_var:CMAKE_ROOT}/bin/cmake"/>
-<stringAttribute key="org.eclipse.ui.externaltools.ATTR_TOOL_ARGUMENTS" value="-DCMAKE_BUILD_TYPE=release&#10;-DCUDA_DEVICE_DEBUGGING:BOOL=OFF&#10;-DUSE_OPENGL:BOOL=ON&#10;-DUSE_MPI:BOOL=OFF&#10;-DUSE_B40C:BOOL=ON&#10;-DUSE_DUST:BOOL=OFF&#10;-DUSE_GALACTICS:BOOL=OFF&#10;-DWAR_OF_GALAXIES:BOOL=ON&#10;-DUSE_THRUST:BOOL=ON&#10;../runtime"/>
-<stringAttribute key="org.eclipse.ui.externaltools.ATTR_WORKING_DIRECTORY" value="${workspace_loc:/Bonsai/build_release_gnu_thrust}"/>
-</launchConfiguration>

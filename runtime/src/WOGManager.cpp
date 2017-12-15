@@ -5,7 +5,7 @@
  *      Author: Bernd Doser <bernd.doser@h-its.org>
  */
 
-#include "FileIO.h"
+#include "read_tipsy_file_parallel.h"
 #include "WOGManager.h"
 
 using jsoncons::json;
@@ -17,7 +17,7 @@ WOGManager::WOGManager(octree *tree, std::string const& path, int port, int wind
  : tree(tree),
    server_socket(-1),
    client_socket(-1),
-   user_particles(*(tree->getDevContext()), number_of_users, true),
+   user_particles(),
    window_width(window_width),
    window_height(window_height),
    fovy(fovy),

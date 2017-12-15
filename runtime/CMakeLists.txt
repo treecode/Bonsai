@@ -1,7 +1,5 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
 
-add_definitions("-std=gnu++11")
-
 option(CUDA_VERBOSE_PTXAS
   "On to enable verbose output from the PTXAS assembler."
   OFF
@@ -129,7 +127,7 @@ set (CCFILES
   src/log.cpp
   src/hostConstruction.cpp
   src/Galaxy.cpp
-  src/FileIO.cpp
+  src/read_tipsy_file_parallel.cpp
   src/WOGManager.cpp
   src/tipsyIO.cpp
   )
@@ -143,7 +141,6 @@ set (HFILES
   include/tipsydefs.h
   include/vector_math.h
   include/depthSort.h
-  include/sort.h
   )
 
 set (CUFILES
@@ -291,6 +288,7 @@ endif (USE_OPENGL)
 
 if (WAR_OF_GALAXIES)
   add_definitions(-DWAR_OF_GALAXIES)
+  add_definitions("-std=gnu++11")
 endif (WAR_OF_GALAXIES)
 
 #The SSE support for the local tree walks

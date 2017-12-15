@@ -5,8 +5,7 @@
  *      Author: Bernd Doser <bernd.doser@h-its.org>
  */
 
-#ifndef WOGSOCKETMANAGER_H_
-#define WOGSOCKETMANAGER_H_
+#pragma once
 
 #include "Galaxy.h"
 #include "octree.h"
@@ -107,5 +106,3 @@ class WOGManager
   std::vector<Galaxy> galaxies;
 
 };
-
-#endif /* WOGSOCKETMANAGER_H_ */

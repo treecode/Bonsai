@@ -679,28 +679,6 @@ public:
                           real4* grpCenter, real4* grpSize, int &DistanceCheck, int &DistanceCheckPP, int maxLevel);
 
   //End functions for parallel code
-<<<<<<< HEAD
-  
-      //Functions related to dust
-  #ifdef USE_DUST 
-    void allocateDustMemory(tree_structure &tree);
-    void sort_dust(tree_structure &tree);
-    void make_dust_groups(tree_structure &tree);
-    void allocateDustGroupBuffers(tree_structure &tree);
-    void predictDustStep(tree_structure &tree);
-    void correctDustStep(tree_structure &tree);
-    void approximate_dust(tree_structure &tree);
-    void direct_dust(tree_structure &tree);
-    void setDustGroupProperties(tree_structure &tree);
-    
-    my_dev::kernel define_dust_groups;
-    my_dev::kernel store_dust_groups;
-    my_dev::kernel predictDust;
-    my_dev::kernel correctDust;
-  #endif
-  
-  // Function for setting up the mergers
-  bool addGalaxy(int galaxyID);
 
   // WarOfGalaxies: add galaxy to simulation
   void releaseGalaxy(Galaxy const& galaxy);

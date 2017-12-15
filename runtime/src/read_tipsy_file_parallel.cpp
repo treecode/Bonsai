@@ -1,20 +1,20 @@
 /*
- * FileIO.cpp
+ * read_tipsy_file_parallel.cpp
  *
  *  Created on: May 6, 2016
  *      Author: Bernd Doser <bernd.doser@h-its.org>
  */
 
-#include "FileIO.h"
+#include "read_tipsy_file_parallel.h"
 
 using namespace std;
 
 void read_tipsy_file_parallel(std::vector<real4> &bodyPositions, std::vector<real4> &bodyVelocities,
-                              std::vector<int> &bodiesIDs,  float eps2, string fileName,
+                              std::vector<ullong> &bodiesIDs,  float eps2, string fileName,
                               int rank, int procs, int &NTotal2, int &NFirst,
                               int &NSecond, int &NThird, octree *tree,
                               std::vector<real4> &dustPositions, std::vector<real4> &dustVelocities,
-                              std::vector<int> &dustIDs, int reduce_bodies_factor,
+                              std::vector<ullong> &dustIDs, int reduce_bodies_factor,
                               int reduce_dust_factor,
                               const bool restart)
 {
@@ -161,18 +161,18 @@ void read_tipsy_file_parallel(std::vector<real4> &bodyPositions, std::vector<rea
     particleCount++;
 
 
-    if(!restart)
-    {
-      if(bodyPositions.size() > perProc && procCntr != procs)
-      {
-    	if (tree) tree->ICSend(procCntr,  &bodyPositions[0], &bodyVelocities[0],  &bodiesIDs[0], (int)bodyPositions.size());
-        procCntr++;
-
-        bodyPositions.clear();
-        bodyVelocities.clear();
-        bodiesIDs.clear();
-      }
-    }
+//    if(!restart)
+//    {
+//      if(bodyPositions.size() > perProc && procCntr != procs)
+//      {
+//    	if (tree) tree->ICSend(procCntr,  &bodyPositions[0], &bodyVelocities[0],  &bodiesIDs[0], (int)bodyPositions.size());
+//        procCntr++;
+//
+//        bodyPositions.clear();
+//        bodyVelocities.clear();
+//        bodiesIDs.clear();
+//      }
+//    }
   }//end while
 
   inputFile.close();

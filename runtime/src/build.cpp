@@ -12,9 +12,6 @@ void octree::allocateParticleMemory(tree_structure &tree)
   //MULTI_GPU_MEM_INCREASE% extra space, only in parallel when
   if(nProcs > 1) n_bodies = (int)(n_bodies*MULTI_GPU_MEM_INCREASE);    //number of particles can fluctuate
 
-  // Dirty hack to test adding an additional galaxy
-  //n_bodies *= 2;
-
   //Particle properties
   tree.bodies_pos.cmalloc(n_bodies+1, true);   //+1 to set end pos, host mapped? TODO not needed right since we use Ppos
   tree.bodies_key.cmalloc(n_bodies+1, false);   //+1 to set end key
