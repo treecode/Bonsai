@@ -289,6 +289,7 @@ endif (USE_OPENGL)
 if (WAR_OF_GALAXIES)
   add_definitions(-DWAR_OF_GALAXIES)
   add_definitions("-std=gnu++11")
+  include_directories(${CMAKE_SOURCE_DIR}/extern/jsoncons/include)
 endif (WAR_OF_GALAXIES)
 
 #The SSE support for the local tree walks
