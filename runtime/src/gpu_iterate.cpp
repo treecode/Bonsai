@@ -131,7 +131,7 @@ void octree::releaseGalaxy(Galaxy const& galaxy)
 
   vector<real4> new_pos;
   vector<real4> new_vel;
-  vector<int> new_ids;
+  vector<ullong> new_ids;
   int old_nb_particles = this->localTree.n;
   int new_nb_particles = old_nb_particles + galaxy.pos.size();
 
@@ -158,7 +158,7 @@ void octree::releaseGalaxy(Galaxy const& galaxy)
   // Copy back to host storage
   memcpy(&this->localTree.bodies_pos[0], &new_pos[0], sizeof(real4) * new_nb_particles);
   memcpy(&this->localTree.bodies_vel[0], &new_vel[0], sizeof(real4) * new_nb_particles);
-  memcpy(&this->localTree.bodies_ids[0], &new_ids[0], sizeof(int) * new_nb_particles);
+  memcpy(&this->localTree.bodies_ids[0], &new_ids[0], sizeof(ullong) * new_nb_particles);
 
   float2 curTime = this->localTree.bodies_time[0];
   for (int i(0); i != new_nb_particles; ++i)
@@ -193,7 +193,7 @@ void octree::removeGalaxy(int user_id)
 
   vector<real4> new_pos;
   vector<real4> new_vel;
-  vector<int> new_ids;
+  vector<ullong> new_ids;
   int old_nb_particles = this->localTree.n;
   int new_nb_particles = 0;
 
@@ -215,7 +215,7 @@ void octree::removeGalaxy(int user_id)
   // Copy back to host storage
   memcpy(&this->localTree.bodies_pos[0], &new_pos[0], sizeof(real4) * new_nb_particles);
   memcpy(&this->localTree.bodies_vel[0], &new_vel[0], sizeof(real4) * new_nb_particles);
-  memcpy(&this->localTree.bodies_ids[0], &new_ids[0], sizeof(int) * new_nb_particles);
+  memcpy(&this->localTree.bodies_ids[0], &new_ids[0], sizeof(ullong) * new_nb_particles);
 
   float2 curTime = this->localTree.bodies_time[0];
   for(int i=0; i < this->localTree.n; i++)
@@ -259,7 +259,7 @@ void octree::removeParticles(real deletion_radius_square, my_dev::dev_mem<uint> 
 
   vector<real4> new_pos;
   vector<real4> new_vel;
-  vector<int> new_ids;
+  vector<ullong> new_ids;
   int old_nb_particles = this->localTree.n;
   int new_nb_particles = 0;
 
@@ -287,7 +287,7 @@ void octree::removeParticles(real deletion_radius_square, my_dev::dev_mem<uint> 
   // Copy back to host storage
   memcpy(&this->localTree.bodies_pos[0], &new_pos[0], sizeof(real4) * new_nb_particles);
   memcpy(&this->localTree.bodies_vel[0], &new_vel[0], sizeof(real4) * new_nb_particles);
-  memcpy(&this->localTree.bodies_ids[0], &new_ids[0], sizeof(int) * new_nb_particles);
+  memcpy(&this->localTree.bodies_ids[0], &new_ids[0], sizeof(ullong) * new_nb_particles);
 
   float2 curTime = this->localTree.bodies_time[0];
   for(int i=0; i < this->localTree.n; i++)

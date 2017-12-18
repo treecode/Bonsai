@@ -28,6 +28,8 @@ WOGManager::WOGManager(octree *tree, std::string const& path, int port, int wind
    deletion_radius_factor(deletion_radius_factor),
    deletion_radius_square(0.0)
 {
+  user_particles.ccalloc(number_of_users);
+
   read_galaxies(path);
   reshape(window_width, window_height);
 
