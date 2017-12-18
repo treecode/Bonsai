@@ -50,6 +50,9 @@ class WOGManager
   /// Must be called by glutReshapeFunc
   void reshape(int width, int height);
 
+  /// Return camera distance
+  real get_camera_distance() const { return camera_distance; }
+
  private:
 
   /// Read all galaxy types

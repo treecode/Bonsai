@@ -1120,7 +1120,7 @@ public:
     float distanceToCenter = radius / sinf(0.5f * fovRads);
     
     //m_cameraTrans = center + make_float3(0, 0, -distanceToCenter*0.2f);
-    m_cameraTrans = make_float3(0, 0, -500);
+    m_cameraTrans = make_float3(0, 0, -m_wogManager.get_camera_distance());
     printf("camera trans %f %f %f \n",m_cameraTrans.x, m_cameraTrans.y, m_cameraTrans.z);
 
 #if 0
