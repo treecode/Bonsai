@@ -1,3 +1,5 @@
+
+
 CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
 
 option(CUDA_VERBOSE_PTXAS
@@ -126,9 +128,6 @@ set (CCFILES
   src/sort_bodies_gpu.cpp
   src/log.cpp
   src/hostConstruction.cpp
-  src/Galaxy.cpp
-  src/read_tipsy_file_parallel.cpp
-  src/WOGManager.cpp
   src/tipsyIO.cpp
   )
 
@@ -152,7 +151,6 @@ set (CUFILES
   CUDAkernels/timestep.cu
   CUDAkernels/depthSort.cu
   CUDAkernels/dev_direct_gravity.cu
-  CUDAkernels/war_of_galaxies.cu
 )
 
 if (COMPILE_SM35)
@@ -288,8 +286,19 @@ endif (USE_OPENGL)
 
 if (WAR_OF_GALAXIES)
   add_definitions(-DWAR_OF_GALAXIES)
-  add_definitions("-std=gnu++11")
+  add_definitions("-std=c++11")
   include_directories(${CMAKE_SOURCE_DIR}/extern/jsoncons/include)
+  set (CCFILES ${CCFILES}
+    src/Galaxy.cpp
+    src/read_tipsy_file_parallel.cpp
+    src/WOGManager.cpp
+  )
+  set (CUFILES ${CUFILES}
+    CUDAkernels/war_of_galaxies.cu
+  )
+  if (USE_THRUST)
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DTHRUST_DEBUG")
+  endif()
 endif (WAR_OF_GALAXIES)
 
 #The SSE support for the local tree walks

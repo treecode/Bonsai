@@ -59,15 +59,6 @@ void octree::makeLET()
 #endif  
 }
 
-extern void read_tipsy_file_parallel(vector<real4> &bodyPositions, vector<real4> &bodyVelocities,
-                              vector<int> &bodiesIDs,  float eps2, string fileName, 
-                              int rank, int procs, int &NTotal2, int &NFirst, 
-                              int &NSecond, int &NThird, octree *tree,
-                              vector<real4> &dustPositions, vector<real4> &dustVelocities,
-                              vector<int> &dustIDs, int reduce_bodies_factor, int reduce_dust_factor, const bool restart) ;
-extern int setupMergerModel(vector<real4> &bodyPositions1,      vector<real4> &bodyVelocities1,
-                            vector<int>   &bodyIDs1,            vector<real4> &bodyPositions2,
-                            vector<real4> &bodyVelocities2,     vector<int>   &bodyIDs2);
 
 
 void octree::iterate_setup() {
@@ -591,7 +582,6 @@ bool octree::iterate_once(IterationData &idata) {
     }
 
 #ifndef WAR_OF_GALAXIES
-    std::cout << "hey" << std::endl;
     if (iter >= iterEnd) return true;
 
     if(t_current >= tEnd)
@@ -1166,7 +1156,7 @@ double octree::compute_energies(tree_structure &tree)
   
   if(mpiGetRank() == 0)
   {
-#if 1
+#ifdef WAR_OF_GALAXIES
   LOG("iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n",
 		  iter, this->t_current, Etot, Ekin, Epot, de, de_max, dde, dde_max, get_time() - tinit);  
   LOGF(stderr, "iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n", 

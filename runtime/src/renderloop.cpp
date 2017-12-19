@@ -31,7 +31,10 @@
 #include "paramgl.h"
 #include "depthSort.h"
 #include "tr.h"
+
+#ifdef WAR_OF_GALAXIES
 #include "WOGManager.h"
+#endif
 
 float TstartGlow;
 float dTstartGlow;
@@ -315,14 +318,14 @@ public:
   BonsaiDemo(octree *tree, octree::IterationData &idata,
     std::string const& wogPath, int wogPort, real wogCameraDistance, real wogDeletionRadiusFactor)
     : m_tree(tree), m_idata(idata), iterationsRemaining(true),
-//       m_renderer(tree->localTree.n + tree->localTree.n_dust),
+//    m_renderer(tree->localTree.n + tree->localTree.n_dust),
       m_renderer(tree->localTree.n, MAX_PARTICLES),
-      //m_displayMode(ParticleRenderer::PARTICLE_SPRITES_COLOR),
-	  m_displayMode(SmokeRenderer::VOLUMETRIC),
+//    m_displayMode(ParticleRenderer::PARTICLE_SPRITES_COLOR),
+      m_displayMode(SmokeRenderer::VOLUMETRIC),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.2f),
       m_paused(false),
       m_renderingEnabled(true),
-  	  m_displayBoxes(false), 
+      m_displayBoxes(false), 
       m_displaySliders(false),
       m_displayCursor(1),
       m_cursorSize(0.5),
@@ -332,16 +335,16 @@ public:
       m_octreeMinDepth(0),
       m_octreeMaxDepth(3),
       m_flyMode(false),
-	  m_fov(60.0f),
-	  m_nearZ(0.2),
-	  m_screenZ(450.0),
+      m_fov(60.0f),
+      m_nearZ(0.2),
+      m_screenZ(450.0),
 #ifdef WAR_OF_GALAXIES
-	  m_farZ(1000),
+      m_farZ(1000),
 #else
-	  m_farZ(2000),
+      m_farZ(2000),
 #endif
-	  m_IOD(4.0),
-	  m_stereoEnabled(false), //SV TODO Must be false, never make it true
+      m_IOD(4.0),
+      m_stereoEnabled(false), //SV TODO Must be false, never make it true
       m_supernova(false),
       m_overBright(1.0f),
       m_params(m_renderer.getParams()),
