@@ -210,7 +210,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   int rebuild_tree_rate    = 1;
   int reduce_bodies_factor = 1;
   int reduce_dust_factor   = 1;
-  std::string gameModeString = "";
+  string fullScreenMode    = "";
   bool direct     = false;
   bool fullscreen = false;
   bool displayFPS = false;
@@ -302,12 +302,11 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 #endif
     ADDUSAGE("     --direct           enable N^2 direct gravitation [" << (direct ? "on" : "off") << "]");
 #ifdef USE_OPENGL
-                ADDUSAGE("     --fullscreen           set fullscreen");
-                ADDUSAGE("     --gameMode #           set game mode string");
-                ADDUSAGE("     --displayfps           enable on-screen FPS display");
-		ADDUSAGE("     --Tglow  #             enable glow @ # Myr [" << TstartGlow << "]");
-		ADDUSAGE("     --dTglow  #            reach full brightness in @ # Myr [" << dTstartGlow << "]");
-		ADDUSAGE("     --stereo               enable stereo rendering");
+		ADDUSAGE("     --fullscreen #     set fullscreen mode string");
+    ADDUSAGE("     --displayfps       enable on-screen FPS display");
+		ADDUSAGE("     --Tglow  #         enable glow @ # Myr [" << TstartGlow << "]");
+		ADDUSAGE("     --dTglow  #        reach full brightness in @ # Myr [" << dTstartGlow << "]");
+		ADDUSAGE("     --stereo           enable stereo rendering");
 #endif
 #ifdef GALACTICS
 		ADDUSAGE("     --milkyway #       use Milky Way model with # particles per proc");
@@ -369,10 +368,9 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 #endif
     opt.setFlag("direct");
 #ifdef USE_OPENGL
-    opt.setFlag("fullscreen");
-    opt.setOption("gameMode");
-    opt.setOption("Tglow");
-    opt.setOption("dTglow");
+    opt.setOption( "fullscreen");
+    opt.setOption( "Tglow");
+    opt.setOption( "dTglow");
     opt.setFlag("displayfps");
     opt.setFlag("stereo");
 #endif
@@ -402,10 +400,6 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     if (opt.getFlag("log"))           ENABLE_RUNTIME_LOG = true;
     if (opt.getFlag("prepend-rank"))  PREPEND_RANK       = true;
 #endif    
-#if USE_OPENGL
-    if (opt.getFlag("fullscreen"))                    fullscreen              = true;
-#endif
-
     char *optarg = NULL;
     if ((optarg = opt.getValue("infile")))       fileName           = string(optarg);
     if ((optarg = opt.getValue("bonsaifile")))   bonsaiFileName     = std::string(optarg);
@@ -440,9 +434,9 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     if ((optarg = opt.getValue("camera-distance")))   wogCameraDistance       = atof(optarg);
     if ((optarg = opt.getValue("del-radius-factor"))) wogDeletionRadiusFactor = atof(optarg);
 #if USE_OPENGL
-    if ((optarg = opt.getValue("gameMode")))	      gameModeString          = string(optarg);
-    if ((optarg = opt.getValue("Tglow")))	          TstartGlow              = (float)atof(optarg);
-    if ((optarg = opt.getValue("dTglow")))	          dTstartGlow             = (float)atof(optarg);
+    if ((optarg = opt.getValue("fullscreen")))	 fullScreenMode     = string(optarg);
+    if ((optarg = opt.getValue("Tglow")))	 TstartGlow  = (float)atof(optarg);
+    if ((optarg = opt.getValue("dTglow")))	 dTstartGlow  = (float)atof(optarg);
     dTstartGlow = std::max(dTstartGlow, 1.0f);
 #endif
     if (bonsaiFileName.empty() && fileName.empty() && nPlummer == -1 && nSphere == -1 && nMilkyWay == -1 && nCube == -1)
@@ -456,12 +450,12 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
       ::exit(0);
     }
 
-    /// WarOfGalaxies: Deactivate unneeded flags if WarOfGalaxies path will be used
-    if (!wogPath.empty()) {
-      throw_if_flag_is_used(opt, {{"direct", "restart", "displayfps", "diskmode", "stereo", "prepend-rank"}});
-      throw_if_option_is_used(opt, {{"plummer", "milkyway", "mwfork", "sphere", "dt", "tend", "iend",
-        "snapname", "snapiter", "rmdist", "valueadd", "rebuild", "reducebodies", "reducedust", "gameMode"}});
-    }
+#ifdef WAR_OF_GALAXIES
+    /// WarOfGalaxies: Deactivate unneeded flags using WarOfGalaxies
+    throw_if_flag_is_used(opt, {{"direct", "restart", "displayfps", "diskmode", "stereo", "prepend-rank"}});
+    throw_if_option_is_used(opt, {{"plummer", "milkyway", "mwfork", "sphere", "dt", "tend", "iend",
+      "snapname", "snapiter", "rmdist", "valueadd", "rebuild", "reducebodies", "reducedust", "gameMode"}});
+#endif
 
 #undef ADDUSAGE
   }
@@ -507,7 +501,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 
 #ifdef USE_OPENGL
   // create OpenGL context first, and register for interop
-  initGL(argc, argv, gameModeString.c_str(), stereo, fullscreen);
+  initGL(argc, argv, fullScreenMode.c_str(), stereo);
   cudaGLSetGLDevice(devID); //TODO should this not be renderDev?
 #endif
 

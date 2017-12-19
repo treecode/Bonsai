@@ -690,7 +690,9 @@ public:
           glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
           glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
           glRotatef(m_cameraRoll, 0.0, 0.0, 1.0);
-          //glRotatef(90.0f, 1.0f, 0.0f, 0.0f); // rotate galaxies into XZ plane
+#ifndef WAR_OF_GALAXIES
+          glRotatef(90.0f, 1.0f, 0.0f, 0.0f); // rotate galaxies into XZ plane
+#endif
         }
 
         glGetFloatv(GL_MODELVIEW_MATRIX, m_modelView);
@@ -1122,9 +1124,12 @@ public:
 
     float distanceToCenter = radius / sinf(0.5f * fovRads);
     
-    //m_cameraTrans = center + make_float3(0, 0, -distanceToCenter*0.2f);
+#ifdef WAR_OF_GALAXIES
     m_cameraTrans = make_float3(0, 0, -m_wogManager.get_camera_distance());
     printf("camera trans %f %f %f \n",m_cameraTrans.x, m_cameraTrans.y, m_cameraTrans.z);
+#else
+    m_cameraTrans = center + make_float3(0, 0, -distanceToCenter*0.2f);
+#endif
 
 #if 0
     /* JB This came with stereo, seems to break rotation */
@@ -1849,7 +1854,7 @@ void idle(void)
   glutPostRedisplay();
 }
 
-void initGL(int argc, char** argv, const char *gameMode, bool &stereo, bool fullscreen)
+void initGL(int argc, char** argv, const char *fullScreenMode, bool &stereo)
 {  
   // First initialize OpenGL context, so we can properly set the GL for CUDA.
   // This is necessary in order to achieve optimal performance with OpenGL/CUDA interop.
@@ -1862,9 +1867,9 @@ void initGL(int argc, char** argv, const char *gameMode, bool &stereo, bool full
   else
     glutInitDisplayMode(GLUT_RGBA | GLUT_DEPTH | GLUT_DOUBLE);
 
-  if (gameMode[0]) {
-      printf("gameMode: %s\n", gameMode);
-      glutGameModeString(gameMode);
+  if (fullScreenMode[0]) {
+      printf("fullScreenMode: %s\n", fullScreenMode);
+      glutGameModeString(fullScreenMode);
       if (glutGameModeGet(GLUT_GAME_MODE_POSSIBLE)) {
           int win = glutEnterGameMode();
       } else {
@@ -1875,10 +1880,6 @@ void initGL(int argc, char** argv, const char *gameMode, bool &stereo, bool full
     //glutInitWindowSize(1024, 768);
     glutInitWindowSize(WINDOWW, WINDOWH);
     glutCreateWindow("Bonsai Tree-code Gravitational N-body Simulation");
-    if (fullscreen) {
-      glutFullScreen();
-      glutDisplayFunc(display);
-    }
   }
 
   //Make sure we got stereo if we asked for it, this must happen after glutCreateWindow
