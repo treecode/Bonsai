@@ -30,6 +30,7 @@
 #include "timer.h"
 #include "paramgl.h"
 #include "depthSort.h"
+
 #include "tr.h"
 
 #ifdef WAR_OF_GALAXIES
@@ -354,10 +355,10 @@ public:
       m_cameraRoll(0.0f),
 #ifdef WAR_OF_GALAXIES
       m_enableStats(false),
+      m_wogManager(tree, wogPath, wogPort, 1024, 768, m_fov, m_farZ, wogCameraDistance, wogDeletionRadiusFactor),
 #else
       m_enableStats(true),
 #endif
-      m_wogManager(tree, wogPath, wogPort, 1024, 768, m_fov, m_farZ, wogCameraDistance, wogDeletionRadiusFactor),
       m_densityRange(100)
   {
     m_windowDims = make_int2(WINDOWW, WINDOWH);
@@ -1105,8 +1106,9 @@ public:
 
 	m_renderer.setFOV(m_fov);
 	m_renderer.setWindowSize(m_windowDims.x, m_windowDims.y);
-
+#ifdef WAR_OF_GALAXIES
 	m_wogManager.reshape(w, h);
+#endif
 
     fitCamera();
     glMatrixMode(GL_MODELVIEW);
@@ -1126,7 +1128,6 @@ public:
     
 #ifdef WAR_OF_GALAXIES
     m_cameraTrans = make_float3(0, 0, -m_wogManager.get_camera_distance());
-    printf("camera trans %f %f %f \n",m_cameraTrans.x, m_cameraTrans.y, m_cameraTrans.z);
 #else
     m_cameraTrans = center + make_float3(0, 0, -distanceToCenter*0.2f);
 #endif
@@ -1164,7 +1165,6 @@ public:
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    std::cout << "m_fov = " << m_fov << std::endl;
     gluPerspective(m_fov, 
                    (float) m_windowDims.x / (float) m_windowDims.y, 
                    0.0001 * distanceToCenter, 
@@ -1520,8 +1520,10 @@ public:
   ParamListGL *m_colorParams;
   ParamListGL *m_params;    // current
 
+#ifdef WAR_OF_GALAXIES
   /// Managing class for WarOfGalaxies
   WOGManager m_wogManager;
+#endif
 
   // saved cameras
   struct Camera {
@@ -1850,7 +1852,9 @@ void special(int key, int x, int y)
 
 void idle(void)
 {
+#ifdef WAR_OF_GALAXIES
   theDemo->m_wogManager.execute();
+#endif
   glutPostRedisplay();
 }
 

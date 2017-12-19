@@ -1,7 +1,10 @@
 #undef NDEBUG
 #include "octree.h"
 #include "postProcessModules.h"
+
+#ifdef WAR_OF_GALAXIES
 #include "thrust_war_of_galaxies.h"
+#endif
 
 #include <iostream>
 #include <algorithm>
@@ -228,7 +231,7 @@ void octree::removeGalaxy(int user_id)
 
 void octree::removeParticles(real deletion_radius_square, my_dev::dev_mem<uint> &user_particles, int number_of_users)
 {
-#ifdef USE_THRUST
+#if defined WAR_OF_GALAXIES && defined USE_THRUST
 
   user_particles.h2d();
   remove_particles(this->localTree, deletion_radius_square, user_particles, number_of_users);

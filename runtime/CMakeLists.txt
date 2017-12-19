@@ -83,9 +83,8 @@ endif (USE_MPI)
 
 if (USE_THRUST)
   add_definitions(-DUSE_THRUST)
-  set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DTHRUST_DEBUG")
-#  include_directories(${CUDA_TOOLKIT_ROOT_DIR}/../../thrust)
 endif (USE_THRUST)
+include_directories(${CUDA_TOOLKIT_ROOT_DIR}/../../thrust)
 
 if (USE_CUB)
     add_definitions(-DUSE_CUB)
@@ -151,7 +150,7 @@ set (CUFILES
   CUDAkernels/timestep.cu
   CUDAkernels/depthSort.cu
   CUDAkernels/dev_direct_gravity.cu
-)
+  )
 
 if (COMPILE_SM35)
   set (CUFILES 

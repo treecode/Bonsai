@@ -1,5 +1,5 @@
 /*
- * WOGSocketManager.h
+ * WOGManager.h
  *
  *  Created on: May 11, 2016
  *      Author: Bernd Doser <bernd.doser@h-its.org>
