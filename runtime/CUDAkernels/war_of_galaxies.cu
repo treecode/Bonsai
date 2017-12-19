@@ -22,7 +22,7 @@ struct OutOfSphereChecker
   {}
 
   __device__
-  bool operator()(thrust::tuple<real4, real4, int> const& t) const
+  bool operator()(thrust::tuple<real4, real4, ullong> const& t) const
   {
     real4 position = thrust::get<0>(t);
     return position.x * position.x + position.y * position.y + position.z * position.z > deletion_radius_square
@@ -54,12 +54,12 @@ extern "C" void remove_particles(tree_structure &tree,
 {
   thrust::device_ptr<real4> thrust_pos = thrust::device_pointer_cast(tree.bodies_pos.raw_p());
   thrust::device_ptr<real4> thrust_vel = thrust::device_pointer_cast(tree.bodies_vel.raw_p());
-  thrust::device_ptr<int> thrust_ids = thrust::device_pointer_cast(tree.bodies_ids.raw_p());
+  thrust::device_ptr<ullong> thrust_ids = thrust::device_pointer_cast(tree.bodies_ids.raw_p());
   thrust::device_ptr<uint> thrust_user_particles = thrust::device_pointer_cast(user_particles.raw_p());
 
   try {
     // auto is not working, compiler assume int
-    thrust::zip_iterator< thrust::tuple<thrust::device_ptr<real4>, thrust::device_ptr<real4>, thrust::device_ptr<int> > > new_end =
+    thrust::zip_iterator< thrust::tuple<thrust::device_ptr<real4>, thrust::device_ptr<real4>, thrust::device_ptr<ullong> > > new_end =
       thrust::remove_if(
         thrust::device,
         thrust::make_zip_iterator(thrust::make_tuple(thrust_pos, thrust_vel, thrust_ids)),
