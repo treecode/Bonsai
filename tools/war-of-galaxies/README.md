@@ -1,10 +1,17 @@
 War of galaxies
 ===============
 
-
-
 Installation
 ------------
+
+Before the compilation the git submodule must be updated with
+
+```
+git submodule init
+git submodule update
+```
+
+Compile with
 
 ```
 cmake \
@@ -15,6 +22,7 @@ cmake \
   -DUSE_THRUST=ON \
   -DWAR_OF_GALAXIES=ON \
   <source-path>
+make -j <n>
 ```
 
 Usage
@@ -24,8 +32,21 @@ Starting Bonsai with
 
 ```
 ./bonsai2_slowdust \
-  -i <source-path>/war-of-galaxies/galaxy_types/dummy.tipsy \
+  -i <source-path>/tools/war-of-galaxies/galaxy_types/dummy.tipsy \
   --war-of-galaxies <source-path>/tools/war-of-galaxies/galaxy_types/available
 ```
 
-will show a empty simulation with a single dummy particle. 
+will show an empty simulation. In trues there is a single dummy particle at
+position (0,0,10000) with zero mass, because Bonsai can not run without any
+particles. The release or removal of galaxies will be controlled by json
+commands. Therefore, you can start the python script:
+
+```
+<source-path>/tools/war-of-galaxies/client_json.py
+```
+
+Please find examples of json commands at
+
+```
+<source-path>/tools/war-of-galaxies/json_examples.txt
+```
