@@ -347,7 +347,7 @@ protected:
   float         snapshotIter;   
   float         quickDump, quickRatio;
   bool          quickSync, useMPIIO, mpiRenderMode;
-  string        snapshotFile;
+  std::string   snapshotFile;
   float         nextSnapTime;
   float         nextQuickDump;
 
@@ -355,6 +355,7 @@ protected:
   float         nextStatsTime;
   int 			rebuild_tree_rate;
 
+  int solverType; //Value set: 1 = gravity, 2 = SPH, 3 = do grav+sph
 
   float eps2;
   float inv_theta;
@@ -373,6 +374,7 @@ protected:
   //Simulation statistics
   double Ekin, Ekin0, Ekin1;
   double Epot, Epot0, Epot1;
+  double Etherm, Etherm0, Etherm1;
   double Etot, Etot0, Etot1;
 
   bool   store_energy_flag;
@@ -434,6 +436,8 @@ protected:
   my_dev::kernel SPHDerivativeLET;
   my_dev::kernel SPHHydro;
   my_dev::kernel SPHHydroLET;
+  my_dev::kernel SPHGravity;
+  my_dev::kernel SPHGravityLET;
   my_dev::kernel setPressure;
 
   //Other
@@ -587,7 +591,6 @@ public:
   double compute_energies(tree_structure &tree);
 
 
-
   //Parallel version functions
 
   int procId, nProcs;                   //Process ID in the mpi stack, number of processors in the commm world
@@ -658,6 +661,10 @@ public:
 
   void   approximate_hydro    (tree_structure &tree);
   void   approximate_hydro_let(tree_structure &tree, tree_structure &remoteTree, int bufferSize, bool doActivePart);
+
+  void   approximate_sphgrav    (tree_structure &tree);
+  void   approximate_sphgrav_let(tree_structure &tree, tree_structure &remoteTree, int bufferSize, bool doActivePart);
+
 
   void   distributeBoundaries(bool doOnlyUpdate);
   void   makeDensityLET();
@@ -802,7 +809,7 @@ public:
   octree(const MPI_Comm &comm,
          my_dev::context *devContext_,
          char **argv, const int device = 0, const float _theta = 0.75, const float eps = 0.05,
-         string snapF = "", float snapI = -1,  
+         std::string snapF = "", float snapI = -1,
          const float _quickDump       = 0.0,
          const float _quickRatio      = 0.1,
          const bool  _quickSync       = true,
@@ -813,10 +820,12 @@ public:
          int _iterEnd                 = (1<<30),
          const int _rebuild           = 2,
          bool direct                  = false,
-         const int shrdpid            = 0)
+         const int shrdpid            = 0,
+         const int _solverType        = 1)
   : devContext(devContext_), mpiCommWorld(comm), rebuild_tree_rate(_rebuild), procId(0), nProcs(1),
     thisPartLETExTime(0), useDirectGravity(direct), quickDump(_quickDump), quickRatio(_quickRatio),
-    quickSync(_quickSync), useMPIIO(_useMPIIO), mpiRenderMode(_mpiRenderMode), nextQuickDump(0.0), sharedPID(shrdpid)
+    quickSync(_quickSync), useMPIIO(_useMPIIO), mpiRenderMode(_mpiRenderMode), nextQuickDump(0.0), sharedPID(shrdpid),
+    solverType(_solverType)
   {
     iter            = 0;
     t_current       = t_previous = 0;

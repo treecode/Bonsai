@@ -64,11 +64,6 @@ __CUDA_FP16_DECL__ float2 __half22float2(const __half2 l)
 
 
 
-/*
- * TODO
- * - Symmetry tree for symmetric hydro force
- */
-
 #include "../profiling/bonsai_timing.h"
 PROF_MODULE(dev_approximate_gravity);
 
@@ -389,7 +384,7 @@ uint2 approximate_sph(
     /* extract cell index from the current level cell list */
     const int cellListIdx = cellListBlock + laneIdx;
     const bool useCell    = cellListIdx < nCells;
-    const int cellIdx     = !useCell ? 0 : cellList[ringAddr<SHIFT>(cellListOffset + cellListIdx)];
+    const int cellIdx     = useCell ? cellList[ringAddr<SHIFT>(cellListOffset + cellListIdx)] : 0;
     cellListBlock        += min(WARP_SIZE, nCells - cellListBlock);
 
     /* read from gmem cell's info */
@@ -417,6 +412,8 @@ uint2 approximate_sph(
     {
         splitCell         = split_node_sph_md(cellSize, cellPos, groupPos, groupSize, grpH, 0);
     }
+
+//    splitCell = true;
 
 
 //    bool splitCell         = split_node_sph_md(cellSize, cellPos, groupPos, groupSize, grpH, cellH);
@@ -880,12 +877,20 @@ bool treewalk_control(
 
                     // Scale the density and the gradient, using current smoothing range
                     dens_i[i].dens  *= cnormk*hi31;
-                    dens_i[i].finalize(group_body_pos[body_i[i]].w);
                     // Compute the gradient for individual smoothing length based SPH (gradh)
                     acc_i[i].x      *= cnormk*hi41;
 
-                    //float omega = dens_i[i].smth / (3*dens_i[i].dens);                 //Compute using new density
-                    float omega = group_body_dens[addr].y / (3*group_body_dens[addr].x); //Compute using prev iteration density
+
+                    if(IDi == -64767)
+                    {
+                        printf("SUM for %d  rho: %f gradh: %f \n", IDi+1, dens_i[i].dens,  acc_i[i].x);
+                    }
+                    dens_i[i].finalize(group_body_pos[body_i[i]].w);
+
+
+
+                    float omega = dens_i[i].smth / (3*dens_i[i].dens);                 //Compute using new density
+                    //float omega = group_body_dens[addr].y / (3*group_body_dens[addr].x); //Compute using prev iteration density
 
                     float gradh = 1.0f / (1 + omega*acc_i[i].x); //Eq 5 of phantom paper
                     group_body.body_vel[addr].w = gradh;         //Note we store this in the (predicted) velocity array
@@ -939,7 +944,6 @@ bool treewalk_control(
               {
                   acc_i[0].x = 0; acc_i[0].y = 0; acc_i[0].z = 0; ; acc_i[0].w = 0;
               }
-
 
               body_acc_out      [addr].x += acc_i[0].x;
               body_acc_out      [addr].y += acc_i[0].y;
@@ -1095,8 +1099,8 @@ void approximate_SPH_main(
 
 
 //  float4 privateInteractionList[64];
-  __shared__ float4 sh_privateInteractionList[128];
-  float4 *privateInteractionList = sh_privateInteractionList;
+//  __shared__ float4 sh_privateInteractionList[128];
+  float4 *privateInteractionList = NULL;
 
 
 

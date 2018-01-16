@@ -390,19 +390,9 @@ bool octree::iterate_once(IterationData &idata) {
 
       }//end rebuild tree
 
-      bool doGRAVITY = true;
-      bool doSPH     = false;
+      bool doGRAVITY = this->solverType & 1;
+      bool doSPH     = this->solverType & 2;
 
-      if(doGRAVITY)
-      {
-          //Approximate gravity
-          t1 = get_time();
-          //devContext.startTiming(gravStream->s());
-          approximate_gravity(this->localTree);
-          //devContext.stopTiming("Approximation", 4, gravStream->s());
-          runningLETTimeSum = 0;
-          if(nProcs > 1) makeLET();
-      }
 
       if(doSPH)
       {
@@ -419,6 +409,7 @@ bool octree::iterate_once(IterationData &idata) {
     #if 0
             if(1)
             {
+             this->localTree.bodies_Ppos.d2h();
              this->localTree.bodies_dens_out.d2h();
              this->localTree.bodies_grad.d2h();
              this->localTree.bodies_hydro.d2h();
@@ -435,7 +426,7 @@ bool octree::iterate_once(IterationData &idata) {
                  {
                      ullong tempID = this->localTree.bodies_ids[i] >= 100000000 ? this->localTree.bodies_ids[i]-100000000 : this->localTree.bodies_ids[i];
     //                 if(tempID < 20 || std::isinf(this->localTree.bodies_acc1[i].x))
-                     if(i < 20)
+//                  q   if(tempID < 20)
                          LOGF(stderr,"Rho out: %d %lld || Pos: %f %f %f %lg\t || Vel: %f %f %f gradh: %f || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
                              i,
                              tempID, //this->localTree.bodies_ids[i],
@@ -492,9 +483,9 @@ bool octree::iterate_once(IterationData &idata) {
             countInteractions(this->localTree, mpiCommWorld, procId);
             mpiSync();
 
-    #if 1
-            //if(1)
-            if(iter == -1)
+    #if 0
+            if(1)
+//            if(iter == -1)
             {
              this->localTree.bodies_dens_out.d2h();
              this->localTree.bodies_grad.d2h();
@@ -513,7 +504,7 @@ bool octree::iterate_once(IterationData &idata) {
              {
                  ullong tempID = this->localTree.bodies_ids[i] >= 100000000 ? this->localTree.bodies_ids[i]-100000000 : this->localTree.bodies_ids[i];
     //             if(tempID < 10 || std::isinf(this->localTree.bodies_acc1[i].x))
-                     LOGF(stderr,"Rho out: %d %lld || Pos: %f %f %f %lg\t || Vel: %f %f %f gradh: %f || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
+                     LOGF(stderr,"Rho out: %d %lld || Pos: %g %g %g %lg\t || Vel: %f %f %f gradh: %f || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
                          i,
                          tempID, //this->localTree.bodies_ids[i],
                          this->localTree.bodies_Ppos[i].x,
@@ -541,15 +532,179 @@ bool octree::iterate_once(IterationData &idata) {
              }
              }//for j
     //         if(t_current > 0)
-             if(iter == 1)
+//             if(iter == 0)
              {
                  mpiSync();
                  exit(0);
              }
             }
+
+
+            if(0)
+  //          if(iter == -1)
+            {
+             this->localTree.bodies_dens_out.d2h();
+             this->localTree.bodies_grad.d2h();
+             this->localTree.bodies_hydro.d2h();
+             this->localTree.bodies_acc1.d2h();
+             this->localTree.bodies_ids.d2h();
+             this->localTree.bodies_Pvel.d2h();
+             this->localTree.bodies_Ppos.d2h();
+
+             for(int j=0; j < this->nProcs; j++) {
+                 mpiSync();
+
+             //char fileName[128];  sprintf(fileName, "interact-%d-%d.txt", procId, nProcs); FILE* outFile = fopen(fileName, "w");
+             if(j == procId)
+             for(int i=0; i < this->localTree.n; i++)
+             {
+                 ullong tempID = this->localTree.bodies_ids[i] >= 100000000 ? this->localTree.bodies_ids[i]-100000000 : this->localTree.bodies_ids[i];
+    //             if(tempID < 10 || std::isinf(this->localTree.bodies_acc1[i].x))
+                 LOGF(stderr,"Rho out: %d %lld || Pos: %f %f %f %lg\t || Vel: %f %f %f gradh: %f || Dens: %lg %f\tAcc: %f %f %f %f | cnt: %f %f\n",
+                     i,
+                     tempID, //this->localTree.bodies_ids[i],
+                     this->localTree.bodies_Ppos[i].x,
+                     this->localTree.bodies_Ppos[i].y,
+                     this->localTree.bodies_Ppos[i].z,
+                     this->localTree.bodies_Ppos[i].w,
+                     this->localTree.bodies_Pvel[i].x,
+                     this->localTree.bodies_Pvel[i].y,
+                     this->localTree.bodies_Pvel[i].z,
+                     this->localTree.bodies_Pvel[i].w,
+                     this->localTree.bodies_dens_out[i].x,
+                     this->localTree.bodies_dens_out[i].y,
+                     this->localTree.bodies_acc1[i].x,
+                     this->localTree.bodies_acc1[i].y,
+                     this->localTree.bodies_acc1[i].z,
+                     this->localTree.bodies_acc1[i].w,
+                     this->localTree.bodies_grad[i].y,
+                     this->localTree.bodies_grad[i].z);
+             } //for i
+             }//for j
+            }//if
+
     #endif
       } //do SPH
 
+//      doGRAVITY = false;
+
+      if(doGRAVITY)
+      {
+          //Approximate gravity
+          t1 = get_time();
+          //devContext.startTiming(gravStream->s());
+          approximate_gravity(this->localTree);
+          //devContext.stopTiming("Approximation", 4, gravStream->s());
+          runningLETTimeSum = 0;
+          if(nProcs > 1) makeLET();
+
+#if 0
+          if(1)
+//          if(iter == -1)
+          {
+           this->localTree.bodies_dens_out.d2h();
+           this->localTree.bodies_grad.d2h();
+           this->localTree.bodies_hydro.d2h();
+           this->localTree.bodies_acc1.d2h();
+           this->localTree.bodies_ids.d2h();
+           this->localTree.bodies_Pvel.d2h();
+           this->localTree.bodies_Ppos.d2h();
+           this->localTree.interactions.d2h();
+
+           for(int j=0; j < this->nProcs; j++) {
+               mpiSync();
+               //char fileName[128];  sprintf(fileName, "interact-%d-%d.txt", procId, nProcs); FILE* outFile = fopen(fileName, "w");
+               if(j == procId)
+               //for(int i=0; i < this->localTree.n; i++)
+               for(int i=0; i < this->localTree.n; i++)
+               {
+                   ullong tempID = this->localTree.bodies_ids[i] >= 100000000 ? this->localTree.bodies_ids[i]-100000000 : this->localTree.bodies_ids[i];
+                   if(tempID < 10 || std::isinf(this->localTree.bodies_acc1[i].x))
+                       LOGF(stderr,"Rho out: %d %lld || Pos: %f %f %f %lg\t || Vel: %f %f %f gradh: %f || Dens: %lg %f\tAcc: %f %f %f %f | cnt: %d %d\n",
+                           i,
+                           tempID, //this->localTree.bodies_ids[i],
+                           this->localTree.bodies_Ppos[i].x,
+                           this->localTree.bodies_Ppos[i].y,
+                           this->localTree.bodies_Ppos[i].z,
+                           this->localTree.bodies_Ppos[i].w,
+                           this->localTree.bodies_Pvel[i].x,
+                           this->localTree.bodies_Pvel[i].y,
+                           this->localTree.bodies_Pvel[i].z,
+                           this->localTree.bodies_Pvel[i].w,
+                           this->localTree.bodies_dens_out[i].x,
+                           this->localTree.bodies_dens_out[i].y,
+                           this->localTree.bodies_acc1[i].x,
+                           this->localTree.bodies_acc1[i].y,
+                           this->localTree.bodies_acc1[i].z,
+                           this->localTree.bodies_acc1[i].w,
+                           this->localTree.interactions[i].x,
+                           this->localTree.interactions[i].y);
+               }
+           }//for j
+  //         if(t_current > 0)
+           if(iter == 1)
+           {
+               mpiSync();
+//               exit(0);
+           }
+          }// if iter==
+
+          approximate_sphgrav(this->localTree);
+
+          if(1)
+//          if(iter == -1)
+          {
+           this->localTree.bodies_dens_out.d2h();
+           this->localTree.bodies_grad.d2h();
+           this->localTree.bodies_hydro.d2h();
+           this->localTree.bodies_acc1.d2h();
+           this->localTree.bodies_ids.d2h();
+           this->localTree.bodies_Pvel.d2h();
+           this->localTree.bodies_Ppos.d2h();
+           this->localTree.interactions.d2h();
+
+           for(int j=0; j < this->nProcs; j++) {
+               mpiSync();
+               //char fileName[128];  sprintf(fileName, "interact-%d-%d.txt", procId, nProcs); FILE* outFile = fopen(fileName, "w");
+               if(j == procId)
+               //for(int i=0; i < this->localTree.n; i++)
+               for(int i=0; i < this->localTree.n; i++)
+               {
+                   ullong tempID = this->localTree.bodies_ids[i] >= 100000000 ? this->localTree.bodies_ids[i]-100000000 : this->localTree.bodies_ids[i];
+                   if(tempID < 10 || std::isinf(this->localTree.bodies_acc1[i].x))
+                       LOGF(stderr,"Rho out: %d %lld || Pos: %f %f %f %lg\t || Vel: %f %f %f gradh: %f || Dens: %lg %f\tAcc: %f %f %f %f | cnt: %d %d\n",
+                           i,
+                           tempID, //this->localTree.bodies_ids[i],
+                           this->localTree.bodies_Ppos[i].x,
+                           this->localTree.bodies_Ppos[i].y,
+                           this->localTree.bodies_Ppos[i].z,
+                           this->localTree.bodies_Ppos[i].w,
+                           this->localTree.bodies_Pvel[i].x,
+                           this->localTree.bodies_Pvel[i].y,
+                           this->localTree.bodies_Pvel[i].z,
+                           this->localTree.bodies_Pvel[i].w,
+                           this->localTree.bodies_dens_out[i].x,
+                           this->localTree.bodies_dens_out[i].y,
+                           this->localTree.bodies_acc1[i].x,
+                           this->localTree.bodies_acc1[i].y,
+                           this->localTree.bodies_acc1[i].z,
+                           this->localTree.bodies_acc1[i].w,
+                           this->localTree.interactions[i].x,
+                           this->localTree.interactions[i].y);
+               }
+           }//for j
+  //         if(t_current > 0)
+           if(iter == 1)
+           {
+               mpiSync();
+               exit(0);
+           }
+          }// if iter==
+
+#endif
+
+
+      } //doGravity
     }//else if useDirectGravity
 
     gravStream->sync(); //Syncs the gravity stream, including any gravity computations due to LET actions
@@ -641,6 +796,7 @@ bool octree::iterate_once(IterationData &idata) {
     double de = compute_energies(this->localTree);
     devContext->stopTiming("Energy", 7, execStream->s());
     idata.totalPredCor += get_time() - tTempTime;
+
 
     if(statisticsIter > 0)
     {
@@ -1253,6 +1409,71 @@ void octree::approximate_hydro_let(tree_structure &tree, tree_structure &remoteT
       return;
 }
 
+
+void octree::approximate_sphgrav(tree_structure &tree)
+{
+    uint2 node_begend;
+    int level_start = tree.startLevelMin;
+    node_begend.x   = tree.level_list[level_start].x;
+    node_begend.y   = tree.level_list[level_start].y;
+
+    bool isFinalLaunch = (nProcs == 1);
+
+
+    SPHGravity.set_args(0, &tree.n_active_groups,
+             &tree.n,
+             &(this->eps2),
+             &node_begend,
+             tree.active_group_list.p(),
+             //i particle properties
+             &tree.group_body,
+             tree.bodies_acc1.p(),
+             tree.ngb.p(),
+             tree.activePartlist.p(),
+             tree.interactions.p(),
+             tree.boxSizeInfo.p(),
+             tree.groupSizeInfo.p(),
+             tree.boxCenterInfo.p(),
+             tree.groupCenterInfo.p(),
+             tree.multipole.p(),
+             //j particle properties
+             &tree.group_body,    //Note i and j particles are the same in local call
+             tree.generalBuffer1.p(),  //The buffer to store the tree walks
+             tree.bodies_ids.p());
+
+    SPHGravity.set_texture<real4>(0,  tree.boxSizeInfo,    "texNodeSize");
+    SPHGravity.set_texture<real4>(1,  tree.boxCenterInfo,  "texNodeCenter");
+    SPHGravity.set_texture<real4>(2,  tree.multipole,      "texMultipole");
+    SPHGravity.set_texture<real4>(3,  tree.bodies_Ppos,    "texBody");
+    SPHGravity.setWork(-1, NTHREAD, nBlocksForTreeWalk);
+//    SPHGravity.setWork(-1, 32, 1);
+
+     //Reset bodies_grad, since we reuse/abuse it to store the dt
+     tree.bodies_grad.zeroMemGPUAsync(gravStream->s());
+//     tree.bodies_acc1.zeroMemGPUAsync(gravStream->s()); //Reset as we used it before to store gradh
+
+
+     tree.interactions.zeroMemGPUAsync(gravStream->s());
+     tree.activePartlist.zeroMemGPUAsync(gravStream->s());
+     SPHGravity.execute2(gravStream->s());  //Gravity force
+
+     cudaDeviceSynchronize();
+
+     gravStream->sync();
+     countInteractions(tree, mpiCommWorld, procId);
+
+
+     if(nProcs > 1)
+     {
+//         distributeBoundaries(false); //Always full update for now
+//         makeHydroLET();
+     }
+}
+
+
+
+
+
 void octree::approximate_gravity(tree_structure &tree)
 { 
 
@@ -1292,7 +1513,7 @@ void octree::approximate_gravity(tree_structure &tree)
   approxGrav.set_texture<real4>(3,  tree.bodies_Ppos,   "texBody");
 
   approxGrav.setWork(-1, NTHREAD, nBlocksForTreeWalk);
-  //approxGrav.setWork(-1, 32, 1);
+//  approxGrav.setWork(-1, 32, 1);
 
 
   cudaEventRecord(startLocalGrav, gravStream->s());
@@ -1571,7 +1792,8 @@ void octree::correct(tree_structure &tree)
 
 
   #ifdef DO_BLOCK_TIMESTEP
-    computeDt.set_args(0, &tree.n, &t_current, &(this->eta), &(this->dt_limit), &(this->eps2),
+    computeDt.set_args(0, &tree.n, &t_current, &(this->eta), &(this->dt_limit),
+                          &(this->eps2), &(this->solverType),
                           tree.bodies_time.p(), tree.bodies_vel.p(), tree.ngb.p(), tree.bodies_pos.p(),
                           tree.bodies_acc0.p(), tree.activePartlist.p(), &timeStep, tree.bodies_grad.p());
     computeDt.setWork(tree.n, 128);
@@ -1579,10 +1801,11 @@ void octree::correct(tree_structure &tree)
   #endif
 }
 
- //Double precision
+
+//Double precision
 double octree::compute_energies(tree_structure &tree)
 {
-  Ekin = 0.0; Epot = 0.0;
+  Ekin = 0.0; Epot = 0.0; Etherm = 0.0;
 
   #if 0
   double hEkin = 0.0;
@@ -1597,6 +1820,7 @@ double octree::compute_energies(tree_structure &tree)
                                  vel.y*vel.y +
                                  vel.z*vel.z);
       hEpot += tree.bodies_pos[i].w*0.5*tree.bodies_acc0[i].w;
+      //tree.bodies_pos[i].w*tree.bodies_hydro[i].z;
 //      if(i < 128)
       if(i < 0)
       {
@@ -1613,10 +1837,16 @@ double octree::compute_energies(tree_structure &tree)
 
   //float2 energy: x is kinetic energy, y is potential energy
   int blockSize = NBLOCK_REDUCE ;
-  my_dev::dev_mem<double2>  energy;
+  my_dev::dev_mem<double4>  energy;
   energy.cmalloc_copy(tree.generalBuffer1, blockSize, 0);
   
-  computeEnergy.set_args(sizeof(double)*128*2, &tree.n, tree.bodies_pos.p(), tree.bodies_vel.p(), tree.bodies_acc0.p(), energy.p());
+  //In pure gravity hydro buffer does not have a value value
+  void *hydro_buffer = tree.bodies_acc0.p();
+  if(solverType == 2 || solverType == 3)
+      hydro_buffer = tree.bodies_hydro.p();
+
+  computeEnergy.set_args(sizeof(double)*128*4, &tree.n, tree.bodies_pos.p(), tree.bodies_vel.p(),
+                         tree.bodies_acc0.p(), hydro_buffer, energy.p());
   computeEnergy.setWork(-1, 128, blockSize);
   computeEnergy.execute2(execStream->s());
 
@@ -1624,23 +1854,30 @@ double octree::compute_energies(tree_structure &tree)
   energy.d2h();
   Ekin = energy[0].x;
   Epot = energy[0].y;
+  Etherm = energy[0].z;
   for (int i = 1; i < blockSize ; i++)
   {
-      Ekin += energy[i].x;
-      Epot += energy[i].y;
+      Ekin   += energy[i].x;
+      Epot   += energy[i].y;
+      Etherm += energy[i].z;
   }
-  
+
   //Sum the values / energies of the system using MPI
-  AllSum(Epot); AllSum(Ekin);
+  AllSum(Epot); AllSum(Ekin); AllSum(Etherm);
   
-  Etot = Epot + Ekin;
+  if(solverType == 1) Etherm = 0.0; //Gravity has no thermal energy
+  if(solverType == 2) Epot   = 0.0; //SPH without gravity has no potential energy
+
+  Etot = Epot + Ekin + Etherm;
 
   if (store_energy_flag) {
     Ekin0 = Ekin;
     Epot0 = Epot;
+    Etherm0 = Etherm;
     Etot0 = Etot;
     Ekin1 = Ekin;
     Epot1 = Epot;
+    Etherm1 = Etherm;
     Etot1 = Etot;
     tinit = get_time();
     store_energy_flag = false;
@@ -1658,20 +1895,21 @@ double octree::compute_energies(tree_structure &tree)
   
   Ekin1 = Ekin;
   Epot1 = Epot;
+  Etherm1 = Etherm;
   Etot1 = Etot;
   
   if(mpiGetRank() == 0)
   {
 #if 0
   LOG("iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n",
-		  iter, this->t_current, Etot, Ekin, Epot, de, de_max, dde, dde_max, get_time() - tinit);  
+		  iter, this->t_current, Etot, Ekin, Epot, de, de_max, dde, dde_max, get_time() - tinit);
   LOGF(stderr, "iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n", 
 		  iter, this->t_current, Etot, Ekin, Epot, de, de_max, dde, dde_max, get_time() - tinit);          
 #else
-  printf("iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n",
-		  iter, this->t_current, Etot, Ekin, Epot, de, de_max, dde, dde_max, get_time() - tinit);  
-  fprintf(stderr, "iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n", 
-		  iter, this->t_current, Etot, Ekin, Epot, de, de_max, dde, dde_max, get_time() - tinit);          
+  printf("iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg Etherm= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n",
+		  iter, this->t_current, Etot, Ekin, Epot, Etherm, de, de_max, dde, dde_max, get_time() - tinit);
+  fprintf(stderr, "iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg Etherm= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n",
+		  iter, this->t_current, Etot, Ekin, Epot, Etherm, de, de_max, dde, dde_max, get_time() - tinit);
 #endif
   }
 

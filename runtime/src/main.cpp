@@ -18,10 +18,11 @@ http://github.com/treecode/Bonsai
  *
  * TODO
  * Close BonsaiIO on destruction to properly close open File handles
- * Fix the block time stepping
+ * Fix the single GPU block time stepping
  * Add block time-stepping to the multi-GPU code
  * Main priority:
  * - Fix gravity and combine with SPH
+ * - Make domain boundaries not hard coded, read in from file
  * - Fix energy/correctness check ekin/epot/etc
  * - Run other tests
  * - Find better method for group creation (smaller sizes to reduce difference between min/max interaction counts)
@@ -32,8 +33,8 @@ http://github.com/treecode/Bonsai
  * - Make the iterations to find density smarter and group based instead of doing it X times for ALL groups
  *
  * Think about the multi-GPU data-exchange. For the SPH code we should not have to send data to all our neighbours
- * but only to ones we have talked to before. So the alltoall can be made more efficient. Maybe only send top level
- * and do point-to-point for the ones with which we have overlap
+ * but only to ones that have some overlap in the domain+smoothing radius. So the alltoall can be made more efficient.
+ * Maybe only send top level and do point-to-point for the ones with which we have overlap
 
  */
 
@@ -178,12 +179,13 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   std::string logFileName       = "gpuLog.log";
   std::string snapshotFile      = "snapshot_";
   std::string bonsaiFileName;
+  std::string fullScreenMode    = "";
   float snapshotIter       = -1;
   float  remoDistance      = -1.0;
   int rebuild_tree_rate    = 1;
   int reduce_bodies_factor = 1;
   int reduce_dust_factor   = 1;
-  string fullScreenMode    = "";
+  int solverType           = 1;
   bool direct     = false;
   bool fullscreen = false;
   bool displayFPS = false;
@@ -260,6 +262,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 		ADDUSAGE("     --rmdist #         Particle removal distance (-1 to disable) [" << remoDistance << "]");
 		ADDUSAGE(" -r  --rebuild #        rebuild tree every # steps [" << rebuild_tree_rate << "]");
 		ADDUSAGE("     --reducebodies #   cut down bodies dataset by # factor ");
+		ADDUSAGE(" -s  --solver #         type of solver (1: gravity, 2: SPH, 3: gravity+SPH)");
 #ifdef USE_DUST
         ADDUSAGE("     --reducedust #     cut down dust dataset by # factor ");
 #endif
@@ -288,18 +291,21 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     ADDUSAGE("     --mpirendermode    use MPI to communicate with the renderer. Must only be used with bonsai_driver. [disabled]");
     ADDUSAGE(" ");
 
-		opt.setFlag( "help" ,   'h');
-		opt.setFlag( "diskmode");
-		opt.setFlag( "mpirendermode");
-		opt.setOption( "infile",  'i');
-		opt.setOption( "bonsaifile",  'f');
-		opt.setFlag  ( "restart");
-		opt.setOption( "dt",      't' );
-		opt.setOption( "tend",    'T' );
-		opt.setOption( "iend",    'I' );
-		opt.setOption( "eps",     'e' );
-		opt.setOption( "theta",   'o' );
-		opt.setOption( "rebuild", 'r' );
+    opt.setFlag  ( "help" ,   'h');
+    opt.setFlag  ( "diskmode");
+    opt.setFlag  ( "mpirendermode");
+    opt.setFlag  ( "restart");
+    opt.setFlag  ( "usempiio");
+    opt.setFlag  ( "noquicksync");
+    opt.setOption( "infile",  'i');
+    opt.setOption( "bonsaifile",  'f');
+    opt.setOption( "dt",      't' );
+    opt.setOption( "tend",    'T' );
+    opt.setOption( "iend",    'I' );
+    opt.setOption( "eps",     'e' );
+    opt.setOption( "theta",   'o' );
+    opt.setOption( "rebuild", 'r' );
+    opt.setOption( "solver", 's' );
     opt.setOption( "plummer");
 #ifdef GALACTICS
     opt.setOption( "milkyway");
@@ -316,8 +322,6 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     opt.setOption( "snapiter");
     opt.setOption( "quickdump");
     opt.setOption( "quickratio");
-    opt.setFlag  ( "usempiio");
-    opt.setFlag  ( "noquicksync");
     opt.setOption( "rmdist");
     opt.setOption( "valueadd");
     opt.setOption( "reducebodies");
@@ -350,7 +354,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     if (opt.getFlag("displayfps"))      displayFPS    = true;
     if (opt.getFlag("diskmode"))        diskmode      = true;
     if (opt.getFlag("mpirendermode"))   mpiRenderMode = true;
-    if(opt.getFlag("stereo"))           stereo        = true;
+    if (opt.getFlag("stereo"))          stereo        = true;
 
 #if ENABLE_LOG
     if (opt.getFlag("log"))           ENABLE_RUNTIME_LOG = true;
@@ -385,6 +389,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     if ((optarg = opt.getValue("rebuild")))      rebuild_tree_rate  = atoi  (optarg);
     if ((optarg = opt.getValue("reducebodies"))) reduce_bodies_factor = atoi  (optarg);
     if ((optarg = opt.getValue("reducedust")))	 reduce_dust_factor = atoi  (optarg);
+    if ((optarg = opt.getValue("solver")))       solverType         = atoi  (optarg);
 #if USE_OPENGL
     if ((optarg = opt.getValue("fullscreen")))	 fullScreenMode     = string(optarg);
     if ((optarg = opt.getValue("Tglow")))	 TstartGlow  = (float)atof(optarg);
@@ -549,7 +554,8 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
                                 useMPIIO,mpiRenderMode,
                                 timeStep,
                                 tEnd, iterEnd,
-                                rebuild_tree_rate, direct, shrMemPID);
+                                rebuild_tree_rate, direct, shrMemPID,
+                                solverType);
 
 
 
@@ -576,6 +582,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     cerr << "[INIT]\tInput file: \t"        << fileName     << "\t\tdevID: \t\t"        << devID << endl;
     cerr << "[INIT]\tRemove dist: \t"   << remoDistance << endl;
     cerr << "[INIT]\tRebuild tree every " << rebuild_tree_rate << " timestep\n";
+    cerr << "[INIT]\tSolver type       " << solverType  << " (1 GRAV, 2 SPH, 3 GRAV+SPH)\n";
 
 
     if( reduce_bodies_factor > 1 ) cerr << "[INIT]\tReduce number of non-dust bodies by " << reduce_bodies_factor << " \n";
@@ -818,8 +825,11 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   tempX = 0;
 
 //  domain.domainSize =  {6.8593750000000000, 4.0594940802395563E-002f, 3.8273277230987154E-002f, tempX}; //Hardcoded for 256 phantom tube
-// domain.domainSize =  {3.9296875000000000, 2.0297470401197781E-002f, 1.9136638615493577E-002f, tempX}; //Hardcoded for 512 tube
+//  domain.domainSize =  {3.9296875000000000, c 1.9136638615493577E-002f, tempX}; //Hardcoded for 512 tube
 //  domain.domainSize =  { 2.46484375, 0.01014873478, 0.00956831966, tempX}; //Hardcoded for 1024 tube
+   domain.domainSize =  {3.5, 0.01299038064, 0.01224744878, tempX}; //Blast wave 4.1.2
+
+
   tree->setPeriodicDomain(domain);
 
 

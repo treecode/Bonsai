@@ -389,7 +389,6 @@ KERNEL_DECLARE(correct_particles)(const int n_bodies,
       body_hydro[idx].z = (body_hydro[idx].z - dt_cb*a0.w) + dt_cb*a1.w;
   }
 
-
   //Store the corrected velocity, acceleration and the new time step info
   vel     [idx] = v;
   acc0_new[idx] = a1;
@@ -409,6 +408,7 @@ extern "C"  __global__ void compute_dt(const int n_bodies,
                                        float    eta,
                                        int      dt_limit,
                                        float    eps2,
+                                       const int solverType,
                                        float2   *time,
                                        real4    *vel,
                                        int      *ngb,
@@ -507,12 +507,13 @@ extern "C"  __global__ void compute_dt(const int n_bodies,
 //  time[idx].y = tc + dt;
 
   float dt    = time[idx].y;
-  dt = bodies_grad[idx].x;      //Dynamic SPH step
-  dt = timeStep;                //Constant gravity step
+  if(solverType == 1)
+      dt = timeStep;                //Constant gravity step
+  if(solverType == 2)
+      dt = bodies_grad[idx].x;      //Dynamic SPH step
 
   time[idx].x = tc;
   time[idx].y = tc + dt;
-
 }
 
 
@@ -522,7 +523,9 @@ static __device__ void compute_energy_doubleD(const int n_bodies,
                                             real4 *pos,
                                             real4 *vel,
                                             real4 *acc,
-                                            double2 *energy, volatile double *shDDataKin) {
+                                            real4 *hydro,
+                                            double4 *energy,
+                                            volatile double *shDDataKin) {
 
   // perform first level of reduction,
   // reading from global memory, writing to shared memory
@@ -532,9 +535,11 @@ static __device__ void compute_energy_doubleD(const int n_bodies,
   unsigned int gridSize = blockSize*2*gridDim.x;
 
   volatile double *shDDataPot = (double*)&shDDataKin [blockSize];
-  double eKin, ePot;
-  shDDataKin[tid] = eKin = 0;   //Stores Ekin
-  shDDataPot[tid] = ePot = 0;   //Stores Epot
+  volatile double *shDDataThe = (double*)&shDDataPot [blockSize];
+  double eKin, ePot, eTherm;
+  shDDataKin[tid] = eKin   = 0;   //Stores Ekin
+  shDDataPot[tid] = ePot   = 0;   //Stores Epot
+  shDDataThe[tid] = eTherm = 0;   //Stores Ethermal
 
   real4 temp;
   // we reduce multiple elements per thread.  The number is determined by the
@@ -544,61 +549,68 @@ static __device__ void compute_energy_doubleD(const int n_bodies,
     if (i             < n_bodies)
     {
       temp  = vel[i];
-      eKin += pos[i].w*0.5*(temp.x*temp.x + temp.y*temp.y + temp.z*temp.z);
-      ePot += pos[i].w*0.5*acc[i].w;
+      eKin   += pos[i].w*0.5*(temp.x*temp.x + temp.y*temp.y + temp.z*temp.z);
+      ePot   += pos[i].w*0.5*acc[i].w;
+      eTherm += pos[i].w*hydro[i].z;
     }
 
     if (i + blockSize < n_bodies)
     {
-      temp  = vel[i + blockSize];
-      eKin += pos[i + blockSize].w*0.5*(temp.x*temp.x + temp.y*temp.y + temp.z*temp.z);
-      ePot += pos[i + blockSize].w*0.5*acc[i + blockSize].w;
+      temp    = vel[i + blockSize];
+      eKin   += pos[i + blockSize].w*0.5*(temp.x*temp.x + temp.y*temp.y + temp.z*temp.z);
+      ePot   += pos[i + blockSize].w*0.5*acc[i + blockSize].w;
+      eTherm += pos[i + blockSize].w*hydro[i + blockSize].z;
     }
 
     i += gridSize;
   }
   shDDataKin[tid] = eKin;
   shDDataPot[tid] = ePot;
+  shDDataThe[tid] = eTherm;
 
   __syncthreads();
 
   // do reduction in shared mem
   if (blockSize >= 512) { if (tid < 256) {
-    shDDataPot[tid] = ePot = ePot + shDDataPot[tid + 256];
-    shDDataKin[tid] = eKin = eKin + shDDataKin[tid + 256];   } __syncthreads(); }
+    shDDataThe[tid] = eTherm = eTherm + shDDataThe[tid + 256];
+    shDDataPot[tid] = ePot   = ePot   + shDDataPot[tid + 256];
+    shDDataKin[tid] = eKin   = eKin   + shDDataKin[tid + 256];   } __syncthreads(); }
   if (blockSize >= 256) { if (tid < 128) {
-    shDDataPot[tid] = ePot = ePot + shDDataPot[tid + 128];
-    shDDataKin[tid] = eKin = eKin + shDDataKin[tid + 128];   } __syncthreads(); }
+    shDDataThe[tid] = eTherm = eTherm + shDDataThe[tid + 128];
+    shDDataPot[tid] = ePot   = ePot   + shDDataPot[tid + 128];
+    shDDataKin[tid] = eKin   = eKin   + shDDataKin[tid + 128];   } __syncthreads(); }
   if (blockSize >= 128) { if (tid <  64) {
-    shDDataPot[tid] = ePot = ePot + shDDataPot[tid + 64];
-    shDDataKin[tid] = eKin = eKin + shDDataKin[tid + 64];   } __syncthreads(); }
+    shDDataThe[tid] = eTherm = eTherm + shDDataThe[tid + 64];
+    shDDataPot[tid] = ePot   = ePot   + shDDataPot[tid + 64];
+    shDDataKin[tid] = eKin   = eKin   + shDDataKin[tid + 64];   } __syncthreads(); }
 
 
 #ifndef __DEVICE_EMULATION__
   if (tid < 32)
 #endif
     {
-      if (blockSize >=  64) {shDDataKin[tid] = eKin = eKin + shDDataKin[tid + 32]; shDDataPot[tid] = ePot = ePot + shDDataPot[tid + 32];  EMUSYNC; }
-      if (blockSize >=  32) {shDDataKin[tid] = eKin = eKin + shDDataKin[tid + 16]; shDDataPot[tid] = ePot = ePot + shDDataPot[tid + 16];  EMUSYNC; }
-      if (blockSize >=  16) {shDDataKin[tid] = eKin = eKin + shDDataKin[tid +  8]; shDDataPot[tid] = ePot = ePot + shDDataPot[tid +  8];  EMUSYNC; }
-      if (blockSize >=   8) {shDDataKin[tid] = eKin = eKin + shDDataKin[tid +  4]; shDDataPot[tid] = ePot = ePot + shDDataPot[tid +  4];  EMUSYNC; }
-      if (blockSize >=   4) {shDDataKin[tid] = eKin = eKin + shDDataKin[tid +  2]; shDDataPot[tid] = ePot = ePot + shDDataPot[tid +  2];  EMUSYNC; }
-      if (blockSize >=   2) {shDDataKin[tid] = eKin = eKin + shDDataKin[tid +  1]; shDDataPot[tid] = ePot = ePot + shDDataPot[tid +  1];  EMUSYNC; }
+      if (blockSize >=  64) {shDDataThe[tid] = eTherm = eTherm + shDDataThe[tid + 32]; shDDataKin[tid] = eKin = eKin + shDDataKin[tid + 32]; shDDataPot[tid] = ePot = ePot + shDDataPot[tid + 32];  EMUSYNC; }
+      if (blockSize >=  32) {shDDataThe[tid] = eTherm = eTherm + shDDataThe[tid + 16]; shDDataKin[tid] = eKin = eKin + shDDataKin[tid + 16]; shDDataPot[tid] = ePot = ePot + shDDataPot[tid + 16];  EMUSYNC; }
+      if (blockSize >=  16) {shDDataThe[tid] = eTherm = eTherm + shDDataThe[tid +  8]; shDDataKin[tid] = eKin = eKin + shDDataKin[tid +  8]; shDDataPot[tid] = ePot = ePot + shDDataPot[tid +  8];  EMUSYNC; }
+      if (blockSize >=   8) {shDDataThe[tid] = eTherm = eTherm + shDDataThe[tid +  4]; shDDataKin[tid] = eKin = eKin + shDDataKin[tid +  4]; shDDataPot[tid] = ePot = ePot + shDDataPot[tid +  4];  EMUSYNC; }
+      if (blockSize >=   4) {shDDataThe[tid] = eTherm = eTherm + shDDataThe[tid +  2]; shDDataKin[tid] = eKin = eKin + shDDataKin[tid +  2]; shDDataPot[tid] = ePot = ePot + shDDataPot[tid +  2];  EMUSYNC; }
+      if (blockSize >=   2) {shDDataThe[tid] = eTherm = eTherm + shDDataThe[tid +  1]; shDDataKin[tid] = eKin = eKin + shDDataKin[tid +  1]; shDDataPot[tid] = ePot = ePot + shDDataPot[tid +  1];  EMUSYNC; }
   }
 
   // write result for this block to global mem
-  if (tid == 0) energy[blockIdx.x] = make_double2(shDDataKin[0], shDDataPot[0]);
+  if (tid == 0) energy[blockIdx.x] = make_double4(shDDataKin[0], shDDataPot[0], shDDataThe[0], 0);
 }
 
 
 //Reduce function to get the energy of the system
-KERNEL_DECLARE(compute_energy_double)(const int n_bodies,
-                                            real4 *pos,
-                                            real4 *vel,
-                                            real4 *acc,
-                                            double2 *energy) {
+KERNEL_DECLARE(compute_energy_double)(const int   n_bodies,
+                                         real4   *pos,
+                                         real4   *vel,
+                                         real4   *acc,
+                                         real4   *hydro,
+                                         double4 *energy) {
   extern __shared__ double shDDataKin[];
-  compute_energy_doubleD(n_bodies, pos, vel, acc, energy, shDDataKin);
+  compute_energy_doubleD(n_bodies, pos, vel, acc, hydro, energy, shDDataKin);
 }
 
 

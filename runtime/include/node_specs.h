@@ -17,6 +17,12 @@ typedef float4 real4;
 #define SPH_KERNEL_SIZE 3.0f
 #define  PARAM_SMTH 1.0
 
+/* M4 Cubic kernel */
+//#define SPH_KERNEL_SIZE 2.0f
+#define SPH_KERNEL_SIZE2 (SPH_KERNEL_SIZE*SPH_KERNEL_SIZE)
+//#define  PARAM_SMTH 1.2
+
+
 /* Phantom Wendland C6 kernel */
 //#define SPH_KERNEL_SIZE 2.0f
 //#define  PARAM_SMTH 1.6
@@ -25,8 +31,8 @@ typedef float4 real4;
 //#define SPH_KERNEL_SIZE 3.5f
 //#define  PARAM_SMTH 1.2
 
-//#define ADIABATIC_INDEX 1.4f
-#define ADIABATIC_INDEX 5.0f/3.0f
+#define ADIABATIC_INDEX 1.4f
+//#define ADIABATIC_INDEX 5.0f/3.0f
 
 //Enabling the following increases the number of particle properties
 //exchanged during mpi particle exchange. Only required if you run
@@ -96,8 +102,8 @@ typedef struct bodyStruct
 //#define LMEM_STACK_SIZE            3072         //Number of storage places PER thread, MUST be power 2 !!!!
 //#define LMEM_STACK_SIZE             2048        //Number of storage places PER thread, MUST be power 2 !!!!
 
-#define LMEM_EXTRA_SIZE            256
-#define LMEM_STACK_SIZE            256         //Number of storage places PER thread, MUST be power 2 !!!!
+#define LMEM_EXTRA_SIZE            512
+#define LMEM_STACK_SIZE            512         //Number of storage places PER thread, MUST be power 2 !!!!
 #define CELL_LIST_MEM_PER_WARP     (LMEM_STACK_SIZE*32)
 #if ((CELL_LIST_MEM_PER_WARP-1) & CELL_LIST_MEM_PER_WARP) != 0
 #error "CELL_LIST_MEM_PER_WARP must be power of 2"
@@ -151,7 +157,7 @@ inline int getTreeWalkBlocksPerSM(int devMajor, int devMinor)
 #define  LEVELMASK 0xF8000000
 
 #define NLEAF 16
-#define NCRIT 64
+#define NCRIT 8    //No larger than 32 for SPH
 //BEST PERF #define NCRIT 8
 #define NTHREAD 128
 

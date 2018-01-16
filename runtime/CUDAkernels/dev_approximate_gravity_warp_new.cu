@@ -279,8 +279,8 @@ static __device__ __forceinline__ float4 add_acc(
 
   const float r2     = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
   const float r2eps  = r2 + eps2;
-//  const float rinv   = (r2 == 0) ? 0 : rsqrtf(r2eps); //JB hack for 0 eps tests
-  const float rinv   = rsqrtf(r2eps);
+  const float rinv   = (r2 == 0) ? 0 : rsqrtf(r2eps); //JB hack for 0 eps tests
+//  const float rinv   = rsqrtf(r2eps);
   const float rinv2  = rinv*rinv;
   const float mrinv  = massj * rinv;
   const float mrinv3 = mrinv * rinv2;
@@ -512,7 +512,7 @@ uint2 approximate_gravity(
     /* extract cell index from the current level cell list */
     const int cellListIdx = cellListBlock + laneIdx;
     const bool useCell    = cellListIdx < nCells;
-    const int cellIdx     = cellList[ringAddr<SHIFT>(cellListOffset + cellListIdx)];
+    const int cellIdx     = useCell ? cellList[ringAddr<SHIFT>(cellListOffset + cellListIdx)] : 0;
     cellListBlock += min(WARP_SIZE, nCells - cellListBlock);
 
     /* read from gmem cell's info */
@@ -530,6 +530,8 @@ uint2 approximate_gravity(
     /* check if cell opening condition is satisfied */
     const float4 cellCOM1 = make_float4(cellCOM.x, cellCOM.y, cellCOM.z, cellPos.w);
     bool splitCell = split_node_grav_impbh(cellCOM1, groupPos, groupSize);
+
+//    splitCell = true;
 
     //interactionCounters.x += 1; //Placing it here counts opening-checks
 
@@ -841,13 +843,13 @@ bool treewalk(
       acc_out     [addr].w += acc_i[0].w;
 
 
-      body_dens_out[addr].x += dens_i[0].x;
-      body_dens_out[addr].y += dens_i[0].y;
+//      body_dens_out[addr].x += dens_i[0].x;
+//      body_dens_out[addr].y += dens_i[0].y;
     }
     else
     {
       acc_out      [addr] =  acc_i[0];
-      body_dens_out[addr] = dens_i[0];
+//      body_dens_out[addr] = dens_i[0];
     }
     //       ngb_out     [addr] = ngb_i;
     ngb_out     [addr] = addr; //JB Fixed this for demo 
@@ -877,13 +879,13 @@ bool treewalk(
         acc_out     [addr].z += acc_i[1].z;
         acc_out     [addr].w += acc_i[1].w;
       
-        body_dens_out[addr].x += dens_i[1].x;
-      	body_dens_out[addr].y += dens_i[1].y;
+//        body_dens_out[addr].x += dens_i[1].x;
+//      	body_dens_out[addr].y += dens_i[1].y;
       }
       else
       {
         acc_out      [addr] =  acc_i[1];
-        body_dens_out[addr] = dens_i[1];
+//        body_dens_out[addr] = dens_i[1];
       
 //	body_h[addr] = adjustH(body_h[addr], dens_i[1].y);
       }

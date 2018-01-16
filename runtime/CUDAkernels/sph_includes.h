@@ -39,10 +39,10 @@ namespace SPH
         }
 
         template <typename type>  type
-        static __device__ __forceinline__  pow5(const type arg){
+        static __device__ __forceinline__  pow3(const type arg){
             const type arg2 = arg * arg;
-            const type arg4 = arg2 * arg2;
-            return arg4 * arg;
+            const type arg3 = arg * arg2;
+            return arg3;
         }
 
         template <typename type>  type
@@ -51,6 +51,15 @@ namespace SPH
             const type arg4 = arg2 * arg2;
             return arg4;
         }
+
+
+        template <typename type>  type
+        static __device__ __forceinline__  pow5(const type arg){
+            const type arg2 = arg * arg;
+            const type arg4 = arg2 * arg2;
+            return arg4 * arg;
+        }
+
 
         template <typename type>  type
         static __device__ __forceinline__  pow7(const type arg){
@@ -73,7 +82,7 @@ namespace SPH
     };
 
     //Quintic kernel as defined in Phantom
-    struct kernel_t : public base_kernel {
+    struct kernel_t : public base_kernel { //kernel_t_quintic
 
         static constexpr float cnormk = 1./(120.*M_PI);
 
@@ -132,6 +141,18 @@ namespace SPH
                 return 0;
             }
         }
+        __device__ __forceinline__ float abs_gradW_print(const float dr, const float h) const{
+            const float hi = 1.0f/h;
+            const float hi21 = hi*hi;
+            const float hi41 = hi21*hi21;
+            const float q  = dr*hi;
+            const float q2 = (dr*dr)*hi21;
+            const float cnormkh = cnormk*hi41; //Quintic kernel
+
+
+            printf("ON DEV2 \t hj21: %g q2j: %g qj: %f cnormk: %g\n",hi21, q2, q, cnormk);
+        }
+
 
         __device__ __forceinline__ float abs_gradW2(const float dr, const float h) const{
             const float hi = 1.0f/h;
@@ -167,7 +188,6 @@ namespace SPH
             const float q  = dr*hi;
             const float q2 = (dr*dr)*hi21;
 
-
             if(q < 1.0f)
             {
                 const float q4 = q2*q2;
@@ -191,6 +211,107 @@ namespace SPH
             }
         }
     };
+
+    //M_4 kernel as defined in Phantom
+    struct kernel_t_m4 : public base_kernel {
+
+        static constexpr float cnormk = 1./M_PI;
+
+
+        //M4 kernel as defined in Phantom
+        __device__ __forceinline__ float W(const float dr, const float h) const{
+
+            const float hi = 1.0f/h;
+            const float hi21 = hi*hi;
+            const float hi31 = hi*hi21;
+            const float q  = dr*hi;
+            const float q2 = (dr*dr)*hi21;
+            const float cnormkh = cnormk*hi31; //Quintic kernel
+
+            if(q < 1.0f)
+            {
+                return cnormkh*(0.75f*q2*q - 1.5f*q2 + 1.0f);
+            }
+            else if(q < 2.0f)
+            {
+                return cnormkh*(-0.25f*pow3(q-2.0f));
+            }
+            else
+            {
+                return 0;
+            }
+        }
+
+        __device__ __forceinline__ float abs_gradW(const float dr, const float h) const{
+            const float hi = 1.0f/h;
+            const float q  = dr*hi;
+            if(q < 1.0f)
+            {
+                return q*(2.25f*q - 3.0f);
+            }
+            else if(q < 2.0f)
+            {
+                return  -0.75f*((q-2.0f)*(q-2.0f));
+            }
+            else
+            {
+                return 0;
+            }
+        }
+
+        __device__ __forceinline__ float kernel_softening(const float q2, const float q, float &potensoft, float &fsoft) const{
+            const float q4 = q2*q2;
+            const float q6 = q4*q2;
+
+            if(q < 1.0f)
+            {
+                potensoft = q4*q/10.0f - 3.0f*q4/10.0f + 2.*q2/3.0f - 7.0f/5.0f;
+                fsoft     = q*(15.0f*q2*q - 36.0f*q2 + 40.0f)/30.0f;
+            }
+            else if(q < 2.0f)
+            {
+                potensoft = (q*(-q4*q + 9.0f*q4 - 30.0f*q2*q + 40.0f*q2 - 48.0f) + 2.0f)/(30.0f*q);
+                fsoft     = (-5.0f*q6 + 36.0f*q4*q - 90.0f*q4 + 80.0f*q2*q - 2.0f)/(30.0f*q2);
+            }
+            else
+            {
+                potensoft = -1.0f/q;
+                fsoft     = 1.0f/q2;
+            }
+        }
+
+
+        __device__ __forceinline__ float abs_gradW2(const float dr, const float h) const{
+            printf("ON DEV, NOT IMPLEMENTED B \n");
+            return 0;
+        }
+
+        //Combined kernel, does not multiply with hi3 and/or hi4 nor with cnorm. This is done as final
+        //step in the dev_sph code.
+        __device__ __forceinline__ float abs_gradW2(const float dr, const float h, float &w) const{
+            const float hi = 1.0f/h;
+            const float hi21 = hi*hi;
+            const float q  = dr*hi;
+            const float q2 = (dr*dr)*hi21;
+
+            if(q < 1.0f)
+            {
+                w = (0.75f*q2*q - 1.5f*q2 + 1.0f);
+                return q*(2.25f*q - 3.0f);
+            }
+            else if(q < 2.0f)
+            {
+                w = (-0.25f*pow3(q-2.0f));
+                return  -0.75f*((q-2.0f)*(q-2.0f));
+            }
+            else
+            {
+                w = 0;
+                return 0;
+            }
+        }
+    };
+
 
     //Wendland C6 kernel as defined in Phantom
     struct kernel_t3 : public base_kernel {
@@ -596,6 +717,26 @@ namespace density
 //            gradient_i[0].z -= jmass * (dv.x * gradW.y - dv.y * gradW.x);
             gradient_i[0].w -= jmass * (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z);
 
+
+#if 0
+            const int IDj = __shfl(IDjx, j);
+
+            if(IDi == 64767 && jmass != 0 && (fabs(jmass * temp1) > 0))
+            {
+                const float hi   = 1.0f/pos_i[k].w;
+                const float hi21 = hi*hi;
+                const float q    = r*hi;
+                const float q2    =(r*r)*hi21;
+
+                printf("ON DEV[ %d %d] , int: %d %d dist: %f wabi: %f grkern: %f dSum: %f  gSum: %f || ipos: %f %f %f\n",
+                        threadIdx.x, blockIdx.x,
+                        (int)IDi+1, IDj+1,
+                        r, temp1,temp2,
+                        density_i[k].dens ,
+                        acc_i[k].x,
+                        pos_i[k].x, pos_i[k].y, pos_i[k].z);
+            }
+#endif
 
             //For interaction stats
 #ifdef STATS
@@ -1130,7 +1271,15 @@ namespace hydroforce
             jth_abs_gradW *= omegaj;
 
 
+
             const int IDj = __shfl(IDjx, j);
+            if(IDi+1 == -26001 && IDj+1 == 16400)
+            {
+                printf("ON DEV %d with %d  grkern-i: %f  grkern-j: %f \n", (int)IDi+1, IDj+1, ith_abs_gradW, jth_abs_gradW);
+                kernel.abs_gradW_print(r, jD.y);
+                printf("ON DEV2b  %d with %d  grkern-j: %f\t gradh: %f \n", (int)IDi+1, IDj+1, kernel.abs_gradW(r, jD.y), omegaj);
+            }
+
 
             const float abs_gradW     = 0.5f * (ith_abs_gradW + jth_abs_gradW);
         //    const float4 gradW        = (r > 0) ? make_float4(abs_gradW * dr.x / r, abs_gradW * dr.y / r, abs_gradW * dr.z / r, 0.0f)
@@ -1193,6 +1342,14 @@ namespace hydroforce
            //Force according to equation 120 , with the addition of the Artificial Viscosity
            PA   = jM0.w*(PAi-AVi)*ith_abs_gradW;
            PB2  = jM0.w*(PAj-AVj)*jth_abs_gradW;
+
+           if(IDi+1 == -26001 && IDj+1 == 16400)
+           {
+               printf("ON DEV3:  %d with %d PA: %f PB2: %f  w_ij: %f dr.x / r: %f \n",
+                       (int)IDi+1, IDj+1, PA,PB2, w_ij, dr.x / r);
+               printf("ON DEV4: %g %g (%g - %g)  %f \n", jM0.w,(PAj-AVj), PAj,AVj,jth_abs_gradW);
+               printf("ON DEV5: %f %f %f\n", (1.0 / (jD.x * jD.x))* jH.x, jD.x, jH.x);
+           }
 
 
            float PB = PA+PB2;
@@ -1368,6 +1525,14 @@ namespace hydroforce
 //                            jD.x,
 //                            w_ij,
 //                            hydro_i[0].y);
+
+
+                const int IDj = __shfl(IDjx, j);
+                if(IDi == -26000 && gradW2.x != 0 && IDj >= 0)
+                {
+                    printf("ON DEV %d with %d  gives: %f \n", (int)IDi+1, IDj+1, gradW2.x);
+                }
+
                 } //ID
 
 
