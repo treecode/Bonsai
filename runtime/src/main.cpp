@@ -452,9 +452,9 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 
 #ifdef WAR_OF_GALAXIES
     /// WarOfGalaxies: Deactivate unneeded flags using WarOfGalaxies
-    throw_if_flag_is_used(opt, {{"direct", "restart", "displayfps", "diskmode", "stereo", "prepend-rank"}});
-    throw_if_option_is_used(opt, {{"plummer", "milkyway", "mwfork", "sphere", "dt", "tend", "iend",
-      "snapname", "snapiter", "rmdist", "valueadd", "rebuild", "reducebodies", "reducedust", "gameMode"}});
+    throw_if_flag_is_used(opt, {{"direct", "restart", "diskmode", "stereo", "prepend-rank"}});
+    throw_if_option_is_used(opt, {{"plummer", "milkyway", "mwfork", "sphere", "tend", "iend",
+      "snapname", "snapiter", "rmdist", "valueadd", "rebuild", "reducedust", "gameMode"}});
 #endif
 
 #undef ADDUSAGE
