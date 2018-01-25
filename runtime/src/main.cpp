@@ -759,32 +759,32 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 
       for (auto const& p : bodyPositions)
       {
-      	mass = p.w;
-      	center_of_mass.x += mass * p.x;
-      	center_of_mass.y += mass * p.y;
-      	center_of_mass.z += mass * p.z;
-      	center_of_mass.w += mass;
+        mass = p.w;
+        center_of_mass.x += mass * p.x;
+        center_of_mass.y += mass * p.y;
+        center_of_mass.z += mass * p.z;
+        center_of_mass.w += mass;
       }
 
       center_of_mass.x /= center_of_mass.w;
       center_of_mass.y /= center_of_mass.w;
       center_of_mass.z /= center_of_mass.w;
 
-      // get total velocity
-      real4 total_velocity = make_real4(0.0, 0.0, 0.0, 0.0);
+      // get center-of-mass velocity
+      real4 center_of_mass_velocity = make_real4(0.0, 0.0, 0.0, 0.0);
 
       for (int i = 0; i < bodyVelocities.size(); i++)
       {
         mass = bodyPositions[i].w;
-        total_velocity.x += mass * bodyVelocities[i].x;
-        total_velocity.y += mass * bodyVelocities[i].y;
-        total_velocity.z += mass * bodyVelocities[i].z;
-        total_velocity.w += mass;
+        center_of_mass_velocity.x += mass * bodyVelocities[i].x;
+        center_of_mass_velocity.y += mass * bodyVelocities[i].y;
+        center_of_mass_velocity.z += mass * bodyVelocities[i].z;
+        center_of_mass_velocity.w += mass;
       }
 
-      total_velocity.x /= total_velocity.w;
-      total_velocity.y /= total_velocity.w;
-      total_velocity.z /= total_velocity.w;
+      center_of_mass_velocity.x /= center_of_mass_velocity.w;
+      center_of_mass_velocity.y /= center_of_mass_velocity.w;
+      center_of_mass_velocity.z /= center_of_mass_velocity.w;
 
       // shift center of mass to position (0,0,10000)
       for (auto &p : bodyPositions)
@@ -797,9 +797,9 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
       // steady
       for (auto &v : bodyVelocities)
       {
-        v.x -= total_velocity.x;
-        v.y -= total_velocity.y;
-        v.z -= total_velocity.z;
+        v.x -= center_of_mass_velocity.x;
+        v.y -= center_of_mass_velocity.y;
+        v.z -= center_of_mass_velocity.z;
       }
 #endif
     float sTime = 0;
