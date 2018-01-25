@@ -30,7 +30,7 @@ real4 Galaxy::getCenterOfMassVelocity() const
 {
   real mass;
   real4 result = make_real4(0.0, 0.0, 0.0, 0.0);
-  for (int i = 0; i < vel.size(); i++)
+  for (size_t i = 0; i < vel.size(); i++)
   {
     mass = pos[i].w;
     result.x += mass * vel[i].x;

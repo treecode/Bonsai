@@ -773,7 +773,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
       // get center-of-mass velocity
       real4 center_of_mass_velocity = make_real4(0.0, 0.0, 0.0, 0.0);
 
-      for (int i = 0; i < bodyVelocities.size(); i++)
+      for (size_t i = 0; i < bodyVelocities.size(); i++)
       {
         mass = bodyPositions[i].w;
         center_of_mass_velocity.x += mass * bodyVelocities[i].x;
