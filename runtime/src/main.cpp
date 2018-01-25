@@ -773,16 +773,18 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
       // get total velocity
       real4 total_velocity = make_real4(0.0, 0.0, 0.0, 0.0);
 
-      for (auto const& v : bodyVelocities)
+      for (int i = 0; i < bodyVelocities.size(); i++)
       {
-        total_velocity.x += v.x;
-        total_velocity.y += v.y;
-        total_velocity.z += v.z;
+        mass = bodyPositions[i].w;
+        total_velocity.x += mass * bodyVelocities[i].x;
+        total_velocity.y += mass * bodyVelocities[i].y;
+        total_velocity.z += mass * bodyVelocities[i].z;
+        total_velocity.w += mass;
       }
 
-      total_velocity.x /= bodyVelocities.size();
-      total_velocity.y /= bodyVelocities.size();
-      total_velocity.z /= bodyVelocities.size();
+      total_velocity.x /= total_velocity.w;
+      total_velocity.y /= total_velocity.w;
+      total_velocity.z /= total_velocity.w;
 
       // shift center of mass to position (0,0,10000)
       for (auto &p : bodyPositions)
