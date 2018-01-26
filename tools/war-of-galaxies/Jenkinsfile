@@ -1,0 +1,47 @@
+#!groovy
+
+pipeline {
+  agent {
+    docker {
+      image 'bernddoser/docker-devel-cpp:cuda-9.1-devel-cmake-3.10'
+    }
+  }
+  stages {
+    stage('Build') {
+      steps {
+        sh '''
+          git submodule init
+          git submodule update
+          mkdir -p build
+          cd build
+          cmake -DCMAKE_BUILD_TYPE=release \
+                -DUSE_OPENGL=ON \
+                -DUSE_MPI=OFF \
+                -DUSE_CUB=OFF \
+                -DUSE_THRUST=ON \
+                -DWAR_OF_GALAXIES=ON \
+                ../runtime/
+          make 2>&1 |tee make.out
+        '''
+      }
+      post {
+        always {
+          step([
+            $class: 'WarningsPublisher', canComputeNew: false, canResolveRelativePaths: false,
+            defaultEncoding: '', excludePattern: '', healthy: '', includePattern: '', messagesPattern: '',
+            parserConfigurations: [[parserName: 'GNU Make + GNU C Compiler (gcc)', pattern: 'build/make.out']],
+            unHealthy: ''
+          ])
+        }
+      }
+    }
+  }
+  post {
+    success {
+      mail to: 'bernd.doser@h-its.org', subject: "SUCCESS: ${currentBuild.fullDisplayName}", body: "All fine."
+    }
+    failure {
+      mail to: 'bernd.doser@h-its.org', subject: "FAILURE: ${currentBuild.fullDisplayName}", body: "Failed."
+    }
+  }
+}
