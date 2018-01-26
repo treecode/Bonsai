@@ -13,7 +13,7 @@ real4 Galaxy::getCenterOfMass() const
   real4 result = make_real4(0.0, 0.0, 0.0, 0.0);
   for (auto const& p : pos)
   {
-  	mass = p.w;
+    mass = p.w;
     result.x += mass * p.x;
     result.y += mass * p.y;
     result.z += mass * p.z;
@@ -26,19 +26,22 @@ real4 Galaxy::getCenterOfMass() const
   return result;
 }
 
-real4 Galaxy::getTotalVelocity() const
+real4 Galaxy::getCenterOfMassVelocity() const
 {
+  real mass;
   real4 result = make_real4(0.0, 0.0, 0.0, 0.0);
-  for (auto const& v : vel)
+  for (size_t i = 0; i < vel.size(); i++)
   {
-    result.x += v.x;
-    result.y += v.y;
-    result.z += v.z;
+    mass = pos[i].w;
+    result.x += mass * vel[i].x;
+    result.y += mass * vel[i].y;
+    result.z += mass * vel[i].z;
+    result.w += mass;
   }
 
-  result.x /= vel.size();
-  result.y /= vel.size();
-  result.z /= vel.size();
+  result.x /= result.w;
+  result.y /= result.w;
+  result.z /= result.w;
   return result;
 }
 
@@ -55,12 +58,12 @@ void Galaxy::centering()
 
 void Galaxy::steady()
 {
-  real4 total_velocity = getTotalVelocity();
+  real4 center_of_mass_velocity = getCenterOfMassVelocity();
   for (auto &v : vel)
   {
-    v.x -= total_velocity.x;
-    v.y -= total_velocity.y;
-    v.z -= total_velocity.z;
+    v.x -= center_of_mass_velocity.x;
+    v.y -= center_of_mass_velocity.y;
+    v.z -= center_of_mass_velocity.z;
   }
 }
 

@@ -452,9 +452,9 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 
 #ifdef WAR_OF_GALAXIES
     /// WarOfGalaxies: Deactivate unneeded flags using WarOfGalaxies
-    throw_if_flag_is_used(opt, {{"direct", "restart", "displayfps", "diskmode", "stereo", "prepend-rank"}});
-    throw_if_option_is_used(opt, {{"plummer", "milkyway", "mwfork", "sphere", "dt", "tend", "iend",
-      "snapname", "snapiter", "rmdist", "valueadd", "rebuild", "reducebodies", "reducedust", "gameMode"}});
+    throw_if_flag_is_used(opt, {{"direct", "restart", "diskmode", "stereo", "prepend-rank"}});
+    throw_if_option_is_used(opt, {{"plummer", "milkyway", "mwfork", "sphere", "tend", "iend",
+      "snapname", "snapiter", "rmdist", "valueadd", "rebuild", "reducedust", "gameMode"}});
 #endif
 
 #undef ADDUSAGE
@@ -759,30 +759,32 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 
       for (auto const& p : bodyPositions)
       {
-      	mass = p.w;
-      	center_of_mass.x += mass * p.x;
-      	center_of_mass.y += mass * p.y;
-      	center_of_mass.z += mass * p.z;
-      	center_of_mass.w += mass;
+        mass = p.w;
+        center_of_mass.x += mass * p.x;
+        center_of_mass.y += mass * p.y;
+        center_of_mass.z += mass * p.z;
+        center_of_mass.w += mass;
       }
 
       center_of_mass.x /= center_of_mass.w;
       center_of_mass.y /= center_of_mass.w;
       center_of_mass.z /= center_of_mass.w;
 
-      // get total velocity
-      real4 total_velocity = make_real4(0.0, 0.0, 0.0, 0.0);
+      // get center-of-mass velocity
+      real4 center_of_mass_velocity = make_real4(0.0, 0.0, 0.0, 0.0);
 
-      for (auto const& v : bodyVelocities)
+      for (size_t i = 0; i < bodyVelocities.size(); i++)
       {
-        total_velocity.x += v.x;
-        total_velocity.y += v.y;
-        total_velocity.z += v.z;
+        mass = bodyPositions[i].w;
+        center_of_mass_velocity.x += mass * bodyVelocities[i].x;
+        center_of_mass_velocity.y += mass * bodyVelocities[i].y;
+        center_of_mass_velocity.z += mass * bodyVelocities[i].z;
+        center_of_mass_velocity.w += mass;
       }
 
-      total_velocity.x /= bodyVelocities.size();
-      total_velocity.y /= bodyVelocities.size();
-      total_velocity.z /= bodyVelocities.size();
+      center_of_mass_velocity.x /= center_of_mass_velocity.w;
+      center_of_mass_velocity.y /= center_of_mass_velocity.w;
+      center_of_mass_velocity.z /= center_of_mass_velocity.w;
 
       // shift center of mass to position (0,0,10000)
       for (auto &p : bodyPositions)
@@ -795,9 +797,9 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
       // steady
       for (auto &v : bodyVelocities)
       {
-        v.x -= total_velocity.x;
-        v.y -= total_velocity.y;
-        v.z -= total_velocity.z;
+        v.x -= center_of_mass_velocity.x;
+        v.y -= center_of_mass_velocity.y;
+        v.z -= center_of_mass_velocity.z;
       }
 #endif
     float sTime = 0;

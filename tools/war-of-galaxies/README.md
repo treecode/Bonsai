@@ -21,7 +21,7 @@ cmake \
   -DUSE_CUB=OFF \
   -DUSE_THRUST=ON \
   -DWAR_OF_GALAXIES=ON \
-  <source-path>
+  <source-path>/runtime/
 make -j <n>
 ```
 
@@ -38,7 +38,13 @@ Starting Bonsai with
 
 will show an empty simulation. In trues there is a single dummy particle at
 position (0,0,10000) with zero mass, because Bonsai can not run without any
-particles. The release or removal of galaxies will be controlled by json
+particles.
+
+Actual galaxies are located or symlinked in
+`<source-path>/tools/war-of-galaxies/galaxy_types/available`, with the naming
+scheme identifying the galaxy numbering.
+
+The release (insertion) or removal of galaxies will be controlled by json
 commands. Therefore, you can start the python script:
 
 ```

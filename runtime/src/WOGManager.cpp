@@ -79,34 +79,34 @@ void WOGManager::read_galaxies(std::string const& path)
 {
   for (int i = 0;; ++i)
   {
-  	std::string filename = path + "/galaxy_type_" + std::to_string(i) + ".tipsy";
-  	if (access(filename.c_str(), F_OK) == -1) break;
-  	std::cout << "Read file " << filename << " into GalaxyStore." << std::endl;
+	std::string filename = path + "/galaxy_type_" + std::to_string(i) + ".tipsy";
+	if (access(filename.c_str(), F_OK) == -1) break;
+	std::cout << "Read file " << filename << " into GalaxyStore." << std::endl;
 
-  	Galaxy galaxy;
-  	int Total2 = 0;
-  	int NFirst = 0;
-  	int NSecond = 0;
-  	int NThird = 0;
+	Galaxy galaxy;
+	int Total2 = 0;
+	int NFirst = 0;
+	int NSecond = 0;
+	int NThird = 0;
 
-  	read_tipsy_file_parallel(galaxy.pos, galaxy.vel, galaxy.ids,
-  	  0.0, filename.c_str(), 0, 1, Total2, NFirst, NSecond, NThird, nullptr,
-  	  galaxy.pos_dust, galaxy.vel_dust, galaxy.ids_dust, 1, 1, false);
+	read_tipsy_file_parallel(galaxy.pos, galaxy.vel, galaxy.ids,
+	  0.0, filename.c_str(), 0, 1, Total2, NFirst, NSecond, NThird, nullptr,
+	  galaxy.pos_dust, galaxy.vel_dust, galaxy.ids_dust, 1, 1, false);
 
-  	real4 cm = galaxy.getCenterOfMass();
-  	std::cout << "Center of mass = " << cm.x << " " << cm.y << " " << cm.z << std::endl;
-  	real4 tv = galaxy.getTotalVelocity();
-  	std::cout << "Total_velocity = " << tv.x << " " << tv.y << " " << tv.z << std::endl;
+	real4 cm = galaxy.getCenterOfMass();
+	std::cout << "Center of mass = " << cm.x << " " << cm.y << " " << cm.z << std::endl;
+	real4 tv = galaxy.getCenterOfMassVelocity();
+	std::cout << "Center_of_mass_velocity = " << tv.x << " " << tv.y << " " << tv.z << std::endl;
 
-  	galaxy.centering();
-  	galaxy.steady();
+	galaxy.centering();
+	galaxy.steady();
 
-  	cm = galaxy.getCenterOfMass();
-  	std::cout << "Center of mass = " << cm.x << " " << cm.y << " " << cm.z << std::endl;
-  	tv = galaxy.getTotalVelocity();
-  	std::cout << "Total_velocity = " << tv.x << " " << tv.y << " " << tv.z << std::endl;
+	cm = galaxy.getCenterOfMass();
+	std::cout << "Center of mass = " << cm.x << " " << cm.y << " " << cm.z << std::endl;
+	tv = galaxy.getCenterOfMassVelocity();
+	std::cout << "Center_of_mass_velocity = " << tv.x << " " << tv.y << " " << tv.z << std::endl;
 
-  	galaxies.push_back(galaxy);
+	galaxies.push_back(galaxy);
   }
 }
 

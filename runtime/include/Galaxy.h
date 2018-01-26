@@ -18,13 +18,13 @@ struct Galaxy
   /// Center of mass
   real4 getCenterOfMass() const;
 
-  /// Total Velocity
-  real4 getTotalVelocity() const;
+  /// Center-of-mass Velocity
+  real4 getCenterOfMassVelocity() const;
 
   /// Move center of mass to origin (0,0,0)
   void centering();
 
-  /// Remove total velocity
+  /// Remove center-of-mass velocity
   void steady();
 
   /// Move center of the galaxy
