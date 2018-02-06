@@ -201,9 +201,8 @@ KERNEL_DECLARE(predict_particles)(const int 	n_bodies,
 
   //Adjust the particle position for periodic boundaries
 
-  float3 low, high;
-  low.x = -(domainInfo.domainSize.x / 2.0f); low.y  = -(domainInfo.domainSize.y / 2.0f); low.z  = -(domainInfo.domainSize.z / 2.0f);
-  high.x = (domainInfo.domainSize.x / 2.0f); high.y =  (domainInfo.domainSize.y / 2.0f); high.z =  (domainInfo.domainSize.z / 2.0f);
+  float3 low = domainInfo.minrange;
+  float3 high = domainInfo.maxrange;
 
   #define PERIODIC_X 1
   #define PERIODIC_Y 2

@@ -803,6 +803,10 @@ public:
 
   void setPeriodicDomain(domainInformation domain)
   {
+      LOG("Periodic boundaries: \nx: %f\t%f\ny: %f\t%f\nz: %f\t%f\n",
+              domain.minrange.x, domain.maxrange.x,
+              domain.minrange.y, domain.maxrange.y,
+              domain.minrange.z, domain.maxrange.z);
       this->periodicDomainInfo = domain;
   }
 

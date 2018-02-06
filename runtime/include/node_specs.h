@@ -14,16 +14,18 @@ typedef float4 real4;
 //having the loose constants around
 
 /* Quinitc kernel */
-#define SPH_KERNEL_SIZE 3.0f
-#define  PARAM_SMTH 1.0
+//#define KERNEL_QUINTIC
+//#define SPH_KERNEL_SIZE 3.0f
+//#define PARAM_SMTH 1.0
 
 /* M4 Cubic kernel */
-//#define SPH_KERNEL_SIZE 2.0f
-#define SPH_KERNEL_SIZE2 (SPH_KERNEL_SIZE*SPH_KERNEL_SIZE)
-//#define  PARAM_SMTH 1.2
+#define KERNEL_M_4
+#define SPH_KERNEL_SIZE 2.0f
+#define  PARAM_SMTH 1.2
 
 
 /* Phantom Wendland C6 kernel */
+//#define KERNEL_W_C6
 //#define SPH_KERNEL_SIZE 2.0f
 //#define  PARAM_SMTH 1.6
 
@@ -31,8 +33,12 @@ typedef float4 real4;
 //#define SPH_KERNEL_SIZE 3.5f
 //#define  PARAM_SMTH 1.2
 
-#define ADIABATIC_INDEX 1.4f
-//#define ADIABATIC_INDEX 5.0f/3.0f
+
+//TODO Remove this once we removed reference to dev_approximate_grvity_sph
+#define SPH_KERNEL_SIZE2 (SPH_KERNEL_SIZE*SPH_KERNEL_SIZE)
+
+//#define ADIABATIC_INDEX 1.4f
+#define ADIABATIC_INDEX 5.0f/3.0f
 
 //Enabling the following increases the number of particle properties
 //exchanged during mpi particle exchange. Only required if you run
@@ -48,9 +54,23 @@ typedef float4 real4;
   #endif
 #endif
 
-struct domainInformation
+class domainInformation
 {
+public:
     float4 domainSize;
+    float3 minrange;
+    float3 maxrange;
+
+    domainInformation(){}
+
+    domainInformation(const float3 _min, const float3 _max, const float periodicity) :
+        minrange(_min), maxrange(_max)
+    {
+        domainSize.x = maxrange.x-minrange.x;
+        domainSize.y = maxrange.y-minrange.y;
+        domainSize.z = maxrange.z-minrange.z;
+        domainSize.w = periodicity;
+    }
 };
 
 

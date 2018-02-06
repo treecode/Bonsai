@@ -604,7 +604,7 @@ bool treewalk_control(
     const float      eps2,
     const uint2      node_begend,
     const bool       isFinalLaunch,
-    const domainInformation domainInfo,
+    const float4     domainSize,
     const int       *active_groups,
     const bodyProps &group_body,
     const float4    *groupSizeInfo,
@@ -718,9 +718,9 @@ bool treewalk_control(
   //For periodic boundaries, mirror the group and body positions along the periodic axis
 
   int2 xP = {0,0}, yP = {0,0}, zP = {0,0};
-  if(((int)domainInfo.domainSize.w) & PERIODIC_X) { xP = {-1,1}; }
-  if(((int)domainInfo.domainSize.w) & PERIODIC_Y) { yP = {-1,1}; }
-  if(((int)domainInfo.domainSize.w) & PERIODIC_Z) { zP = {-1,1}; }
+  if(((int)domainSize.w) & PERIODIC_X) { xP = {-1,1}; }
+  if(((int)domainSize.w) & PERIODIC_Y) { yP = {-1,1}; }
+  if(((int)domainSize.w) & PERIODIC_Z) { zP = {-1,1}; }
 
   long long int startC = clock64();
 
@@ -737,9 +737,9 @@ bool treewalk_control(
           float4 pGroupPos   = group_pos;
           float4 pBodyPos[2] = {pos_i[0], pos_i[1]};
 
-          pGroupPos.x   += (domainInfo.domainSize.x*ix); pBodyPos[0].x += (domainInfo.domainSize.x*ix); pBodyPos[1].x += (domainInfo.domainSize.x*ix);
-          pGroupPos.y   += (domainInfo.domainSize.y*iy); pBodyPos[0].y += (domainInfo.domainSize.y*iy); pBodyPos[1].y += (domainInfo.domainSize.y*iy);
-          pGroupPos.z   += (domainInfo.domainSize.z*iz); pBodyPos[0].z += (domainInfo.domainSize.z*iz); pBodyPos[1].z += (domainInfo.domainSize.z*iz);
+          pGroupPos.x   += (domainSize.x*ix); pBodyPos[0].x += (domainSize.x*ix); pBodyPos[1].x += (domainSize.x*ix);
+          pGroupPos.y   += (domainSize.y*iy); pBodyPos[0].y += (domainSize.y*iy); pBodyPos[1].y += (domainSize.y*iy);
+          pGroupPos.z   += (domainSize.z*iz); pBodyPos[0].z += (domainSize.z*iz); pBodyPos[1].z += (domainSize.z*iz);
 
           uint2 curCounters = {0};
 
@@ -1069,7 +1069,7 @@ void approximate_SPH_main(
     float     eps2,
     uint2     node_begend,
     bool      isFinalLaunch,
-    const domainInformation domainInfo,
+    const float4 domainSize,
     int      *active_groups,
     bodyProps &group_body,
     int      *active_inout,
@@ -1147,7 +1147,7 @@ void approximate_SPH_main(
                                     eps2,
                                     node_begend,
                                     isFinalLaunch,
-                                    domainInfo,
+                                    domainSize,
                                     active_groups,
                                     group_body,
                                     groupSizeInfo,
@@ -1238,7 +1238,7 @@ void approximate_SPH_main(
                                               eps2,
                                               node_begend,
                                               isFinalLaunch,
-                                              domainInfo,
+                                              domainSize,
                                               active_groups,
                                               group_body,
                                               groupSizeInfo,
@@ -1302,7 +1302,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
            eps2,
            node_begend,
            isFinalLaunch,
-           domainInfo,
+           domainInfo.domainSize,
            active_groups,
            group_body,
            active_inout,
@@ -1356,7 +1356,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
           eps2,
           node_begend,
           isFinalLaunch,
-          domainInfo,
+          domainInfo.domainSize,
           active_groups,
           group_body,
           active_inout,
@@ -1842,7 +1842,7 @@ approximate_SPH_main<false, NTHREAD2, SPH::derivative::directOperator>(
          eps2,
          node_begend,
          isFinalLaunch,
-         domainInfo,
+         domainInfo.domainSize,
          active_groups,
          group_body,
          active_inout,

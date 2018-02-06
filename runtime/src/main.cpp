@@ -780,7 +780,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   tree->localTree.setN((int)bodyPositions.size());
   tree->allocateParticleMemory(tree->localTree);
 
-  //Incase we do not use SPH generator command
+  //In case we do not use SPH generator command
   bodyDensity.resize(bodyPositions.size());
   bodyHydro.resize(bodyPositions.size());
 
@@ -827,7 +827,10 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 //  domain.domainSize =  {6.8593750000000000, 4.0594940802395563E-002f, 3.8273277230987154E-002f, tempX}; //Hardcoded for 256 phantom tube
 //  domain.domainSize =  {3.9296875000000000, c 1.9136638615493577E-002f, tempX}; //Hardcoded for 512 tube
 //  domain.domainSize =  { 2.46484375, 0.01014873478, 0.00956831966, tempX}; //Hardcoded for 1024 tube
-   domain.domainSize =  {3.5, 0.01299038064, 0.01224744878, tempX}; //Blast wave 4.1.2
+//   domain.domainSize =  {3.5, 0.01299038064, 0.01224744878, tempX}; //Blast wave 4.1.2
+
+  domain = domainInformation(make_float3(-0.5,-0.5,-0.5), make_float3(0.5,0.5,0.5),PERIODIC_X |PERIODIC_Y | PERIODIC_Z); //Sedov 4.1.3
+//   domain = domainInformation(make_float3(0,0,-0.019137), make_float3(1,1,0.019137),PERIODIC_X |PERIODIC_Y | PERIODIC_Z); //KH 4.1.4, 64 particle
 
 
   tree->setPeriodicDomain(domain);

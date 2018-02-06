@@ -82,6 +82,7 @@ namespace SPH
     };
 
     //Quintic kernel as defined in Phantom
+#ifdef KERNEL_QUINTIC
     struct kernel_t : public base_kernel { //kernel_t_quintic
 
         static constexpr float cnormk = 1./(120.*M_PI);
@@ -141,17 +142,17 @@ namespace SPH
                 return 0;
             }
         }
-        __device__ __forceinline__ float abs_gradW_print(const float dr, const float h) const{
-            const float hi = 1.0f/h;
-            const float hi21 = hi*hi;
-            const float hi41 = hi21*hi21;
-            const float q  = dr*hi;
-            const float q2 = (dr*dr)*hi21;
-            const float cnormkh = cnormk*hi41; //Quintic kernel
-
-
-            printf("ON DEV2 \t hj21: %g q2j: %g qj: %f cnormk: %g\n",hi21, q2, q, cnormk);
-        }
+//        __device__ __forceinline__ float abs_gradW_print(const float dr, const float h) const{
+//            const float hi = 1.0f/h;
+//            const float hi21 = hi*hi;
+//            const float hi41 = hi21*hi21;
+//            const float q  = dr*hi;
+//            const float q2 = (dr*dr)*hi21;
+//            const float cnormkh = cnormk*hi41; //Quintic kernel
+//
+//
+//            printf("ON DEV2 \t hj21: %g q2j: %g qj: %f cnormk: %g\n",hi21, q2, q, cnormk);
+//        }
 
 
         __device__ __forceinline__ float abs_gradW2(const float dr, const float h) const{
@@ -211,16 +212,18 @@ namespace SPH
             }
         }
     };
+#endif
 
+#ifdef KERNEL_M_4
     //M_4 kernel as defined in Phantom
-    struct kernel_t_m4 : public base_kernel {
+    //struct kernel_t_m4 : public base_kernel {
+    struct kernel_t : public base_kernel {
 
         static constexpr float cnormk = 1./M_PI;
 
 
         //M4 kernel as defined in Phantom
         __device__ __forceinline__ float W(const float dr, const float h) const{
-
             const float hi = 1.0f/h;
             const float hi21 = hi*hi;
             const float hi31 = hi*hi21;
@@ -244,46 +247,24 @@ namespace SPH
 
         __device__ __forceinline__ float abs_gradW(const float dr, const float h) const{
             const float hi = 1.0f/h;
+            const float hi21 = hi*hi;
+            const float hi41 = hi21*hi21;
             const float q  = dr*hi;
+
+            const float cnormkh = cnormk*hi41; //Quintic kernel
+
             if(q < 1.0f)
             {
-                return q*(2.25f*q - 3.0f);
+                return cnormkh*q*(2.25f*q - 3.0f);
             }
             else if(q < 2.0f)
             {
-                return  -0.75f*((q-2.0f)*(q-2.0f));
+                return cnormkh*(-0.75f*((q-2.0f)*(q-2.0f)));
             }
             else
             {
                 return 0;
             }
-        }
-
-        __device__ __forceinline__ float kernel_softening(const float q2, const float q, float &potensoft, float &fsoft) const{
-            const float q4 = q2*q2;
-            const float q6 = q4*q2;
-
-            if(q < 1.0f)
-            {
-                potensoft = q4*q/10.0f - 3.0f*q4/10.0f + 2.*q2/3.0f - 7.0f/5.0f;
-                fsoft     = q*(15.0f*q2*q - 36.0f*q2 + 40.0f)/30.0f;
-            }
-            else if(q < 2.0f)
-            {
-                potensoft = (q*(-q4*q + 9.0f*q4 - 30.0f*q2*q + 40.0f*q2 - 48.0f) + 2.0f)/(30.0f*q);
-                fsoft     = (-5.0f*q6 + 36.0f*q4*q - 90.0f*q4 + 80.0f*q2*q - 2.0f)/(30.0f*q2);
-            }
-            else
-            {
-                potensoft = -1.0f/q;
-                fsoft     = 1.0f/q2;
-            }
-        }
-
-
-        __device__ __forceinline__ float abs_gradW2(const float dr, const float h) const{
-            printf("ON DEV, NOT IMPLEMENTED B \n");
-            return 0;
         }
 
         //Combined kernel, does not multiply with hi3 and/or hi4 nor with cnorm. This is done as final
@@ -310,11 +291,35 @@ namespace SPH
                 return 0;
             }
         }
+
+//        __device__ __forceinline__ float kernel_softening(const float q2, const float q, float &potensoft, float &fsoft) const{
+//            const float q4 = q2*q2;
+//            const float q6 = q4*q2;
+//
+//            if(q < 1.0f)
+//            {
+//                potensoft = q4*q/10.0f - 3.0f*q4/10.0f + 2.*q2/3.0f - 7.0f/5.0f;
+//                fsoft     = q*(15.0f*q2*q - 36.0f*q2 + 40.0f)/30.0f;
+//            }
+//            else if(q < 2.0f)
+//            {
+//                potensoft = (q*(-q4*q + 9.0f*q4 - 30.0f*q2*q + 40.0f*q2 - 48.0f) + 2.0f)/(30.0f*q);
+//                fsoft     = (-5.0f*q6 + 36.0f*q4*q - 90.0f*q4 + 80.0f*q2*q - 2.0f)/(30.0f*q2);
+//            }
+//            else
+//            {
+//                potensoft = -1.0f/q;
+//                fsoft     = 1.0f/q2;
+//            }
+//        }
+
+
     };
+#endif
 
-
+#ifdef KERNEL_W_C6
     //Wendland C6 kernel as defined in Phantom
-    struct kernel_t3 : public base_kernel {
+    struct kernel_t : public base_kernel {
         static constexpr float cnormk = 1365./(512.*M_PI);
 
         __device__ __forceinline__ float W(const float dr, const float h) const{
@@ -338,47 +343,26 @@ namespace SPH
             if(q >= 2.0) return 0;
             return hi41*cnormk*q*pow7(0.5*q - 1.0f)*(22.0f*q2 + 19.25f*q + 5.5f);
         }
-        //        pure subroutine get_kernel(q2,q,wkern,grkern)
-        //         real, intent(in)  :: q2,q
-        //         real, intent(out) :: wkern,grkern
-        //
-        //         !--Wendland 2/3D C^6
-        //         if (q < 2.) then
-        //            wkern  = (q - 1.)**8*(32.*q2*q + 25.*q2 + 8.*q + 1.)
-        //            grkern = q*(q - 1.)**7*(352.*q2 + 154.*q + 22.)
-        //         else
-        //            wkern  = 0.
-        //            grkern = 0.
-        //         endif
-        //        end subroutine get_kernel
+
+        //Combined kernel, does not multiply with hi3 and/or hi4 nor with cnorm. This is done as final
+        //step in the dev_sph code.
+        __device__ __forceinline__ float abs_gradW2(const float dr, const float h, float &w) const{
+            const float hi = 1.0f/h;
+            const float hi21 = hi*hi;
+            const float q  = dr*hi;
+            const float q2 = (dr*dr)*hi21;
+
+            if(q >= 2.0)
+            {
+                w = 0.0f;
+                return 0;
+            }
+            w = pow8(0.5*q - 1.0f)*(4.0f*q2*q + 6.25f*q2 + 4.0f*q + 1.0f);
+            return q*pow7(0.5*q - 1.0f)*(22.0f*q2 + 19.25f*q + 5.5f);
+         }
 
     };
-
-
-    //Wendland C6 Natsuki
-    struct kernel_t2 : public base_kernel {
-        static constexpr float cnormk = 1; //TODO align this with below cnormk use
-
-        //W
-        __device__ __forceinline__ float W(const float dr, const float h) const{
-            const float H = supportRadius() * h;
-            const float s = dr / H;
-            float r_value;
-            r_value = (1.0f + s * (8.0f + s * (25.0f + s * (32.0f)))) * pow8(plus(1.0f - s));
-            r_value *= (1365.f/64.f) / (H * H * H * M_PI);
-            return r_value;
-        }
-
-        //gradW
-        __device__ __forceinline__ float abs_gradW(const float r, const float h) const{
-              const float H = supportRadius() * h;
-              const float s = r / H;
-              float r_value;
-              r_value = pow7(plus(1.0f - s)) * (plus(1.0f - s) * (8.0f + s * (50.0f + s * (96.0f))) - 8.0f * (1.0f + s * (8.0f + s * (25.0f + s * (32.0f)))));
-              r_value *= (1365.f/64.f) / (H * H * H * M_PI);
-              return r_value / (H  + 1.0e-6 * h);
-             }
-    };
+#endif
 
     namespace density
     {
@@ -496,16 +480,6 @@ namespace density
     #if 1  // to test performance of a tree-walk
       //const float3 dr    = make_float3(posj.x - pos.x, posj.y - pos.y, posj.z - pos.z);
         float3 dr    = make_float3(posj.x - pos.x, posj.y - pos.y, posj.z - pos.z);
-
-
-//      const float dxbound = 6.85937500f;
-//      const float dybound = 0.040594f;
-//      const float dzbound = 0.038274f;
-//      #define SIGN(x) ((x > 0) - (x < 0))
-//      if (abs(dr.x) > 0.5*dxbound) dr.x = dr.x - dxbound*SIGN(dr.x);
-//      if (abs(dr.y) > 0.5*dybound) dr.y = dr.y - dybound*SIGN(dr.y);
-//      if (abs(dr.z) > 0.5*dzbound) dr.z = dr.z - dzbound*SIGN(dr.z);
-
 
 
       const float r2     = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
@@ -1276,7 +1250,7 @@ namespace hydroforce
             if(IDi+1 == -26001 && IDj+1 == 16400)
             {
                 printf("ON DEV %d with %d  grkern-i: %f  grkern-j: %f \n", (int)IDi+1, IDj+1, ith_abs_gradW, jth_abs_gradW);
-                kernel.abs_gradW_print(r, jD.y);
+//                kernel.abs_gradW_print(r, jD.y);
                 printf("ON DEV2b  %d with %d  grkern-j: %f\t gradh: %f \n", (int)IDi+1, IDj+1, kernel.abs_gradW(r, jD.y), omegaj);
             }
 
