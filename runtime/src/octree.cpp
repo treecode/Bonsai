@@ -492,6 +492,9 @@ void octree::dumpData()
                                  std::vector<real4>  &bodyHydro,
                                  std::vector<real4>  &bodyDrv,
                                  float &t_current,
+                                 float3 &domain_low,
+                                 float3 &domain_high,
+                                 int &periodicity,
                                  const std::string &fileName,
                                  const int rank, const int nrank,
                                  const MPI_Comm &comm,
@@ -659,6 +662,11 @@ void octree::dumpData()
             //tree->set_t_current(static_cast<float>(in->getTime()));
             t_current = static_cast<float>(in->getTime());
         }
+
+        //Read boundaries, if those are not available defaults will be set automatically
+        in->getDomainInfo(domain_low.x,  domain_low.y,  domain_low.z,
+             domain_high.x, domain_high.y, domain_high.z, periodicity);
+
 
         in->close();
         const double bw = in->computeBandwidth()/1e6;

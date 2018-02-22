@@ -10,8 +10,10 @@ typedef float4 real4;
 #define DO_BLOCK_TIMESTEP
 
 
-//This will depend on the SPH method, I stick it here to be able to prevent
-//having the loose constants around
+
+//SPH defines
+//Boundary particles have an ID higher than SPHBOUND
+#define SPHBOUND          100000000000000
 
 /* Quinitc kernel */
 //#define KERNEL_QUINTIC
@@ -34,8 +36,10 @@ typedef float4 real4;
 //#define  PARAM_SMTH 1.2
 
 
-//TODO Remove this once we removed reference to dev_approximate_grvity_sph
-#define SPH_KERNEL_SIZE2 (SPH_KERNEL_SIZE*SPH_KERNEL_SIZE)
+#define USE_BALSARA_SWITCH
+
+
+
 
 //#define ADIABATIC_INDEX 1.4f
 #define ADIABATIC_INDEX 5.0f/3.0f

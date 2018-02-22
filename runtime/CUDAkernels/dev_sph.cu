@@ -192,7 +192,6 @@ __device__ void useParticleMD(const float4       posi,
 /****** Opening criterion ******/
 /*******************************/
 
-#if 1
 
 /*
  * TODO, we can probably add the cellH/smoothing length to the groupSize to save
@@ -276,43 +275,6 @@ __device__ bool split_node_sph_md_print(const float4 nodeSize,
   return (ds2 <= (grpH+cellH));
 }
 
-
-#else
-/*
- * TODO When using this pre-compute bHigh and bLow
- * TODO This one does not work
- */
-__device__ bool split_node_sph_md(
-    const float4 nodeSize,
-    const float4 nodeCenter,
-    const float4 groupCenter,
-    const float4 groupSize,
-    const float  grpH,
-    const float  cellH)
-{
-    //TODO NOTE When using this function make sure not to use a squared cellH
-    //Test overlap
-    const float aHighx = nodeCenter.x+nodeSize.x;
-    const float aHighy = nodeCenter.y+nodeSize.y;
-    const float aHighz = nodeCenter.z+nodeSize.z;
-    const float aLowx  = nodeCenter.x-nodeSize.x;
-    const float aLowy  = nodeCenter.y-nodeSize.y;
-    const float aLowz  = nodeCenter.z-nodeSize.z;
-    const float bHighx = groupCenter.x+groupSize.x+grpH;
-    const float bHighy = groupCenter.y+groupSize.y+grpH;
-    const float bHighz = groupCenter.z+groupSize.z+grpH;
-    const float bLowx  = groupCenter.x-groupSize.x-grpH;
-    const float bLowy  = groupCenter.y-groupSize.y-grpH;
-    const float bLowz  = groupCenter.z-groupSize.z-grpH;
-
-    bool notOverlap =      (aHighx < bLowx) || (bHighx < aLowx)
-                        || (aHighy < bLowy) || (bHighy < aLowy)
-                        || (aHighz < bLowz) || (bHighz < aLowz);
-
-    return !notOverlap;
-}
-
-#endif
 
 
 #define TEXTURES
@@ -895,7 +857,7 @@ bool treewalk_control(
                     float gradh = 1.0f / (1 + omega*acc_i[i].x); //Eq 5 of phantom paper
                     group_body.body_vel[addr].w = gradh;         //Note we store this in the (predicted) velocity array
 
-                    if(ID[addr] >= 100000000)   //Boundary particles do not update their density/smoothing values
+                    if(ID[addr] >= SPHBOUND)   //Boundary particles do not update their density/smoothing values
                     {
                         body_dens_out[addr] = group_body_dens[addr];
                         dens_i[i].dens = group_body_dens[addr].x;
@@ -940,7 +902,7 @@ bool treewalk_control(
 
           if(directOp<1, true>::type == SPH::HYDROFORCE)
           {
-              if(ID[addr] >= 100000000)
+              if(ID[addr] >= SPHBOUND)
               {
                   acc_i[0].x = 0; acc_i[0].y = 0; acc_i[0].z = 0; ; acc_i[0].w = 0;
               }
@@ -972,87 +934,7 @@ bool treewalk_control(
           interactions[addr].y += counters.y / ni ;
         }
     }
-/*
-#if 0
-    const int addr = body_i[0];
-    if (ACCUMULATE)
-    {
-      acc_out      [addr].x += acc_i[0].x;
-      acc_out      [addr].y += acc_i[0].y;
-      acc_out      [addr].z += acc_i[0].z;
-      acc_out      [addr].w += acc_i[0].w;
 
-      body_grad_out[addr].x += derivative_i[0].x;
-      body_grad_out[addr].y += derivative_i[0].y;
-      body_grad_out[addr].z += derivative_i[0].z;
-      body_grad_out[addr].w += derivative_i[0].w;
-
-      body_dens_out[addr].x += dens_i[0].dens;
-      body_dens_out[addr].y += dens_i[0].smth; //TODO can not sum lengths
-    }
-    else
-    {
-      acc_out      [addr] =  acc_i[0];
-      body_dens_out[addr] = make_float2(dens_i[0].dens, dens_i[0].smth);
-
-      body_grad_out[addr].x = 123; //derivative_i[0].x;
-      body_grad_out[addr].y = derivative_i[0].y;
-      body_grad_out[addr].z = derivative_i[0].z;
-      body_grad_out[addr].w = derivative_i[0].w;
-    }
-    active_inout[addr] = 1;
-    if (ACCUMULATE)
-    {
-      interactions[addr].x += counters.x / ni;
-      interactions[addr].y += counters.y / ni ;
-    }
-    else
-    {
-      interactions[addr].x = counters.x / ni;
-      interactions[addr].y = counters.y / ni ;
-    }
-    if (ni == 2)
-    {
-      const int addr = body_i[1];
-      if (ACCUMULATE)
-      {
-        acc_out      [addr].x += acc_i[1].x;
-        acc_out      [addr].y += acc_i[1].y;
-        acc_out      [addr].z += acc_i[1].z;
-        acc_out      [addr].w += acc_i[1].w;
-
-        body_grad_out[addr].x += derivative_i[1].x;
-        body_grad_out[addr].y += derivative_i[1].y;
-        body_grad_out[addr].z += derivative_i[1].z;
-        body_grad_out[addr].w += derivative_i[1].w;
-
-        body_dens_out[addr].x += dens_i[1].dens;
-        body_dens_out[addr].y += dens_i[1].smth; //TODO can not sum lengths
-      }
-      else
-      {
-        acc_out      [addr] =  acc_i[1];
-        body_dens_out[addr] = make_float2(dens_i[1].dens, dens_i[1].smth);
-        body_grad_out[addr].x = derivative_i[1].x;
-        body_grad_out[addr].y = derivative_i[1].y;
-        body_grad_out[addr].z = derivative_i[1].z;
-        body_grad_out[addr].w = derivative_i[1].w;
-
-      }
-      active_inout[addr] = 1;
-      if (ACCUMULATE)
-      {
-        interactions[addr].x += counters.x / ni;
-        interactions[addr].y += counters.y / ni;
-      }
-      else
-      {
-        interactions[addr].x = counters.x / ni;
-        interactions[addr].y = counters.y / ni;
-      }
-    }
-#endif
-*/
   }
 
   return true;
@@ -1135,11 +1017,6 @@ void approximate_SPH_main(
 
     bid   = shmemv[0];
     if (bid >= n_active_groups) return;
-
-//    if (bid >= 1) return; //JB TDO REMOVE
-//    if(directOp<1, true>::type == SPH::HYDROFORCE)
-//    if(bid != 59) continue;//JB TODO REMOVE
-
 
     int *lmem = &MEM_BUF[(CELL_LIST_MEM_PER_WARP<<nWarps2)*blockIdx.x + CELL_LIST_MEM_PER_WARP*warpId];
     const bool success = treewalk_control<0,blockDim2,ACCUMULATE, directOp>(

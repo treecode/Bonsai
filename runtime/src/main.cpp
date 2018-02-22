@@ -679,6 +679,10 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 
   double tStartup2 = tree->get_time();  
 
+  float3 domain_low  = make_float3(0,0,0);
+  float3 domain_high = make_float3(0,0,0);
+  int    domain_periodicity = 0;
+
   if (!bonsaiFileName.empty() && useMPIIO)
   {
 #ifdef USE_MPI        
@@ -693,6 +697,9 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
         bodyHydro,
         bodyDrv,
         tCurrent,
+        domain_low,
+        domain_high,
+        domain_periodicity,
         bonsaiFileName,
         procId, nProcs, comm,
         restartSim,
@@ -792,7 +799,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     tree->localTree.bodies_pos[i]   = bodyPositions[i];
 
     //tree->localTree.bodies_pos[i].x += double(rand())/RAND_MAX;
-    if(bodyIDs[i] < 10 || bodyIDs[i] == 100000000 )
+    if(bodyIDs[i] < 10 || bodyIDs[i] == SPHBOUND )
     {
         fprintf(stderr,"START %d\t%lld\t xyz: %f %f %f vxyz: %f %f %f \trho,h: %.16f  %.16lg \n",
                 i, bodyIDs[i],
@@ -820,19 +827,20 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   tree->localTree.bodies_dens. h2d();
   tree->localTree.bodies_hydro.h2d();
 
-  domainInformation domain;
-  float tempX =  PERIODIC_Y | PERIODIC_Z;
-  tempX = 0;
+
+  fprintf(stderr,"Domain info: \n");
+  fprintf(stderr,"X: %f %f\n", domain_low.x, domain_high.x);
+  fprintf(stderr,"Y: %f %f\n", domain_low.y, domain_high.y);
+  fprintf(stderr,"Z: %f %f\n", domain_low.z, domain_high.z);
+  fprintf(stderr,"Axis: %d \n", domain_periodicity);
+
 
 //  domain.domainSize =  {6.8593750000000000, 4.0594940802395563E-002f, 3.8273277230987154E-002f, tempX}; //Hardcoded for 256 phantom tube
 //  domain.domainSize =  {3.9296875000000000, c 1.9136638615493577E-002f, tempX}; //Hardcoded for 512 tube
 //  domain.domainSize =  { 2.46484375, 0.01014873478, 0.00956831966, tempX}; //Hardcoded for 1024 tube
-//   domain.domainSize =  {3.5, 0.01299038064, 0.01224744878, tempX}; //Blast wave 4.1.2
-
-  domain = domainInformation(make_float3(-0.5,-0.5,-0.5), make_float3(0.5,0.5,0.5),PERIODIC_X |PERIODIC_Y | PERIODIC_Z); //Sedov 4.1.3
-//   domain = domainInformation(make_float3(0,0,-0.019137), make_float3(1,1,0.019137),PERIODIC_X |PERIODIC_Y | PERIODIC_Z); //KH 4.1.4, 64 particle
-
-
+//  domain.domainSize =  {3.5, 0.01299038064, 0.01224744878, tempX}; //Blast wave 4.1.2
+//  domain = domainInformation(make_float3(-0.5,-0.5,-0.5), make_float3(0.5,0.5,0.5),PERIODIC_X |PERIODIC_Y | PERIODIC_Z); //Sedov 4.1.3
+  domainInformation domain = domainInformation(domain_low, domain_high, domain_periodicity);
   tree->setPeriodicDomain(domain);
 
 

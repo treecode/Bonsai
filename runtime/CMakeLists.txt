@@ -147,7 +147,6 @@ set (CUFILES
   CUDAkernels/depthSort.cu
   CUDAkernels/dev_direct_gravity.cu
   CUDAkernels/dev_sph.cu
-  CUDAkernels/dev_approximate_gravity_sph.cu
   )
 
 if (COMPILE_SM35)

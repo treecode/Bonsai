@@ -12,6 +12,7 @@ CXXFLAGS =  -fPIC $(OFLAGS) $(OMPFLAGS) -std=c++11
 CXXFLAGS += -Werror
 CXXFLAGS += -Wno-literal-suffix  # ignores warrning in openmpi 1.6.5
 
+PROG11FLAGS += "-I../../runtime/include/"
 
 
 LDFLAGS = 
@@ -25,6 +26,7 @@ SRC4 = cvt_tipsy_gtc12_2bonsai.cpp
 SRC5 = cvt_bonsai2dumbp.cpp
 SRC6 = cvt_amuseASCII2bonsai.cpp
 SRC7 = cvt_bonsai2amuseASCII.cpp
+SRC11 = cvt_phantomASCII2bonsai.cpp ../../runtime/src/anyoption.cpp 
 OBJ1 = $(SRC1:%.cpp=%.o)
 OBJ2 = $(SRC2:%.cpp=%.o)
 OBJ3 = $(SRC3:%.cpp=%.o)
@@ -32,6 +34,7 @@ OBJ4 = $(SRC4:%.cpp=%.o)
 OBJ5 = $(SRC5:%.cpp=%.o)
 OBJ6 = $(SRC6:%.cpp=%.o)
 OBJ7 = $(SRC7:%.cpp=%.o)
+OBJ11 = $(SRC11:%.cpp=%.o)
 
 PROG1 = cvt_tipsy2bonsai
 PROG2 = readBonsai
@@ -57,11 +60,12 @@ $(PROG3): $(OBJ3)
 	$(LD) $(LDFLAGS) $^ -o $@ $(OMPFLAGS)
 $(PROG4): $(OBJ4) 
 	$(LD) $(LDFLAGS) $^ -o $@ $(OMPFLAGS)
-
+$(PROG11): $(OBJ11) 
+	$(LD) $(LDFLAGS) $^ -o $@ $(OMPFLAGS)
 
 
 %.o: $(SRCPATH)/%.cpp
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(PROG11FLAGS) -c $< -o $@
 
 
 clean:

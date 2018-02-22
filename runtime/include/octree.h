@@ -92,6 +92,8 @@ struct __half2 { unsigned short x,y; };
 #define DARKMATTERID  3000000000000000000
 #define DISKID        0
 #define BULGEID       2000000000000000000
+//SPHBOUND defined in node_specs.h
+
 
 #define PERIODIC_X 1
 #define PERIODIC_Y 2
@@ -436,8 +438,6 @@ protected:
   my_dev::kernel SPHDerivativeLET;
   my_dev::kernel SPHHydro;
   my_dev::kernel SPHHydroLET;
-  my_dev::kernel SPHGravity;
-  my_dev::kernel SPHGravityLET;
   my_dev::kernel setPressure;
 
   //Other
@@ -580,7 +580,9 @@ public:
   void lReadBonsaiFile(std::vector<real4 > &,std::vector<real4 > &, std::vector<ullong> &,
                        std::vector<real2> &bodyDensity, std::vector<real4>       &bodyHydro,
                        std::vector<real4> &bodyDrv,
-                       float &tCurrent, const std::string &fileName, const int rank, const int nrank,
+                       float &tCurrent,
+                       float3 &domain_low, float3 &domain_high, int &periodicity,
+                       const std::string &fileName, const int rank, const int nrank,
                        const MPI_Comm &comm, const bool restart = true, const int reduceFactor = 1);
 
   //Sub functions of iterate, should probably be private
@@ -803,10 +805,6 @@ public:
 
   void setPeriodicDomain(domainInformation domain)
   {
-      LOG("Periodic boundaries: \nx: %f\t%f\ny: %f\t%f\nz: %f\t%f\n",
-              domain.minrange.x, domain.maxrange.x,
-              domain.minrange.y, domain.maxrange.y,
-              domain.minrange.z, domain.maxrange.z);
       this->periodicDomainInfo = domain;
   }
 

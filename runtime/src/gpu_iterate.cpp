@@ -227,6 +227,44 @@ void countInteractions(tree_structure &tree, MPI_Comm mpiCommWorld, int procId)
 }
 
 
+void snapshot_SPH(octree *tree, const int snapshot_count, const float t_current)
+{
+    tree->localTree.bodies_pos.d2h();
+    tree->localTree.bodies_vel.d2h();
+    tree->localTree.bodies_dens_out.d2h();
+    tree->localTree.bodies_hydro.d2h();
+    tree->localTree.bodies_ids.d2h();
+
+    char fname[512];
+    sprintf(fname, "SPHSNAP_%05d.txt", snapshot_count);
+    std::ofstream out(fname, std::ofstream::out);
+    out << "# t_current: " << t_current << std::endl;
+    out << "#x\ty\tz\tm\th\tdensity\tvx\tvy\tvz\tu\tP\tID\n";
+    for(int i=0; i < tree->localTree.n; i++)
+    {
+//          ullong tempID = this->localTree.bodies_ids[i] >= 100000000 ? this->localTree.bodies_ids[i]-100000000 : this->localTree.bodies_ids[i];
+          char buff[2048];
+          //sprintf(buff,"%lld\t%f\t%f\t%f\t%lg\t%f\t%f\t%f\t%lg\t%f\t%f\t%f\t%lld\n",
+          sprintf(buff,"%f\t%f\t%f\t%lg\t%f\t%f\t%f\t%lg\t%f\t%f\t%f\t%lld\n",
+              tree->localTree.bodies_pos[i].x,
+              tree->localTree.bodies_pos[i].y,
+              tree->localTree.bodies_pos[i].z,
+              tree->localTree.bodies_pos[i].w,
+              tree->localTree.bodies_dens_out[i].y,
+              tree->localTree.bodies_dens_out[i].x,
+              tree->localTree.bodies_vel[i].x,
+              tree->localTree.bodies_vel[i].y,
+              tree->localTree.bodies_vel[i].z,
+              tree->localTree.bodies_hydro[i].z,
+              tree->localTree.bodies_hydro[i].x,
+              tree->localTree.bodies_ids[i]);
+          out << buff;
+    }
+    out.close();
+
+}
+
+
 void octree::iterate_setup(IterationData &idata) {
 
   if(execStream == NULL)          execStream          = new my_dev::dev_stream(0);
@@ -299,7 +337,7 @@ bool octree::iterate_once(IterationData &idata) {
 
     LOG("At the start of iterate:\n");
 
-    dumpData(); 
+   //TODO(jbedorf) re-enable dumpData();
 
     bool forceTreeRebuild = false;
     bool needDomainUpdate = true;
@@ -833,7 +871,7 @@ bool octree::iterate_once(IterationData &idata) {
     }//Statistics dumping
 
 
-    if (useMPIIO)
+    if (useMPIIO && false) //TODO(jbedorf) reanble
     {
 #ifdef USE_MPI
       if (mpiRenderMode) dumpDataMPI(); //To renderer process
@@ -845,6 +883,15 @@ bool octree::iterate_once(IterationData &idata) {
       if((t_current >= nextSnapTime))
       {
         nextSnapTime += snapshotIter;
+
+        static int snapshot_count = 0;
+
+        snapshot_SPH(this, snapshot_count, t_current);
+
+        snapshot_count++;
+
+#if 0
+
 
         while(!ioSharedData.writingFinished)
         {
@@ -870,6 +917,7 @@ bool octree::iterate_once(IterationData &idata) {
 
         ioSharedData.writingFinished = false;
         if(nProcs <= 16) while (!ioSharedData.writingFinished);
+#endif
       }
     }
 
@@ -882,38 +930,6 @@ bool octree::iterate_once(IterationData &idata) {
       double totalTime = get_time() - idata.startTime;
       LOG("Finished: %f > %f \tLoop alone took: %f\n", t_current, tEnd, totalTime);
       my_dev::base_mem::printMemUsage();
-
-
-//      std::ofstream out("sphDUMP.txt", std::ofstream::out);
-//      for(int i=0; i < this->localTree.n; i++)
-//      {
-//          char buff[2048];
-//          sprintf(buff,"%d %lld || Pos: %f %f %f %lg\t Vel: %f %f %f || Dens: %lg %f\t|| Drvt: %f %f %f %f\t|| Hydro: %f %f %f %f || Acc: %f %f %f %f\n",
-//              i,
-//              this->localTree.bodies_ids[i],
-//              this->localTree.bodies_Ppos[i].x,
-//              this->localTree.bodies_Ppos[i].y,
-//              this->localTree.bodies_Ppos[i].z,
-//              this->localTree.bodies_Ppos[i].w,
-//              this->localTree.bodies_Pvel[i].x,
-//              this->localTree.bodies_Pvel[i].y,
-//              this->localTree.bodies_Pvel[i].z,
-//              this->localTree.bodies_dens_out[i].x,
-//              this->localTree.bodies_dens_out[i].y,
-//              this->localTree.bodies_grad[i].w,
-//              this->localTree.bodies_grad[i].x,
-//              this->localTree.bodies_grad[i].y,
-//              this->localTree.bodies_grad[i].z,
-//              this->localTree.bodies_hydro[i].x,
-//              this->localTree.bodies_hydro[i].y,
-//              this->localTree.bodies_hydro[i].z,
-//              this->localTree.bodies_hydro[i].w,
-//              this->localTree.bodies_acc1[i].x,
-//              this->localTree.bodies_acc1[i].y,
-//              this->localTree.bodies_acc1[i].z,
-//              this->localTree.bodies_acc1[i].w);
-//          out << buff;
-//      }
 
       this->localTree.bodies_pos.d2h();
       this->localTree.bodies_vel.d2h();
@@ -1063,6 +1079,9 @@ void octree::predict(tree_structure &tree)
 
     //Enforce global time-step
     t_current = this->AllMin(t_current);
+
+    if(t_current > nextSnapTime)
+        t_current = nextSnapTime;
 
 
     //Set valid list to zero  <- TODO should we act on this comment?
@@ -1408,69 +1427,6 @@ void octree::approximate_hydro_let(tree_structure &tree, tree_structure &remoteT
 
       return;
 }
-
-
-void octree::approximate_sphgrav(tree_structure &tree)
-{
-    uint2 node_begend;
-    int level_start = tree.startLevelMin;
-    node_begend.x   = tree.level_list[level_start].x;
-    node_begend.y   = tree.level_list[level_start].y;
-
-    bool isFinalLaunch = (nProcs == 1);
-
-
-    SPHGravity.set_args(0, &tree.n_active_groups,
-             &tree.n,
-             &(this->eps2),
-             &node_begend,
-             tree.active_group_list.p(),
-             //i particle properties
-             &tree.group_body,
-             tree.bodies_acc1.p(),
-             tree.ngb.p(),
-             tree.activePartlist.p(),
-             tree.interactions.p(),
-             tree.boxSizeInfo.p(),
-             tree.groupSizeInfo.p(),
-             tree.boxCenterInfo.p(),
-             tree.groupCenterInfo.p(),
-             tree.multipole.p(),
-             //j particle properties
-             &tree.group_body,    //Note i and j particles are the same in local call
-             tree.generalBuffer1.p(),  //The buffer to store the tree walks
-             tree.bodies_ids.p());
-
-    SPHGravity.set_texture<real4>(0,  tree.boxSizeInfo,    "texNodeSize");
-    SPHGravity.set_texture<real4>(1,  tree.boxCenterInfo,  "texNodeCenter");
-    SPHGravity.set_texture<real4>(2,  tree.multipole,      "texMultipole");
-    SPHGravity.set_texture<real4>(3,  tree.bodies_Ppos,    "texBody");
-    SPHGravity.setWork(-1, NTHREAD, nBlocksForTreeWalk);
-//    SPHGravity.setWork(-1, 32, 1);
-
-     //Reset bodies_grad, since we reuse/abuse it to store the dt
-     tree.bodies_grad.zeroMemGPUAsync(gravStream->s());
-//     tree.bodies_acc1.zeroMemGPUAsync(gravStream->s()); //Reset as we used it before to store gradh
-
-
-     tree.interactions.zeroMemGPUAsync(gravStream->s());
-     tree.activePartlist.zeroMemGPUAsync(gravStream->s());
-     SPHGravity.execute2(gravStream->s());  //Gravity force
-
-     cudaDeviceSynchronize();
-
-     gravStream->sync();
-     countInteractions(tree, mpiCommWorld, procId);
-
-
-     if(nProcs > 1)
-     {
-//         distributeBoundaries(false); //Always full update for now
-//         makeHydroLET();
-     }
-}
-
-
 
 
 

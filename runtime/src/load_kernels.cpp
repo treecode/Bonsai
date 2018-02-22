@@ -57,9 +57,6 @@ void octree::load_kernels() {
   SPHDerivativeLET.create("dev_sph_derivative",      (const void*)&dev_sph_derivative);
   SPHHydro.        create("dev_sph_hydro",           (const void*)&dev_sph_hydro);
   SPHHydroLET.     create("dev_sph_hydro",           (const void*)&dev_sph_hydro);
-  SPHGravity.      create("dev_sph_gravity",         (const void*)&dev_sph_gravity);
-  SPHGravityLET.   create("dev_sph_gravity",         (const void*)&dev_sph_gravity);
-
 
   setPressure.     create("set_pressure",            (const void*)&set_pressure);
   gpuBoundaryTree. create("gpuBoundaryTree",         (const void*)&gpu_boundaryTree);

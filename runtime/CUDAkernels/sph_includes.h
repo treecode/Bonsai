@@ -291,29 +291,6 @@ namespace SPH
                 return 0;
             }
         }
-
-//        __device__ __forceinline__ float kernel_softening(const float q2, const float q, float &potensoft, float &fsoft) const{
-//            const float q4 = q2*q2;
-//            const float q6 = q4*q2;
-//
-//            if(q < 1.0f)
-//            {
-//                potensoft = q4*q/10.0f - 3.0f*q4/10.0f + 2.*q2/3.0f - 7.0f/5.0f;
-//                fsoft     = q*(15.0f*q2*q - 36.0f*q2 + 40.0f)/30.0f;
-//            }
-//            else if(q < 2.0f)
-//            {
-//                potensoft = (q*(-q4*q + 9.0f*q4 - 30.0f*q2*q + 40.0f*q2 - 48.0f) + 2.0f)/(30.0f*q);
-//                fsoft     = (-5.0f*q6 + 36.0f*q4*q - 90.0f*q4 + 80.0f*q2*q - 2.0f)/(30.0f*q2);
-//            }
-//            else
-//            {
-//                potensoft = -1.0f/q;
-//                fsoft     = 1.0f/q2;
-//            }
-//        }
-
-
     };
 #endif
 
@@ -681,6 +658,7 @@ namespace density
             density_i[k].dens  += jmass*temp1;                   //Density
             acc_i[k].x         += jmass*(-qi*temp2 - 3*temp1);   //Derivative
 
+#ifdef USE_BALSARA_SWITCH
             //Balsara switch, TODO(jbedorf): In theory this is only needed when we perform the final density iteration
             const float3 jvel  = make_float3(__shfl(MV.x, j), __shfl(MV.y, j), __shfl(MV.z, j));
             const float3 dv    = make_float3(jvel.x - vel_i[0].x, jvel.y - vel_i[0].y, jvel.z - vel_i[0].z);
@@ -691,27 +669,6 @@ namespace density
 //            gradient_i[0].z -= jmass * (dv.x * gradW.y - dv.y * gradW.x);
             gradient_i[0].w -= jmass * (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z);
 
-
-#if 0
-            const int IDj = __shfl(IDjx, j);
-
-            if(IDi == 64767 && jmass != 0 && (fabs(jmass * temp1) > 0))
-            {
-                const float hi   = 1.0f/pos_i[k].w;
-                const float hi21 = hi*hi;
-                const float q    = r*hi;
-                const float q2    =(r*r)*hi21;
-
-                printf("ON DEV[ %d %d] , int: %d %d dist: %f wabi: %f grkern: %f dSum: %f  gSum: %f || ipos: %f %f %f\n",
-                        threadIdx.x, blockIdx.x,
-                        (int)IDi+1, IDj+1,
-                        r, temp1,temp2,
-                        density_i[k].dens ,
-                        acc_i[k].x,
-                        pos_i[k].x, pos_i[k].y, pos_i[k].z);
-            }
-#endif
-
             //For interaction stats
 #ifdef STATS
             gradient_i[0].z++;       //Number of operations
@@ -720,6 +677,8 @@ namespace density
             gradient_i[0].y -= jmass * (dv.z * gradW.x - dv.x * gradW.z);
             gradient_i[0].z -= jmass * (dv.x * gradW.y - dv.y * gradW.x);
 #endif
+#endif //USE_BALSARA_SWITCH
+
             //End Balsara
           } //for k
         } //for offset
@@ -1303,14 +1262,11 @@ namespace hydroforce
                AVi = 0.5f*(1.0 / density_i[0].dens)*v_sigi*projv;
                AVj = 0.5f*(1.0 / jD.x)*v_sigj*projv;
 
-               if(IDj == 147470 && IDi == 16577500)
-               {
-                   printf("ON DEVXX2b: %.16f %.16f %.16f AVi: %.16f PAi: %.16f\n",  1.0 / density_i[0].dens, v_sigi, projv, 0.5f*(1.0 / density_i[0].dens)*v_sigi*projv);
-               }
-
+#ifdef USE_BALSARA_SWITCH
                //Multiply with the Balsara switch
-//               AVi *= hydro_i[0].w;
-//               AVj *= jH.w;
+               AVi *= hydro_i[0].w;
+               AVj *= jH.w;
+#endif
            }
 
            //Force according to equation 120 , with the addition of the Artificial Viscosity
@@ -1526,36 +1482,9 @@ namespace hydroforce
 
 
 
-
-
-//            float temp = jM0.w * (hydro_i[0].x / (density_i[0].dens * density_i[0].dens) + jH.x / (jD.x * jD.x) + AV); //Rosswog eq 61
-//            temp       = (jD.y != 0) ? temp : 0; //Same as above, a 0 smoothing length leads to NaN (divide by 0)
-
-//            acc_i[0].x    -= temp  * gradW.x;
-//            acc_i[0].y    -= temp  * gradW.y;
-//            acc_i[0].z    -= temp  * gradW.z;
-
-            //eng_dot is acc_i[0].w
-            //Natsuki , Rosswog Eq 62
-//            acc_i[0].w    += jM0.w * (hydro_i[0].x / (density_i[0].dens * density_i[0].dens)  + 0.5 * AV) * (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z); //eng_dot
-
-            //Gasoline, uses Rho_i * Rho_j
-//            temp =  jM0.w * (hydro_i[0].x / (density_i[0].dens * jD.x)  + 0.5 * AV) * (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z); //eng_dot
-//            temp = (jD.x != 0) ? temp : 0;
-//            acc_i[0].w    += temp;
-
-
-//            Hier gebleven, in de papers van MAGMA staat duidelijker wat er in de formules moet
-            //omegai*massj*(Pi/(rhoi^2))*(dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z)
-//            acc_i[0].w += omegai*jM0.w * (hydro_i[0].x / (density_i[0].dens * density_i[0].dens));
-
-
-            //      acc.y           += (fabs(abs_gradW) > 0);  //Count how often we do something useful in this function
-            //      acc.z           += 1; //Count how often we enter this function
-
           }//for WARP_SIZE
 
-          gradient_i[0].x = max(v_sig_max, gradient_i[0].x);    //This is fo the dt parameter
+          gradient_i[0].x = max(v_sig_max, gradient_i[0].x);    //This is for the dt parameter
           //force[id].dt = PARAM::C_CFL * 2.0 * ith.smth / v_sig_max;
         }
 #endif

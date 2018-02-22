@@ -249,10 +249,38 @@ namespace BonsaiIO
       std::vector<DataInfo> data;
       double time;
 
+      float  boundary_low[3];  //xmin, ymin, zmin
+      float  boundary_high[3]; //xhigh, yhigh, zhigh
+      int    periodicity;   //Which axis are periodic
+
 
     public:
       void   setTime(const double _time) { time = _time;}
       double getTime() const { return time; }
+
+      void setDomainInfo(const float xmin, const float ymin, const float zmin,
+                         const float xhigh, const float yhigh, const float zhigh, const int p)
+      {
+          boundary_low[0]  = xmin;
+          boundary_low[1]  = ymin;
+          boundary_low[2]  = zmin;
+          boundary_high[0] = xhigh;
+          boundary_high[1] = yhigh;
+          boundary_high[2] = zhigh;
+          periodicity      = p;
+      }
+
+      void getDomainInfo(float &xmin, float &ymin, float &zmin,
+              float &xhigh, float &yhigh, float &zhigh, int &p)
+      {
+          xmin  = boundary_low[0];
+          ymin  = boundary_low[1];
+          zmin  = boundary_low[2];
+          xhigh = boundary_high[0];
+          yhigh = boundary_high[1];
+          zhigh = boundary_high[2];
+          p     = periodicity;
+      }
 
       void printFields() const
       {
@@ -319,12 +347,17 @@ namespace BonsaiIO
       void write(FileIO &fh)
       {
         assert(fh.isWrite());
-        char versionString[16] = "V2";
+        char versionString[16] = "V3";
         fh.write(versionString, 16*sizeof(char), "Error writing versionString.");
         int nData = data.size();
         fh.write(&nData, sizeof(int), "Error writing nData.");
         fh.write(&data[0], sizeof(DataInfo)*nData, "Error writing dataInfo.");
         fh.write(&time, sizeof(double), "Error writing time.");
+
+        //Write boundary information
+        fh.write(&boundary_low[0],  sizeof(boundary_low)*3,  "Error writing domain-low.");
+        fh.write(&boundary_high[0], sizeof(boundary_high)*3, "Error writing domain-high.");
+        fh.write(&periodicity, sizeof(int), "Error writing periodicity.");
       }
 
       void read(FileIO &fh)
@@ -334,7 +367,8 @@ namespace BonsaiIO
         fh.read(versionString, 16*sizeof(char), "Error reading versionString.");
         assert(
             std::string(versionString) == "V1" ||
-            std::string(versionString) == "V2" );
+            std::string(versionString) == "V2" ||
+            std::string(versionString) == "V3" );
         int nData;
         fh.read(&nData, sizeof(int), "Error reading nData.");
 
@@ -345,6 +379,22 @@ namespace BonsaiIO
           fh.read(&time, sizeof(float), "Error reading time.");
         else
           fh.read(&time, sizeof(double), "Error reading time.");
+
+        //From V3 onwards we support encoding periodic boundary information in the file header
+        if (std::string(versionString) != "V1" &&
+            std::string(versionString) != "V2")
+        {
+            fh.read(&boundary_low[0],  sizeof(float)*3,  "Error reading domain-low.");
+            fh.read(&boundary_high[0], sizeof(float)*3, "Error reading domain-high.");
+            fh.read(&periodicity, sizeof(int), "Error reading periodicity.");
+        }
+        else
+        {
+            //For older versions there is no periodicity encoded
+            boundary_low[0] = boundary_low[1] = boundary_low[2] = 0;
+            boundary_high[0] = boundary_high[1] = boundary_high[2] = 0;
+            periodicity = 0;
+        }
       }
   };
 
@@ -378,6 +428,19 @@ namespace BonsaiIO
       Header const & getHeader() { return header; }
       void setTime(const double t) { header.setTime(t); }
       double getTime() const { return header.getTime(); }
+
+
+      void setDomainInfo(const float xmin, const float ymin, const float zmin,
+                         const float xhigh, const float yhigh, const float zhigh, const int p)
+      {
+          header.setDomainInfo(xmin,ymin,zmin,xhigh,yhigh,zhigh,p);
+      }
+
+      void getDomainInfo(float &xmin, float &ymin, float &zmin,
+              float &xhigh, float &yhigh, float &zhigh, int &p)
+      {
+          header.getDomainInfo(xmin,ymin,zmin,xhigh,yhigh,zhigh,p);
+      }
 
     public:
       Core(const int _myRank,
