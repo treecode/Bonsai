@@ -92,13 +92,16 @@ int main(int argc, char * argv[])
       int periodicity = -1;
       in.getHeader().getDomainInfo(domain_min[0],  domain_min[1],  domain_min[2],
                                    domain_high[0], domain_high[1], domain_high[2], periodicity);
-      printf("# t_current: %f\n", t_current);
+
+      //Note current time is written on a non-commented out line!
+      printf("# t_current:\n%f\n", t_current);
       printf("# domainInfo: %f\t%f\t%f\t%f\t%f\t%f\t%d\n",
              domain_min[0],  domain_min[1],  domain_min[2],
              domain_high[0], domain_high[1], domain_high[2], periodicity);
     }
 
     double dtRead;
+#if 0    
     if (reduceDM > 0)
     {
       typedef float float4[4];
@@ -131,6 +134,7 @@ int main(int argc, char * argv[])
       }
 
     }
+#endif    
 
     if (reduceS > 0)
     {
@@ -141,26 +145,26 @@ int main(int argc, char * argv[])
       auto pos  = std::make_shared<BonsaiIO::DataType<float4>>("Stars:POS:real4");
       auto vel  = std::make_shared<BonsaiIO::DataType<float3>>("Stars:VEL:float[3]");
       auto rhoh = std::make_shared<BonsaiIO::DataType<float2>>("Stars:RHOH:float[2]");
+      auto hydro = std::make_shared<BonsaiIO::DataType<float4>>("Stars:HYDRO:float[4]");
 
       std::vector<std::shared_ptr<BonsaiIO::DataTypeBase>> dataDM;
       dataDM.push_back(idt);
       dataDM.push_back(pos);
       dataDM.push_back(vel);
       dataDM.push_back(rhoh);
+      dataDM.push_back(hydro);
       dtRead += read(myRank, comm, dataDM, in, reduceDM);
-
       const auto n = idt->size();
-      printf("# 1     2   3  4 5 6  7  8  9    10  11 \n");
-      printf("# ID  type  m  x y z  vx vy vz   rho h   \n");
+      printf("#x\ty\tz\tm\th\tdensity\tvx\tvy\tvz\tu\tP\tID\n");
       for (size_t i = 0; i < n; i++)
       {
-        printf(" %zu  %u  %g   %g %g %g   %g %g %g   %g %g \n",
-            idt->operator[](i).getID(),
-            idt->operator[](i).getType(),
-            pos->operator[](i)[3],
+        printf("%g\t%g\t%g\t%g\t %g\t%g\t %g\t%g\t%g\t %g\t%g\t %zu\n",
             pos->operator[](i)[0] ,pos->operator[](i)[1], pos->operator[](i)[2],
+            pos->operator[](i)[3],
+            rhoh->operator[](i)[1] ,rhoh->operator[](i)[0],
             vel->operator[](i)[0] ,vel->operator[](i)[1], vel->operator[](i)[2],
-            rhoh->operator[](i)[0] ,rhoh->operator[](i)[1]);
+            hydro->operator[](i)[2], hydro->operator[](i)[0], //u is in z, P is in x
+            idt->operator[](i).getID());
       }
     }
 

@@ -197,6 +197,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   float quickRatio = 0.1;
   bool  quickSync  = true;
   bool  useMPIIO = false;
+  bool  useMPIIO_single = false;
 
 #if ENABLE_LOG
   ENABLE_RUNTIME_LOG = false;
@@ -259,6 +260,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 		ADDUSAGE("     --quickratio #     which fraction of data to dump (fraction) [" << quickRatio << "]");
         ADDUSAGE("     --noquicksync      disable syncing for quick dumping ");
         ADDUSAGE("     --usempiio         use MPI-IO [disabled]");
+        ADDUSAGE("     --mpiio_single     toggle when not using bonsai_driver/bonsai_io");
 		ADDUSAGE("     --rmdist #         Particle removal distance (-1 to disable) [" << remoDistance << "]");
 		ADDUSAGE(" -r  --rebuild #        rebuild tree every # steps [" << rebuild_tree_rate << "]");
 		ADDUSAGE("     --reducebodies #   cut down bodies dataset by # factor ");
@@ -296,6 +298,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     opt.setFlag  ( "mpirendermode");
     opt.setFlag  ( "restart");
     opt.setFlag  ( "usempiio");
+    opt.setFlag  ( "mpiio_single");
     opt.setFlag  ( "noquicksync");
     opt.setOption( "infile",  'i');
     opt.setOption( "bonsaifile",  'f');
@@ -384,6 +387,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     if ((optarg = opt.getValue("quickdump")))    quickDump          = (float) atof  (optarg);
     if ((optarg = opt.getValue("quickratio")))   quickRatio         = (float) atof  (optarg);
     if (opt.getValue("usempiio")) useMPIIO = true;
+    if (opt.getValue("mpiio_single")) useMPIIO_single = true;
     if (opt.getValue("noquicksync")) quickSync = false;
     if ((optarg = opt.getValue("rmdist")))       remoDistance       = (float) atof  (optarg);
     if ((optarg = opt.getValue("rebuild")))      rebuild_tree_rate  = atoi  (optarg);
@@ -573,7 +577,8 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     cerr << "[INIT]\tTheta: \t\t"           << theta                << "\t\teps: \t\t"      << eps           << endl;
     cerr << "[INIT]\tTimestep: \t"          << timeStep             << "\t\ttEnd: \t\t"     << tEnd          << endl;
     cerr << "[INIT]\titerEnd: \t"           << iterEnd                                                       << endl;
-    cerr << "[INIT]\tUse MPI-IO: \t"        << (useMPIIO ? "YES" : "NO")                                     << endl;
+    cerr << "[INIT]\tUse MPI-IO: \t"        << (useMPIIO ? "YES" : "NO");
+    cerr << " using " <<  (useMPIIO_single ? "a single process" : " multi-process")     << endl;
     cerr << "[INIT]\tsnapshotFile: \t"      << snapshotFile          << "\tsnapshotIter: \t" << snapshotIter << endl;
     if (useMPIIO)
     {
@@ -828,18 +833,6 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   tree->localTree.bodies_hydro.h2d();
 
 
-  fprintf(stderr,"Domain info: \n");
-  fprintf(stderr,"X: %f %f\n", domain_low.x, domain_high.x);
-  fprintf(stderr,"Y: %f %f\n", domain_low.y, domain_high.y);
-  fprintf(stderr,"Z: %f %f\n", domain_low.z, domain_high.z);
-  fprintf(stderr,"Axis: %d \n", domain_periodicity);
-
-
-//  domain.domainSize =  {6.8593750000000000, 4.0594940802395563E-002f, 3.8273277230987154E-002f, tempX}; //Hardcoded for 256 phantom tube
-//  domain.domainSize =  {3.9296875000000000, c 1.9136638615493577E-002f, tempX}; //Hardcoded for 512 tube
-//  domain.domainSize =  { 2.46484375, 0.01014873478, 0.00956831966, tempX}; //Hardcoded for 1024 tube
-//  domain.domainSize =  {3.5, 0.01299038064, 0.01224744878, tempX}; //Blast wave 4.1.2
-//  domain = domainInformation(make_float3(-0.5,-0.5,-0.5), make_float3(0.5,0.5,0.5),PERIODIC_X |PERIODIC_Y | PERIODIC_Z); //Sedov 4.1.3
   domainInformation domain = domainInformation(domain_low, domain_high, domain_periodicity);
   tree->setPeriodicDomain(domain);
 
@@ -865,7 +858,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 
   /* w/o MPI-IO use async fwrite, so use 2 threads otherwise, use 1 threads
    */
-#pragma omp parallel num_threads(1+ (!useMPIIO))
+  #pragma omp parallel num_threads(1+ (!useMPIIO) + (useMPIIO_single))
   {
     const int tid = omp_get_thread_num();
     if (tid == 0)
@@ -886,42 +879,54 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
         if(nProcs > 1) ::abort();
       }
       simulationFinished = true;
+      if (useMPIIO) tree->terminateIO();
     }
     else
     {
-      assert(!useMPIIO);
-      /* IO */
-      sleep(1);
-      while(!simulationFinished)
+      if(!useMPIIO_single)
       {
-        if(ioSharedData.writingFinished == false)
-        {
-          const float t_current = ioSharedData.t_current;
-
-          bool distributed = true;
-          std::string fileName; fileName.resize(256);
-          sprintf(&fileName[0], "%s_%010.4f-%d", snapshotFile.c_str(), t_current, procId);
-
-
-          if(nProcs <= 16)
+          assert(!useMPIIO);
+          /* IO */
+          sleep(1);
+          while(!simulationFinished)
           {
-              distributed = false;
-              sprintf(&fileName[0], "%s_%010.4f", snapshotFile.c_str(), t_current);
+            if(ioSharedData.writingFinished == false)
+            {
+              const float t_current = ioSharedData.t_current;
+
+              bool distributed = true;
+              std::string fileName; fileName.resize(256);
+              sprintf(&fileName[0], "%s_%010.4f-%d", snapshotFile.c_str(), t_current, procId);
+
+
+              if(nProcs <= 16)
+              {
+                  distributed = false;
+                  sprintf(&fileName[0], "%s_%010.4f", snapshotFile.c_str(), t_current);
+              }
+
+              tree->fileIO->writeFile(ioSharedData.Pos, ioSharedData.Vel,
+                                      ioSharedData.IDs, ioSharedData.nBodies,
+                                      fileName.c_str(), t_current,
+                                      procId, nProcs, mpiCommWorld, distributed) ;
+
+              ioSharedData.free();
+              assert(ioSharedData.writingFinished == false);
+              ioSharedData.writingFinished = true;
+            }
+            else
+            {
+              usleep(100);
+            }
           }
-
-          tree->fileIO->writeFile(ioSharedData.Pos, ioSharedData.Vel,
-                                  ioSharedData.IDs, ioSharedData.nBodies,
-                                  fileName.c_str(), t_current,
-                                  procId, nProcs, mpiCommWorld, distributed) ;
-
-          ioSharedData.free();
-          assert(ioSharedData.writingFinished == false);
-          ioSharedData.writingFinished = true;
-        }
-        else
-        {
-          usleep(100);
-        }
+      } //if(0)
+      else
+      {
+          //If useMPIIO_single==true, we have a seperate thread acting as MPI writer
+          //Create a new communicator to let the MPI writer work on
+          MPI_Comm ioComm;
+          MPICheck(MPI_Comm_dup(MPI_COMM_WORLD, &ioComm));
+          tree->writeSharedMemoryLoop(procId, nProcs, shrMemPID, ioComm);
       }
     }
   }

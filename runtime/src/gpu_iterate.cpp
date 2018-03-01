@@ -227,44 +227,6 @@ void countInteractions(tree_structure &tree, MPI_Comm mpiCommWorld, int procId)
 }
 
 
-void snapshot_SPH(octree *tree, const int snapshot_count, const float t_current)
-{
-    tree->localTree.bodies_pos.d2h();
-    tree->localTree.bodies_vel.d2h();
-    tree->localTree.bodies_dens_out.d2h();
-    tree->localTree.bodies_hydro.d2h();
-    tree->localTree.bodies_ids.d2h();
-
-    char fname[512];
-    sprintf(fname, "SPHSNAP_%05d.txt", snapshot_count);
-    std::ofstream out(fname, std::ofstream::out);
-    out << "# t_current: " << t_current << std::endl;
-    out << "#x\ty\tz\tm\th\tdensity\tvx\tvy\tvz\tu\tP\tID\n";
-    for(int i=0; i < tree->localTree.n; i++)
-    {
-//          ullong tempID = this->localTree.bodies_ids[i] >= 100000000 ? this->localTree.bodies_ids[i]-100000000 : this->localTree.bodies_ids[i];
-          char buff[2048];
-          //sprintf(buff,"%lld\t%f\t%f\t%f\t%lg\t%f\t%f\t%f\t%lg\t%f\t%f\t%f\t%lld\n",
-          sprintf(buff,"%f\t%f\t%f\t%lg\t%f\t%f\t%f\t%lg\t%f\t%f\t%f\t%lld\n",
-              tree->localTree.bodies_pos[i].x,
-              tree->localTree.bodies_pos[i].y,
-              tree->localTree.bodies_pos[i].z,
-              tree->localTree.bodies_pos[i].w,
-              tree->localTree.bodies_dens_out[i].y,
-              tree->localTree.bodies_dens_out[i].x,
-              tree->localTree.bodies_vel[i].x,
-              tree->localTree.bodies_vel[i].y,
-              tree->localTree.bodies_vel[i].z,
-              tree->localTree.bodies_hydro[i].z,
-              tree->localTree.bodies_hydro[i].x,
-              tree->localTree.bodies_ids[i]);
-          out << buff;
-    }
-    out.close();
-
-}
-
-
 void octree::iterate_setup(IterationData &idata) {
 
   if(execStream == NULL)          execStream          = new my_dev::dev_stream(0);
@@ -337,7 +299,7 @@ bool octree::iterate_once(IterationData &idata) {
 
     LOG("At the start of iterate:\n");
 
-   //TODO(jbedorf) re-enable dumpData();
+    dumpData();
 
     bool forceTreeRebuild = false;
     bool needDomainUpdate = true;
@@ -378,6 +340,25 @@ bool octree::iterate_once(IterationData &idata) {
         needDomainUpdate    = true; //TODO if I set it to false results degrade. Check why, for now just updte
       }
     }
+    else
+    {
+        char fileName[512];
+        //Write the source particles
+        sprintf(fileName, "fullTreeStructureParticles-%d-%d.txt", mpiGetNProcs(), mpiGetRank());
+        ofstream partFile;
+        partFile.open(fileName);
+        this->localTree.bodies_Ppos.d2h();
+        partFile << "POINTS\n";
+        for(int i=0; i < this->localTree.n; i++)
+        {
+          float4  pos =  this->localTree.bodies_Ppos[i];
+          //partFile << pos.x << "\t" << pos.y << "\t" << pos.z << endl;
+          partFile << pos.x << "\t" << pos.y << "\t" << pos.z << "\t" << i << endl;
+        }
+        partFile.close();
+    }
+
+
 
 
     if (useDirectGravity)
@@ -441,7 +422,6 @@ bool octree::iterate_once(IterationData &idata) {
            //Approximate gravity
            t1 = get_time();
            //devContext.startTiming(gravStream->s());
-           //approximate_gravity(this->localTree);
            approximate_density(this->localTree);
 
     #if 0
@@ -624,7 +604,6 @@ bool octree::iterate_once(IterationData &idata) {
     #endif
       } //do SPH
 
-//      doGRAVITY = false;
 
       if(doGRAVITY)
       {
@@ -635,113 +614,6 @@ bool octree::iterate_once(IterationData &idata) {
           //devContext.stopTiming("Approximation", 4, gravStream->s());
           runningLETTimeSum = 0;
           if(nProcs > 1) makeLET();
-
-#if 0
-          if(1)
-//          if(iter == -1)
-          {
-           this->localTree.bodies_dens_out.d2h();
-           this->localTree.bodies_grad.d2h();
-           this->localTree.bodies_hydro.d2h();
-           this->localTree.bodies_acc1.d2h();
-           this->localTree.bodies_ids.d2h();
-           this->localTree.bodies_Pvel.d2h();
-           this->localTree.bodies_Ppos.d2h();
-           this->localTree.interactions.d2h();
-
-           for(int j=0; j < this->nProcs; j++) {
-               mpiSync();
-               //char fileName[128];  sprintf(fileName, "interact-%d-%d.txt", procId, nProcs); FILE* outFile = fopen(fileName, "w");
-               if(j == procId)
-               //for(int i=0; i < this->localTree.n; i++)
-               for(int i=0; i < this->localTree.n; i++)
-               {
-                   ullong tempID = this->localTree.bodies_ids[i] >= 100000000 ? this->localTree.bodies_ids[i]-100000000 : this->localTree.bodies_ids[i];
-                   if(tempID < 10 || std::isinf(this->localTree.bodies_acc1[i].x))
-                       LOGF(stderr,"Rho out: %d %lld || Pos: %f %f %f %lg\t || Vel: %f %f %f gradh: %f || Dens: %lg %f\tAcc: %f %f %f %f | cnt: %d %d\n",
-                           i,
-                           tempID, //this->localTree.bodies_ids[i],
-                           this->localTree.bodies_Ppos[i].x,
-                           this->localTree.bodies_Ppos[i].y,
-                           this->localTree.bodies_Ppos[i].z,
-                           this->localTree.bodies_Ppos[i].w,
-                           this->localTree.bodies_Pvel[i].x,
-                           this->localTree.bodies_Pvel[i].y,
-                           this->localTree.bodies_Pvel[i].z,
-                           this->localTree.bodies_Pvel[i].w,
-                           this->localTree.bodies_dens_out[i].x,
-                           this->localTree.bodies_dens_out[i].y,
-                           this->localTree.bodies_acc1[i].x,
-                           this->localTree.bodies_acc1[i].y,
-                           this->localTree.bodies_acc1[i].z,
-                           this->localTree.bodies_acc1[i].w,
-                           this->localTree.interactions[i].x,
-                           this->localTree.interactions[i].y);
-               }
-           }//for j
-  //         if(t_current > 0)
-           if(iter == 1)
-           {
-               mpiSync();
-//               exit(0);
-           }
-          }// if iter==
-
-          approximate_sphgrav(this->localTree);
-
-          if(1)
-//          if(iter == -1)
-          {
-           this->localTree.bodies_dens_out.d2h();
-           this->localTree.bodies_grad.d2h();
-           this->localTree.bodies_hydro.d2h();
-           this->localTree.bodies_acc1.d2h();
-           this->localTree.bodies_ids.d2h();
-           this->localTree.bodies_Pvel.d2h();
-           this->localTree.bodies_Ppos.d2h();
-           this->localTree.interactions.d2h();
-
-           for(int j=0; j < this->nProcs; j++) {
-               mpiSync();
-               //char fileName[128];  sprintf(fileName, "interact-%d-%d.txt", procId, nProcs); FILE* outFile = fopen(fileName, "w");
-               if(j == procId)
-               //for(int i=0; i < this->localTree.n; i++)
-               for(int i=0; i < this->localTree.n; i++)
-               {
-                   ullong tempID = this->localTree.bodies_ids[i] >= 100000000 ? this->localTree.bodies_ids[i]-100000000 : this->localTree.bodies_ids[i];
-                   if(tempID < 10 || std::isinf(this->localTree.bodies_acc1[i].x))
-                       LOGF(stderr,"Rho out: %d %lld || Pos: %f %f %f %lg\t || Vel: %f %f %f gradh: %f || Dens: %lg %f\tAcc: %f %f %f %f | cnt: %d %d\n",
-                           i,
-                           tempID, //this->localTree.bodies_ids[i],
-                           this->localTree.bodies_Ppos[i].x,
-                           this->localTree.bodies_Ppos[i].y,
-                           this->localTree.bodies_Ppos[i].z,
-                           this->localTree.bodies_Ppos[i].w,
-                           this->localTree.bodies_Pvel[i].x,
-                           this->localTree.bodies_Pvel[i].y,
-                           this->localTree.bodies_Pvel[i].z,
-                           this->localTree.bodies_Pvel[i].w,
-                           this->localTree.bodies_dens_out[i].x,
-                           this->localTree.bodies_dens_out[i].y,
-                           this->localTree.bodies_acc1[i].x,
-                           this->localTree.bodies_acc1[i].y,
-                           this->localTree.bodies_acc1[i].z,
-                           this->localTree.bodies_acc1[i].w,
-                           this->localTree.interactions[i].x,
-                           this->localTree.interactions[i].y);
-               }
-           }//for j
-  //         if(t_current > 0)
-           if(iter == 1)
-           {
-               mpiSync();
-               exit(0);
-           }
-          }// if iter==
-
-#endif
-
-
       } //doGravity
     }//else if useDirectGravity
 
@@ -871,7 +743,7 @@ bool octree::iterate_once(IterationData &idata) {
     }//Statistics dumping
 
 
-    if (useMPIIO && false) //TODO(jbedorf) reanble
+    if (useMPIIO) //TODO(jbedorf) reanble
     {
 #ifdef USE_MPI
       if (mpiRenderMode) dumpDataMPI(); //To renderer process
@@ -883,15 +755,6 @@ bool octree::iterate_once(IterationData &idata) {
       if((t_current >= nextSnapTime))
       {
         nextSnapTime += snapshotIter;
-
-        static int snapshot_count = 0;
-
-        snapshot_SPH(this, snapshot_count, t_current);
-
-        snapshot_count++;
-
-#if 0
-
 
         while(!ioSharedData.writingFinished)
         {
@@ -917,7 +780,6 @@ bool octree::iterate_once(IterationData &idata) {
 
         ioSharedData.writingFinished = false;
         if(nProcs <= 16) while (!ioSharedData.writingFinished);
-#endif
       }
     }
 

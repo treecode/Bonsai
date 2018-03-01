@@ -34,12 +34,14 @@ static double write(
     MPI_Allreduce(&nLoc, &nGlb, 1, MPI_DOUBLE, MPI_SUM, comm);
     if (nGlb > 0)
       assert(out.write(*type));
-    fprintf(stderr,"Items: %d \n", nGlb);
+    fprintf(stderr,"Items: %lld\n", nGlb);
     dtWrite += MPI_Wtime() - t0;
   }
 
   return dtWrite;
 }
+
+/* NOTE: This function should be equal to the one in src/octree.cpp  */
 
 template<typename ShmHeader, typename ShmData>
 bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank, const MPI_Comm &comm)
@@ -96,6 +98,9 @@ bool writeLoop(ShmHeader &header, ShmData &data, const int rank, const int nrank
       double dtOpen = MPI_Wtime() - tOpen;
 
       out.setTime(tCurrent);
+      out.setDomainInfo(header[0].xmin,header[0].ymin,header[0].zmin,
+                        header[0].xmax,header[0].ymax,header[0].zmax,
+                        header[0].periodicity);      
       tLast = tCurrent;
 
       /* prepare data */ 

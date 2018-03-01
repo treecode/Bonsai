@@ -17,6 +17,11 @@ struct BonsaiSharedHeader
   char fileName[256];
   bool handshake;
   bool done_writing;
+
+  // Domain information
+  float  xmin, ymin, zmin;
+  float  xmax, ymax, zmax;
+  int    periodicity;
 };
   
 struct BonsaiSharedData
@@ -31,7 +36,7 @@ struct BonsaiSharedData
 
 };
 
-char BonsaiSharedNameBuffer[1024];
+static char BonsaiSharedNameBuffer[1024];
 
 struct BonsaiSharedQuickHeader : public BonsaiSharedHeader
 {

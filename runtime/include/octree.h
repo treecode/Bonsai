@@ -42,6 +42,19 @@
 #ifdef USE_MPI
   #include "MPIComm.h"
   extern MPIComm *myComm;
+
+
+    #define MPICheck(cmd)                                                \
+      do {                                                                \
+        int mpi_errno = cmd;                                              \
+        if (MPI_SUCCESS != mpi_errno) {                                   \
+          fprintf(stderr, "[%s:%d] MPI call failed with %d \n", __FILE__, \
+                  __LINE__, mpi_errno);                                   \
+          exit(EXIT_FAILURE);                                             \
+        }                                                                 \
+        assert(MPI_SUCCESS == mpi_errno);                                 \
+    } while (false)
+
 #endif
 
 #ifndef WIN32
@@ -584,6 +597,8 @@ public:
                        float3 &domain_low, float3 &domain_high, int &periodicity,
                        const std::string &fileName, const int rank, const int nrank,
                        const MPI_Comm &comm, const bool restart = true, const int reduceFactor = 1);
+  void writeSharedMemoryLoop(const int procId, const int nProcs, const int shrMemPID, const MPI_Comm &ioComm);
+
 
   //Sub functions of iterate, should probably be private
   void   predict(tree_structure &tree);
@@ -805,6 +820,15 @@ public:
 
   void setPeriodicDomain(domainInformation domain)
   {
+      if(procId == 0)
+      {
+          LOG("Domain info: \n");
+          LOG("X: [ %f - %f ], Y: [ %f - %f ], Z: [ %f - %f ] Axis: %d\n",
+                  domain.minrange.x, domain.maxrange.x,
+                  domain.minrange.y, domain.maxrange.y,
+                  domain.minrange.z, domain.maxrange.z,
+                  (int)domain.domainSize.w);
+      }
       this->periodicDomainInfo = domain;
   }
 

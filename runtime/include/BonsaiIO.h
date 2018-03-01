@@ -271,7 +271,7 @@ namespace BonsaiIO
       }
 
       void getDomainInfo(float &xmin, float &ymin, float &zmin,
-              float &xhigh, float &yhigh, float &zhigh, int &p)
+              float &xhigh, float &yhigh, float &zhigh, int &p) const
       {
           xmin  = boundary_low[0];
           ymin  = boundary_low[1];

@@ -99,6 +99,19 @@ static __device__ uint4 get_key(int4 crd)
   int mask;
   int key;
 
+  int4 crd_temp = crd;
+
+  //Default split along the z-direction
+
+  //Split along the y-direction
+  //crd.y = crd_temp.z;
+  //crd.z = crd_temp.y;
+
+  //Split along the x-direction (B)
+  //crd.x = crd_temp.z;
+  //crd.z = crd_temp.x;
+
+
   mask = crd.y;
   crd.y = crd.z;
   crd.z = mask;

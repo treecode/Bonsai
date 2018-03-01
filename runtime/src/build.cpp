@@ -561,6 +561,25 @@ void octree::parallelDataSummary(tree_structure &tree,
 
     LOGF(stderr, "Redistribute domain took: %f\n", get_time()-t0);
 
+
+    char fileName[512];
+    //Write the source particles
+    sprintf(fileName, "fullTreeStructureParticles-%d-%d.txt", mpiGetNProcs(), mpiGetRank());
+    ofstream partFile;
+    partFile.open(fileName);
+    tree.bodies_Ppos.d2h();
+    partFile << "POINTS\n";
+    for(int i=0; i < tree.n; i++)
+    {
+      float4  pos =  tree.bodies_Ppos[i];
+      //partFile << pos.x << "\t" << pos.y << "\t" << pos.z << endl;
+      partFile << pos.x << "\t" << pos.y << "\t" << pos.z << "\t" << i << endl;
+    }
+    partFile.close();
+
+//    exit(0);
+
+
   /*************************/
 
 }
