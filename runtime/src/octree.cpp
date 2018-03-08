@@ -129,8 +129,6 @@ void octree::terminateIO() const
   }
 }
 
-#define USE_MPI
-
 #ifdef USE_MPI
 /*
  *

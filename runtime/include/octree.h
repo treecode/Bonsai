@@ -120,6 +120,8 @@ struct __half2 { unsigned short x,y; };
 
 
 
+
+
 typedef struct setupParams {
   int jobs;                     //Minimal number of jobs for each 'processor'
   int blocksWithExtraJobs;      //Some ' processors'  do one extra job all with bid < bWEJ
@@ -385,6 +387,7 @@ protected:
 
 
   domainInformation periodicDomainInfo;
+  sphParameters     SPHParameters;
 
   //Simulation statistics
   double Ekin, Ekin0, Ekin1;
@@ -447,8 +450,6 @@ protected:
   //SPH kernels
   my_dev::kernel SPHDensity;
   my_dev::kernel SPHDensityLET;
-  my_dev::kernel SPHDerivative;
-  my_dev::kernel SPHDerivativeLET;
   my_dev::kernel SPHHydro;
   my_dev::kernel SPHHydroLET;
   my_dev::kernel setPressure;
@@ -830,6 +831,11 @@ public:
                   (int)domain.domainSize.w);
       }
       this->periodicDomainInfo = domain;
+  }
+
+  void setSPHParameters(sphParameters params)
+  {
+      this->SPHParameters = params;
   }
 
   octree(const MPI_Comm &comm,

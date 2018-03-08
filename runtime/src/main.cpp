@@ -836,6 +836,18 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   domainInformation domain = domainInformation(domain_low, domain_high, domain_periodicity);
   tree->setPeriodicDomain(domain);
 
+  if(solverType == 1 || solverType == 2)
+  {
+      sphParameters sphParam;
+      sphParam.adiabatic_index = 5.0f/3.0f;
+      sphParam.av_alpha = 1;
+      sphParam.av_beta  = 2;
+      sphParam.ac_param = 1;
+      tree->setSPHParameters(sphParam);
+  }
+
+
+
 
   #ifdef USE_MPI
     omp_set_num_threads(4); //Startup the OMP threads to be used during LET phase
@@ -922,16 +934,19 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
       } //if(0)
       else
       {
-          //If useMPIIO_single==true, we have a seperate thread acting as MPI writer
-          //Create a new communicator to let the MPI writer work on
-          MPI_Comm ioComm;
-          MPICheck(MPI_Comm_dup(MPI_COMM_WORLD, &ioComm));
-          tree->writeSharedMemoryLoop(procId, nProcs, shrMemPID, ioComm);
+          if(snapshotIter > 0)
+          {
+              //If useMPIIO_single==true, we have a seperate thread acting as MPI writer
+              //Create a new communicator to let the MPI writer work on
+              MPI_Comm ioComm;
+              MPICheck(MPI_Comm_dup(MPI_COMM_WORLD, &ioComm));
+              tree->writeSharedMemoryLoop(procId, nProcs, shrMemPID, ioComm);
+          }
       }
     }
   }
 
-  if (useMPIIO) tree->terminateIO();
+  if (useMPIIO && (snapshotIter > 0)) tree->terminateIO();
 
   LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
 

@@ -295,9 +295,9 @@ uint2 approximate_sph(
                         const float4    *body_hydro_j,
                         const float2    *body_dens_j,
                         const float      eps2,
+                        const sphParameters     SPHParams,
                         const uint2      top_cells,
                         int             *shmem,
-                        float4          *privateInteractionList,
                         int             *cellList,
                         const float4     groupSize,
                         SPH::density::data      density_i   [NI],
@@ -388,9 +388,6 @@ uint2 approximate_sph(
     const int firstChild =  cellData & 0x0FFFFFFF;
     const int nChildren  = (cellData & 0xF0000000) >> 28;
 
-//    if(directOP<1, true>::type == SPH::HYDROFORCE) splitCell = true;
-
-
     if(cellData == 0xFFFFFFFF) splitCell = false;
 
     /**********************************************/
@@ -467,7 +464,7 @@ uint2 approximate_sph(
 
         if (nParticle >= WARP_SIZE)
         {
-          directOP<NI,true>()(acc_i, pos_i, vel_i, ptclIdx, eps2, density_i, derivative_i, hydro_i,
+          directOP<NI,true>()(acc_i, pos_i, vel_i, ptclIdx, eps2, SPHParams, density_i, derivative_i, hydro_i,
                   body_pos_j, body_vel_j, body_dens_j, body_hydro_j, IDi,IDs);
           nParticle  -= WARP_SIZE;
           nProcessed += WARP_SIZE;
@@ -486,7 +483,7 @@ uint2 approximate_sph(
           if (directCounter >= WARP_SIZE)
           {
             /* evaluate cells stored in shmem */
-            directOP<NI,true>()(acc_i, pos_i, vel_i, tmpList[laneIdx], eps2, density_i, derivative_i, hydro_i,
+            directOP<NI,true>()(acc_i, pos_i, vel_i, tmpList[laneIdx], eps2, SPHParams, density_i, derivative_i, hydro_i,
                                 body_pos_j, body_vel_j, body_dens_j, body_hydro_j, IDi,IDs);
             directCounter -= WARP_SIZE;
             const int scatterIdx = directCounter + laneIdx - nParticle;
@@ -516,7 +513,7 @@ uint2 approximate_sph(
   //Process remaining items
   if (directCounter > 0)
   {
-    directOP<NI,false>()(acc_i, pos_i, vel_i, laneIdx < directCounter ? directPtclIdx : -1, eps2, density_i, derivative_i, hydro_i,
+    directOP<NI,false>()(acc_i, pos_i, vel_i, laneIdx < directCounter ? directPtclIdx : -1, eps2, SPHParams, density_i, derivative_i, hydro_i,
             body_pos_j, body_vel_j, body_dens_j, body_hydro_j, IDi,IDs);
     if (INTCOUNT)
       interactionCounters.y += directCounter * NI;
@@ -567,6 +564,7 @@ bool treewalk_control(
     const uint2      node_begend,
     const bool       isFinalLaunch,
     const float4     domainSize,
+    const sphParameters     SPHParams,
     const int       *active_groups,
     const bodyProps &group_body,
     const float4    *groupSizeInfo,
@@ -575,7 +573,6 @@ bool treewalk_control(
     const float4    *nodeSize,
     const float4    *nodeMultipole,
     int             *shmem,
-    float4          *privateInteractionList,
     int             *lmem,
     int2            *interactions,
     int             *active_inout,
@@ -723,9 +720,9 @@ bool treewalk_control(
                         body_hydro_j,
                         body_dens_j,
                         eps2,
+                        SPHParams,
                         node_begend,
                         shmem,
-                        privateInteractionList,
                         lmem,
                         curGroupSize,
                         dens_i,
@@ -747,9 +744,9 @@ bool treewalk_control(
                         body_hydro_j,
                         body_dens_j,
                         eps2,
+                        SPHParams,
                         node_begend,
                         shmem,
-                        privateInteractionList,
                         lmem,
                         curGroupSize,
                         dens_i,
@@ -772,13 +769,7 @@ bool treewalk_control(
 
   long long int endC = clock64();
 
-//  if(directOp<1, true>::type == SPH::DERIVATIVE)
-//  {
-//      derivative_i[0].x = warpGroupReduce(derivative_i[0].x);
-//      derivative_i[0].y = warpGroupReduce(derivative_i[0].y);
-//      derivative_i[0].z = warpGroupReduce(derivative_i[0].z);
-//      derivative_i[0].w = warpGroupReduce(derivative_i[0].w);
-//  }
+
   if(directOp<1, true>::type == SPH::DENSITY)
   {
       dens_i[0].dens    = warpGroupReduce(dens_i[0].dens);
@@ -881,7 +872,7 @@ bool treewalk_control(
                                   derivative_i[i].y*derivative_i[i].y +
                                   derivative_i[i].z*derivative_i[i].z;
                     temp2 *= cnormk*hi41;
-                    //0.0001*Sound-speed/smoothing-length
+
                     //TODO(jbedorf): Should this be the old or the new smoothing?
                     //float temp3 = 1.0e-4 * group_body_hydro[addr].y / dens_i[i].smth;
                     float temp3 = 1.0e-4 * group_body_hydro[addr].y / group_body_dens[addr].y;
@@ -952,6 +943,7 @@ void approximate_SPH_main(
     uint2     node_begend,
     bool      isFinalLaunch,
     const float4 domainSize,
+    const sphParameters     SPHParams,
     int      *active_groups,
     bodyProps &group_body,
     int      *active_inout,
@@ -978,12 +970,6 @@ void approximate_SPH_main(
   const int sh_offs    = (shMemSize >> nWarps2) * warpId;
   int *shmem           = shmem_pool + sh_offs;
   volatile int *shmemv = shmem;
-
-
-//  float4 privateInteractionList[64];
-//  __shared__ float4 sh_privateInteractionList[128];
-  float4 *privateInteractionList = NULL;
-
 
 
 
@@ -1025,6 +1011,7 @@ void approximate_SPH_main(
                                     node_begend,
                                     isFinalLaunch,
                                     domainSize,
+                                    SPHParams,
                                     active_groups,
                                     group_body,
                                     groupSizeInfo,
@@ -1033,7 +1020,6 @@ void approximate_SPH_main(
                                     boxSizeInfo,
                                     multipole_data,
                                     shmem,
-                                    privateInteractionList,
                                     lmem,
                                     interactions,
                                     active_inout,
@@ -1116,6 +1102,7 @@ void approximate_SPH_main(
                                               node_begend,
                                               isFinalLaunch,
                                               domainSize,
+                                              SPHParams,
                                               active_groups,
                                               group_body,
                                               groupSizeInfo,
@@ -1124,7 +1111,6 @@ void approximate_SPH_main(
                                               boxSizeInfo,
                                               multipole_data,
                                               shmem,
-                                              privateInteractionList,
                                               lmem,
                                               interactions,
                                               active_inout,
@@ -1156,6 +1142,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
           uint2     node_begend,
           bool      isFinalLaunch,
           const domainInformation domainInfo,
+          const sphParameters     SPHParams,
           int       *active_groups,
           bodyProps group_body,                //The i-particles
           int       *active_inout,
@@ -1180,6 +1167,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
            node_begend,
            isFinalLaunch,
            domainInfo.domainSize,
+           SPHParams,
            active_groups,
            group_body,
            active_inout,
@@ -1209,6 +1197,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
           uint2     node_begend,
           bool      isFinalLaunch,
           const domainInformation domainInfo,
+          const sphParameters     SPHParams,
           int       *active_groups,
           bodyProps group_body,
           int       *active_inout,
@@ -1234,6 +1223,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
           node_begend,
           isFinalLaunch,
           domainInfo.domainSize,
+          SPHParams,
           active_groups,
           group_body,
           active_inout,
@@ -1658,7 +1648,7 @@ extern "C" __global__ void gpu_boundaryTree2(
 
 
 
-
+#if 0
 extern "C"
 __launch_bounds__(NTHREAD,1024/NTHREAD)
 __global__ void
@@ -1738,7 +1728,7 @@ approximate_SPH_main<false, NTHREAD2, SPH::derivative::directOperator>(
          ID);
 #endif
 }
-
+#endif
 
 
 #if 0

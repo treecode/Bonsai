@@ -8,6 +8,9 @@
 #endif
 
 
+#define USE_BALSARA_SWITCH
+
+
 
 /***********************************/
 /***** DENSITY   ******************/
@@ -142,23 +145,10 @@ namespace SPH
                 return 0;
             }
         }
-//        __device__ __forceinline__ float abs_gradW_print(const float dr, const float h) const{
-//            const float hi = 1.0f/h;
-//            const float hi21 = hi*hi;
-//            const float hi41 = hi21*hi21;
-//            const float q  = dr*hi;
-//            const float q2 = (dr*dr)*hi21;
-//            const float cnormkh = cnormk*hi41; //Quintic kernel
-//
-//
-//            printf("ON DEV2 \t hj21: %g q2j: %g qj: %f cnormk: %g\n",hi21, q2, q, cnormk);
-//        }
-
 
         __device__ __forceinline__ float abs_gradW2(const float dr, const float h) const{
             const float hi = 1.0f/h;
             const float hi21 = hi*hi;
-//            const float hi41 = hi21*hi21;
             const float q  = dr*hi;
             const float q2 = (dr*dr)*hi21;
             const float cnormkh = 1; //Quintic kernel
@@ -366,6 +356,7 @@ namespace SPH
         } data;
     }
 
+#if 1
     namespace derivative
     {
         typedef struct  __attribute__((aligned(16)))  data
@@ -389,6 +380,7 @@ namespace SPH
 
         } data;
     }
+#endif
 
     namespace hydroforce
     {
@@ -532,6 +524,7 @@ namespace density
           const float4  vel_i[NI],
           const int     ptclIdx,
           const float   eps2,
+          const sphParameters     SPHParams,
           SPH::density::data  density_i[NI],
           SPH::derivative::data gradient_i[NI],
           const float4  hydro_i[NI],  //Not used here
@@ -839,207 +832,6 @@ namespace density
 }; //namespace density
 #endif
 
-#if 0
-namespace density
-{
-
-
-    static __device__ __forceinline__ void addDensity(
-        const float4    pos,
-        const float     massj,
-        const float3    posj,
-        const float     eps2,
-              float    &dens,
-              int      &temp,
-        const SPH::kernel_t &kernel)
-    {
-    #if 1  // to test performance of a tree-walk
-      const float3 dr    = make_float3(posj.x - pos.x, posj.y - pos.y, posj.z - pos.z);
-      const float r2     = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
-      const float r2eps  = r2;// + eps2;
-      const float r      = sqrtf(r2eps);
-
-      temp = (fabs(massj*kernel.W(r, pos.w)) > 0);
-
-      dens += massj*kernel.W(r, pos.w);
-      //Prevent adding ourself, TODO should make this 'if' more efficient, like multiply with something
-      //Not needed for this SPH kernel?
-      //if(r2 != 0) density +=tempD;
-    #endif
-    }
-
-
-
-
-    template<int NI, bool FULL>
-    struct directOperator {
-
-        static const SPHVal type = SPH::DENSITY;
-
-        __device__ __forceinline__ void operator()(
-                float4  acc_i[NI],
-          const float4  pos_i[NI],
-          const float4  vel_i[NI],
-          const int     ptclIdx,
-          const float   eps2,
-          SPH::density::data  density_i[NI],
-          SPH::derivative::data gradient_i[NI],
-          const float4  hydro_i[NI],  //Not used here
-          const float4 *body_jpos,
-          const float4 *body_jvel,
-          const float2 *body_jdens,   //Not used here
-          const float4 *body_hydro    //Not used here
-          )
-        {
-          SPH::kernel_t kernel;
-          const float4 M0 = (FULL || ptclIdx >= 0) ? body_jpos[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
-
-          for (int j = 0; j < WARP_SIZE; j++)
-          {
-            const float4 jM0   = make_float4(__shfl(M0.x, j), __shfl(M0.y, j), __shfl(M0.z, j), __shfl(M0.w,j));
-            const float  jmass = jM0.w;
-            const float3 jpos  = make_float3(jM0.x, jM0.y, jM0.z);
-        #pragma unroll
-            for (int k = 0; k < NI; k++)
-            {
-              int temp = 0;
-              addDensity(pos_i[k], jmass, jpos, eps2, density_i[k].dens, temp, kernel);
-              density_i[k].smth++;
-
-              gradient_i[k].x++;
-              gradient_i[k].y += temp;
-            }
-          }
-        }
-    };
-}; //namespace density
-#endif
-
-namespace derivative
-{
-    static __device__ __forceinline__ void addParticleEffect(
-        const float4    posi,
-        const float4    veli,
-        const float     massj,
-        const float3    posj,
-        const float3    velj,
-        const float     eps2,
-              SPH::derivative::data  &gradient,
-        const SPH::kernel_t &kernel)
-    {
-      const float3 dr    = make_float3(posj.x - posi.x, posj.y - posi.y, posj.z - posi.z);
-      const float3 dv    = make_float3(velj.x - veli.x, velj.y - veli.y, velj.z - veli.z);
-      const float r2     = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
-      const float r2eps  = r2;// + eps2;
-      const float r      = sqrtf(r2eps);
-
-      const float abs_gradW = kernel.abs_gradW(r, posi.w);
-
-      const float4 gradW = (r > 0) ? make_float4(abs_gradW * dr.x / r, abs_gradW * dr.y / r, abs_gradW * dr.z / r, 0.0) : (float4){0.0, 0.0, 0.0, 0.0};
-
-      gradient.x -= massj* (dv.y * gradW.z - dv.z * gradW.y);
-      gradient.y -= massj* (dv.z * gradW.x - dv.x * gradW.z);
-      gradient.z -= massj* (dv.x * gradW.y - dv.y * gradW.x);
-      gradient.w -= massj* (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z);
-    }
-
-
-
-
-
-    template<int NI, bool FULL>
-    struct directOperator {
-
-         static const SPHVal type = SPH::DERIVATIVE;
-#if 0
-        __device__ __forceinline__ void operator()(
-                  float4  acc_i[NI],
-            const float4  pos_i[NI],
-            const float4  vel_i[NI],
-            const int     ptclIdx,
-            const float   eps2,
-            SPH::density::data  density_i[NI],
-            SPH::derivative::data gradient_i[NI],
-            const float4  hydro_i[NI],  //Not used here
-            const float4 *body_jpos,
-            const float4 *body_jvel,
-            const float2 *body_jdens,   //Not used here
-            const float4 *body_hydro    //Not used here
-            )
-        {
-          SPH::kernel_t kernel;
-          const float4 MP = (FULL || ptclIdx >= 0) ? body_jpos[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
-          const float4 MV = (FULL || ptclIdx >= 0) ? body_jvel[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
-
-          const int NGROUPTemp = NCRIT;
-          const int offset     = NGROUPTemp*(laneId / NGROUPTemp);
-//          for (int j = 0; j < WARP_SIZE; j++)
-          for (int j = offset; j < offset+NGROUPTemp; j++)
-          {
-            const float4 jM0   = make_float4(__shfl(MP.x, j), __shfl(MP.y, j), __shfl(MP.z, j), __shfl(MP.w,j));
-            const float  jmass = jM0.w;
-            const float3 jpos  = make_float3(jM0.x, jM0.y, jM0.z);
-            const float3 jvel  = make_float3(__shfl(MV.x, j), __shfl(MV.y, j), __shfl(MV.z, j));
-
-        #pragma unroll
-            for (int k = 0; k < NI; k++)
-            {
-              addParticleEffect(pos_i[k], vel_i[k], jmass, jpos, jvel, eps2, gradient_i[k], kernel);
-            }
-          }
-        }
-#else
-        __device__ __forceinline__ void operator()(
-                  float4  acc_i[NI],
-            const float4  pos_i[NI],
-            const float4  vel_i[NI],
-            const int     ptclIdx,
-            const float   eps2,
-            SPH::density::data  density_i[NI],
-            SPH::derivative::data gradient_i[NI],
-            const float4  hydro_i[NI],  //Not used here
-            const float4 *body_jpos,
-            const float4 *body_jvel,
-            const float2 *body_jdens,   //Not used here
-            const float4 *body_hydro,    //Not used here
-            const unsigned long long IDi,
-            const unsigned long long *IDs
-            )
-        {
-          //This function is only used for computing the Balsala switch
-          SPH::kernel_t kernel;
-          const float4 MP = (FULL || ptclIdx >= 0) ? body_jpos[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
-          const float4 MV = (FULL || ptclIdx >= 0) ? body_jvel[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
-
-          const int NGROUPTemp = NCRIT;
-          const int offset     = NGROUPTemp*(laneId / NGROUPTemp);
-          for (int j = offset; j < offset+NGROUPTemp; j++)
-          {
-                const float4 jM0      = make_float4(__shfl(MP.x, j), __shfl(MP.y, j), __shfl(MP.z, j), __shfl(MP.w,j));
-                const float3 dr       = make_float3(jM0.x - pos_i[0].x, jM0.y - pos_i[0].y, jM0.z - pos_i[0].z);
-                const float r         = sqrtf(dr.x*dr.x + dr.y*dr.y + dr.z*dr.z);
-
-                const float abs_gradW = kernel.abs_gradW(r, pos_i[0].w);
-                const float4 gradW = (r > 0) ? make_float4(abs_gradW * dr.x / r, abs_gradW * dr.y / r, abs_gradW * dr.z / r, 0.0) : (float4){0.0, 0.0, 0.0, 0.0};
-
-                const float3 jvel  = make_float3(__shfl(MV.x, j), __shfl(MV.y, j), __shfl(MV.z, j));
-                const float3 dv    = make_float3(jvel.x - vel_i[0].x, jvel.y - vel_i[0].y, jvel.z - vel_i[0].z);
-                gradient_i[0].x -= jM0.w* (dv.y * gradW.z - dv.z * gradW.y);
-                gradient_i[0].y -= jM0.w* (dv.z * gradW.x - dv.x * gradW.z);
-                gradient_i[0].z -= jM0.w* (dv.x * gradW.y - dv.y * gradW.x);
-                gradient_i[0].w -= jM0.w* (dv.x * gradW.x + dv.y * gradW.y + dv.z * gradW.z);
-
-//                gradient_i[0].z++;       //Number of operations
-//                gradient_i[0].y += (jM0.w*fabs(abs_gradW)) > 0; //Number of useful operations
-          }
-
-        }
-
-#endif
-
-
-    };
-}; //namespace derivative
 
 
 namespace hydroforce
@@ -1155,6 +947,7 @@ namespace hydroforce
             const float4  vel_i[NI],
             const int     ptclIdx,
             const float   eps2,
+            const sphParameters     SPHParams,
             SPH::density::data    density_i[NI],
             SPH::derivative::data gradient_i[NI],
             const float4  hydro_i[NI],              //x = pressure, y = soundspeed, z = Energy , w = Balsala Switch
@@ -1222,9 +1015,9 @@ namespace hydroforce
             const float4 jH       = make_float4(__shfl(MH.x, j), __shfl(MH.y, j), __shfl(MH.z,j), __shfl(MH.w,j)); //OLD: Note w in z location
 
 #if 1
-            const float aAV       = 1.0f; //1.0f; //Alpha parameter for artificial viscosity
-            const float bAV       = 2.0f; //2.0f; //Beta parameter for artificial viscosity
-            const float aC        = 1.0f; //1.0f; //Artificial Conductivity parameter
+            const float aAV       = SPHParams.av_alpha; //AV_ALPHA; //1.0f; //Alpha parameter for artificial viscosity
+            const float bAV       = SPHParams.av_beta; //AV_BETA; //2.0f; //Beta parameter for artificial viscosity
+            const float aC        = SPHParams.ac_param; //AC_PARAM; //1.0f; //Artificial Conductivity parameter
 
             const float v_sigi     = aAV*hydro_i[0].y - bAV * projv; //a*csi - b*drdv
             const float v_sigj     = aAV*jH.y         - bAV * projv; //a*csj - b*drdv

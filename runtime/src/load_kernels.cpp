@@ -53,8 +53,6 @@ void octree::load_kernels() {
   approxGrav.	   create("dev_approximate_gravity", (const void*)&dev_approximate_gravity);
   SPHDensity.      create("dev_sph_density",         (const void*)&dev_sph_density);
   SPHDensityLET.   create("dev_sph_density",         (const void*)&dev_sph_density);
-  SPHDerivative.   create("dev_sph_derivative",      (const void*)&dev_sph_derivative);
-  SPHDerivativeLET.create("dev_sph_derivative",      (const void*)&dev_sph_derivative);
   SPHHydro.        create("dev_sph_hydro",           (const void*)&dev_sph_hydro);
   SPHHydroLET.     create("dev_sph_hydro",           (const void*)&dev_sph_hydro);
 

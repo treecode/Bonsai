@@ -10,7 +10,6 @@ typedef float4 real4;
 #define DO_BLOCK_TIMESTEP
 
 
-
 //SPH defines
 //Boundary particles have an ID higher than SPHBOUND
 #define SPHBOUND          100000000000000
@@ -23,34 +22,23 @@ typedef float4 real4;
 /* M4 Cubic kernel */
 #define KERNEL_M_4
 #define SPH_KERNEL_SIZE 2.0f
-#define  PARAM_SMTH 1.2
+#define PARAM_SMTH 1.2
 
 
 /* Phantom Wendland C6 kernel */
 //#define KERNEL_W_C6
 //#define SPH_KERNEL_SIZE 2.0f
-//#define  PARAM_SMTH 1.6
-
-/* Natsuki Wendland C6 kernel , works*/
-//#define SPH_KERNEL_SIZE 3.5f
-//#define  PARAM_SMTH 1.2
-
-
-#define USE_BALSARA_SWITCH
+//#define PARAM_SMTH 1.6
 
 
 
-
-//#define ADIABATIC_INDEX 1.4f
-#define ADIABATIC_INDEX 5.0f/3.0f
 
 //Enabling the following increases the number of particle properties
 //exchanged during mpi particle exchange. Only required if you run
 //block time steps. Not needed in the default shared time-step mode.
 //#define DO_BLOCK_TIMESTEP_EXCHANGE_MPI
 
-//Uncomment the next line to use thrust radix sort instead of built in one
-// #define USE_THRUST
+
 
 #if USE_DUST
   #if USE_MPI
@@ -76,6 +64,15 @@ public:
         domainSize.w = periodicity;
     }
 };
+
+// The variable configuration options for SPH kernels
+typedef struct sphParameters {
+    float adiabatic_index;
+    float av_alpha;
+    float av_beta;
+    float ac_param;
+} sphParameters;
+
 
 
 struct bodyProps
@@ -106,11 +103,7 @@ typedef struct bodyStruct
   float4 hydro;
   float4 drvt;
 
-
-
-
 #ifdef DO_BLOCK_TIMESTEP_EXCHANGE_MPI
-
   uint4 key;
   real4 acc1;
 #endif
