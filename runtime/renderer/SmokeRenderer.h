@@ -111,6 +111,7 @@ public:
     ParamListGL *getParams() { return m_params; }
 
     void render();
+    void addText(const int fontSize, const float x, const float y, const char* format, ...);
     void debugVectors();
     
     void depthSort(float4 *posD);
@@ -159,6 +160,7 @@ private:
     void drawVector(nv::vec3f v);
 	void drawBounds();
     void drawSkybox(GLuint tex);
+    
 
     void initParams();
 

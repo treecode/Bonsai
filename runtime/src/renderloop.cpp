@@ -12,17 +12,24 @@
 #include <GL/glxew.h>
 #endif
 
-#if defined(__APPLE__) || defined(MACOSX)
-#include <GLUT/glut.h>
-#else
-#include <GL/freeglut.h>
+// #define USE_GLUT
+#ifdef USE_GLUT
+    #if defined(__APPLE__) || defined(MACOSX)
+        #include <GLUT/glut.h>
+    #else
+        #include <GL/freeglut.h>
+    #endif
 #endif
+
+
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
 
 #include <cuda_runtime_api.h>
 #include <cstdarg>
 #include <vector>
 #include <cassert>
-
+#include <csignal>
 
 #include "render_particles.h"
 #include "SmokeRenderer.h"
@@ -33,14 +40,84 @@
 
 #include "tr.h"
 
+
+
+#define USE_JPEG
+#ifdef USE_JPEG
+#include <turbojpeg.h>
+
+class JPEGWriter
+{
+private:
+    const int width;
+    const int height;
+    
+    unsigned char       *jpegBuff;
+    long unsigned int    jpegSize;
+    
+    const int JPEG_QUALITY = 75;
+    const int COLOR_COMPONENTS = 3;  
+    
+    tjhandle compressor;
+    
+public: 
+    JPEGWriter(const int w, const int h): width(w), height(h) 
+    {
+        //Worst case allocation, no compression
+        jpegSize = width*height*COLOR_COMPONENTS;
+        jpegBuff = tjAlloc(jpegSize);       
+        
+        compressor = tjInitCompress();
+    }
+    
+    ~JPEGWriter()
+    
+    {
+        tjDestroy(compressor);
+        tjFree(jpegBuff);
+    }
+    
+    void write(unsigned char *buffer, const char * fileName)
+    {
+        //Compress the image using the predefined settings
+        tjCompress2(compressor, buffer, width, 0, height, TJPF_RGB,
+        &jpegBuff, &jpegSize, TJSAMP_444, JPEG_QUALITY, TJFLAG_FASTDCT | TJFLAG_NOREALLOC);
+
+        
+        FILE *jpegFile = fopen(fileName, "wb");
+        if (jpegFile == NULL)
+        {
+            fprintf(stderr,"Failed to open JPEG output file\n");
+        }
+        else
+        {        
+            fwrite(jpegBuff, jpegSize, 1, jpegFile);
+            fclose(jpegFile);
+        }    
+    }
+};
+#endif
+
+
 float TstartGlow;
 float dTstartGlow;
 
-#define WINDOWW 1920
-#define WINDOWH 1200
+//#define WINDOWW 1920
+//#define WINDOWH 1200
 
-//#define WINDOWW 1024
-//#define WINDOWH 768
+#define WINDOWW 1024
+#define WINDOWH 768
+
+// #define WINDOWW 3840
+// #define WINDOWH 2160
+
+
+EGLSurface eglSurf;
+EGLDisplay eglDpy;
+EGLContext eglCtx;
+EGLConfig eglCfg;
+
+
 #define DEG2RAD(a) ((a)/57.295)
 //for stereo
 enum EYE
@@ -187,6 +264,147 @@ class StarSampler
 		}
 };
 
+
+class ScreenshotCameraCoordinates
+{
+    private:
+        std::vector<float3> coordinates;
+
+        float   radius;
+        float3  cameraTrans;
+
+    public:
+        ScreenshotCameraCoordinates(const float r = 1): radius(r)
+        {
+            coordinates.clear();
+            cameraTrans = {0,0,0};
+        }
+
+
+        void generate(float rad = -1)
+        {
+            if (rad < 0) rad = radius;
+            //Add the top and bottom view
+            coordinates.clear();
+            
+            
+            float3 coord = compute_coordinates(0, 0, rad);
+            printf("phi: %f theta: %f || %f %f %f \n", 0 * 180 / M_PI, 0 * 180 / M_PI, 
+                           coord.x, coord.y, coord.z);
+            coordinates.push_back(coord);
+            coord = compute_coordinates(M_PI, 0, rad);
+            printf("phi: %f theta: %f || %f %f %f \n", 180 * 180 / M_PI, 0 * 180 / M_PI, 
+                           coord.x, coord.y, coord.z);
+            coordinates.push_back(coord);
+            
+            //coordinates.push_back(compute_coordinates(0, 0, rad));
+            //coordinates.push_back(compute_coordinates(180, 0, rad));
+            
+
+            const int nPhi   = 4;
+            const int nTheta = 4;
+
+            const float phi_inc = 180.0 / nPhi;
+            const float theta_inc = 360.0 / nTheta;
+
+            for (int i=1; i < nPhi; i++)
+            {
+                for (int j=0; j < nTheta; j++)
+                {
+                    float phi   = 2*M_PI * ((phi_inc*i)   / 360);
+                    float theta = 2*M_PI * ((theta_inc*j) / 360);
+                    
+                    float3 coord = compute_coordinates(phi, theta, rad);
+                    
+                    printf("phi: %f theta: %f || %f %f %f \n", phi * 180 / M_PI, theta * 180 / M_PI, 
+                           coord.x, coord.y, coord.z);
+
+                    //Translate to the center of mass TODO
+
+                    coordinates.push_back(coord);
+                } //theta
+            }//phi
+        }//generate
+
+        void setCenterTranslation(float3 boxMin, float3 boxMax, const int winx, const int winy) 
+        {
+            const float pi = M_PI;
+            float3 center = 0.5f * (boxMin + boxMax);
+            float radius = std::max(length(boxMax), length(boxMin));
+            const float fovRads = (winx / (float)winy) * pi / 3.0f ; 
+
+            float distanceToCenter = radius / sinf(0.5f * fovRads);
+            
+            float3 cameraTrans = center + make_float3(0, 0, -distanceToCenter*0.2f);
+        }
+
+        //Phi and theta should be in radians
+        float3 compute_coordinates(float phi, float theta, float r)
+        {
+            return float3 
+            {
+              r*sin(phi)*cos(theta),
+              r*sin(phi)*sin(theta),
+              r*cos(phi)
+            };
+        }
+
+
+        const std::vector<float3> &get() const
+        {
+            return coordinates;
+        }
+};
+
+
+ScreenshotCameraCoordinates screenshot_camera;
+
+  
+  #define check_gl_error() _check_gl_error(__FILE__,__LINE__)
+  void _check_gl_error(const char *file, int line) {
+        GLenum err (glGetError());
+
+        while(err!=GL_NO_ERROR) {
+                string error;
+
+                switch(err) {
+                        case GL_INVALID_OPERATION:      error="INVALID_OPERATION";      break;
+                        case GL_INVALID_ENUM:           error="INVALID_ENUM";           break;
+                        case GL_INVALID_VALUE:          error="INVALID_VALUE";          break;
+                        case GL_OUT_OF_MEMORY:          error="OUT_OF_MEMORY";          break;
+                        case GL_INVALID_FRAMEBUFFER_OPERATION:  error="INVALID_FRAMEBUFFER_OPERATION";  break;
+                }
+
+                cerr << "GL_" << error.c_str() <<" - "<<file<<":"<<line<<endl;
+                err=glGetError();
+        }
+}
+
+#define CASE_STR( value ) case value: return #value; 
+const char* eglGetErrorString( EGLint error )
+{
+    switch( error )
+    {
+    CASE_STR( EGL_SUCCESS             )
+    CASE_STR( EGL_NOT_INITIALIZED     )
+    CASE_STR( EGL_BAD_ACCESS          )
+    CASE_STR( EGL_BAD_ALLOC           )
+    CASE_STR( EGL_BAD_ATTRIBUTE       )
+    CASE_STR( EGL_BAD_CONTEXT         )
+    CASE_STR( EGL_BAD_CONFIG          )
+    CASE_STR( EGL_BAD_CURRENT_SURFACE )
+    CASE_STR( EGL_BAD_DISPLAY         )
+    CASE_STR( EGL_BAD_SURFACE         )
+    CASE_STR( EGL_BAD_MATCH           )
+    CASE_STR( EGL_BAD_PARAMETER       )
+    CASE_STR( EGL_BAD_NATIVE_PIXMAP   )
+    CASE_STR( EGL_BAD_NATIVE_WINDOW   )
+    CASE_STR( EGL_CONTEXT_LOST        )
+    default: return "Unknown";
+    }
+}
+#undef CASE_STR
+
 extern void displayTimers();    // For profiling counter display
 
 /* thread safe drand48(), man drand48 */
@@ -276,7 +494,12 @@ void beginDeviceCoords(void)
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
+    
+#ifdef USE_GLUT    
     glOrtho(0, glutGet(GLUT_WINDOW_WIDTH), 0, glutGet(GLUT_WINDOW_HEIGHT), -1, 1);
+#else
+    glOrtho(0, WINDOWW, 0, WINDOWH, -1, 1);    
+#endif
 
     glMatrixMode(GL_MODELVIEW);
     glPushMatrix();
@@ -306,6 +529,7 @@ void glPrintf(float x, float y, const char* format, ...)
   va_end(args);
 }
 
+
 // reducing to improve perf
 #define MAX_PARTICLES 5700000
 
@@ -317,11 +541,13 @@ public:
 //       m_renderer(tree->localTree.n + tree->localTree.n_dust),
       m_renderer(tree->localTree.n, MAX_PARTICLES),
       //m_displayMode(ParticleRenderer::PARTICLE_SPRITES_COLOR),
-	    m_displayMode(SmokeRenderer::VOLUMETRIC),
+        m_displayMode(SmokeRenderer::VOLUMETRIC),
+//       m_displayMode(SmokeRenderer::POINTS),
+      //m_displayMode(SmokeRenderer::SPRITES),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.2f),
       m_paused(false),
-      m_renderingEnabled(true),
-  	  m_displayBoxes(false), 
+      m_renderingEnabled(false),
+      m_displayBoxes(false), 
       m_displaySliders(false),
       m_displayCursor(1),
       m_cursorSize(0.5),
@@ -331,12 +557,12 @@ public:
       m_octreeMinDepth(0),
       m_octreeMaxDepth(3),
       m_flyMode(false),
-	    m_fov(60.0f),
-	    m_nearZ(0.2),
-	    m_screenZ(450.0),
-	    m_farZ(2000),
-	    m_IOD(4.0),
-	    m_stereoEnabled(false), //SV TODO Must be false, never make it true
+      m_fov(60.0f),
+      m_nearZ(0.2),
+      m_screenZ(450.0),
+      m_farZ(2000),
+      m_IOD(4.0),
+      m_stereoEnabled(false), //SV TODO Must be false, never make it true
       m_supernova(false),
       m_overBright(1.0f),
       m_params(m_renderer.getParams()),
@@ -344,8 +570,9 @@ public:
       m_displayBodiesSec(true),
       m_cameraRollHome(0.0f),
       m_cameraRoll(0.0f),
-      m_enableStats(true),
-      m_densityRange(100)
+      m_enableStats(false),
+      m_densityRange(100),
+      m_generatingSphere(false)
   {
     m_windowDims = make_int2(WINDOWW, WINDOWH);
     m_cameraTrans = make_float3(0, -2, -100);
@@ -359,6 +586,11 @@ public:
     //m_renderer.setBaseColor(color);
     //m_renderer.setPointSize(0.00001f);
     tree->iterate_setup();
+    
+    
+#ifdef USE_JPEG
+    jpegWriter = new JPEGWriter(WINDOWW, WINDOWH);  
+#endif    
 
    
     int arraySize = tree->localTree.n;
@@ -391,6 +623,10 @@ public:
     m_tree->iterate_teardown(m_idata);
     delete m_tree;
     delete [] m_particleColors;
+    #ifdef USE_JPEG
+      delete jpegWriter;
+    #endif    
+    
   }
 
   void cycleDisplayMode() {
@@ -458,12 +694,12 @@ public:
     glDisable(GL_DEPTH_TEST);
     glColor4f(0.0f, 1.0f, 0.0f, 1.0f);
 
-    float x = 100.0f;
-    //float y = 50.0f;
-    float y = glutGet(GLUT_WINDOW_HEIGHT)*4.0f - 200.0f;
-	const float lineSpacing = 140.0f;
-
     float Myr = m_tree->get_t_current() * 9.78f;
+    float x = 100.0f;
+        
+#ifdef USE_GLUT
+    float y = glutGet(GLUT_WINDOW_HEIGHT)*4.0f - 200.0f;
+    const float lineSpacing = 140.0f;
     glPrintf(x, y, "MYears:    %.2f", Myr);
     y -= lineSpacing;
 
@@ -481,15 +717,39 @@ public:
       glPrintf(x, y, "FPS:       %.2f", fps);
       y -= lineSpacing;
     }
+#else
+    float y = WINDOWW*4.0f - 200.0f;
+    const float lineSpacing = 60.0f;
+    y = 50.0f;
+    
+    m_renderer.addText(48, 50, y, "MYears:    %.2f", Myr);
+    y += lineSpacing;
+    m_renderer.addText(48, 50, y, "BODIES:    %d", bodies);
+    y += lineSpacing;
+    
+    if (m_displayBodiesSec) {
+	  double frameTime = 1.0 / fps;
+          m_renderer.addText(48, 50, y, "BODIES/SEC:%.0f", bodies / frameTime);
+      	  y += lineSpacing;
+    }
 
+    if (displayFps)
+    {
+      m_renderer.addText(48, 50, y, "FPS:       %.2f", fps);
+      y += lineSpacing;
+    }    
+#endif
+    
     glDisable(GL_BLEND);
     endWinCoords();
 
+#ifdef USE_GLUT
     char str[256];
     sprintf(str, "Bonsai N-Body Tree Code (%d bodies): %0.1f fps",
             bodies, fps);
 
     glutSetWindowTitle(str);
+#endif    
   }
 
   //calculate position of software 3D cursor, not so useful right now but helps for picking in future
@@ -532,16 +792,17 @@ public:
       m_cursorPos[2] = pos[2];
     }
   }
+
   //This is the main render routine that is called by display for each eye (in stereo case), assumes mview and proj are already setup
   void mainRender(EYE whichEye)
   {
-    //m_renderer.display(m_displayMode);
     m_renderer.render();
 
     if (m_displayBoxes) {
-      glEnable(GL_DEPTH_TEST);
-      displayOctree();
+        glEnable(GL_DEPTH_TEST);
+        displayOctree();
     }
+    
     if (m_displayCursor) {
 
       //JB Hack TODO, I disable cursor in non-stereo mode since doesnt seem to do anything
@@ -569,7 +830,7 @@ public:
     if (m_displaySliders) {
       m_params->Render(0, 0);
     }
-    drawStats(fps);
+    drawStats(fps);    
 
   } //end of mainRender
 
@@ -577,6 +838,8 @@ public:
   void display() {
     double startTime = GetTimer();
     double getBodyDataTime = startTime;
+    
+     check_gl_error();
 
     if (m_renderingEnabled)
     {
@@ -619,14 +882,14 @@ public:
       glLoadIdentity();
       glFrustum( -right+frustumShift, right+frustumShift, -top, top, m_nearZ, m_farZ);
       glTranslatef(m_IOD/2, 0.0, 0.0);        //translate to cancel parallax
-        glGetDoublev(GL_PROJECTION_MATRIX, m_projectionLeft);
+      glGetDoublev(GL_PROJECTION_MATRIX, m_projectionLeft);
 
       //Get right projection matrix and store it
       glMatrixMode(GL_PROJECTION);
       glLoadIdentity();
       glFrustum( -right-frustumShift, right-frustumShift, -top, top, m_nearZ, m_farZ);
       glTranslatef(-m_IOD/2, 0.0, 0.0);        //translate to cancel parallax
-        glGetDoublev(GL_PROJECTION_MATRIX, m_projectionRight);
+      glGetDoublev(GL_PROJECTION_MATRIX, m_projectionRight);
 
     }
     else { //MONO
@@ -637,15 +900,12 @@ public:
         (float) m_windowDims.x / (float) m_windowDims.y,
         m_nearZ, m_farZ);
         glGetDoublev(GL_PROJECTION_MATRIX, m_projection);
-
     }
-
-
       // view transform
       //{
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
-
+        
         //lighting for cursor
         GLfloat mat_specular[] = { 1.0, 1.0, 1.0, 1.0 };
         GLfloat mat_shininess[] = { 50.0 };
@@ -656,10 +916,11 @@ public:
         glLightfv(GL_LIGHT0, GL_POSITION, light_position);
         //end cursor lighting
         glGetIntegerv( GL_VIEWPORT, m_viewport);
+        
         if (m_displayCursor) {
           calculateCursorPos();
         }
-
+        
         if (m_flyMode) {
           glRotatef(m_cameraRotLag.z, 0.0, 0.0, 1.0);
           glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
@@ -672,12 +933,22 @@ public:
           //m_cameraRot.z = (m_cameraRollHome - m_cameraRot.z)*0.1f;
 
         } else {
-          // orbit viwer - rotate around centre, then translate
-          glTranslatef(m_cameraTransLag.x, m_cameraTransLag.y, m_cameraTransLag.z);
-          glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
-          glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
-          glRotatef(m_cameraRoll, 0.0, 0.0, 1.0);
-          glRotatef(90.0f, 1.0f, 0.0f, 0.0f); // rotate galaxies into XZ plane
+            
+            if(m_generatingSphere)
+            {
+                gluLookAt(m_cameraTransLag.x, m_cameraTransLag.y, m_cameraTransLag.z,
+                          m_modelCenter.x, m_modelCenter.y, m_modelCenter.z,
+                          0,0,-1);
+            }
+            else
+            {
+                // orbit viewer - rotate around centre, then translate
+                glTranslatef(m_cameraTransLag.x, m_cameraTransLag.y, m_cameraTransLag.z);
+                glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
+                glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
+                glRotatef(m_cameraRoll, 0.0, 0.0, 1.0);
+                glRotatef(90.0f, 1.0f, 0.0f, 0.0f); // rotate galaxies into XZ plane
+            } 
         }
 
         glGetFloatv(GL_MODELVIEW_MATRIX, m_modelView);
@@ -691,7 +962,7 @@ public:
           }
           m_renderer.setOverbright(m_overBright);
         }
-
+        
         //Start drawing
         if (m_stereoEnabled) { //STEREO
           //draw left
@@ -713,8 +984,7 @@ public:
           mainRender(RIGHT_EYE);
         } //end of draw back right
         else { //MONO
-          //draw left
-          glDrawBuffer(GL_BACK);                                   //draw into back left buffer
+          //draw main
           glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
           glMatrixMode(GL_PROJECTION);
           glLoadMatrixd(m_projection);
@@ -725,9 +995,38 @@ public:
       }
       else //rendering disabled just draw stats
         drawStats(fps);
+    
+#if 0
+#ifndef USE_GLUT    
+    std::ofstream outFile;
+    size_t numBytes = WINDOWW * WINDOWH * 3;
+    uint8_t* rgb = new uint8_t[numBytes];
+    
+    uint8_t* jpgbuff = new uint8_t[numBytes];
 
+    //Read from the default buffer (surface)
+    
+    double tA = m_tree->get_time();
+    glReadPixels(0, 0, WINDOWW, WINDOWH, GL_RGB, GL_UNSIGNED_BYTE, rgb);
+    
+    double t0 = m_tree->get_time();
 
-
+    outFile.open("test_out-serverFBO2.ppm", std::ios::binary);
+    outFile << "P6" << "\n" << WINDOWW << " " << WINDOWH << "\n" << "255\n";
+    outFile.write((char*) rgb, numBytes);
+    outFile.close();    
+    
+    #ifdef USE_JPEG
+        jpegWriter->write(rgb, "test2.jpg");
+    #endif
+    
+    delete[] rgb;
+   
+   raise(SIGINT);
+#endif    
+#endif          
+      
+     
 //        //m_renderer.display(m_displayMode);
 //        m_renderer.render();
 //
@@ -1416,6 +1715,10 @@ public:
 
   }
 
+#ifdef USE_JPEG
+   JPEGWriter *jpegWriter;
+#endif  
+  
   octree *m_tree;
   octree::IterationData &m_idata;
   bool iterationsRemaining;
@@ -1443,7 +1746,10 @@ public:
   float m_cameraRollHome;
   float m_cameraRoll;
   float m_modelView[16];
-
+  
+  
+  float3 m_modelCenter = {0,0,0};
+  
   //SV TODO combine left and mono later
   double m_projection[16]; //mono projection
   double m_projectionLeft[16]; //left projection
@@ -1473,6 +1779,10 @@ public:
   bool m_directGravitation;
   bool m_displayBodiesSec;
   bool m_enableStats;
+  
+  bool m_generatingSphere; //Used to indicate if we are in the screenshotting phase
+  
+
 
   bool m_keyDown[256];
   int m_keyModifiers;
@@ -1570,8 +1880,10 @@ void display()
   theDemo->step();
   theDemo->display();
 
+#ifdef USE_GLUT
   //glutReportErrors();
   glutSwapBuffers();
+#endif  
 
   fpsCount++;
 
@@ -1602,6 +1914,84 @@ void display()
 
     cudaEventRecord(startEvent, 0);
   }
+}
+
+
+void createSphereOfImages()
+{
+    
+  int t_current = (int)(theDemo->m_tree->get_t_current());
+
+  //Obtain the current properties of the model, used to point the camera at 
+  //the center of mass of the system
+  theDemo->m_tree->localTree.multipole.d2h(1);
+  
+  fprintf(stderr, "Center of mass: %f %f %f \n", 
+          theDemo->m_tree->localTree.multipole[0].x,
+          theDemo->m_tree->localTree.multipole[0].y,
+          theDemo->m_tree->localTree.multipole[0].z);
+        
+  float3 boxMin = make_float3(theDemo->m_tree->rMinLocalTree);
+  float3 boxMax = make_float3(theDemo->m_tree->rMaxLocalTree);
+  screenshot_camera.setCenterTranslation(boxMin, boxMax, theDemo->m_windowDims.x, theDemo->m_windowDims.y);
+
+  //Reset the projection and generate the camera positions, assuming a certain field of view and distance 
+  glMatrixMode(GL_PROJECTION);
+  glLoadIdentity();
+  
+  float radius              = std::max(length(boxMax), length(boxMin));
+  float3 center             = 0.5f * (boxMin + boxMax);
+  const float fovRads       = (theDemo->m_windowDims.x / (float)theDemo->m_windowDims.y) * M_PI / 3.0f ; // 60 degrees
+  float distanceToCenter    = radius / sinf(0.5f * fovRads);  
+  
+  screenshot_camera.generate(0.2*distanceToCenter);
+  
+  std::ofstream outFile;
+  size_t numBytes = WINDOWW * WINDOWH * 3;
+  uint8_t* rgb = new uint8_t[numBytes];
+  
+  char fileName[256];
+    
+
+  theDemo->m_generatingSphere = true;
+  int count = 0;
+  //Loop over all camera positions and render the result
+  for(auto translation : screenshot_camera.get())
+  {
+        theDemo->m_cameraTransLag = translation;
+        theDemo->m_cameraTrans    = translation;
+
+        center = {theDemo->m_tree->localTree.multipole[0].x,
+                  theDemo->m_tree->localTree.multipole[0].y,
+                  theDemo->m_tree->localTree.multipole[0].z};
+
+        theDemo->m_modelCenter       = center;  
+
+        glMatrixMode(GL_PROJECTION);
+        glLoadIdentity();
+        gluPerspective(theDemo->m_fov, 
+                    (float) theDemo->m_windowDims.x / (float) theDemo->m_windowDims.y, 
+                    0.0001 * distanceToCenter, 
+                    4 * (radius + distanceToCenter));
+      
+      
+//         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        theDemo->display();
+        
+        glReadPixels(0, 0, WINDOWW, WINDOWH, GL_RGB, GL_UNSIGNED_BYTE, rgb);
+        
+        sprintf(fileName, "outFile-%05d-%02d.jpg", t_current, count);
+        
+        theDemo->jpegWriter->write(rgb, fileName);
+        count++;        
+        fprintf(stderr,"Created snapshot: %s \n", fileName);
+  }
+  theDemo->m_generatingSphere = false;
+   
+  delete[] rgb;
+  
+  
 }
 
 void storeImage()
@@ -1804,6 +2194,9 @@ void key(unsigned char key, int /*x*/, int /*y*/)
   case 'u':
     storeImage();
     break;
+  case 'y':
+    createSphereOfImages();
+    break;
   default:
     break;
   }
@@ -1826,11 +2219,18 @@ void idle(void)
     glutPostRedisplay();
 }
 
+
+
+#ifdef USE_GLUT
 void initGL(int argc, char** argv, const char *fullScreenMode, bool &stereo)
 {  
+  screenshot_camera.generate();
+
+
   // First initialize OpenGL context, so we can properly set the GL for CUDA.
   // This is necessary in order to achieve optimal performance with OpenGL/CUDA interop.
   glutInit(&argc, argv);
+
 
   if (stereo) {
     printf("===== Checking Stereo Pixel Format \n===========");
@@ -1838,6 +2238,7 @@ void initGL(int argc, char** argv, const char *fullScreenMode, bool &stereo)
   }
   else
     glutInitDisplayMode(GLUT_RGBA | GLUT_DEPTH | GLUT_DOUBLE);
+  
 
   if (fullScreenMode[0]) {
       printf("fullScreenMode: %s\n", fullScreenMode);
@@ -1849,21 +2250,11 @@ void initGL(int argc, char** argv, const char *fullScreenMode, bool &stereo)
           exit(-1);
       }
   } else {
-    //glutInitWindowSize(1024, 768);
     glutInitWindowSize(WINDOWW, WINDOWH);
     glutCreateWindow("Bonsai Tree-code Gravitational N-body Simulation");
   }
-
-  //Make sure we got stereo if we asked for it, this must happen after glutCreateWindow
-  if (stereo) {
-    GLboolean bStereoEnabled = false;
-    glGetBooleanv(GL_STEREO, &bStereoEnabled);
-    if (bStereoEnabled)
-      printf("======= yay! STEREO ENABLED ========\n");
-    else //we asked for stereo but didnt get it, set the stereo to false
-      stereo = false;
-  }
-
+  
+  
   glutDisplayFunc(display);
   glutReshapeFunc(reshape);
   glutMouseFunc(mouse);
@@ -1874,12 +2265,8 @@ void initGL(int argc, char** argv, const char *fullScreenMode, bool &stereo)
   glutIdleFunc(idle);
 
   glutIgnoreKeyRepeat(GL_TRUE);
-
-  //shalini
   glutSetCursor(GLUT_CURSOR_CROSSHAIR);
-  //glutSetCursor(GLUT_CURSOR_NONE);
-  //JB I turned cursor back on
-
+  
   GLenum err = glewInit();
 
   if (GLEW_OK != err)
@@ -1913,13 +2300,153 @@ void initGL(int argc, char** argv, const char *fullScreenMode, bool &stereo)
   atexit(onexit);
 }
 
+#else
+
+void initGL(int argc, char** argv, const char *fullScreenMode, bool &stereo)
+{  
+  static const EGLint configAttribs[] = {
+          EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
+          EGL_BLUE_SIZE, 8,
+          EGL_GREEN_SIZE, 8,
+          EGL_RED_SIZE, 8,
+          EGL_DEPTH_SIZE, 8,
+          EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
+          EGL_NONE
+  };    
+
+  EGLint major, minor;
+  EGLBoolean res;
+  
+  // 1. Initialize EGL
+  
+#if 1
+  eglDpy = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+#else  
+    // load the function pointers for the device,platform extensions 
+    PFNEGLQUERYDEVICESEXTPROC eglQueryDevicesEXT =
+               (PFNEGLQUERYDEVICESEXTPROC) eglGetProcAddress("eglQueryDevicesEXT");
+    if(!eglQueryDevicesEXT) { 
+         printf("ERROR: extension eglQueryDevicesEXT not available"); 
+//          return(-1); 
+    } 
+    
+    PFNEGLGETPLATFORMDISPLAYEXTPROC eglGetPlatformDisplayEXT =
+               (PFNEGLGETPLATFORMDISPLAYEXTPROC)eglGetProcAddress("eglGetPlatformDisplayEXT");
+    if(!eglGetPlatformDisplayEXT) { 
+         printf("ERROR: extension eglGetPlatformDisplayEXT not available"); 
+//          return(-1);  
+    }
+  
+    static const int MAX_DEVICES = 16;
+    EGLDeviceEXT devices[MAX_DEVICES];
+    EGLint numDevices;
+
+    res = eglQueryDevicesEXT(MAX_DEVICES, devices, &numDevices);
+    
+    fprintf(stderr,"Res: %d Number of devices: %d \n", res, devices);
+
+  eglDpy = eglGetPlatformDisplayEXT(EGL_PLATFORM_DEVICE_EXT, devices[0], 0);  
+#endif  
+    
+  res = eglInitialize(eglDpy, &major, &minor);
+  fprintf(stderr,"EGL: eglInitialize [ %d ] EGl version: %d.%d \n", res, major, minor);
+  
+// 2. Select an appropriate configuration
+  EGLint numConfigs;
+  res = eglChooseConfig(eglDpy, configAttribs, &eglCfg, 1, &numConfigs);
+  fprintf(stderr,"EGL: eglChooseConfig [ %d ] nConfigs: %d \n", res, numConfigs);
+  
+  // 4. Bind the API
+  res = eglBindAPI(EGL_OPENGL_API);
+  fprintf(stderr,"EGL: eglBindAPI [ %d ]\n", res);
+
+  // 5. Create a context and make it current
+  eglCtx = eglCreateContext(eglDpy, eglCfg, EGL_NO_CONTEXT, NULL);
+  fprintf(stderr,"EGL: eglCreateContext [ %d ] Context: %d Error: %s\n", res, eglCtx, eglGetErrorString(eglGetError()));
+  
+  static const EGLint pbufferAttribs[] = {
+        EGL_WIDTH,  WINDOWW,
+        EGL_HEIGHT, WINDOWH,
+        EGL_NONE,
+  };    
+  //Create a default surface 
+  EGLSurface eglSurf = eglCreatePbufferSurface(eglDpy, eglCfg, pbufferAttribs);
+  res = eglMakeCurrent(eglDpy, eglSurf, eglSurf, eglCtx);
+  fprintf(stderr,"EGL: eglMakeCurrent [ %d ] Error: %s\n", res, eglGetErrorString(eglGetError()));
+ 
+#if 1
+   GLenum err = glewInit();
+  if (GLEW_OK != err)
+  {
+    fprintf(stderr, "GLEW Error: %s\n", glewGetErrorString(err));
+    cudaDeviceReset();
+    exit(-1);
+  }
+  else if (!glewIsSupported("GL_VERSION_2_0 "
+    "GL_VERSION_1_5 "
+    "GL_ARB_multitexture "
+    "GL_ARB_vertex_buffer_object")) 
+  {
+    fprintf(stderr, "Required OpenGL extensions missing.");
+    exit(-1);
+  }
+  else
+  {
+#if   defined(WIN32)
+    wglSwapIntervalEXT(0);
+#elif defined(LINUX)
+    glxSwapIntervalSGI(0);
+#endif      
+  }
+#endif
+  
+  glEnable(GL_DEPTH_TEST);
+  glClearColor(0.0, 0.0, 0.0, 1.0);
+   
+  
+  screenshot_camera.generate();
+
+  checkGLErrors("initGL");
+}
+
+#endif
+
 
 void initAppRenderer(int argc, char** argv, octree *tree, 
                      octree::IterationData &idata, bool showFPS, bool stereo) {
   displayFps = showFPS;
-  //initGL(argc, argv);
   theDemo = new BonsaiDemo(tree, idata);
+  
+  
   if (stereo)
     theDemo->toggleStereo(); //SV assuming stereo is set to disable by default.
+  fprintf(stderr,"initAppRenderer %s:%d \n", __FILE__, __LINE__);    
+#ifdef USE_GLUT  
   glutMainLoop();
+#else  
+  
+  double t_snapIncrease = 10;
+  
+  double t_snapNext = (int)theDemo->m_tree->get_t_current();
+  
+  while(1)
+  {
+      theDemo->m_renderingEnabled = false;
+      display();       
+      if(theDemo->m_tree->get_t_current() >= t_snapNext)         
+//       if(theDemo->m_tree->get_t_current() > 355)
+      {
+          theDemo->m_renderingEnabled = true;
+          createSphereOfImages();
+          
+          t_snapNext += t_snapIncrease;
+//           raise(SIGINT);
+//           storeImage();
+//           exit(0);
+      }
+      //eglTerminate(eglDpy);
+  
+
+  }
+#endif  
 }

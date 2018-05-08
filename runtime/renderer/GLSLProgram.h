@@ -29,6 +29,14 @@ public:
 	void enable();
 	void disable();
 
+    GLint get_attrib(const char *name) {
+        GLint attribute = glGetAttribLocation(mProg, name);
+        if(attribute == -1)
+          fprintf(stderr, "Could not bind attribute %s\n", name);
+        return attribute;
+    }
+
+
 	void setUniform1f(const GLchar *name, GLfloat x);
 	void setUniform2f(const GLchar *name, GLfloat x, GLfloat y);
     void setUniform3f(const char *name, float x, float y, float z);

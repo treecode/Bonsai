@@ -16,6 +16,9 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <fstream>
+#include <csignal>
 #include "SmokeRenderer.h"
 #include "SmokeShaders.h"
 //#include <nvImage.h>
@@ -125,15 +128,15 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
     //m_blurProg = new GLSLProgram(passThruVS, blur2PS);
     m_blurProg = new GLSLProgram(passThruVS, blur3x3PS);
     m_displayTexProg = new GLSLProgram(passThruVS, texture2DPS);
-	m_compositeProg = new GLSLProgram(passThruVS, compositePS);
+    m_compositeProg = new GLSLProgram(passThruVS, compositePS);
 
-	m_starFilterProg = new GLSLProgram(passThruVS, starFilterPS);
+    m_starFilterProg = new GLSLProgram(passThruVS, starFilterPS);
     m_volumeProg = new GLSLProgram(volumeVS, volumePS);
 
     //m_downSampleProg = new GLSLProgram(passThruVS, downSample4PS);
-	m_downSampleProg = new GLSLProgram(passThruVS, downSample2PS);
+    m_downSampleProg = new GLSLProgram(passThruVS, downSample2PS);
     m_gaussianBlurProg = new GLSLProgram(passThruVS, gaussianBlurPS);
-	m_thresholdProg = new GLSLProgram(passThruVS, thresholdPS);
+    m_thresholdProg = new GLSLProgram(passThruVS, thresholdPS);
 
     m_skyboxProg = new GLSLProgram(skyboxVS, skyboxPS);
 
@@ -148,59 +151,59 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
 //    loadSmokeTextures(32,0,"perlinNoiseTextures2/noise2_");
 //    loadSmokeTextures(8, 0, "noiseTextures3/noise");
 //    m_rainbowTex = loadTexture("data/rainbow.png");
-	m_rainbowTex = createRainbowTexture();
+    m_rainbowTex = createRainbowTexture();
 
-	glGenTextures(1, &mPosBufferTexture);
-	m_noiseTex = createNoiseTexture(64, 64, 64);
+    glGenTextures(1, &mPosBufferTexture);
+    m_noiseTex = createNoiseTexture(64, 64, 64);
 
     m_cubemapTex = loadCubemapCross("../images/Carina_cross.ppm");
     if (!m_cubemapTex) {
       //m_cubemapTex = loadCubemap("../images/deepfield%d.ppm");
-	  m_cubemapTex = loadCubemap("../images/deepfield%d_1k.ppm");
+      m_cubemapTex = loadCubemap("../images/deepfield%d_1k.ppm");
     }
 
-	m_spriteTex = createSpriteTexture(256);
+    m_spriteTex = createSpriteTexture(256);
 
     initParams();
 
-	//initCUDA();
+    //initCUDA();
 
-	cudaGLSetGLDevice(renderDevID);
+    cudaGLSetGLDevice(renderDevID);
 
-	mParticlePos.alloc(mMaxParticles, true, false, false);
-	mParticleDepths.alloc(mMaxParticles, false, false, false);
-	mParticleIndices.alloc(mMaxParticles, true, false, true);
-	for(uint i=0; i<mMaxParticles; i++) {
-		mParticleIndices.getHostPtr()[i] = i;
-	}
-	mParticleIndices.copy(GpuArray<uint>::HOST_TO_DEVICE);
+    mParticlePos.alloc(mMaxParticles, true, false, false);
+    mParticleDepths.alloc(mMaxParticles, false, false, false);
+    mParticleIndices.alloc(mMaxParticles, true, false, true);
+    for(uint i=0; i<mMaxParticles; i++) {
+            mParticleIndices.getHostPtr()[i] = i;
+    }
+    mParticleIndices.copy(GpuArray<uint>::HOST_TO_DEVICE);
 
-	cudaStreamCreate(&m_copyStreamPos);
-  cudaStreamCreate(&m_copyStreamColor);
+    cudaStreamCreate(&m_copyStreamPos);
+    cudaStreamCreate(&m_copyStreamColor);
 
-  cudaStreamCreate(&m_copyStreamSortPos);
-  cudaStreamCreate(&m_copyStreamSortDepth);
-  cudaStreamCreate(&m_copyStreamSortIndices);
+    cudaStreamCreate(&m_copyStreamSortPos);
+    cudaStreamCreate(&m_copyStreamSortDepth);
+    cudaStreamCreate(&m_copyStreamSortIndices);
 
     if(renderDevID != devID)
     {
-	cudaDeviceEnablePeerAccess(devID, 0);
-	cudaSetDevice(devID);
-	cudaDeviceEnablePeerAccess( renderDevID, 0 );
+        cudaDeviceEnablePeerAccess(devID, 0);
+        cudaSetDevice(devID);
+        cudaDeviceEnablePeerAccess( renderDevID, 0 );
     }
     {cudaError_t res =cudaGetLastError(); fprintf(stderr, "Errors during OpenGL init: %s  %s:%d\n",  cudaGetErrorString(res), __FILE__,__LINE__); }
 //  cudaDeviceEnablePeerAccess(devID, 0);
 //	cudaSetDevice(devID);
 //cudaDeviceEnablePeerAccess( renderDevID, 0 );
 
-	//Allocate additional arrays
-  cudaMalloc( &mParticleDepths_devID, mMaxParticles*sizeof(float));
-  cudaMalloc( &mParticleIndices_devID, mMaxParticles*sizeof(uint));
+    //Allocate additional arrays
+    cudaMalloc( &mParticleDepths_devID, mMaxParticles*sizeof(float));
+    cudaMalloc( &mParticleIndices_devID, mMaxParticles*sizeof(uint));
 
-	printf("Vendor: %s\n", glGetString(GL_VENDOR));
-	printf("Renderer: %s\n", glGetString(GL_RENDERER));
+    printf("Vendor: %s\n", glGetString(GL_VENDOR));
+    printf("Renderer: %s\n", glGetString(GL_RENDERER));
 
-    glutReportErrors();
+    //glutReportErrors();
 }
 
 SmokeRenderer::~SmokeRenderer()
@@ -469,7 +472,7 @@ void SmokeRenderer::drawPoints(int start, int count, bool sorted)
 
     if (sorted) {
         //glBindBufferARB(GL_ELEMENT_ARRAY_BUFFER_ARB, mIndexBuffer);
-		glBindBufferARB(GL_ELEMENT_ARRAY_BUFFER_ARB, mParticleIndices.getVbo());
+        glBindBufferARB(GL_ELEMENT_ARRAY_BUFFER_ARB, mParticleIndices.getVbo());
         glDrawElements(GL_POINTS, count, GL_UNSIGNED_INT, (void*) (start*sizeof(unsigned int)) );
         glBindBufferARB(GL_ELEMENT_ARRAY_BUFFER_ARB, 0);
     } else {
@@ -477,11 +480,11 @@ void SmokeRenderer::drawPoints(int start, int count, bool sorted)
     }
 
     glDisableClientState(GL_VERTEX_ARRAY);
-	glDisableClientState(GL_COLOR_ARRAY);
-	glBindBufferARB(GL_ARRAY_BUFFER_ARB, 0);
+    glDisableClientState(GL_COLOR_ARRAY);
+    glBindBufferARB(GL_ARRAY_BUFFER_ARB, 0);
 
     glClientActiveTexture(GL_TEXTURE0);
-	glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+    glDisableClientState(GL_TEXTURE_COORD_ARRAY);
 }
 
 // draw points using given shader program
@@ -611,9 +614,9 @@ void SmokeRenderer::calcVectors()
 // draw quad for volume rendering
 void SmokeRenderer::drawVolumeSlice(int i, bool shadowed)
 {
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-	//glBlendFunc(GL_ONE, GL_ONE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    //glBlendFunc(GL_ONE, GL_ONE);
     glDisable(GL_DEPTH_TEST);
 
     //glMatrixMode(GL_MODELVIEW);
@@ -634,14 +637,14 @@ void SmokeRenderer::drawVolumeSlice(int i, bool shadowed)
     m_volumeProg->setUniform1f("volumeStart", m_volumeStart);
     m_volumeProg->setUniform1f("volumeWidth", m_volumeWidth);
 
-	float t = i / (float) m_numSlices;
-	float z = m_minDepth + (m_maxDepth - m_minDepth) * t;
+    float t = i / (float) m_numSlices;
+    float z = m_minDepth + (m_maxDepth - m_minDepth) * t;
     drawQuad(0.5f, z);
 
     m_volumeProg->disable();
 
     //glPopMatrix();
-	glDisable(GL_BLEND);
+    glDisable(GL_BLEND);
 }
 
 // draw slice of particles from camera view
@@ -656,7 +659,7 @@ void SmokeRenderer::drawSlice(int i)
 #else
     m_fbo->AttachTexture(GL_TEXTURE_2D, m_imageTex[0], GL_COLOR_ATTACHMENT0_EXT);
     //m_fbo->AttachTexture(GL_TEXTURE_2D, m_depthTex, GL_DEPTH_ATTACHMENT_EXT);
-	m_fbo->AttachTexture(GL_TEXTURE_2D, 0, GL_DEPTH_ATTACHMENT_EXT);
+    m_fbo->AttachTexture(GL_TEXTURE_2D, 0, GL_DEPTH_ATTACHMENT_EXT);
 #endif
     glViewport(0, 0, m_imageW, m_imageH);
 
@@ -948,7 +951,7 @@ void SmokeRenderer::displayTexture(GLuint tex, float scale)
     m_displayTexProg->enable();
     m_displayTexProg->bindTexture("tex", tex, GL_TEXTURE_2D, 0);
     m_displayTexProg->setUniform1f("scale", scale);
-	m_displayTexProg->setUniform1f("gamma", m_gamma);
+    m_displayTexProg->setUniform1f("gamma", m_gamma);
     drawQuad();
     m_displayTexProg->disable();
 }
@@ -1043,14 +1046,14 @@ void SmokeRenderer::doGlowFilter()
     m_gaussianBlurProg->disable();
 }
 
+
 // composite final volume image on top of scene
 void SmokeRenderer::compositeResult()
 {
     if (m_enableFilters) {
-	    if (m_starBlurRadius > 0.0f && m_starIntensity > 0.0f) {
+        if (m_starBlurRadius > 0.0f && m_starIntensity > 0.0f) {
             doStarFilter();
-	    }
-
+        }
         if (m_glowIntensity > 0.0f || m_flareIntensity > 0.0f) {
           downSample();
         }
@@ -1064,32 +1067,32 @@ void SmokeRenderer::compositeResult()
 
     glViewport(0, 0, mWindowW, mWindowH);
     glDisable(GL_DEPTH_TEST);
-	glDepthMask(GL_FALSE);
+    glDepthMask(GL_FALSE);
     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     //glEnable(GL_BLEND);
 
-	if (m_enableFilters) {
-		m_compositeProg->enable();
-		m_compositeProg->bindTexture("tex", m_imageTex[0], GL_TEXTURE_2D, 0);
-		m_compositeProg->bindTexture("blurTexH", m_imageTex[1], GL_TEXTURE_2D, 1);
-		m_compositeProg->bindTexture("blurTexV", m_imageTex[2], GL_TEXTURE_2D, 2);
-		m_compositeProg->bindTexture("glowTex", m_downSampledTex[0], GL_TEXTURE_2D, 3);
-        m_compositeProg->bindTexture("flareTex", m_downSampledTex[2], GL_TEXTURE_2D, 4);
-		m_compositeProg->setUniform1f("scale", m_imageBrightness);
-		m_compositeProg->setUniform1f("sourceIntensity", m_sourceIntensity);
-		m_compositeProg->setUniform1f("glowIntensity", m_glowIntensity);
-		m_compositeProg->setUniform1f("starIntensity", m_starIntensity);
-		m_compositeProg->setUniform1f("flareIntensity", m_flareIntensity);
-		m_compositeProg->setUniform1f("gamma", m_gamma);
-		drawQuad();
-		m_compositeProg->disable();
-	} else {
-		displayTexture(m_imageTex[0], m_imageBrightness);
-        //displayTexture(m_downSampledTex[0], m_imageBrightness);
-	}
-
+    if (m_enableFilters) {
+                m_compositeProg->enable();
+                m_compositeProg->bindTexture("tex", m_imageTex[0], GL_TEXTURE_2D, 0);
+                m_compositeProg->bindTexture("blurTexH", m_imageTex[1], GL_TEXTURE_2D, 1);
+                m_compositeProg->bindTexture("blurTexV", m_imageTex[2], GL_TEXTURE_2D, 2);
+                m_compositeProg->bindTexture("glowTex", m_downSampledTex[0], GL_TEXTURE_2D, 3);
+                m_compositeProg->bindTexture("flareTex", m_downSampledTex[2], GL_TEXTURE_2D, 4);
+                m_compositeProg->setUniform1f("scale", m_imageBrightness);
+                m_compositeProg->setUniform1f("sourceIntensity", m_sourceIntensity);
+                m_compositeProg->setUniform1f("glowIntensity", m_glowIntensity);
+                m_compositeProg->setUniform1f("starIntensity", m_starIntensity);
+                m_compositeProg->setUniform1f("flareIntensity", m_flareIntensity);
+                m_compositeProg->setUniform1f("gamma", m_gamma);
+                drawQuad();
+                m_compositeProg->disable();
+        } else {
+                displayTexture(m_imageTex[0], m_imageBrightness);
+                //displayTexture(m_downSampledTex[0], m_imageBrightness);
+        }
+   
     glDisable(GL_BLEND);
-	glDepthMask(GL_TRUE);
+    glDepthMask(GL_TRUE);
 }
 
 void SmokeRenderer::drawBounds()
@@ -1124,36 +1127,38 @@ void SmokeRenderer::renderSprites(bool sort)
     m_fbo->Bind();
     m_fbo->AttachTexture(GL_TEXTURE_2D, m_imageTex[0], GL_COLOR_ATTACHMENT0_EXT);
     m_fbo->AttachTexture(GL_TEXTURE_2D, 0, GL_DEPTH_ATTACHMENT_EXT);
+    
+    
 	//m_fbo->AttachTexture(GL_TEXTURE_2D, m_depthTex, GL_DEPTH_ATTACHMENT_EXT);
     glViewport(0, 0, m_imageW, m_imageH);
     glClearColor(0.0, 0.0, 0.0, 0.0); 
     //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	glClear(GL_COLOR_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT);
 
     glDisable(GL_BLEND);
     drawSkybox(m_cubemapTex);
 #endif
 
-	glColor4f(1.0, 1.0, 1.0, m_spriteAlpha);
+    glColor4f(1.0, 1.0, 1.0, m_spriteAlpha);
     if (sort) {
-	    calcVectors();
-	    depthSortCopy();
+        calcVectors();
+        depthSortCopy();
         glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-	    drawPointSprites(m_particleProg, 0, mNumParticles, false, true);	
+        drawPointSprites(m_particleProg, 0, mNumParticles, false, true);	
     } else {
         glBlendFunc(GL_ONE, GL_ONE);
-	    drawPointSprites(m_particleProg, 0, mNumParticles, false, false);
+        drawPointSprites(m_particleProg, 0, mNumParticles, false, false);
     }
 
 #if 1
     m_fbo->Disable();
-	compositeResult();
-#endif
+    compositeResult();
+#endif    
 }
 
 void SmokeRenderer::render()
 {
-	switch(mDisplayMode) {
+    switch(mDisplayMode) {
 	case POINTS:
 		glPointSize(2.0f);
 		glEnable(GL_DEPTH_TEST);
@@ -1161,22 +1166,21 @@ void SmokeRenderer::render()
 		m_simpleProg->enable();
 		drawPoints(0, mNumParticles, false);
 		m_simpleProg->disable();
-        glPointSize(1.0f);
+                glPointSize(1.0f);
 		break;
-
 	case SPRITES:
 		renderSprites(false);
 		break;
 
-    case SPRITES_SORTED:
-        renderSprites(true);
-        break;
+        case SPRITES_SORTED:
+            renderSprites(true);
+            break;
 
 	case VOLUMETRIC:
 		calcVectors();
 		depthSortCopy();
 		drawSlices();
-		compositeResult();
+                compositeResult();
 		//drawBounds();
 		break;
 
@@ -1191,7 +1195,6 @@ void SmokeRenderer::render()
         displayTexture(m_lightTexture[m_srcLightTexture], 1.0f);
         glViewport(0, 0, mWindowW, mWindowH);
     }
-
     //glutReportErrors();
 }
 
@@ -1266,7 +1269,7 @@ inline float sfrand()
 
 GLuint SmokeRenderer::createNoiseTexture(int w, int h, int d)
 {
-	int size = w*h*d;
+    int size = w*h*d;
     float *data = new float [size];
     float *ptr = data;
     for(int i=0; i<size; i++) {
@@ -1278,7 +1281,7 @@ GLuint SmokeRenderer::createNoiseTexture(int w, int h, int d)
 
     GLuint texid;
     glGenTextures(1, &texid);
-	GLenum target = GL_TEXTURE_3D;
+    GLenum target = GL_TEXTURE_3D;
     glBindTexture(target, texid);
 
     glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -1461,6 +1464,51 @@ void SmokeRenderer::debugVectors()
     drawVector(m_halfVector);
 }
 
+
+//Taken from the GLUT source code, to not be dependent on the full 
+//GLUT library just for drawing a box
+static void drawBox(GLfloat size, GLenum type)
+{
+  static GLfloat n[6][3] =
+  {
+    {-1.0, 0.0, 0.0},
+    {0.0, 1.0, 0.0},
+    {1.0, 0.0, 0.0},
+    {0.0, -1.0, 0.0},
+    {0.0, 0.0, 1.0},
+    {0.0, 0.0, -1.0}
+  };
+  static GLint faces[6][4] =
+  {
+    {0, 1, 2, 3},
+    {3, 2, 6, 7},
+    {7, 6, 5, 4},
+    {4, 5, 1, 0},
+    {5, 6, 2, 1},
+    {7, 4, 0, 3}
+  };
+  GLfloat v[8][3];
+  GLint i;
+
+  v[0][0] = v[1][0] = v[2][0] = v[3][0] = -size / 2;
+  v[4][0] = v[5][0] = v[6][0] = v[7][0] = size / 2;
+  v[0][1] = v[1][1] = v[4][1] = v[5][1] = -size / 2;
+  v[2][1] = v[3][1] = v[6][1] = v[7][1] = size / 2;
+  v[0][2] = v[3][2] = v[4][2] = v[7][2] = -size / 2;
+  v[1][2] = v[2][2] = v[5][2] = v[6][2] = size / 2;
+
+  for (i = 5; i >= 0; i--) {
+    glBegin(type);
+    glNormal3fv(&n[i][0]);
+    glVertex3fv(&v[faces[i][0]][0]);
+    glVertex3fv(&v[faces[i][1]][0]);
+    glVertex3fv(&v[faces[i][2]][0]);
+    glVertex3fv(&v[faces[i][3]][0]);
+    glEnd();
+  }
+}
+
+
 void SmokeRenderer::drawSkybox(GLuint tex)
 {
     if (!m_cubemapTex)
@@ -1477,14 +1525,193 @@ void SmokeRenderer::drawSkybox(GLuint tex)
     //glColor3f(0.25f, 0.25f, 0.25f);
     //glColor3f(0.5f, 0.5f, 0.5f);
     //glColor3f(1.0f, 1.0f, 1.0f);
+    
 
-    glutSolidCube(2.0);
+//     glutSolidCube(2.0);
+    drawBox(2.0, GL_QUADS);
 
     m_skyboxProg->disable();
 
     glEnable(GL_DEPTH_TEST);
     glDepthMask(GL_TRUE);
 }
+
+
+#define USE_EGL
+#ifdef USE_EGL
+
+//FreeType code sample taken from
+//https://github.com/CAMOBAP795/opengl-modern-tutorials/blob/master/text01_intro
+//Modified to be compatible with our setup and to flip the characters 
+
+#include <ft2build.h>
+#include FT_FREETYPE_H
+
+FT_Library ft;
+FT_Face face;
+
+GLuint vbo;
+
+GLint attribute_coord;
+const char *fontfilename = "FreeSans.ttf";
+
+GLSLProgram *ft_program;
+
+#define STRINGIFY(A) #A
+const char *textPS = STRINGIFY(                                                                   
+    varying vec2 texpos;                    
+    uniform sampler2D tex;
+    uniform vec4 color;
+    void main(void) {                                                  \n
+        gl_FragColor = vec4(1, 1, 1, texture2D(tex, texpos).a) * color;  \n
+    }                                                                  \n
+);  
+
+const char *textVS = STRINGIFY(                                                                   
+attribute vec4 coord;
+varying vec2 texpos;
+void main(void) {                              \n
+  gl_Position = vec4(coord.xy, 0, 1);          \n
+  texpos = coord.zw;                           \n
+}
+);  
+
+
+
+int init_resources()
+{
+	/* Initialize the FreeType2 library */
+	if (FT_Init_FreeType(&ft)) {
+		fprintf(stderr, "Could not init freetype library\n");
+		return 0;
+	}
+
+	/* Load a font */
+	if (FT_New_Face(ft, fontfilename, 0, &face)) {
+		fprintf(stderr, "Could not open font %s\n", fontfilename);
+		return 0;
+	}
+
+	ft_program = new GLSLProgram(textVS, textPS);
+	if(ft_program == 0)
+        {
+            fprintf(stderr,"Failed to compile programs\n");
+            return 0;
+        }
+ 	attribute_coord = ft_program->get_attrib("coord");
+
+	// Create the vertex buffer object
+	glGenBuffers(1, &vbo);
+
+	return 1;
+}
+
+struct point {
+	GLfloat x;
+	GLfloat y;
+	GLfloat s;
+	GLfloat t;
+};
+
+
+void render_text(const char *text, float x, float y, float sx, float sy) {
+        const char *p;
+        FT_GlyphSlot g = face->glyph;
+
+        /* Create a texture that will be used to hold one "glyph" */
+        GLuint tex;
+        
+        glActiveTexture(GL_TEXTURE0);
+        glGenTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        ft_program->bindTexture("tex", 0, GL_TEXTURE_2D, 0);
+
+        /* We require 1 byte alignment when uploading texture data */
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+        /* Clamping to edges is important to prevent artifacts when scaling */
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        /* Linear filtering usually looks best for text */
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+        /* Set up the VBO for our vertex data */
+        glEnableVertexAttribArray(attribute_coord);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glVertexAttribPointer(attribute_coord, 4, GL_FLOAT, GL_FALSE, 0, 0);
+
+
+        /* Loop through all characters */
+        for (p = text; *p; p++)
+        {
+            if (FT_Load_Char(face, *p, FT_LOAD_RENDER))
+                    continue;
+
+            /* Upload the "bitmap", which contains an 8-bit grayscale image, as an alpha texture */
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, g->bitmap.width, g->bitmap.rows, 0, GL_ALPHA, GL_UNSIGNED_BYTE, g->bitmap.buffer);
+
+            /* Calculate the vertex and texture coordinates */
+            float x2 =  x + g->bitmap_left * sx;
+            float y2 = -y - g->bitmap_top  * sy;
+            float w  = g->bitmap.width * sx;
+            float h  = g->bitmap.rows * sy;
+            
+            point box[4] = {
+                    {x2,      y2,       0, 0},
+                    {x2 + w,  y2,       1, 0},
+                    {x2,      y2 +h ,   0, 1},
+                    {x2 + w,  y2 +h,    1, 1},
+            };      
+
+            /* Draw the character on the screen */
+            glBufferData(GL_ARRAY_BUFFER, sizeof box, box, GL_DYNAMIC_DRAW);
+            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+            
+            /* Advance the cursor to the start of the next character */
+            x += (g->advance.x >> 6) * sx;
+            y += (g->advance.y >> 6) * sy;
+        }
+
+        glDisableVertexAttribArray(attribute_coord);
+        glDeleteTextures(1, &tex);
+}
+
+void SmokeRenderer::addText(const int fontSize, const float x, const float y, const char* format, ...)
+{
+    static bool firstCall = true;
+    if(firstCall) {
+        init_resources();
+        firstCall = false;
+    }
+    
+    ft_program->enable();
+    
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    GLfloat green[4] = { 0, 1, 0, 1 };
+
+    FT_Set_Pixel_Sizes(face, 0, fontSize);        
+    ft_program->setUniform4f("color", green[0],green[1],green[2],green[3]);
+    
+    float sx = 1.0 / mWindowW;
+    float sy = 1.0 / mWindowH;
+    
+    char buffer[256];
+    va_list args;
+    va_start (args, format); 
+    vsnprintf (buffer, 255, format, args);
+    render_text(buffer, -1 + x * sx, 1 - (fontSize * sy) - (y * sy), sx, sy);
+    va_end(args); 
+    
+    ft_program->disable();     
+}
+
+#endif
+
+
 
 void SmokeRenderer::initParams()
 {

@@ -69,8 +69,10 @@ add_definitions(-std=c++11)
 set(EXTRA_MPI_LINK_FLAGS)
 if (USE_MPI)
   add_definitions(-DUSE_MPI)
-  add_definitions(-fPIE -Wno-main)
-  set(EXTRA_MPI_LINK_FLAGS   -pie -rdynamic)
+  #  add_definitions(-fPIE -Wno-main)
+  add_definitions(-Wno-main)
+  set(EXTRA_MPI_LINK_FLAGS  )
+  #set(EXTRA_MPI_LINK_FLAGS   -pie -rdynamic)
 if (USE_MPIMT)
   add_definitions(-D_MPIMT)
 endif (USE_MPIMT)
@@ -108,6 +110,7 @@ set (IO_CCFILES
 set(CMAKE_DEBUG_POSTFIX "D")
 
 include_directories(${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/renderer)
+include_directories(/usr/include/freetype2)
 
 set (CCFILES
   src/build.cpp 
@@ -267,7 +270,7 @@ if (USE_OPENGL)
     set(ALL_LIBRARIES ${FREEGLUT_LIBRARY} ${GLEW_LIBRARY})
   else (WIN32)
     FIND_LIBRARY(GLU_LIBRARY NAMES GLU PATHS ${LIB_PATH})
-    set(ALL_LIBRARIES ${FREEGLUT_LIBRARY} ${GLEW_LIBRARY} ${GLU_LIBRARY} ${OPENGL_gl_LIBRARY} ${OPENGL_glu_LIBRARY})
+    set(ALL_LIBRARIES ${FREEGLUT_LIBRARY} ${GLEW_LIBRARY} ${GLU_LIBRARY} ${OPENGL_gl_LIBRARY} ${OPENGL_glu_LIBRARY} -lEGL)
   endif (WIN32)
 
   # Copy DLLs
@@ -352,7 +355,7 @@ else(USE_GALACTICS OR USE_GALACTICS_IFORT)
 endif(USE_GALACTICS OR USE_GALACTICS_IFORT)
 
 #target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES} -lrt -pie -rdynamic)
-target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES} -lrt ${EXTRA_MPI_LINK_FLAGS})
+target_link_libraries(${BINARY_NAME} ${ALL_LIBRARIES} -lrt ${EXTRA_MPI_LINK_FLAGS} -lfreetype -lturbojpeg)
 if (USE_MPI)
     target_link_libraries(${BINARY_CLR_NAME}  -lrt ${EXTRA_MPI_LINK_FLAGS})
     target_link_libraries(${BINARY_IO_NAME}   -lrt ${EXTRA_MPI_LINK_FLAGS})
