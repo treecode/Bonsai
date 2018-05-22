@@ -115,7 +115,6 @@ struct __half2 { unsigned short x,y; };
 
 #define LET_METHOD_GRAV 1
 #define LET_METHOD_DENS 2
-#define LET_METHOD_DRVT 3
 #define LET_METHOD_HYDR 4
 
 

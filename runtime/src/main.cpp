@@ -843,6 +843,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
       sphParam.av_alpha = 1;
       sphParam.av_beta  = 2;
       sphParam.ac_param = 1;
+      sphParam.c_cfl    = 0.3;
       tree->setSPHParameters(sphParam);
   }
 

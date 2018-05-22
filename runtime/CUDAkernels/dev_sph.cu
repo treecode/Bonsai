@@ -130,7 +130,7 @@ PROF_MODULE(dev_approximate_gravity);
 //#endif
 
 
-#if 1
+#if 0
 __device__ bool testParticleMD(const float4 particlePos,
                                const float4 groupCenter,
                                const float4 groupSize,
@@ -150,7 +150,7 @@ __device__ bool testParticleMD(const float4 particlePos,
 }
 #endif
 
-#if 1
+#if 0
 __device__ void useParticleMD(const float4       posi,
                               const float4      *body_jpos,
                               const int          ptclIdx,
@@ -220,60 +220,60 @@ __device__ bool split_node_sph_md(const float4 nodeSize,
 }
 
 #define SIGN(x) ((x > 0) - (x < 0))
-__device__ bool split_node_sph_md_b(const float4 nodeSize,
-                                  const float4 nodeCenter,
-                                  const float4 groupCenter,
-                                  const float4 groupSize,
-                                  const float  grpH,
-                                  const float  cellH)
-{
-  //Compute the distance between the group and the cell
-  float3 dr = {fabs(groupCenter.x - nodeCenter.x) - (groupSize.x + nodeSize.x),
-               fabs(groupCenter.y - nodeCenter.y) - (groupSize.y + nodeSize.y),
-               fabs(groupCenter.z - nodeCenter.z) - (groupSize.z + nodeSize.z)};
+//__device__ bool split_node_sph_md_b(const float4 nodeSize,
+//                                  const float4 nodeCenter,
+//                                  const float4 groupCenter,
+//                                  const float4 groupSize,
+//                                  const float  grpH,
+//                                  const float  cellH)
+//{
+//  //Compute the distance between the group and the cell
+//  float3 dr = {fabs(groupCenter.x - nodeCenter.x) - (groupSize.x + nodeSize.x),
+//               fabs(groupCenter.y - nodeCenter.y) - (groupSize.y + nodeSize.y),
+//               fabs(groupCenter.z - nodeCenter.z) - (groupSize.z + nodeSize.z)};
+//
+////  float3 domainSize = {6.8593750000000000, 0.040594f, 0.038274f};   //Hardcoded for phantom tube
+////  const float dxbound = 6.85937500f;
+////  const float dybound = 0.040594f;
+////  const float dzbound = 0.038274f;
+////  if (abs(dr.x) > 0.5*dxbound) dr.x = dr.x - dxbound*SIGN(dr.x);
+////  if (abs(dr.y) > 0.5*dybound) dr.y = dr.y - dybound*SIGN(dr.y);
+////  if (abs(dr.z) > 0.5*dzbound) dr.z = dr.z - dzbound*SIGN(dr.z);
+//
+//  dr.x += fabs(dr.x); dr.x *= 0.5f;
+//  dr.y += fabs(dr.y); dr.y *= 0.5f;
+//  dr.z += fabs(dr.z); dr.z *= 0.5f;
+//
+//  //Distance squared, no need to do sqrt since opening criteria has been squared
+//  float ds2    = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
+//  return (ds2 <= 1*(grpH+cellH));
+//}
 
-//  float3 domainSize = {6.8593750000000000, 0.040594f, 0.038274f};   //Hardcoded for phantom tube
-//  const float dxbound = 6.85937500f;
-//  const float dybound = 0.040594f;
-//  const float dzbound = 0.038274f;
-//  if (abs(dr.x) > 0.5*dxbound) dr.x = dr.x - dxbound*SIGN(dr.x);
-//  if (abs(dr.y) > 0.5*dybound) dr.y = dr.y - dybound*SIGN(dr.y);
-//  if (abs(dr.z) > 0.5*dzbound) dr.z = dr.z - dzbound*SIGN(dr.z);
-
-  dr.x += fabs(dr.x); dr.x *= 0.5f;
-  dr.y += fabs(dr.y); dr.y *= 0.5f;
-  dr.z += fabs(dr.z); dr.z *= 0.5f;
-
-  //Distance squared, no need to do sqrt since opening criteria has been squared
-  float ds2    = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
-  return (ds2 <= 1*(grpH+cellH));
-}
 
 
-
-__device__ bool split_node_sph_md_print(const float4 nodeSize,
-                                  const float4 nodeCenter,
-                                  const float4 groupCenter,
-                                  const float4 groupSize,
-                                  const float  grpH,
-                                  const float  cellH)
-{
-  //Compute the distance between the group and the cell
-  float3 dr = {fabs(groupCenter.x - nodeCenter.x) - (groupSize.x + nodeSize.x),
-               fabs(groupCenter.y - nodeCenter.y) - (groupSize.y + nodeSize.y),
-               fabs(groupCenter.z - nodeCenter.z) - (groupSize.z + nodeSize.z)};
-
-  dr.x += fabs(dr.x); dr.x *= 0.5f;
-  dr.y += fabs(dr.y); dr.y *= 0.5f;
-  dr.z += fabs(dr.z); dr.z *= 0.5f;
-
-  //Distance squared, no need to do sqrt since opening criteria has been squared
-  float ds2    = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
-
-  printf("ON DEV distance: %f %f %f | ds2: %f  grpH: %f cellH: %f \n", dr.x, dr.y, dr.z, ds2, grpH, cellH);
-
-  return (ds2 <= (grpH+cellH));
-}
+//__device__ bool split_node_sph_md_print(const float4 nodeSize,
+//                                  const float4 nodeCenter,
+//                                  const float4 groupCenter,
+//                                  const float4 groupSize,
+//                                  const float  grpH,
+//                                  const float  cellH)
+//{
+//  //Compute the distance between the group and the cell
+//  float3 dr = {fabs(groupCenter.x - nodeCenter.x) - (groupSize.x + nodeSize.x),
+//               fabs(groupCenter.y - nodeCenter.y) - (groupSize.y + nodeSize.y),
+//               fabs(groupCenter.z - nodeCenter.z) - (groupSize.z + nodeSize.z)};
+//
+//  dr.x += fabs(dr.x); dr.x *= 0.5f;
+//  dr.y += fabs(dr.y); dr.y *= 0.5f;
+//  dr.z += fabs(dr.z); dr.z *= 0.5f;
+//
+//  //Distance squared, no need to do sqrt since opening criteria has been squared
+//  float ds2    = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
+//
+//  printf("ON DEV distance: %f %f %f | ds2: %f  grpH: %f cellH: %f \n", dr.x, dr.y, dr.z, ds2, grpH, cellH);
+//
+//  return (ds2 <= (grpH+cellH));
+//}
 
 
 
@@ -288,13 +288,12 @@ uint2 approximate_sph(
                               float4     acc_i   [NI] /* out */,
                         const float4     _pos_i  [NI],
                         const float4     _vel_i  [NI],
-                        const float4     _hydro_i[NI],
+                        const float4     hydro_i[NI],
                         const float4     groupPos,
                         const float4    *body_pos_j,
                         const float4    *body_vel_j,
                         const float4    *body_hydro_j,
                         const float2    *body_dens_j,
-                        const float      eps2,
                         const sphParameters     SPHParams,
                         const uint2      top_cells,
                         int             *shmem,
@@ -305,19 +304,17 @@ uint2 approximate_sph(
                         const float4    *nodeSize,
                         const float4    *nodeCenter,
                         const float4    *nodeMultipole,
-                        const float      grpH,
-                        const unsigned long long    IDi,
-                        const unsigned long long    *IDs)
+                        const float      grpH)
 {
   const int laneIdx = threadIdx.x & (WARP_SIZE-1);
 
   /* this helps to unload register pressure */
-  float4 pos_i[NI], vel_i[NI], hydro_i[NI];
+  float4 pos_i[NI], vel_i[NI];// hydro_i[NI];
 #pragma unroll 1
   for (int i = 0; i < NI; i++){
     pos_i[i]   = _pos_i[i];
     vel_i[i]   = _vel_i[i];
-    hydro_i[i] = _hydro_i[i];
+//    hydro_i[i] = _hydro_i[i];
   }
 
   uint2 interactionCounters = {0}; /* # of approximate and exact force evaluations */
@@ -366,20 +363,17 @@ uint2 approximate_sph(
     if(directOP<1, true>::type == SPH::HYDROFORCE)
     {
         //For hydro force we have to use mutual forces, so take the maximum smoothing of the cell and the group
-//                cellH = fabs(cellPos.w);
         cellH = fabs(openxy.y);
         splitCell         = split_node_sph_md(cellSize, cellPos, groupPos, groupSize, max(cellH, grpH), 0);
     }
     else
     {
-        splitCell         = split_node_sph_md(cellSize, cellPos, groupPos, groupSize, grpH, 0);
+        //Should be this splitCell         = split_node_sph_md(cellSize, cellPos, groupPos, groupSize, grpH, 0);
+        cellH = fabs(openxy.y);
+        splitCell         = split_node_sph_md(cellSize, cellPos, groupPos, groupSize, max(cellH, grpH), 0);
     }
 
-//    splitCell = true;
 
-
-//    bool splitCell         = split_node_sph_md(cellSize, cellPos, groupPos, groupSize, grpH, cellH);
-    //bool splitCell         = split_node_sph_md_b(cellSize, cellPos, groupPos, groupSize, grpH, cellH);
     interactionCounters.x += 1; //Keep track of number of opening tests
 
 
@@ -394,8 +388,6 @@ uint2 approximate_sph(
     /* split cells that satisfy opening condition */
     /**********************************************/
     const bool isNode = openxy.x > 0.0f;
-//    const bool isNode = cellPos.w > 0.0f;
-
 
     {
       bool splitNode  = isNode && splitCell && useCell;
@@ -432,8 +424,8 @@ uint2 approximate_sph(
       const int firstBody =   cellData & BODYMASK;
       const int     nBody = ((cellData & INVBMASK) >> LEAFBIT)+1;
 
-
       const int2 childScatter = warpIntExclusiveScan(nBody & (-isDirect));
+
       int nParticle  = childScatter.y;
       int nProcessed = 0;
       int2 scanVal   = {0};
@@ -447,25 +439,14 @@ uint2 approximate_sph(
           isDirect = false;
           tmpList[childScatter.x - nProcessed] = -1-firstBody;
         }
+
         scanVal = inclusive_segscan_warp(tmpList[laneIdx], scanVal.y);
         const int  ptclIdx = scanVal.x;
 
-
-        //Test the found particle against the group boundaries to see if this particular particle
-        //is actually useful or just a useless by-product of having to use one of it's fellow leaf-particles
-        if(0)
-        {
-            float4 bodyj = body_pos_j[ptclIdx];
-            bool    use  = testParticleMD(bodyj,groupPos, groupSize, grpH);
-            if(!use) derivative_i[0].z++;
-            else     derivative_i[0].w++;
-        }
-
-
         if (nParticle >= WARP_SIZE)
         {
-          directOP<NI,true>()(acc_i, pos_i, vel_i, ptclIdx, eps2, SPHParams, density_i, derivative_i, hydro_i,
-                  body_pos_j, body_vel_j, body_dens_j, body_hydro_j, IDi,IDs);
+          directOP<NI,true>()(acc_i, pos_i, vel_i, ptclIdx, SPHParams, density_i, derivative_i, hydro_i,
+                  body_pos_j, body_vel_j, body_dens_j, body_hydro_j);
           nParticle  -= WARP_SIZE;
           nProcessed += WARP_SIZE;
           if (INTCOUNT)
@@ -483,8 +464,8 @@ uint2 approximate_sph(
           if (directCounter >= WARP_SIZE)
           {
             /* evaluate cells stored in shmem */
-            directOP<NI,true>()(acc_i, pos_i, vel_i, tmpList[laneIdx], eps2, SPHParams, density_i, derivative_i, hydro_i,
-                                body_pos_j, body_vel_j, body_dens_j, body_hydro_j, IDi,IDs);
+            directOP<NI,true>()(acc_i, pos_i, vel_i, tmpList[laneIdx], SPHParams, density_i, derivative_i, hydro_i,
+                                body_pos_j, body_vel_j, body_dens_j, body_hydro_j);
             directCounter -= WARP_SIZE;
             const int scatterIdx = directCounter + laneIdx - nParticle;
             if (scatterIdx >= 0)
@@ -513,8 +494,8 @@ uint2 approximate_sph(
   //Process remaining items
   if (directCounter > 0)
   {
-    directOP<NI,false>()(acc_i, pos_i, vel_i, laneIdx < directCounter ? directPtclIdx : -1, eps2, SPHParams, density_i, derivative_i, hydro_i,
-            body_pos_j, body_vel_j, body_dens_j, body_hydro_j, IDi,IDs);
+    directOP<NI,false>()(acc_i, pos_i, vel_i, laneIdx < directCounter ? directPtclIdx : -1, SPHParams, density_i, derivative_i, hydro_i,
+            body_pos_j, body_vel_j, body_dens_j, body_hydro_j);
     if (INTCOUNT)
       interactionCounters.y += directCounter * NI;
     directCounter = 0;
@@ -523,35 +504,6 @@ uint2 approximate_sph(
   return interactionCounters;
 }
 
-//Re-compute the box position and size but now with the smoothing length taken into account
-__device__ void computeGroupBoundsWithSmoothingLength(const float4 pos[2], const int ni,
-                                                      float4 &grpCenter, float4 &grpSize)
-{
-    //Compute the extends of the 'box' around this particle
-    float  smth  = pos[0].w*SPH_KERNEL_SIZE;
-    float3 r_min = make_float3(pos[0].x-smth, pos[0].y-smth, pos[0].z-smth);
-    float3 r_max = make_float3(pos[0].x+smth, pos[0].y+smth, pos[0].z+smth);
-
-    if(ni > 1)  //Reduce within the thread the 2 possible particles
-    {
-        smth    = pos[1].w*SPH_KERNEL_SIZE;
-        r_min.x = fminf(pos[1].x-smth, r_min.x); r_min.y = fminf(pos[1].y-smth, r_min.y); r_min.z = fminf(pos[1].z-smth, r_min.z);
-        r_max.x = fmaxf(pos[1].x+smth, r_max.x); r_max.y = fmaxf(pos[1].y+smth, r_max.y); r_max.z = fmaxf(pos[1].z+smth, r_max.z);
-    }
-
-    //Reduce the whole group
-    r_min.x = warpAllReduceMin(r_min.x); r_min.y = warpAllReduceMin(r_min.y); r_min.z = warpAllReduceMin(r_min.z);
-    r_max.x = warpAllReduceMax(r_max.x); r_max.y = warpAllReduceMax(r_max.y); r_max.z = warpAllReduceMax(r_max.z);
-
-    //Compute the group center and size
-    grpCenter.x = 0.5*(r_min.x + r_max.x);
-    grpCenter.y = 0.5*(r_min.y + r_max.y);
-    grpCenter.z = 0.5*(r_min.z + r_max.z);
-
-    grpSize.x = fmaxf(fabs(grpCenter.x-r_min.x), fabs(grpCenter.x-r_max.x));
-    grpSize.y = fmaxf(fabs(grpCenter.y-r_min.y), fabs(grpCenter.y-r_max.y));
-    grpSize.z = fmaxf(fabs(grpCenter.z-r_min.z), fabs(grpCenter.z-r_max.z));
-}
 
 typedef unsigned long long ullong;
 
@@ -657,7 +609,7 @@ bool treewalk_control(
   pos_i[0].w                = dens_i[0].smth;  //y is smoothing range
   if(ni > 1 )   pos_i[1].w  = dens_i[1].smth;  //y is smoothing range
 
-#if 1
+
   //Compute the cellH, which is the maximum smoothing value off all particles
   //in a group because as we search for the whole group in parallel we have to
   //be sure to include all possibly required particles
@@ -668,22 +620,13 @@ bool treewalk_control(
   }
   cellH *= SPH::kernel_t::supportRadius(); //Multiply with the kernel cut-off radius
   cellH *= cellH; //Squared for distance comparison without sqrt
-#else
-  //TODO: This results in more cells being opened. Look into this later, might be related to the 3.5 factor
-  computeGroupBoundsWithSmoothingLength(pos_i, ni, group_pos, curGroupSize);
-  const float cellH = 0;
-#endif
+
 
   //For periodic boundaries, mirror the group and body positions along the periodic axis
-
   int2 xP = {0,0}, yP = {0,0}, zP = {0,0};
   if(((int)domainSize.w) & PERIODIC_X) { xP = {-1,1}; }
   if(((int)domainSize.w) & PERIODIC_Y) { yP = {-1,1}; }
   if(((int)domainSize.w) & PERIODIC_Z) { zP = {-1,1}; }
-
-  long long int startC = clock64();
-
-  const ullong IDi = ID[body_i[0]];
 
 
   //TODO use templates or parameterize this at some point
@@ -719,7 +662,6 @@ bool treewalk_control(
                         body_vel_j,
                         body_hydro_j,
                         body_dens_j,
-                        eps2,
                         SPHParams,
                         node_begend,
                         shmem,
@@ -730,8 +672,7 @@ bool treewalk_control(
                         nodeSize,
                         nodeCenter,
                         nodeMultipole,
-                        cellH,
-                        IDi, ID);
+                        cellH);
             else
                 curCounters = approximate_sph<SHIFT2, BLOCKDIM2, 2, INTCOUNT, directOp>(
                         acc_i,
@@ -743,7 +684,6 @@ bool treewalk_control(
                         body_vel_j,
                         body_hydro_j,
                         body_dens_j,
-                        eps2,
                         SPHParams,
                         node_begend,
                         shmem,
@@ -754,8 +694,7 @@ bool treewalk_control(
                         nodeSize,
                         nodeCenter,
                         nodeMultipole,
-                        cellH,
-                        IDi, ID);
+                        cellH);
           }
           if(curCounters.x == 0xFFFFFFFF && curCounters.y == 0xFFFFFFFF)
           {
@@ -791,8 +730,8 @@ bool treewalk_control(
       derivative_i[0].x = warpGroupReduceMax(derivative_i[0].x);
 
       //Below is for statistics
-      derivative_i[0].z = warpGroupReduce(derivative_i[0].z); //For stats
-      derivative_i[0].y = warpGroupReduce(derivative_i[0].y); //For stats
+      derivative_i[0].z = warpGroupReduce(derivative_i[0].z); //For statistics
+      derivative_i[0].y = warpGroupReduce(derivative_i[0].y); //For statistics
   }
 
   if (laneId < nb_i)
@@ -809,14 +748,12 @@ bool treewalk_control(
                 //depending on if this was the final call this does not have to be the final dens/smoothing value
                 dens_i[i].dens   += body_dens_out[addr].x;
 
-                acc_i[i].x       += body_acc_out[addr].x;
+                acc_i[i].x       += body_acc_out[addr].x;   //Used to store gradh
 
                 derivative_i[i].x += body_grad_out[addr].x;
                 derivative_i[i].y += body_grad_out[addr].y;
                 derivative_i[i].z += body_grad_out[addr].z;
                 derivative_i[i].w += body_grad_out[addr].w;
-
-
 
 
                 if(isFinalLaunch)
@@ -834,15 +771,11 @@ bool treewalk_control(
                     acc_i[i].x      *= cnormk*hi41;
 
 
-                    if(IDi == -64767)
-                    {
-                        printf("SUM for %d  rho: %f gradh: %f \n", IDi+1, dens_i[i].dens,  acc_i[i].x);
-                    }
                     dens_i[i].finalize(group_body_pos[body_i[i]].w);
 
 
 
-                    float omega = dens_i[i].smth / (3*dens_i[i].dens);                 //Compute using new density
+                    float omega = dens_i[i].smth / (3*dens_i[i].dens);                     //Compute using new density
                     //float omega = group_body_dens[addr].y / (3*group_body_dens[addr].x); //Compute using prev iteration density
 
                     float gradh = 1.0f / (1 + omega*acc_i[i].x); //Eq 5 of phantom paper
@@ -893,7 +826,7 @@ bool treewalk_control(
 
           if(directOp<1, true>::type == SPH::HYDROFORCE)
           {
-              if(ID[addr] >= SPHBOUND)
+              if(ID[addr] >= SPHBOUND) // 0 force for boundary particles
               {
                   acc_i[0].x = 0; acc_i[0].y = 0; acc_i[0].z = 0; ; acc_i[0].w = 0;
               }
@@ -906,17 +839,16 @@ bool treewalk_control(
               //This stores the time-step/dt
               body_grad_out[addr].x = max(body_grad_out[addr].x,  derivative_i[0].x);
 
+
               if(isFinalLaunch)
               {
-                  const float C_CFL = 0.3; //Default is 0.3
-                  float dt = C_CFL * 2.0 * dens_i[0].smth / body_grad_out[addr].x;
+                  float dt = SPHParams.c_cfl * 2.0 * dens_i[0].smth / body_grad_out[addr].x;
                   body_grad_out[addr].x = dt;
               }
 
               //TODO remove, this records interaction stats
               body_grad_out[addr].z += derivative_i[i].z;
               body_grad_out[addr].y += derivative_i[i].y;
-//              body_grad_out[addr].w += endC-startC; //Clock cycles for this group
           }
         }
         active_inout[addr] = 1;
@@ -970,7 +902,6 @@ void approximate_SPH_main(
   const int sh_offs    = (shMemSize >> nWarps2) * warpId;
   int *shmem           = shmem_pool + sh_offs;
   volatile int *shmemv = shmem;
-
 
 
 #if 0

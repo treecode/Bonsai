@@ -58,29 +58,9 @@ void octree::distributeBoundaries(bool doOnlyUpdate)
     devContext->popNVTX();
 }
 
+
+
 void octree::makeDensityLET()
-{
-    //Before we start making LET structures we need to wait till the data is available to the CPU
-    localTree.boxSizeInfo.waitForCopyEvent();
-    localTree.boxCenterInfo.waitForCopyEvent();
-    localTree.boxSmoothing.waitForCopyEvent();
-    localTree.multipole.waitForCopyEvent();
-
-    std::vector<real4> topLevelsBuffer;
-    std::vector<uint2> treeSizeAndOffset;
-    int copyTreeUpToLevel = 0;
-    //Start LET kernels
-    essential_tree_exchangeV2(localTree,
-                              remoteTree,
-                              topLevelsBuffer,
-                              treeSizeAndOffset,
-                              copyTreeUpToLevel,
-                              LET_METHOD_DENS);
-
-    letRunning = false;
-}
-
-void octree::makeDerivativeLET()
 {
     //Before we start making LET structures we need to wait till the data is available to the CPU
     localTree.boxSizeInfo.waitForCopyEvent();
@@ -106,7 +86,7 @@ void octree::makeDerivativeLET()
                               topLevelsBuffer,
                               treeSizeAndOffset,
                               copyTreeUpToLevel,
-                              LET_METHOD_DRVT);
+                              LET_METHOD_DENS);
 
     letRunning = false;
 }
@@ -432,8 +412,11 @@ bool octree::iterate_once(IterationData &idata) {
 
            setPressure.execute2(gravStream->s());
 
+           //Update the tree boundaries with the updated smoothing values
 
-           LOGF(stderr,"Start Hydro\n");
+           //TODO make this smarter as in only compute cells not groups. Or only needed info
+           compute_properties(this->localTree);
+
 
            double tStartHydro = get_time();
            approximate_hydro(this->localTree);
@@ -443,9 +426,9 @@ bool octree::iterate_once(IterationData &idata) {
            idata.totalDensityTime += tDens;
            idata.totalHydroTime   += tHydro;
 
-           mpiSync();
-           countInteractions(this->localTree, mpiCommWorld, procId);
-           mpiSync();
+//           mpiSync();
+//           countInteractions(this->localTree, mpiCommWorld, procId);
+//           mpiSync();
       } //do SPH
 
 
@@ -866,6 +849,7 @@ void octree::approximate_density    (tree_structure &tree)
     SPHDensity.set_texture<real4>(3,  tree.bodies_Ppos,    "texBody");
 
     SPHDensity.setWork(-1, NTHREAD, nBlocksForTreeWalk);
+//    SPHDensity.setWork(-1, 32, 1);
 
     for(int i=0; i < 3; i++)
     {
@@ -875,16 +859,13 @@ void octree::approximate_density    (tree_structure &tree)
         tree.bodies_dens_out.zeroMemGPUAsync(gravStream->s());
         tree.bodies_acc1.zeroMemGPUAsync(gravStream->s()); //Used for computing gradh
 
-
         cudaEventRecord(startLocalGrav, gravStream->s());
         double tStart = get_time();
         SPHDensity.execute2(gravStream->s());  //First iteration
         cudaEventRecord(endLocalGrav, gravStream->s());
 
-        cudaDeviceSynchronize();
-//        countInteractions(tree, mpiCommWorld, procId);
+
     //    double tEnd = get_time();
-    //
     //    float ms;
     //    CU_SAFE_CALL(cudaEventElapsedTime(&ms, startLocalGrav, endLocalGrav));
     //    fprintf(stderr,"SPH GPU step took: %f ms\t%lg sec\n", ms,  tEnd-tStart);
@@ -892,22 +873,18 @@ void octree::approximate_density    (tree_structure &tree)
         if(nProcs > 1)
         {
             distributeBoundaries(false); //Always full update for now
-//            makeDensityLET();
-            makeDerivativeLET();
+            makeDensityLET();
         }
 
         //Update the current density and smoothing radius based on that density
         tree.bodies_dens.copy_devonly_async(tree.bodies_dens_out, tree.n, 0,gravStream->s());
 
-        //TODO should we update the tree? No as we only update and use particle search radii.
-        //Actually yes, since we need proper tree-node smoothing values after the iterations
-        compute_properties(tree);
+        //TODO, are these needed earlier for the parallel code
+        //compute_properties(tree);
 
-        cudaDeviceSynchronize();
         //wait on the LET to finish before we start the interaction computations
         gravStream->sync();
-
-//        countInteractions(tree, mpiCommWorld, procId);
+        //countInteractions(tree, mpiCommWorld, procId);
     } //For i
 }
 
@@ -1034,10 +1011,6 @@ void octree::approximate_hydro(tree_structure &tree)
      SPHHydro.setWork(-1, NTHREAD, nBlocksForTreeWalk);
     //  SPHDerivative.setWork(-1, 32, 1);
 
-     //Note, I abuse the compute_prop function/opening angle criteria, so you can not use
-     //this for computing gravity at this point.
-     compute_properties(tree); //TODO make this smarter as in only compute cells not groups. And switch between SPH and Gravity
-
 
      //Reset bodies_grad, since we reuse/abuse it to store the dt
      tree.bodies_grad.zeroMemGPUAsync(gravStream->s());
@@ -1047,8 +1020,6 @@ void octree::approximate_hydro(tree_structure &tree)
      tree.interactions.zeroMemGPUAsync(gravStream->s());
      tree.activePartlist.zeroMemGPUAsync(gravStream->s());
      SPHHydro.execute2(gravStream->s());  //Hydro force
-
-     cudaDeviceSynchronize();
 
      gravStream->sync();
      countInteractions(tree, mpiCommWorld, procId);
@@ -1176,10 +1147,8 @@ void octree::approximate_gravity(tree_structure &tree)
   approxGrav.set_texture<real4>(0,  tree.boxSizeInfo,    "texNodeSize");
   approxGrav.set_texture<real4>(1,  tree.boxCenterInfo,  "texNodeCenter");
   approxGrav.set_texture<real4>(2,  tree.multipole,      "texMultipole");
-  approxGrav.set_texture<real4>(3,  tree.bodies_Ppos,   "texBody");
-
+  approxGrav.set_texture<real4>(3,  tree.bodies_Ppos,    "texBody");
   approxGrav.setWork(-1, NTHREAD, nBlocksForTreeWalk);
-//  approxGrav.setWork(-1, 32, 1);
 
 
   cudaEventRecord(startLocalGrav, gravStream->s());
@@ -1227,11 +1196,6 @@ void octree::approximate_gravity(tree_structure &tree)
       
       apprSum2     += tree.interactions[i].x*tree.interactions[i].x;
       directSum2   += tree.interactions[i].y*tree.interactions[i].y;   
-      
-//      if(i < 35)
-//      fprintf(stderr, "%d\t Direct: %d\tApprox: %d\t Group: %d \n",
-//              i, tree.interactions[i].y, tree.interactions[i].x,
-//              tree.body2group_list[i]);
     }
     cout << "Interaction at (rank= " << mpiGetRank() << " ) iter: " << iter << "\tdirect: " << directSum << "\tappr: " << apprSum << "\t";
     cout << "avg dir: " << directSum / tree.n << "\tavg appr: " << apprSum / tree.n << "\tMaxdir: " << maxDir << "\tmaxAppr: " << maxAppr <<  endl;

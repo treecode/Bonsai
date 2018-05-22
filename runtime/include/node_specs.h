@@ -68,9 +68,10 @@ public:
 // The variable configuration options for SPH kernels
 typedef struct sphParameters {
     float adiabatic_index;
-    float av_alpha;
-    float av_beta;
-    float ac_param;
+    float av_alpha;     //Artificial viscosity
+    float av_beta;      //Artificial viscosity
+    float ac_param;     //Artificial conductivity
+    float c_cfl;        //Time-step parameter
 } sphParameters;
 
 

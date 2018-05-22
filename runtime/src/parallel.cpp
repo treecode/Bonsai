@@ -10,9 +10,6 @@
 #include "dd2d.h"
 
 
-//typedef float  _v4sf  __attribute__((vector_size(16)));
-//typedef int    _v4si  __attribute__((vector_size(16)));
-
 #ifdef __ALTIVEC__
     #include <altivec.h>
 
@@ -257,27 +254,6 @@ struct GETLETBUFFERS
 
 MPIComm *myComm;
 
-//#include "MPIComm.h"
-//template <> MPI_Datatype MPIComm_datatype<float>() {return MPI_FLOAT; }
-
-//static MPI_Datatype MPI_V4SF = 0;
-
-//  template <>
-//MPI_Datatype MPIComm_datatype<v4sf>()
-//{
-//  if (MPI_V4SF) return MPI_V4SF;
-//  else {
-//    int ss = sizeof(v4sf) / sizeof(float);
-//    assert(0 == sizeof(v4sf) % sizeof(float));
-//    MPI_Type_contiguous(ss, MPI_FLOAT, &MPI_V4SF);
-//    MPI_Type_commit(&MPI_V4SF);
-//    return MPI_V4SF;
-//  }
-//}
-//void MPIComm_free_type()
-//{
-//  if (MPI_V4SF) MPI_Type_free(&MPI_V4SF);
-//}
 
 
 inline int host_float_as_int(float val)
@@ -314,27 +290,6 @@ static inline _v8sf __abs8(const _v8sf x)
 }
 #endif
 
-//
-//
-//#ifdef __AVX__
-//typedef float  _v8sf  __attribute__((vector_size(32)));
-//typedef int    _v8si  __attribute__((vector_size(32)));
-//#endif
-//
-//static inline _v4sf __abs(const _v4sf x)
-//{
-//  const _v4si mask = {0x7fffffff, 0x7fffffff, 0x7fffffff, 0x7fffffff};
-//  return __builtin_ia32_andps(x, (_v4sf)mask);
-//}
-//
-//#ifdef __AVX__
-//static inline _v8sf __abs8(const _v8sf x)
-//{
-//  const _v8si mask = {0x7fffffff, 0x7fffffff, 0x7fffffff, 0x7fffffff,
-//    0x7fffffff, 0x7fffffff, 0x7fffffff, 0x7fffffff};
-//  return __builtin_ia32_andps256(x, (_v8sf)mask);
-//}
-//#endif
 
 
 inline void _v4sf_transpose(_v4sf &a, _v4sf &b, _v4sf &c, _v4sf &d){
@@ -2570,7 +2525,7 @@ int3 getLET1(
   assert((int)bufferStruct.LETBuffer_node.size() == nExportCell);
 
   int bodyPropsCount = 1;                                //Position
-  if(LETMethod == LET_METHOD_DRVT)  bodyPropsCount +=1;  //Position and Velocity
+  if(LETMethod == LET_METHOD_DENS)  bodyPropsCount +=1;  //Position and Velocity
   if(LETMethod == LET_METHOD_HYDR)  bodyPropsCount +=3;  //Position, Velocity, Density and Hydro
 
   /* now copy data into LETBuffer */
@@ -2589,7 +2544,7 @@ int3 getLET1(
       const int idx = bufferStruct.LETBuffer_ptcl[i];
       vLETBuffer[i] = bodies_posV[idx];
     }
-    if(LETMethod == LET_METHOD_DRVT || LETMethod == LET_METHOD_HYDR)
+    if(LETMethod == LET_METHOD_DENS || LETMethod == LET_METHOD_HYDR)
     {
         for (int i = 0; i < nExportPtcl; i++)
         {
@@ -3172,7 +3127,7 @@ int3 getLEToptFullTree(
   {
 
       int bodyPropsCount = 1;                                //Position
-      if(LETMethod == LET_METHOD_DRVT)  bodyPropsCount +=1;  //Position and Velocity
+      if(LETMethod == LET_METHOD_DENS)  bodyPropsCount +=1;  //Position and Velocity
       if(LETMethod == LET_METHOD_HYDR)  bodyPropsCount +=3;  //Position, Velocity, Density and Hydro
     //LETBuffer.resize(nExportPtcl + 5*nExportCell);
 #pragma omp critical //Malloc seems to be not so thread safe..
@@ -3192,7 +3147,7 @@ int3 getLEToptFullTree(
       const int idx = bufferStruct.LETBuffer_ptcl[i];
       vLETBuffer[i] = bodiesPosV[idx];
     }
-    if(LETMethod == LET_METHOD_DRVT ||LETMethod == LET_METHOD_HYDR)
+    if(LETMethod == LET_METHOD_DENS ||LETMethod == LET_METHOD_HYDR)
     {
         for (int i = 0; i < nExportPtcl; i++)
         {
@@ -3853,7 +3808,7 @@ void octree::essential_tree_exchangeV2(tree_structure &tree,
 
 
         int bodyPropsCount = 1;
-        if(LETMethod == LET_METHOD_DRVT) bodyPropsCount +=1;  //Velocity included
+        if(LETMethod == LET_METHOD_DENS) bodyPropsCount +=1;  //Velocity included
         if(LETMethod == LET_METHOD_HYDR) bodyPropsCount +=3;  //Velocity, Density and Hydro included
 
         countParticles  = nExport.y;
@@ -4343,7 +4298,7 @@ void octree::mergeAndLaunchLETStructures(
   vector<int  > topSourceProc; //Do not assign size since we use 'insert'
 
   int bodyPropsCount = 1;                            //Position
-  if(METHOD == LET_METHOD_DRVT) bodyPropsCount +=1;  //Position and Velocity
+  if(METHOD == LET_METHOD_DENS) bodyPropsCount +=1;  //Position and Velocity
   if(METHOD == LET_METHOD_HYDR) bodyPropsCount +=3;  //Position, Velocity, Dens and Hydro
 
 
@@ -4641,7 +4596,7 @@ void octree::mergeAndLaunchLETStructures(
     //Particles
     memcpy(&combinedRemoteTree[particleSumOffsets[i]],   &treeBuffers[i+procTrees][1], sizeof(real4)*remoteP);
 
-    if(METHOD == LET_METHOD_DRVT || METHOD == LET_METHOD_HYDR) //Insert the velocity
+    if(METHOD == LET_METHOD_DENS || METHOD == LET_METHOD_HYDR) //Insert the velocity
     {
         memcpy(&combinedRemoteTree[1*totalParticles+particleSumOffsets[i]],         //Write after the positions
                &treeBuffers[i+procTrees][1+1*remoteP], sizeof(real4)*remoteP);      // Read after the positions
@@ -4828,10 +4783,6 @@ void octree::mergeAndLaunchLETStructures(
           break;
       case LET_METHOD_DENS:
           approximate_density_let(this->localTree, this->remoteTree, bufferSize, doActivePart);
-          break;
-      case LET_METHOD_DRVT:
-          approximate_density_let(this->localTree, this->remoteTree, bufferSize, doActivePart);
-//          approximate_derivative_let(this->localTree, this->remoteTree, bufferSize, doActivePart);
           break;
       case LET_METHOD_HYDR:
           approximate_hydro_let(this->localTree, this->remoteTree, bufferSize, doActivePart);
