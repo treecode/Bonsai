@@ -13,7 +13,7 @@
 
 __constant__ bodyProps group_body_props;
 
-#if 0
+#if 1
 #include "cuda_fp16.h"
 #else
 
@@ -165,7 +165,8 @@ __device__ void useParticleMD(const float4       posi,
 
     for (int j = 0; j < WARP_SIZE; j++)
     {
-      const float4 jM0   = make_float4(__shfl(M0.x, j), __shfl(M0.y, j), __shfl(M0.z, j), __shfl(M0.w,j));
+      const float4 jM0   = make_float4(__shfl_sync(FULL_MASK, M0.x, j), __shfl_sync(FULL_MASK, M0.y, j),
+                                       __shfl_sync(FULL_MASK, M0.z, j), __shfl_sync(FULL_MASK, M0.w,j));
       const float3 dr    = make_float3(jM0.x - posi.x, jM0.y - posi.y, jM0.z - posi.z);
       const float r2     = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
       if(r2 <= iH && M0.w >= 0) //Only use valid particles (no negative mass)

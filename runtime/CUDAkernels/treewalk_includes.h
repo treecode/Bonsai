@@ -14,6 +14,16 @@
 
 #define BTEST(x) (-(int)(x))
 
+#if 0
+/* For CUDA8 compilation we require the old functions */
+    #define __ballot_sync(mask, pred)           __ballot(pred)
+    #define __shfl_sync(mask, val, src, width)  __shfl(val, src, width)
+    #define __shfl_xor_sync(mask, val, src)     __shfl_xor(val, src)
+    #define __shfl_down_sync(mask, val, src)    __shfl_down(val, src)
+#endif
+
+
+
 #define FULL_MASK 0xffffffff
 
 

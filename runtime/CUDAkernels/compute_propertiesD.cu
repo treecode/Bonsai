@@ -2,7 +2,7 @@
 #include "support_kernels.cu"
 #include <stdio.h>
 
-#if 0
+#if 1
 #include "cuda_fp16.h"
 #else
 

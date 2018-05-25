@@ -416,7 +416,8 @@ namespace density
             const int offset     = NGROUPTemp*(laneId / NGROUPTemp);
             for (int j = offset; j < offset+NGROUPTemp; j++)
             {
-              const float4 jM0   = make_float4(__shfl(M0.x, j ), __shfl(M0.y, j), __shfl(M0.z, j), __shfl(M0.w,j));
+              const float4 jM0   = make_float4(__shfl_sync(FULL_MASK, M0.x, j), __shfl_sync(FULL_MASK, M0.y, j),
+                                               __shfl_sync(FULL_MASK, M0.z, j), __shfl_sync(FULL_MASK, M0.w,j));
               const float  jmass = jM0.w;
               const float3 jpos  = make_float3(jM0.x, jM0.y, jM0.z);
 
@@ -439,7 +440,7 @@ namespace density
 
 #ifdef USE_BALSARA_SWITCH
                 //Balsara switch, TODO(jbedorf): In theory this is only needed when we perform the final density iteration
-                const float3 jvel  = make_float3(__shfl(MV.x, j), __shfl(MV.y, j), __shfl(MV.z, j));
+                const float3 jvel  = make_float3(__shfl_sync(FULL_MASK, MV.x, j), __shfl_sync(FULL_MASK, MV.y, j), __shfl_sync(FULL_MASK, MV.z, j));
                 const float3 dv    = make_float3(jvel.x - vel_i[0].x, jvel.y - vel_i[0].y, jvel.z - vel_i[0].z);
 
                 temp2 /= r;
@@ -512,10 +513,11 @@ namespace hydroforce
           const int offset     = NGROUPTemp*(laneId / NGROUPTemp);
           for (int j = offset; j < offset+NGROUPTemp; j++)
           {
-            const float4 jM0   = make_float4(__shfl(MP.x, j), __shfl(MP.y, j), __shfl(MP.z, j), __shfl(MP.w,j));
+            const float4 jM0   = make_float4(__shfl_sync(FULL_MASK, MP.x, j), __shfl_sync(FULL_MASK, MP.y, j),
+                                             __shfl_sync(FULL_MASK, MP.z, j), __shfl_sync(FULL_MASK, MP.w,j));
             const float3 dr    = make_float3(pos_i[0].x - jM0.x, pos_i[0].y - jM0.y, pos_i[0].z - jM0.z);
 
-            const float3 jvel  = make_float3(__shfl(MV.x, j), __shfl(MV.y, j), __shfl(MV.z, j));
+            const float3 jvel  = make_float3(__shfl_sync(FULL_MASK, MV.x, j), __shfl_sync(FULL_MASK, MV.y, j), __shfl_sync(FULL_MASK, MV.z, j));
             const float3 dv    = make_float3(vel_i[0].x - jvel.x, vel_i[0].y - jvel.y, vel_i[0].z - jvel.z);
 
             const float r        = sqrtf(dr.x*dr.x + dr.y*dr.y + dr.z*dr.z);
@@ -525,7 +527,8 @@ namespace hydroforce
 
 
             //Artificial viscosity
-            const float4 jH       = make_float4(__shfl(MH.x, j), __shfl(MH.y, j), __shfl(MH.z,j), __shfl(MH.w,j));
+            const float4 jH       = make_float4(__shfl_sync(FULL_MASK, MH.x, j), __shfl_sync(FULL_MASK, MH.y, j),
+                                                __shfl_sync(FULL_MASK, MH.z, j), __shfl_sync(FULL_MASK, MH.w, j));
 
             const float v_sigi     = tmp_hydro_y  - SPHParams.av_beta * projv;
             const float v_sigj     = jH.y         - SPHParams.av_beta * projv;
@@ -537,7 +540,7 @@ namespace hydroforce
 
             float PA = 0, PB2 = 0, AVi = 0, AVj = 0;
 
-            const float2 jD    = make_float2(__shfl(MD.x, j), __shfl(MD.y, j));
+            const float2 jD    = make_float2(__shfl_sync(FULL_MASK, MD.x, j), __shfl_sync(FULL_MASK, MD.y, j));
             const float densji = 1.0f / jD.x;
 
 
@@ -557,7 +560,7 @@ namespace hydroforce
             float ith_abs_gradW = kernel.abs_gradW(r, pos_i[0].w);
             ith_abs_gradW *= omegai;
             float jth_abs_gradW = (jD.y != 0) ? kernel.abs_gradW(r, jD.y) : 0.0f; //Returns NaN if smthj is 0 which happens if we do not use the particle, so 'if' for now
-            jth_abs_gradW *= __shfl(MV.w, j); //multiply with omegaj
+            jth_abs_gradW *= __shfl_sync(FULL_MASK, MV.w, j); //multiply with omegaj
 
 
             //Force according to equation 120 , with the addition of the Artificial Viscosity
