@@ -1,5 +1,4 @@
 #include "bonsai.h"
-// #include "support_kernels.cu0
 #include <stdio.h>
 
 #include "../profiling/bonsai_timing.h"
@@ -31,7 +30,9 @@ PROF_MODULE(dev_approximate_gravity);
 #define _QUADRUPOLE_
 #endif
 
-#if __CUDA_API_VERSION >= 9010
+#include <cuda.h>
+
+#if CUDART_VERSION >= 9020
     #include <cuda_fp16.h>
 #else
     #if defined(__CUDACC_RTC__)

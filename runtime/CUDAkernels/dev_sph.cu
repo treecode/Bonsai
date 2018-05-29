@@ -13,7 +13,7 @@
 
 __constant__ bodyProps group_body_props;
 
-#if __CUDA_API_VERSION >= 9010
+#if CUDART_VERSION >= 9010
     #include <cuda_fp16.h>
 #else
 
