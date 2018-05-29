@@ -2,8 +2,8 @@
 #include "support_kernels.cu"
 #include <stdio.h>
 
-#if 1
-#include "cuda_fp16.h"
+#if __CUDA_API_VERSION >= 9010
+    #include "cuda_fp16.h"
 #else
 
 #if defined(__CUDACC_RTC__)

@@ -31,47 +31,49 @@ PROF_MODULE(dev_approximate_gravity);
 #define _QUADRUPOLE_
 #endif
 
-#if 0
-#if defined(__CUDACC_RTC__)
-#define __CUDA_FP16_DECL__ __host__ __device__
-#else /* !__CUDACC_RTC__ */
-#define __CUDA_FP16_DECL__ static __device__ __inline__
-#endif /* __CUDACC_RTC__ */
+#if __CUDA_API_VERSION >= 9010
+    #include <cuda_fp16.h>
+#else
+    #if defined(__CUDACC_RTC__)
+    #define __CUDA_FP16_DECL__ __host__ __device__
+    #else /* !__CUDACC_RTC__ */
+    #define __CUDA_FP16_DECL__ static __device__ __inline__
+    #endif /* __CUDACC_RTC__ */
 
 
-typedef struct __align__(4) {
-   unsigned int x;
-} __half2;
-typedef struct __align__(2) {
-   unsigned short x;
-} __half;
+    typedef struct __align__(4) {
+       unsigned int x;
+    } __half2;
+    typedef struct __align__(2) {
+       unsigned short x;
+    } __half;
 
-typedef __half2 half2;
-__CUDA_FP16_DECL__ __half2 __halves2half2(const __half l, const __half h)
-{
-   __half2 val;
-   asm("{  mov.b32 %0, {%1,%2};}\n"
-       : "=r"(val.x) : "h"(l.x), "h"(h.x));
-   return val;
-}
-__CUDA_FP16_DECL__ __half __float2half(const float f)
-{
-   __half val;
-   asm volatile("{  cvt.rn.f16.f32 %0, %1;}\n" : "=h"(val.x) : "f"(f));
-   return val;
-}
+    typedef __half2 half2;
+    __CUDA_FP16_DECL__ __half2 __halves2half2(const __half l, const __half h)
+    {
+       __half2 val;
+       asm("{  mov.b32 %0, {%1,%2};}\n"
+           : "=r"(val.x) : "h"(l.x), "h"(h.x));
+       return val;
+    }
+    __CUDA_FP16_DECL__ __half __float2half(const float f)
+    {
+       __half val;
+       asm volatile("{  cvt.rn.f16.f32 %0, %1;}\n" : "=h"(val.x) : "f"(f));
+       return val;
+    }
 
-__CUDA_FP16_DECL__ float2 __half22float2(const __half2 l)
-{
-   float hi_float;
-   float lo_float;
-   asm("{.reg .f16 low,high;\n"
-       "  mov.b32 {low,high},%1;\n"
-       "  cvt.f32.f16 %0, low;}\n" : "=f"(lo_float) : "r"(l.x));
+    __CUDA_FP16_DECL__ float2 __half22float2(const __half2 l)
+    {
+       float hi_float;
+       float lo_float;
+       asm("{.reg .f16 low,high;\n"
+           "  mov.b32 {low,high},%1;\n"
+           "  cvt.f32.f16 %0, low;}\n" : "=f"(lo_float) : "r"(l.x));
 
-   asm("{.reg .f16 low,high;\n"
-       "  mov.b32 {low,high},%1;\n"
-       "  cvt.f32.f16 %0, high;}\n" : "=f"(hi_float) : "r"(l.x));
+       asm("{.reg .f16 low,high;\n"
+           "  mov.b32 {low,high},%1;\n"
+           "  cvt.f32.f16 %0, high;}\n" : "=f"(hi_float) : "r"(l.x));
 
    return make_float2(lo_float, hi_float);
 }
