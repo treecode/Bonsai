@@ -75,32 +75,6 @@ namespace SPH
 
         /* this one works with SPH_KERNEL_SIZE 3.0f and PARAM_SMTH 1.0 */
         //Quintic kernel as defined in Phantom
-        __device__ __forceinline__ float W(const float dr, const float h) const{
-            const float hi = 1.0f/h;
-            const float hi21 = hi*hi;
-            const float hi31 = hi*hi21;
-            const float q  = dr*hi;
-            const float q2 = (dr*dr)*hi21;
-            const float cnormkh = cnormk*hi31;
-
-            if(q < 1.0f)
-            {
-                const float q4 = q2*q2;
-                return cnormkh*(-10.0f*q4*q + 30.0f*q4 - 60.0f*q2 + 66.0f);
-            }
-            else if(q < 2.0f)
-            {
-                return cnormkh*(-pow5(q - 3.0f) + 6.0f*pow5((q - 2.0f)));
-            }
-            else if(q < 3.0f)
-            {
-                return cnormkh*(-pow5(q - 3.0f));
-            }
-            else
-            {
-                return 0;
-            }
-        }
 
         __device__ __forceinline__ float abs_gradW(const float dr, const float h) const{
             const float hi = 1.0f/h;
@@ -128,38 +102,11 @@ namespace SPH
             }
         }
 
-        __device__ __forceinline__ float abs_gradW2(const float dr, const float h) const{
-            const float hi = 1.0f/h;
-            const float hi21 = hi*hi;
-            const float q  = dr*hi;
-            const float q2 = (dr*dr)*hi21;
-            const float cnormkh = 1; //Quintic kernel
-
-            if(q < 1.0f)
-            {
-                return cnormkh*(q*(-50.0f*q2*q + 120.0f*q2 - 120.0f));
-            }
-            else if(q < 2.0f)
-            {
-                return  cnormkh*(-5.0f*pow4(q - 3.0f) + 30.0f*pow4(q - 2.0f));
-            }
-            else if(q < 3.0f)
-            {
-                return cnormkh*(-5.0f*pow4(q - 3.0f));
-            }
-            else
-            {
-                return 0;
-            }
-        }
 
         //Combined kernel, does not multiply with hi3 and/or hi4 nor with cnorm. This is done as final
         //step in the dev_sph code.
-        __device__ __forceinline__ float abs_gradW2(const float dr, const float h, float &w) const{
-            const float hi = 1.0f/h;
-            const float hi21 = hi*hi;
-            const float q  = dr*hi;
-            const float q2 = (dr*dr)*hi21;
+        __device__ __forceinline__ float abs_gradW2(const float q, float &w) const{
+            const float q2 = q * q;
 
             if(q < 1.0f)
             {
@@ -183,6 +130,7 @@ namespace SPH
                 return 0;
             }
         }
+
     };
 #endif
 
@@ -240,28 +188,6 @@ namespace SPH
 
         //Combined kernel, does not multiply with hi3 and/or hi4 nor with cnorm. This is done as final
         //step in the dev_sph code.
-        __device__ __forceinline__ float abs_gradW2a(const float dr, const float h, float &w) const{
-            const float hi = 1.0f/h;
-            const float hi21 = hi*hi;
-            const float q  = dr*hi;
-            const float q2 = (dr*dr)*hi21;
-
-            if(q < 1.0f)
-            {
-                w = (0.75f*q2*q - 1.5f*q2 + 1.0f);
-                return q*(2.25f*q - 3.0f);
-            }
-            else if(q < 2.0f)
-            {
-                w = (-0.25f*pow3(q-2.0f));
-                return  -0.75f*((q-2.0f)*(q-2.0f));
-            }
-            else
-            {
-                w = 0.0f;
-                return 0.0f;
-            }
-        }
         __device__ __forceinline__ float abs_gradW2(const float q, float &w) const{
             if(q < 1.0f)
             {
@@ -310,23 +236,19 @@ namespace SPH
             return hi41*cnormk*q*pow7(0.5*q - 1.0f)*(22.0f*q2 + 19.25f*q + 5.5f);
         }
 
-        //Combined kernel, does not multiply with hi3 and/or hi4 nor with cnorm. This is done as final
-        //step in the dev_sph code.
-        __device__ __forceinline__ float abs_gradW2(const float dr, const float h, float &w) const{
-            const float hi = 1.0f/h;
-            const float hi21 = hi*hi;
-            const float q  = dr*hi;
-            const float q2 = (dr*dr)*hi21;
 
-            if(q >= 2.0)
-            {
-                w = 0.0f;
-                return 0;
-            }
-            w = pow8(0.5*q - 1.0f)*(4.0f*q2*q + 6.25f*q2 + 4.0f*q + 1.0f);
-            return q*pow7(0.5*q - 1.0f)*(22.0f*q2 + 19.25f*q + 5.5f);
-         }
-
+         //Combined kernel, does not multiply with hi3 and/or hi4 nor with cnorm. This is done as final
+         //step in the dev_sph code.
+         __device__ __forceinline__ float abs_gradW2(const float q, float &w) const{
+             if(q >= 2.0)
+             {
+                 w = 0.0f;
+                 return 0;
+             }
+             const float q2 = q*q;
+             w = pow8(0.5*q - 1.0f)*(4.0f*q2*q + 6.25f*q2 + 4.0f*q + 1.0f);
+             return q*pow7(0.5*q - 1.0f)*(22.0f*q2 + 19.25f*q + 5.5f);
+          }
     };
 #endif
 
@@ -514,7 +436,7 @@ namespace hydroforce
           for (int j = offset; j < offset+NGROUPTemp; j++)
           {
             const float4 jM0   = make_float4(__shfl_sync(FULL_MASK, MP.x, j), __shfl_sync(FULL_MASK, MP.y, j),
-                                             __shfl_sync(FULL_MASK, MP.z, j), __shfl_sync(FULL_MASK, MP.w,j));
+                                             __shfl_sync(FULL_MASK, MP.z, j), __shfl_sync(FULL_MASK, MP.w, j));
             const float3 dr    = make_float3(pos_i[0].x - jM0.x, pos_i[0].y - jM0.y, pos_i[0].z - jM0.z);
 
             const float3 jvel  = make_float3(__shfl_sync(FULL_MASK, MV.x, j), __shfl_sync(FULL_MASK, MV.y, j), __shfl_sync(FULL_MASK, MV.z, j));
@@ -541,7 +463,7 @@ namespace hydroforce
             float PA = 0, PB2 = 0, AVi = 0, AVj = 0;
 
             const float2 jD    = make_float2(__shfl_sync(FULL_MASK, MD.x, j), __shfl_sync(FULL_MASK, MD.y, j));
-            const float densji = 1.0f / jD.x;
+            const float densji = (jM0.w != 0) ? 1.0f / jD.x : 0;
 
 
             if(w_ij < 0)
@@ -588,7 +510,6 @@ namespace hydroforce
             float autermj = SPHParams.ac_param*0.5f*jM0.w*densji;
             float denij   = hydro_i[0].z - jH.z;
             du += vsigu*denij*(autermi*ith_abs_gradW + autermj*jth_abs_gradW); //Phantom Eq 40
-
 
           if(jD.x != 0) {
             acc_i[0].x    -= gradW2.x;

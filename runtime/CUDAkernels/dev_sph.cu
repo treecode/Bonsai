@@ -812,7 +812,11 @@ bool treewalk_control(
                     float temp3 = 1.0e-4 * group_body_hydro[addr].y / group_body_dens[addr].y;
 
                     //Note using group_body_hydro here instead of body_hydro_out to store Balsara Switch
-                    group_body_hydro[addr].w = temp / (temp + sqrtf(temp2) + temp3);
+                    if(temp > 0.0f)     //Prevent NaN when dividing by zero
+                        group_body_hydro[addr].w = temp / (temp + sqrtf(temp2) + temp3);
+                    else
+                        group_body_hydro[addr].w = 0.0f;
+
                 } //is final launch
 
                 body_dens_out[addr]   = make_float2(dens_i[i].dens,dens_i[i].smth);
