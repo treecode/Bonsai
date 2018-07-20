@@ -1286,6 +1286,7 @@ extern "C" __global__ void gpu_extractBoundaryTree(
 extern "C" __global__ void gpu_boundaryTree(
                                             const uint2      top_cells,     //Encode the start and end cells of our initial traverse
                                             const  int       maxDepth,      //Number of levels we will traverse
+                                            const  int       stackSize,     //Number of items that we can store in the tree-traverse stack
                                             int             *cellStack,     //Used for tree-traversal
                                             const uint      *nodeBodies,    //Contains the info needed to walk the tree
                                             const uint2     *leafBodies,    //To get indices of the particle information
@@ -1366,9 +1367,12 @@ extern "C" __global__ void gpu_boundaryTree(
     if(isNode)
     {
       /* make sure we still have available stack space */
-      if (childScatter.y + nCells - cellListBlock + nextLevelCellCounter > (CELL_LIST_MEM_PER_WARP<<SHIFT))
-        //return make_uint2(0xFFFFFFFF,0xFFFFFFFF);
-         return; //TODO print error
+      if ((childScatter.y + nCells - cellListBlock + nextLevelCellCounter) > stackSize)
+      {
+        if(laneIdx == 0) printf("ON DEV: ERROR, ran out of stack space during boundary extraction\n");
+        markedNodes2[0] = make_int4(-1, -1, -1, -1);
+        return;
+      }
 
       /* if so populate next level stack in gmem */
       if (splitNode)

@@ -223,9 +223,11 @@ int octree::gpuDetermineBoundary(tree_structure &tree, int maxDepth, uint2 node_
                                   my_dev::dev_mem<int4>  &newValid,   my_dev::dev_mem<int4>  &finalValid,
                                   my_dev::dev_mem<float4> &finalBuff)
 {
+   int stackListSize = stackList.get_size();
   //Determine the boundaries of the tree-structure. This is used during multi-GPU execution.
    gpuBoundaryTree.set_args(0, &node_begend,
                                &maxDepth,
+                               &stackListSize,
                                stackList.p(),
                                tree.n_children.p(),
                                tree.node_bodies.p(),
@@ -235,6 +237,12 @@ int octree::gpuDetermineBoundary(tree_structure &tree, int maxDepth, uint2 node_
    gpuBoundaryTree.execute2(execStream->s());
 
    newValid.d2h(1);
+
+   if(newValid[0].x < 0)
+   {
+       LOGF(stderr,"Boundary extraction ran out of space, increase the buffer size of stackList before calling gpuDetermineBoundary.\n");
+       exit(0);
+   }
 
    const int nBodyProps = 4; //Pos, Vel, Dens+Smth, Hydro
 
@@ -393,12 +401,13 @@ void octree::build (tree_structure &tree) {
 
 
   //For multi-GPU execution we now determine the outer boundaries of this tree-structure
-//  if(nProcs > 1)
+  //  if(nProcs > 1)
   {
       my_dev::dev_mem<int4>   newValid;
       my_dev::dev_mem<uint>   stackList;
 
-      memBufOffset = stackList.cmalloc_copy(tree.generalBuffer1, 32*1024,      memBufOffsetValidList);
+      //Allocate, a per thread stack size of 4096 items
+      memBufOffset = stackList.cmalloc_copy(tree.generalBuffer1, 32*4096,      memBufOffsetValidList);
       memBufOffset = newValid.cmalloc_copy (tree.generalBuffer1, tree.n_nodes, memBufOffset);
 
       //First do this for the smallBoundary tree
@@ -562,20 +571,20 @@ void octree::parallelDataSummary(tree_structure &tree,
     LOGF(stderr, "Redistribute domain took: %f\n", get_time()-t0);
 
 
-    char fileName[512];
-    //Write the source particles
-    sprintf(fileName, "fullTreeStructureParticles-%d-%d.txt", mpiGetNProcs(), mpiGetRank());
-    ofstream partFile;
-    partFile.open(fileName);
-    tree.bodies_Ppos.d2h();
-    partFile << "POINTS\n";
-    for(int i=0; i < tree.n; i++)
-    {
-      float4  pos =  tree.bodies_Ppos[i];
-      //partFile << pos.x << "\t" << pos.y << "\t" << pos.z << endl;
-      partFile << pos.x << "\t" << pos.y << "\t" << pos.z << "\t" << i << endl;
-    }
-    partFile.close();
+//    char fileName[512];
+//    //Write the source particles
+//    sprintf(fileName, "fullTreeStructureParticles-%d-%d.txt", mpiGetNProcs(), mpiGetRank());
+//    ofstream partFile;
+//    partFile.open(fileName);
+//    tree.bodies_Ppos.d2h();
+//    partFile << "POINTS\n";
+//    for(int i=0; i < tree.n; i++)
+//    {
+//      float4  pos =  tree.bodies_Ppos[i];
+//      //partFile << pos.x << "\t" << pos.y << "\t" << pos.z << endl;
+//      partFile << pos.x << "\t" << pos.y << "\t" << pos.z << "\t" << i << endl;
+//    }
+//    partFile.close();
 
 //    exit(0);
 

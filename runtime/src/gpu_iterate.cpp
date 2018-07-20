@@ -884,7 +884,21 @@ void octree::approximate_density    (tree_structure &tree)
 
         //wait on the LET to finish before we start the interaction computations
         gravStream->sync();
-        //countInteractions(tree, mpiCommWorld, procId);
+//        countInteractions(tree, mpiCommWorld, procId);
+//
+//
+//        this->localTree.bodies_dens_out.d2h();
+//        for(int i=0; i < 10; i++)
+//        {
+//            fprintf(stderr,"DEN: %d\t%f\t%f \n",
+//                    i,
+//                    this->localTree.bodies_dens_out[i].x,
+//                    this->localTree.bodies_dens_out[i].y);
+//
+//        }
+
+
+//        exit(0);
     } //For i
 }
 
@@ -1022,7 +1036,7 @@ void octree::approximate_hydro(tree_structure &tree)
      SPHHydro.execute2(gravStream->s());  //Hydro force
 
      gravStream->sync();
-     countInteractions(tree, mpiCommWorld, procId);
+//     countInteractions(tree, mpiCommWorld, procId);
 
 
      if(nProcs > 1)
@@ -1545,6 +1559,23 @@ double octree::compute_energies(tree_structure &tree)
 
   if(std::isnan(Etot)){
       LOGF(stderr,"NaN detected, exit\n");
+
+
+      tree.bodies_pos.d2h();
+      tree.bodies_vel.d2h();
+      tree.bodies_acc0.d2h();
+      tree.bodies_ids.d2h();
+      for (int i = 0; i < tree.n; i++) {
+          if(std::isnan(tree.bodies_acc0[i].x))
+          {
+          LOGF(stderr,"%d | %d \tAcc: %f %f %f %f\tPx: %f\tVx: %f\n", i,
+               tree.bodies_ids[i],
+               tree.bodies_acc0[i].x, tree.bodies_acc0[i].y, tree.bodies_acc0[i].z,
+               tree.bodies_acc0[i].w, tree.bodies_pos[i].x, tree.bodies_vel[i].x);
+          break;
+          }
+      }
+
       exit(0);
   }
   mpiSync(); //TODO(jbedorf) remove this and the lines above if we solved NaN problems
