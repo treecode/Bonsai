@@ -839,12 +839,12 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   if(solverType == 1 || solverType == 2)
   {
       sphParameters sphParam;
-      sphParam.adiabatic_index = 5.0f/3.0f;   //Tube, Sedov, KH
-//      sphParam.adiabatic_index = 7.0f/5.0f; //Blast wave
+//      sphParam.adiabatic_index = 5.0f/3.0f;   //Tube, Sedov, KH
+      sphParam.adiabatic_index = 7.0f/5.0f; //Blast wave
       sphParam.av_alpha = 1;
       sphParam.av_beta  = 2;
       sphParam.ac_param = 1;
-      sphParam.c_cfl    = 0.3;
+      sphParam.c_cfl    = 0.3; //0.3 is default
       tree->setSPHParameters(sphParam);
   }
 

@@ -14,15 +14,15 @@ typedef float4 real4;
 //Boundary particles have an ID higher than SPHBOUND
 #define SPHBOUND          100000000000000
 
-/* Quinitc kernel */
-//#define KERNEL_QUINTIC
-//#define SPH_KERNEL_SIZE 3.0f
-//#define PARAM_SMTH 1.0
+/* M6 Quintic kernel */
+#define KERNEL_QUINTIC
+#define SPH_KERNEL_SIZE 3.0f
+#define PARAM_SMTH 1.0
 
 /* M4 Cubic kernel */
-#define KERNEL_M_4
-#define SPH_KERNEL_SIZE 2.0f
-#define PARAM_SMTH 1.2
+//#define KERNEL_M_4
+//#define SPH_KERNEL_SIZE 2.0f
+//#define PARAM_SMTH 1.2
 
 
 /* Phantom Wendland C6 kernel */

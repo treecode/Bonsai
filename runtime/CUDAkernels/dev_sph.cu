@@ -776,8 +776,8 @@ bool treewalk_control(
 
 
 
-                    float omega = dens_i[i].smth / (3*dens_i[i].dens);                     //Compute using new density
-                    //float omega = group_body_dens[addr].y / (3*group_body_dens[addr].x); //Compute using prev iteration density
+                    //float omega = dens_i[i].smth / (3*dens_i[i].dens);                     //Compute using new density
+                    float omega = group_body_dens[addr].y / (3*group_body_dens[addr].x); //Compute using prev iteration density
 
                     float gradh = 1.0f / (1 + omega*acc_i[i].x); //Eq 5 of phantom paper
                     group_body.body_vel[addr].w = gradh;         //Note we store this in the (predicted) velocity array
