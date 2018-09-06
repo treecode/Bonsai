@@ -20,6 +20,10 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
+## BonsaiSPH
+
+The version of Bonsai that has support for SPH can be found in the `BonsaiSPH` branch of this repository.
+ 
 Bonsai demo keys
 ----------------
 
