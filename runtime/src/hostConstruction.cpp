@@ -33,7 +33,7 @@
         return temp2;
     }
 #else
-    #include <xmmintrin.h>
+    #include <immintrin.h>
 
     static inline float2 extract_opening_criteria(float val)
     {

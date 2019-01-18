@@ -851,7 +851,7 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys2,    int  nSa
       MPI_Allreduce( &timeLocal, &timeSum, 1,MPI_DOUBLE, MPI_SUM, mpiCommWorld);
 
       double fmin = 0.0;
-      double fmax = HUGE;
+      double fmax = HUGE_VAL;
 
 /* evghenii: updated LB and MEMB part, works on the following synthetic test
       double lastExecTime = (double)nkeys_loc/nloc_mean;
@@ -871,7 +871,7 @@ void octree::exchangeSamplesAndUpdateBoundarySFC(uint4 *sampleKeys2,    int  nSa
         double fac = 1.0;
 
         fmin = fac/(1.0+mem_imballance);
-        fmax = HUGE;
+        fmax = HUGE_VAL;
 #if 0   /* use this to limit # of exported particles */
         fmax = fac*(1.0+mem_imballance);
 #endif

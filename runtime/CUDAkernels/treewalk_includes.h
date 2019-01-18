@@ -46,7 +46,7 @@ static __device__ __forceinline__ uint shfl_scan_add_step(uint partial, uint up_
   asm(
       "{.reg .u32 r0;"
       ".reg .pred p;"
-      "shfl.up.b32 r0|p, %1, %2, 0;"
+      "shfl.sync.up.b32 r0|p, %1, %2, 0, 0xffffffff;"
       "@p add.u32 r0, r0, %3;"
       "mov.u32 %0, r0;}"
       : "=r"(result) : "r"(partial), "r"(up_offset), "r"(partial));
@@ -75,7 +75,7 @@ static __device__ __forceinline__ int ShflSegScanStepB(
   asm(
       "{.reg .u32 r0;"
       ".reg .pred p;"
-      "shfl.up.b32 r0, %1, %2, 0;"
+      "shfl.sync.up.b32 r0, %1, %2, 0, 0xffffffff;"
       "setp.le.u32 p, %2, %3;"
       "@p add.u32 %1, r0, %1;"
       "mov.u32 %0, %1;}"

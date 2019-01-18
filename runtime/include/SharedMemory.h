@@ -153,7 +153,7 @@ class SharedMemoryClient: public SharedMemoryBase<T>
     using Header    = typename p::Header;
 
   public:
-    SharedMemoryClient(const std::string &descriptor, const double timeOut = HUGE) : p(descriptor) 
+    SharedMemoryClient(const std::string &descriptor, const double timeOut = HUGE_VAL) : p(descriptor) 
     {
       double dt = 0.0;
       while (p::shmfd < 0 && dt < timeOut)
