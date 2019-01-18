@@ -24,6 +24,9 @@ PROF_MODULE(dev_approximate_gravity);
 
 #define BTEST(x) (-(int)(x))
 
+#define FULL_MASK 0xffffffff
+
+
 #if 1
 #define _QUADRUPOLE_
 #endif
@@ -76,11 +79,12 @@ static __device__ __forceinline__ float adjustH(const float h_old, const float n
 
 static __device__ __forceinline__ uint shfl_scan_add_step(uint partial, uint up_offset)
 {
+    //"shfl.up.b32 r0|p, %1, %2, 0;"
   uint result;
   asm(
       "{.reg .u32 r0;"
       ".reg .pred p;"
-      "shfl.up.b32 r0|p, %1, %2, 0;"
+      "shfl.sync.up.b32 r0|p, %1, %2, 0, 0xffffffff;"
       "@p add.u32 r0, r0, %3;"
       "mov.u32 %0, r0;}"
       : "=r"(result) : "r"(partial), "r"(up_offset), "r"(partial));
@@ -106,10 +110,11 @@ static __device__ __forceinline__ int ShflSegScanStepB(
             uint distance,
             uint up_offset)
 {
+//      "shfl.up.b32 r0, %1, %2, 0;"
   asm(
       "{.reg .u32 r0;"
       ".reg .pred p;"
-      "shfl.up.b32 r0, %1, %2, 0;"
+      "shfl.sync.up.b32 r0, %1, %2, 0, 0xffffffff;"
       "setp.le.u32 p, %2, %3;"
       "@p add.u32 %1, r0, %1;"
       "mov.u32 %0, %1;}"
@@ -140,12 +145,12 @@ static __device__ __forceinline__ uint inclusive_scan_warp(const int sum)
 static __device__ __forceinline__ int2 warpIntExclusiveScan(const int value)
 {
   const int sum = inclusive_scan_warp<WARP_SIZE2>(value);
-  return make_int2(sum-value, __shfl(sum, WARP_SIZE-1, WARP_SIZE));
+  return make_int2(sum-value, __shfl_sync(FULL_MASK, sum, WARP_SIZE-1, WARP_SIZE));
 }
 
 static __device__ __forceinline__ int2 warpBinExclusiveScan(const bool p)
 {
-  const unsigned int b = __ballot(p);
+  const unsigned int b = __ballot_sync(FULL_MASK, p);
   return make_int2(__popc(b & lanemask_lt()), __popc(b));
 }
 
@@ -157,13 +162,13 @@ static __device__ __forceinline__ int2 inclusive_segscan_warp(
   const int  mask = -flag;
   const int value = (~mask & packed_value) + (mask & (-1-packed_value));
 
-  const int flags = __ballot(flag);
+  const int flags = __ballot_sync(FULL_MASK, flag);
 
   const int dist_block = __clz(__brev(flags));
 
   const int distance = __clz(flags & lanemask_le()) + laneId - 31;
   const int val = inclusive_segscan_warp_step<WARP_SIZE2>(value, min(distance, laneId));
-  return make_int2(val + (carryValue & (-(laneId < dist_block))), __shfl(val, WARP_SIZE-1, WARP_SIZE));
+  return make_int2(val + (carryValue & (-(laneId < dist_block))), __shfl_sync(FULL_MASK, val, WARP_SIZE-1, WARP_SIZE));
 }
 
 /**** binary scans ****/
@@ -256,7 +261,8 @@ static __device__ __forceinline__ void directAcc(
 //#pragma unroll
   for (int j = 0; j < WARP_SIZE; j++)
   {
-    const float4 jM0 = make_float4(__shfl(M0.x, j), __shfl(M0.y, j), __shfl(M0.z, j), __shfl(M0.w,j));
+    const float4 jM0 = make_float4(__shfl_sync(FULL_MASK, M0.x, j), __shfl_sync(FULL_MASK, M0.y, j),
+                                   __shfl_sync(FULL_MASK, M0.z, j), __shfl_sync(FULL_MASK, M0.w,j));
     const float  jmass = jM0.w;
     const float3 jpos  = make_float3(jM0.x, jM0.y, jM0.z);
 #pragma unroll
@@ -338,9 +344,12 @@ static __device__ __forceinline__ void approxAcc(
 
   for (int j = 0; j < WARP_SIZE; j++)
   {
-    const float4 jM0 = make_float4(__shfl(M0.x, j), __shfl(M0.y, j), __shfl(M0.z, j), __shfl(M0.w,j));
-    const float4 jQ0 = make_float4(__shfl(Q0.x, j), __shfl(Q0.y, j), __shfl(Q0.z, j), 0.0f);
-    const float4 jQ1 = make_float4(__shfl(Q1.x, j), __shfl(Q1.y, j), __shfl(Q1.z, j), 0.0f);
+    const float4 jM0 = make_float4(__shfl_sync(FULL_MASK, M0.x, j), __shfl_sync(FULL_MASK, M0.y, j),
+                                   __shfl_sync(FULL_MASK, M0.z, j), __shfl_sync(FULL_MASK, M0.w,j));
+    const float4 jQ0 = make_float4(__shfl_sync(FULL_MASK, Q0.x, j), __shfl_sync(FULL_MASK, Q0.y, j),
+                                   __shfl_sync(FULL_MASK, Q0.z, j), 0.0f);
+    const float4 jQ1 = make_float4(__shfl_sync(FULL_MASK, Q1.x, j), __shfl_sync(FULL_MASK, Q1.y, j),
+                                   __shfl_sync(FULL_MASK, Q1.z, j), 0.0f);
     const float  jmass = jM0.w;
     const float3 jpos  = make_float3(jM0.x, jM0.y, jM0.z);
 #pragma unroll
