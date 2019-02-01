@@ -194,15 +194,19 @@ void countInteractions(tree_structure &tree, MPI_Comm mpiCommWorld, int procId)
           (int)(interactionUsefull / tree.n), minUsefull, maxUsefull,
           interactionUsefull);
 
+#ifdef USE_MPI
   unsigned long long tmp  = 0, tmpb = 0;
   unsigned long long tmp2 = interactionUsefull;
   unsigned long long tmp2b = interactionTotal;
   MPI_Allreduce(&tmp2,&tmp,1, MPI_UNSIGNED_LONG_LONG, MPI_SUM,mpiCommWorld);
   MPI_Allreduce(&tmp2b,&tmpb,1, MPI_UNSIGNED_LONG_LONG, MPI_SUM,mpiCommWorld);
   if(procId == 0) fprintf(stderr,"Global useful count: %lld \t\tTotal: %lld\n", tmp, tmpb);
-
-
   MPI_Barrier(mpiCommWorld);
+#else
+  fprintf(stderr,"Global useful count: %lld \t\tTotal: %lld\n", interactionUsefull, interactionTotal);
+#endif
+
+
 #endif
 }
 
@@ -1565,11 +1569,12 @@ double octree::compute_energies(tree_structure &tree)
       tree.bodies_vel.d2h();
       tree.bodies_acc0.d2h();
       tree.bodies_ids.d2h();
-      for (int i = 0; i < tree.n; i++) {
+      for (int i = 0; i < tree.n; i++)
+      {
           if(std::isnan(tree.bodies_acc0[i].x))
           {
-          LOGF(stderr,"%d | %d \tAcc: %f %f %f %f\tPx: %f\tVx: %f\n", i,
-               tree.bodies_ids[i],
+            LOGF(stderr,"%d | %lld \tAcc: %f %f %f %f\tPx: %f\tVx: %f\n", 
+               i, tree.bodies_ids[i],
                tree.bodies_acc0[i].x, tree.bodies_acc0[i].y, tree.bodies_acc0[i].z,
                tree.bodies_acc0[i].w, tree.bodies_pos[i].x, tree.bodies_vel[i].x);
           break;

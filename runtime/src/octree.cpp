@@ -922,8 +922,19 @@ void octree::dumpData()
     }
 
 
+#else
 
-    #endif
+void octree::dumpData()
+{
+    fprintf(stderr,"Currently it is not possible to write data to file without MPI support\n");
+    fprintf(stderr,"This is because the file-format is based on MPI-IO\n");
+}
+
+
+#endif //USE_MPI
+
+
+
 
 void octree::dumpTreeStructureToFile(tree_structure &tree)
 {

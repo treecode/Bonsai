@@ -72,9 +72,6 @@ struct v4sf
 
 #define LEVEL_MIN_GRP_TREE 2
 
-#if 1
-
-
 
 static inline uint4 get_mask2(int level) {
   int mask_levels = 3*std::max(MAXLEVELS - level, 0);
@@ -1274,7 +1271,38 @@ public:
 
 };
 
-#endif
+#else
 
-#endif
+
+void octree::build_NewTopLevels(int n_bodies,
+                     uint4 *keys,
+                     uint2 *nodes,
+                     uint4 *node_keys,
+                     uint  *node_levels,
+                     int &n_levels,
+                     int &n_nodes,
+                     int &startNode,
+                     int &endNode) {
+    fprintf(stderr, "Do not call this function when not using MPI execution. %s:%d\n",
+            __FILE__, __LINE__);
+    exit(0);
+}
+void octree::computeProps_TopLevelTree(
+                                      int topTree_n_nodes,
+                                      int topTree_n_levels,
+                                      uint* node_levels,
+                                      uint2 *nodes,
+                                      real4* topTreeCenters,
+                                      real4* topTreeSizes,
+                                      real4* topTreeMultipole,
+                                      real4* nodeCenters,
+                                      real4* nodeSizes,
+                                      real4* multiPoles,
+                                      double4* tempMultipoleRes) {
+    fprintf(stderr, "Do not call this function when not using MPI execution. %s:%d\n",
+            __FILE__, __LINE__);
+    exit(0);
+}
+#endif //USE_MPI
+
 

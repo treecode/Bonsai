@@ -940,9 +940,15 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
           {
               //If useMPIIO_single==true, we have a seperate thread acting as MPI writer
               //Create a new communicator to let the MPI writer work on
-              MPI_Comm ioComm;
-              MPICheck(MPI_Comm_dup(MPI_COMM_WORLD, &ioComm));
-              tree->writeSharedMemoryLoop(procId, nProcs, shrMemPID, ioComm);
+              #ifdef USE_MPI
+                  MPI_Comm ioComm;
+                  MPICheck(MPI_Comm_dup(MPI_COMM_WORLD, &ioComm));
+                  tree->writeSharedMemoryLoop(procId, nProcs, shrMemPID, ioComm);
+              #else
+                  fprintf(stderr,"Error, you can only use the `mpiio_single` argument when \
+                          building the code with MPI support\n");
+                  assert(0);
+              #endif
           }
       }
     }

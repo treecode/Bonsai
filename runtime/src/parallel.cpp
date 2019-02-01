@@ -1,6 +1,6 @@
 #include "octree.h"
 
-#define USE_MPI
+//#define USE_MPI
 
 
 #ifdef USE_MPI
@@ -8,7 +8,7 @@
 #include <parallel/algorithm>
 #include <map>
 #include "dd2d.h"
-
+#endif
 
 #ifdef __ALTIVEC__
     #include <altivec.h>
@@ -162,7 +162,6 @@
 
 
 #endif
-#endif
 
 
 struct v4sf
@@ -248,11 +247,11 @@ struct GETLETBUFFERS
 
 
 #include "hostTreeBuild.h"
-#include "mpi.h"
-#include <omp.h>
-
-
-MPIComm *myComm;
+#ifdef USE_MPI
+    #include "mpi.h"
+    #include <omp.h>
+    MPIComm *myComm;
+#endif
 
 
 
@@ -1722,6 +1721,7 @@ int4 octree::getSearchPropertiesBoundaryTrees()
 
 void octree::updateCurrentInfoGrpTree()
 {
+#ifdef USE_MPI
     //This function will send updated smoothing values in order to upgrade
     //the existing boundary trees.
 
@@ -1817,6 +1817,7 @@ assert(0); //This has to be double checked that the new indices are correct now 
     MPI_Waitall(nreq, req, stat);
 
     //Boundary trees have been updated, we can use them now :)
+#endif
 }
 
 
