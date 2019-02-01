@@ -310,10 +310,23 @@ cuda_add_executable(${BINARY_NAME}
   ${HFILES}
   ${CUFILES}
   ${PROFFILES}
-  OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING} ${KEEP} -Xcompiler="-fPIE" -std=c++11 
+  OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING} ${KEEP} -Xcompiler="-fPIE" -std=c++11
   )
 
-if (USE_MPI)  
+
+#For AMUSE we only build the library and should ignore the code in main.cpp
+set(lib_sources ${CCFILES})
+list(REMOVE_ITEM lib_sources src/main.cpp)
+cuda_add_library(bonsai_amuse
+  ${lib_sources}
+  ${HFILES}
+  ${CUFILES}
+  ${PROFFILES}
+  OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING} ${KEEP} -Xcompiler="-fPIE" -std=c++11
+)
+
+
+if (USE_MPI)
     add_executable(${BINARY_CLR_NAME}
       ${CLR_CCFILES}
       )

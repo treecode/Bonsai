@@ -540,7 +540,7 @@ public:
     void compute_properties_double(tree_structure &tree);
     void setActiveGrpsFunc(tree_structure &tree);
 
-    void iterate();
+    void iterate(bool amuse = false);
 
   struct IterationData {
       IterationData() : Nact_since_last_tree_rebuild(0),
@@ -578,9 +578,9 @@ public:
       double totalHydroTime;
   };
 
-  void iterate_setup(IterationData &idata); 
-  void iterate_teardown(IterationData &idata); 
-  bool iterate_once(IterationData &idata); 
+  void iterate_setup();
+  void iterate_teardown();
+  bool iterate_once(IterationData &idata);
 
   //Bonsai IO related
   void terminateIO() const;

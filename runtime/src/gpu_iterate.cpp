@@ -211,7 +211,7 @@ void countInteractions(tree_structure &tree, MPI_Comm mpiCommWorld, int procId)
 }
 
 
-void octree::iterate_setup(IterationData &idata) {
+void octree::iterate_setup() {
 
   if(execStream == NULL)          execStream          = new my_dev::dev_stream(0);
   if(gravStream == NULL)          gravStream          = new my_dev::dev_stream(0);
@@ -256,7 +256,6 @@ void octree::iterate_setup(IterationData &idata) {
   sort_bodies(localTree, true, true); //Initial sort to get global boundaries to compute keys
 
   letRunning      = false;
-  idata.startTime = get_time();
 }
 
 // returns true if this iteration is the last (t_current >= t_end), false otherwise
@@ -624,6 +623,7 @@ bool octree::iterate_once(IterationData &idata) {
       LOG("Finished: %f > %f \tLoop alone took: %f\n", t_current, tEnd, totalTime);
       my_dev::base_mem::printMemUsage();
 
+#if 0
       this->localTree.bodies_pos.d2h();
       this->localTree.bodies_vel.d2h();
       this->localTree.bodies_dens_out.d2h();
@@ -655,9 +655,7 @@ bool octree::iterate_once(IterationData &idata) {
             out << buff;
       }
       out.close();
-
-
-
+#endif
 
       return true;
     }
@@ -668,7 +666,7 @@ bool octree::iterate_once(IterationData &idata) {
 
 
 
-void octree::iterate_teardown(IterationData &idata) {
+void octree::iterate_teardown() {
   if(execStream != NULL) {
     delete execStream;
     execStream = NULL;
@@ -690,9 +688,11 @@ void octree::iterate_teardown(IterationData &idata) {
   }
 }
 
-void octree::iterate() {
+void octree::iterate(bool amuse) {
   IterationData idata;
-  iterate_setup(idata);
+  if(!amuse) iterate_setup();
+  
+  idata.startTime = get_time();
 
 
   while(true)
@@ -727,7 +727,7 @@ void octree::iterate() {
     if(stopRun) break;
   } //end while
   
-  iterate_teardown(idata);
+  if(!amuse) iterate_teardown();
 } //end iterate
 
 

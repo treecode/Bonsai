@@ -11,7 +11,7 @@
   #include <typeinfo.h>
 #endif
 
-#define DONVTX
+//#define DONVTX
 #ifdef DONVTX
     #include "nvToolsExt.h"
 #endif
@@ -246,23 +246,27 @@ namespace my_dev {
 
     void pushNVTX(std::string text)
     {
+#ifdef DONVTX
         int id = nvtxRangePushA(text.c_str());
+#endif
     }
 
     void popNVTX()
     {
+#ifdef DONVTX
         nvtxRangePop();
+#endif
     }
 
     void startTiming(cudaStream_t stream=0)
     {
       if(disable_timing) return;
-      int eventflags =  cudaEventDefault;      
-      CU_SAFE_CALL(cudaEventCreateWithFlags(&start, eventflags));  
+      int eventflags =  cudaEventDefault;
+      CU_SAFE_CALL(cudaEventCreateWithFlags(&start, eventflags));
       CU_SAFE_CALL(cudaEventCreateWithFlags(&stop, eventflags));
       CU_SAFE_CALL(cudaEventRecord(start, stream));
     }
-    
+
     //Text and ID to be printed with the log message on screen / in the file
     void stopTiming(const char *text, int type = -1, cudaStream_t stream=0)
     {
