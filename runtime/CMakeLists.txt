@@ -43,11 +43,11 @@ option(USE_THRUST
   OFF
   )
 
-option(USE_B40C
-  "On to use B40C sorting"
+option(USE_CUB
+    "On to use CUB sorting"
   ON
   )
-  
+
 option(COMPILE_SM35
   "On to enable SM35 compilation"
   ON
