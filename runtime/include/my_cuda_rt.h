@@ -1071,6 +1071,7 @@ protected:
       if(sharedMemorySize > 0) { fprintf(stderr, "%s uses shared mem\n", hKernelName); }//exit(0);}
     }
 
+#if 0  
     //NVIDIA macro
     #define ALIGN_UP(offset, alignment) (offset) = ((offset) + (alignment) - 1) & ~((alignment) -1)
     void completeArguments()
@@ -1115,7 +1116,7 @@ protected:
         } //end if
       }//end for
     }//end completeArguments
-
+#endif
 
     //Overwrite one of the previous set arguments with a new value
     void reset_arg(const int idx, void *arg) {kArguments[idx] = arg; }
@@ -1388,6 +1389,8 @@ protected:
     {
       printWorkSize("");
     }
+
+#if 0    
     void execute(cudaStream_t hStream = 0, int* event = NULL) {
       assert(kernel_flag);
       assert(work_flag);
@@ -1422,6 +1425,7 @@ protected:
 //      CU_SAFE_CALL(cudaDeviceSynchronize());       LOGF(stderr,"finished \n");
       
     }
+#endif    
     ////
   };
    
