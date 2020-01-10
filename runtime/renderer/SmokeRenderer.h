@@ -175,6 +175,7 @@ private:
 	GpuArray<float4>    mParticlePos;
 	GpuArray<float>     mParticleDepths;
 	GpuArray<uint>      mParticleIndices;
+	GpuArray<float>     mColorVbo2;
 
     float               mParticleRadius;
     DisplayMode	        mDisplayMode;

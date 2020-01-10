@@ -165,8 +165,9 @@ SmokeRenderer::SmokeRenderer(int numParticles, int maxParticles) :
 
 	//initCUDA();
 
-	cudaGLSetGLDevice(renderDevID);
+	//cudaGLSetGLDevice(renderDevID);
 
+    mColorVbo2.alloc(mMaxParticles*4, true, false, true);
 	mParticlePos.alloc(mMaxParticles, true, false, false);
 	mParticleDepths.alloc(mMaxParticles, false, false, false);
 	mParticleIndices.alloc(mMaxParticles, true, false, true);
@@ -230,6 +231,7 @@ SmokeRenderer::~SmokeRenderer()
 
 	cudaSetDevice(renderDevID);
 
+    mColorVbo2.free();
 	mParticlePos.free();
 	mParticleDepths.free();
 	mParticleIndices.free();
@@ -371,46 +373,22 @@ void SmokeRenderer::setPositionsDevice(float *posD)
 
 void SmokeRenderer::setColors(float *color)
 {
-	if (!mColorVbo)
-	{
-		// allocate
-		glGenBuffers(1, &mColorVbo);
-		glBindBuffer(GL_ARRAY_BUFFER_ARB, mColorVbo);
-// 		glBufferData(GL_ARRAY_BUFFER_ARB, mNumParticles * 4 * sizeof(float), color, GL_DYNAMIC_DRAW);
-        //Jeroen, I allocate the maximum number of particles
-        glBufferData(GL_ARRAY_BUFFER_ARB, mMaxParticles * 4 * sizeof(float), color, GL_DYNAMIC_DRAW);                
-	}
+    int colVbo = mColorVbo2.getVbo();
+    glBindBuffer(GL_ARRAY_BUFFER_ARB, colVbo);
+    glBufferSubData(GL_ARRAY_BUFFER_ARB, 0, mNumParticles * 4 * sizeof(float), color);
+    glBindBuffer( GL_ARRAY_BUFFER_ARB, 0);
 
-	glBindBuffer(GL_ARRAY_BUFFER_ARB, mColorVbo);
-	//glBufferData(GL_ARRAY_BUFFER_ARB, mNumParticles * 4 * sizeof(float), color, GL_DYNAMIC_DRAW);
-	glBufferSubData(GL_ARRAY_BUFFER_ARB, 0, mNumParticles * 4 * sizeof(float), color);
-	glBindBuffer( GL_ARRAY_BUFFER_ARB, 0);
 }
 
 void SmokeRenderer::setColorsDevice(float *colorD)
 {
 	cudaSetDevice(renderDevID);
-
- 	if (!mColorVbo)
-	{
-		// allocate
-		glGenBuffers(1, &mColorVbo);
-		glBindBuffer(GL_ARRAY_BUFFER_ARB, mColorVbo);
-// 		glBufferData(GL_ARRAY_BUFFER_ARB, mNumParticles * 4 * sizeof(float), color, GL_DYNAMIC_DRAW);
-        //Jeroen, I allocate the maximum number of particles
-        glBufferData(GL_ARRAY_BUFFER_ARB, mMaxParticles * 4 * sizeof(float), NULL, GL_DYNAMIC_DRAW);    
-		cutilSafeCall(cudaGLRegisterBufferObject(mColorVbo));
-		cutilSafeCall(cudaGLSetBufferObjectMapFlags(mColorVbo, cudaGLMapFlagsWriteDiscard));    // CUDA writes, GL consumes
-	}
-
 #ifndef NOCOPY
-  void *ptr;
-  cutilSafeCall(cudaGLMapBufferObject((void **) &ptr, mColorVbo));
-  //cudaMemcpy( ptr, colorD, mNumParticles * 4 * sizeof(float), cudaMemcpyDeviceToDevice );
-  cudaMemcpyPeerAsync( ptr, renderDevID, colorD, devID, mNumParticles * 4 * sizeof(float), m_copyStreamColor );
-  cutilSafeCall(cudaGLUnmapBufferObject(mColorVbo));
-#endif
+    mColorVbo2.map();
+  cudaMemcpyPeerAsync(mColorVbo2.getDevicePtr(), renderDevID, colorD, devID, mNumParticles*4*sizeof(float), m_copyStreamColor);
+    mColorVbo2.unmap();
 
+#endif
 	cudaSetDevice(devID);
 }
 
@@ -452,10 +430,10 @@ void SmokeRenderer::drawPoints(int start, int count, bool sorted)
 {
     glBindBufferARB(GL_ARRAY_BUFFER_ARB, mParticlePos.getVbo());
     glVertexPointer(4, GL_FLOAT, 0, 0);
-    glEnableClientState(GL_VERTEX_ARRAY);                
+    glEnableClientState(GL_VERTEX_ARRAY);
 
-    if (mColorVbo) {
-        glBindBufferARB(GL_ARRAY_BUFFER_ARB, mColorVbo);
+    if (mColorVbo2.getSize()) {
+        glBindBufferARB(GL_ARRAY_BUFFER_ARB, mColorVbo2.getVbo());
         glColorPointer(4, GL_FLOAT, 0, 0);
         glEnableClientState(GL_COLOR_ARRAY);
     }
