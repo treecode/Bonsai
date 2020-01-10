@@ -33,7 +33,7 @@ extern "C"
 void initCUDA()
 {
   #ifdef USE_OPENGL
-    cudaGLSetGLDevice(0);
+//    cudaGLSetGLDevice(0);
   #endif
 }
 

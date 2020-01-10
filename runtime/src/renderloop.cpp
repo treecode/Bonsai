@@ -1018,7 +1018,7 @@ public:
     m_keyDown[key] = true;
   }
 
-  void writeParams(ParamList *params, char *filename)
+  void writeParams(ParamList *params, const char *filename)
   {
     ofstream stream;
     stream.open(filename);
@@ -1029,7 +1029,7 @@ public:
     stream.close();
   }
 
-  void readParams(ParamList *params, char *filename)
+  void readParams(ParamList *params, const char *filename)
   {
     ifstream stream;
     stream.open(filename);
@@ -1511,7 +1511,11 @@ public:
 
     bool read(FILE *fp)
     {
-      return fscanf(fp, "%d %f %f %f %f %f %f", &fly, &translate.x, &translate.y, &translate.z, &rotate.x, &rotate.y, &rotate.z) == 7;
+      int tmp;
+      bool res = fscanf(fp, "%d %f %f %f %f %f %f", &tmp, &translate.x, &translate.y, &translate.z, &rotate.x, &rotate.y, &rotate.z) == 7;
+      fly = tmp;
+
+      return res;
     }
 
     float3 translate;
@@ -1522,7 +1526,7 @@ public:
   static const int maxCameras = 8;
   Camera m_camera[maxCameras];
 
-  void writeCameras(char *filename)
+  void writeCameras(const char *filename)
   {
     FILE *fp = fopen(filename, "w");
     if (!fp) {
@@ -1536,7 +1540,7 @@ public:
     printf("Wrote camera file '%s'\n", filename);
   }
 
-  bool readCameras(char *filename)
+  bool readCameras(const char *filename)
   {
     FILE *fp = fopen(filename, "r");
     if (!fp) {

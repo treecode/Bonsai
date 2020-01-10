@@ -458,7 +458,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 #ifdef USE_OPENGL
   // create OpenGL context first, and register for interop
   initGL(argc, argv, fullScreenMode.c_str(), stereo);
-  cudaGLSetGLDevice(devID); //TODO should this not be renderDev?
+//  cudaGLSetGLDevice(devID); //TODO should this not be renderDev?
 #endif
 
   initTimers();

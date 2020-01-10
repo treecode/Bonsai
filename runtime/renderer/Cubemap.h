@@ -1,2 +1,2 @@
-GLuint loadCubemap(char *filenameFormat);
-GLuint loadCubemapCross(char *filename);
+GLuint loadCubemap(const char *filenameFormat);
+GLuint loadCubemapCross(const char *filename);

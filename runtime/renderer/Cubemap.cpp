@@ -124,7 +124,7 @@ bool convertCrossToCubemap(Image *img, Image **faces)
     return true;
 }
 
-GLuint loadCubemap(char *filenameFormat)
+GLuint loadCubemap(const char *filenameFormat)
 {
     // load faces
     Image *faces[6];
@@ -147,7 +147,7 @@ GLuint loadCubemap(char *filenameFormat)
     return tex;
 }
 
-GLuint loadCubemapCross(char *filename)
+GLuint loadCubemapCross(const char *filename)
 {
     Image *cross = loadPPM(filename);
     if (!cross) {
