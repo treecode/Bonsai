@@ -85,10 +85,10 @@ Compile tips and tricks
 Using CMake under Linux:
 
 For Demo purposes:
-cmake -DUSE_B40C=1 -DUSE_DUST=1 -DUSE_OPENGL=1
+cmake -DUSE_CUB=0 -DUSE_DUST=1 -DUSE_OPENGL=1
 
 For production simulations 
-cmake -DUSE_B40C=1 -DUSE_DUST=0
+cmake -DUSE_CUB=0 -DUSE_DUST=0
 
 Using MPI under linux:
 cmake -DCMAKE_CXX_COMPILER=mpicxx
