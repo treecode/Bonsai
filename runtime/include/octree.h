@@ -699,6 +699,7 @@ public:
   //End library functions
 
   void set_t_current(const float t) { t_current = t_previous = t; }
+  void set_nextSnapTime(const float t) { nextSnapTime = t; }
   float get_t_current() const       { return t_current; }
   void setUseDirectGravity(bool s)  { useDirectGravity = s;    }
   bool getUseDirectGravity() const  { return useDirectGravity; }

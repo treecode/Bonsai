@@ -699,6 +699,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
         restartSim,
         reduce_bodies_factor);
     tree->set_t_current(tCurrent);
+    if (snapshotIter > 0) tree->set_nextSnapTime(tCurrent + snapshotIter);
 #else
     fprintf(stderr,"Usage of these options requires to code to be built with MPI support!\n"); exit(0);
 #endif      
@@ -714,6 +715,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
         MPI_Bcast(&tCurrent, 1, MPI_FLOAT, 0,mpiCommWorld);
         tree->set_t_current(tCurrent);
     #endif
+    if (snapshotIter > 0) tree->set_nextSnapTime(tree->get_t_current() + snapshotIter);
   }
   else if(nMilkyWay >= 0)
   {
