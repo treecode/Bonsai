@@ -33,6 +33,10 @@
 
 #include "tr.h"
 
+#ifdef WAR_OF_GALAXIES
+#include "WOGManager.h"
+#endif
+
 float TstartGlow;
 float dTstartGlow;
 
@@ -312,16 +316,17 @@ void glPrintf(float x, float y, const char* format, ...)
 class BonsaiDemo
 {
 public:
-  BonsaiDemo(octree *tree, octree::IterationData &idata) 
+  BonsaiDemo(octree *tree, octree::IterationData &idata,
+    std::string const& wogPath, int wogPort, real wogCameraDistance, real wogDeletionRadiusFactor)
     : m_tree(tree), m_idata(idata), iterationsRemaining(true),
-//       m_renderer(tree->localTree.n + tree->localTree.n_dust),
+//    m_renderer(tree->localTree.n + tree->localTree.n_dust),
       m_renderer(tree->localTree.n, MAX_PARTICLES),
-      //m_displayMode(ParticleRenderer::PARTICLE_SPRITES_COLOR),
-	    m_displayMode(SmokeRenderer::VOLUMETRIC),
+//    m_displayMode(ParticleRenderer::PARTICLE_SPRITES_COLOR),
+      m_displayMode(SmokeRenderer::VOLUMETRIC),
       m_ox(0), m_oy(0), m_buttonState(0), m_inertia(0.2f),
       m_paused(false),
       m_renderingEnabled(true),
-  	  m_displayBoxes(false), 
+      m_displayBoxes(false), 
       m_displaySliders(false),
       m_displayCursor(1),
       m_cursorSize(0.5),
@@ -331,12 +336,16 @@ public:
       m_octreeMinDepth(0),
       m_octreeMaxDepth(3),
       m_flyMode(false),
-	    m_fov(60.0f),
-	    m_nearZ(0.2),
-	    m_screenZ(450.0),
-	    m_farZ(2000),
-	    m_IOD(4.0),
-	    m_stereoEnabled(false), //SV TODO Must be false, never make it true
+      m_fov(60.0f),
+      m_nearZ(0.2),
+      m_screenZ(450.0),
+#ifdef WAR_OF_GALAXIES
+      m_farZ(1000),
+#else
+      m_farZ(2000),
+#endif
+      m_IOD(4.0),
+      m_stereoEnabled(false), //SV TODO Must be false, never make it true
       m_supernova(false),
       m_overBright(1.0f),
       m_params(m_renderer.getParams()),
@@ -344,7 +353,12 @@ public:
       m_displayBodiesSec(true),
       m_cameraRollHome(0.0f),
       m_cameraRoll(0.0f),
+#ifdef WAR_OF_GALAXIES
+      m_enableStats(false),
+      m_wogManager(tree, wogPath, wogPort, 1024, 768, m_fov, m_farZ, wogCameraDistance, wogDeletionRadiusFactor),
+#else
       m_enableStats(true),
+#endif
       m_densityRange(100)
   {
     m_windowDims = make_int2(WINDOWW, WINDOWH);
@@ -677,7 +691,9 @@ public:
           glRotatef(m_cameraRotLag.x, 1.0, 0.0, 0.0);
           glRotatef(m_cameraRotLag.y, 0.0, 1.0, 0.0);
           glRotatef(m_cameraRoll, 0.0, 0.0, 1.0);
+#ifndef WAR_OF_GALAXIES
           glRotatef(90.0f, 1.0f, 0.0f, 0.0f); // rotate galaxies into XZ plane
+#endif
         }
 
         glGetFloatv(GL_MODELVIEW_MATRIX, m_modelView);
@@ -1011,6 +1027,7 @@ public:
       m_cameraRoll -= 2.0f;
       break;
     case 'W':
+      break;
     default:
       break;
     }
@@ -1089,6 +1106,9 @@ public:
 
 	m_renderer.setFOV(m_fov);
 	m_renderer.setWindowSize(m_windowDims.x, m_windowDims.y);
+#ifdef WAR_OF_GALAXIES
+	m_wogManager.reshape(w, h);
+#endif
 
     fitCamera();
     glMatrixMode(GL_MODELVIEW);
@@ -1106,7 +1126,11 @@ public:
 
     float distanceToCenter = radius / sinf(0.5f * fovRads);
     
+#ifdef WAR_OF_GALAXIES
+    m_cameraTrans = make_float3(0, 0, -m_wogManager.get_camera_distance());
+#else
     m_cameraTrans = center + make_float3(0, 0, -distanceToCenter*0.2f);
+#endif
 
 #if 0
     /* JB This came with stereo, seems to break rotation */
@@ -1496,6 +1520,11 @@ public:
   ParamListGL *m_colorParams;
   ParamListGL *m_params;    // current
 
+#ifdef WAR_OF_GALAXIES
+  /// Managing class for WarOfGalaxies
+  WOGManager m_wogManager;
+#endif
+
   // saved cameras
   struct Camera {
     Camera() {
@@ -1821,13 +1850,16 @@ void keyUp(unsigned char key, int /*x*/, int /*y*/)
 
 void special(int key, int x, int y)
 {
-    theDemo->special(key);
-    glutPostRedisplay();
+  theDemo->special(key);
+  glutPostRedisplay();
 }
 
 void idle(void)
 {
-    glutPostRedisplay();
+#ifdef WAR_OF_GALAXIES
+  theDemo->m_wogManager.execute();
+#endif
+  glutPostRedisplay();
 }
 
 void initGL(int argc, char** argv, const char *fullScreenMode, bool &stereo)
@@ -1917,12 +1949,13 @@ void initGL(int argc, char** argv, const char *fullScreenMode, bool &stereo)
   atexit(onexit);
 }
 
-
-void initAppRenderer(int argc, char** argv, octree *tree, 
-                     octree::IterationData &idata, bool showFPS, bool stereo) {
+void initAppRenderer(int argc, char** argv, octree *tree, octree::IterationData &idata,
+		             bool showFPS, bool stereo, std::string const& wogPath, int wogPort,
+		             real wogCameraDistance, real wogDeletionRadiusFactor)
+{
   displayFps = showFPS;
   //initGL(argc, argv);
-  theDemo = new BonsaiDemo(tree, idata);
+  theDemo = new BonsaiDemo(tree, idata, wogPath, wogPort, wogCameraDistance, wogDeletionRadiusFactor);
   if (stereo)
     theDemo->toggleStereo(); //SV assuming stereo is set to disable by default.
   glutMainLoop();

@@ -48,8 +48,7 @@
   #include <unistd.h>
 #endif
 
-
-
+#include "Galaxy.h"
 
 typedef float              real;
 typedef float2             real2;
@@ -681,6 +680,14 @@ public:
 
   //End functions for parallel code
 
+  // WarOfGalaxies: add galaxy to simulation
+  void releaseGalaxy(Galaxy const& galaxy);
+
+  // WarOfGalaxies: remove particles of a user
+  void removeGalaxy(int user_id);
+
+  // WarOfGalaxies: remove particles out of sphere continuously
+  void removeParticles(real deletion_radius_square, my_dev::dev_mem<uint> &user_particles, int number_of_users);
 
   //Library interface functions  
   void  setEps(float eps);

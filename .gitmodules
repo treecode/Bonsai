@@ -1,0 +1,3 @@
+[submodule "runtime/extern/jsoncons"]
+	path = runtime/extern/jsoncons
+	url = https://github.com/danielaparker/jsoncons.git

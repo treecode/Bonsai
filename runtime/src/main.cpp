@@ -63,6 +63,8 @@ http://github.com/treecode/Bonsai
 #include "anyoption.h"
 #include "renderloop.h"
 
+#include "read_tipsy_file_parallel.h"
+
 #include <array>
 
 #include <FileIO.h>
@@ -117,7 +119,22 @@ extern void displayTimers()
 #include <cuda_gl_interop.h>
 #endif
 
+#ifdef WAR_OF_GALAXIES
+#include <stdexcept>
+void throw_if_flag_is_used(AnyOption const& opt, std::vector<std::string> arguments)
+{
+  for (auto const& arg : arguments)
+    // Error in AnyOption: getter function not const
+    if (const_cast<AnyOption&>(opt).getFlag(arg.c_str())) throw std::runtime_error(arg + " is not valid in war-of-galaxy mode.");
+}
 
+void throw_if_option_is_used(AnyOption const& opt, std::vector<std::string> arguments)
+{
+  for (auto const& arg : arguments)
+    // Error in AnyOption: getter function not const
+    if (const_cast<AnyOption&>(opt).getValue(arg.c_str()) != nullptr) throw std::runtime_error(arg + " is not valid in war-of-galaxy mode.");
+}
+#endif
 
 
 
@@ -229,6 +246,12 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   int nCube     = -1;
   int nMilkyWay = -1;
   int nMWfork   =  4;
+
+  std::string wogPath;
+  int wogPort = 50007;
+  real wogCameraDistance = 500.0;
+  real wogDeletionRadiusFactor = 1.0;
+
   int galSeed   =  0;
   std::string taskVar;
 //#define TITAN_G
@@ -296,6 +319,12 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 		ADDUSAGE("     --cube     #       use cube model with # particles per proc");
     ADDUSAGE("     --diskmode         use diskmode to read same input file all MPI taks and randomly shuffle its positions");
     ADDUSAGE("     --mpirendermode    use MPI to communicate with the renderer. Must only be used with bonsai_driver. [disabled]");
+#ifdef WAR_OF_GALAXIES
+    ADDUSAGE("     --war-of-galaxies #    input path for WarOfGalaxies");
+    ADDUSAGE("     --port #               Port for WarOfGalaxies");
+    ADDUSAGE("     --camera-distance #    OpenGL camera distance for WarOfGalaxies");
+    ADDUSAGE("     --del-radius-factor #  Scaling factor of deletion sphere for WarOfGalaxies");
+#endif
 		ADDUSAGE(" ");
 
 
@@ -345,6 +374,10 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     opt.setFlag("displayfps");
     opt.setFlag("stereo");
 #endif
+	opt.setOption("war-of-galaxies");
+	opt.setOption("port");
+	opt.setOption("camera-distance");
+	opt.setOption("del-radius-factor");
 
     opt.processCommandArgs( argc, argv );
 
@@ -396,6 +429,10 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     if ((optarg = opt.getValue("rebuild")))      rebuild_tree_rate  = atoi  (optarg);
     if ((optarg = opt.getValue("reducebodies"))) reduce_bodies_factor = atoi  (optarg);
     if ((optarg = opt.getValue("reducedust")))	 reduce_dust_factor = atoi  (optarg);
+    if ((optarg = opt.getValue("war-of-galaxies")))   wogPath                 = string(optarg);
+    if ((optarg = opt.getValue("port")))              wogPort                 = atoi(optarg);
+    if ((optarg = opt.getValue("camera-distance")))   wogCameraDistance       = atof(optarg);
+    if ((optarg = opt.getValue("del-radius-factor"))) wogDeletionRadiusFactor = atof(optarg);
 #if USE_OPENGL
     if ((optarg = opt.getValue("fullscreen")))	 fullScreenMode     = string(optarg);
     if ((optarg = opt.getValue("Tglow")))	 TstartGlow  = (float)atof(optarg);
@@ -412,6 +449,13 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
       opt.printUsage();
       ::exit(0);
     }
+
+#ifdef WAR_OF_GALAXIES
+    /// WarOfGalaxies: Deactivate unneeded flags using WarOfGalaxies
+    throw_if_flag_is_used(opt, {{"direct", "restart", "diskmode", "stereo", "prepend-rank"}});
+    throw_if_option_is_used(opt, {{"plummer", "milkyway", "mwfork", "sphere", "tend", "iend",
+      "snapname", "snapiter", "rmdist", "valueadd", "rebuild", "reducedust", "gameMode"}});
+#endif
 
 #undef ADDUSAGE
   }
@@ -706,6 +750,59 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   }
   else if ((nPlummer == -1 && nSphere == -1  && nCube == -1 && !diskmode && nMilkyWay == -1) || restartSim)
   {
+#ifdef WAR_OF_GALAXIES
+      std::cout << "WarOfGalaxies: Input file is used as dummy particles." << std::endl;
+      for (auto & id : bodyIDs) id = id - id % 10 + 9;
+
+      // get center of mass
+      real mass;
+      real4 center_of_mass = make_real4(0.0, 0.0, 0.0, 0.0);
+
+      for (auto const& p : bodyPositions)
+      {
+        mass = p.w;
+        center_of_mass.x += mass * p.x;
+        center_of_mass.y += mass * p.y;
+        center_of_mass.z += mass * p.z;
+        center_of_mass.w += mass;
+      }
+
+      center_of_mass.x /= center_of_mass.w;
+      center_of_mass.y /= center_of_mass.w;
+      center_of_mass.z /= center_of_mass.w;
+
+      // get center-of-mass velocity
+      real4 center_of_mass_velocity = make_real4(0.0, 0.0, 0.0, 0.0);
+
+      for (size_t i = 0; i < bodyVelocities.size(); i++)
+      {
+        mass = bodyPositions[i].w;
+        center_of_mass_velocity.x += mass * bodyVelocities[i].x;
+        center_of_mass_velocity.y += mass * bodyVelocities[i].y;
+        center_of_mass_velocity.z += mass * bodyVelocities[i].z;
+        center_of_mass_velocity.w += mass;
+      }
+
+      center_of_mass_velocity.x /= center_of_mass_velocity.w;
+      center_of_mass_velocity.y /= center_of_mass_velocity.w;
+      center_of_mass_velocity.z /= center_of_mass_velocity.w;
+
+      // shift center of mass to position (0,0,10000)
+      for (auto &p : bodyPositions)
+      {
+        p.x -= center_of_mass.x;
+        p.y -= center_of_mass.y;
+        p.z -= center_of_mass.z + 10000;
+      }
+
+      // steady
+      for (auto &v : bodyVelocities)
+      {
+        v.x -= center_of_mass_velocity.x;
+        v.y -= center_of_mass_velocity.y;
+        v.z -= center_of_mass_velocity.z;
+      }
+#endif
     float sTime = 0;
     tree->fileIO->readFile(mpiCommWorld, bodyPositions, bodyVelocities, bodyIDs, fileName,
                            procId, nProcs, sTime, reduce_bodies_factor, restartSim);
@@ -806,7 +903,8 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   //Start the integration
 #ifdef USE_OPENGL
   octree::IterationData idata;
-  initAppRenderer(argc, argv, tree, idata, displayFPS, stereo);
+  initAppRenderer(argc, argv, tree, idata, displayFPS, stereo,
+	wogPath, wogPort, wogCameraDistance, wogDeletionRadiusFactor);
   LOG("Finished!!! Took in total: %lg sec\n", tree->get_time()-t0);
 #else
   tree->mpiSync();

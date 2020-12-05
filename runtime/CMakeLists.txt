@@ -63,6 +63,11 @@ option(CUDA_KEEP_INTERMEDIATE_FILES
   OFF
   )
 
+option(WAR_OF_GALAXIES
+  "On to enable WarOfGalaxies"
+  OFF
+  )
+
 FIND_PACKAGE(CUDA REQUIRED)
 
 add_definitions(-std=c++11)
@@ -277,6 +282,23 @@ if (USE_OPENGL)
 	endif (WIN32)
 
 endif (USE_OPENGL)
+
+if (WAR_OF_GALAXIES)
+  add_definitions(-DWAR_OF_GALAXIES)
+  add_definitions("-std=c++11")
+  include_directories(${CMAKE_SOURCE_DIR}/extern/jsoncons/include)
+  set (CCFILES ${CCFILES}
+    src/Galaxy.cpp
+    src/read_tipsy_file_parallel.cpp
+    src/WOGManager.cpp
+  )
+  set (CUFILES ${CUFILES}
+    CUDAkernels/war_of_galaxies.cu
+  )
+  if (USE_THRUST)
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DTHRUST_DEBUG")
+  endif()
+endif (WAR_OF_GALAXIES)
 
 #The SSE support for the local tree walks
 if(WIN32)

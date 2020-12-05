@@ -1,6 +1,10 @@
 #undef NDEBUG
 #include "octree.h"
-#include  "postProcessModules.h"
+#include "postProcessModules.h"
+
+#ifdef WAR_OF_GALAXIES
+#include "thrust_war_of_galaxies.h"
+#endif
 
 #include <iostream>
 #include <algorithm>
@@ -106,6 +110,197 @@ void octree::iterate_setup() {
 
   sort_bodies(localTree, true, true); //Initial sort to get global boundaries to compute keys
   letRunning      = false;
+}
+
+void octree::releaseGalaxy(Galaxy const& galaxy)
+{
+  // Get particle data back to the host so we can add our new data
+  this->localTree.bodies_pos.d2h();
+  this->localTree.bodies_acc0.d2h();
+  this->localTree.bodies_vel.d2h();
+  this->localTree.bodies_time.d2h();
+  this->localTree.bodies_ids.d2h();
+  this->localTree.bodies_Ppos.d2h();
+  this->localTree.bodies_Pvel.d2h();
+
+  vector<real4> new_pos;
+  vector<real4> new_vel;
+  vector<ullong> new_ids;
+  int old_nb_particles = this->localTree.n;
+  int new_nb_particles = old_nb_particles + galaxy.pos.size();
+
+  for (int i(0); i != old_nb_particles; ++i)
+  {
+    new_pos.push_back(this->localTree.bodies_pos[i]);
+    new_vel.push_back(this->localTree.bodies_vel[i]);
+    new_ids.push_back(this->localTree.bodies_ids[i]);
+  }
+
+  for (int i(0); i != galaxy.pos.size(); ++i)
+  {
+    new_pos.push_back(galaxy.pos[i]);
+    new_vel.push_back(galaxy.vel[i]);
+    new_ids.push_back(galaxy.ids[i]);
+  }
+
+  // Set new size of the buffers
+  this->localTree.setN(new_nb_particles);
+
+  // Resize preserves original data
+  this->reallocateParticleMemory(this->localTree);
+
+  // Copy back to host storage
+  memcpy(&this->localTree.bodies_pos[0], &new_pos[0], sizeof(real4) * new_nb_particles);
+  memcpy(&this->localTree.bodies_vel[0], &new_vel[0], sizeof(real4) * new_nb_particles);
+  memcpy(&this->localTree.bodies_ids[0], &new_ids[0], sizeof(ullong) * new_nb_particles);
+
+  float2 curTime = this->localTree.bodies_time[0];
+  for (int i(0); i != new_nb_particles; ++i)
+    this->localTree.bodies_time[i] = curTime;
+  for (int i(old_nb_particles); i != new_nb_particles; ++i)
+    this->localTree.bodies_acc0[i] = make_float4(0.0, 0.0, 0.0, 0.0);
+  this->localTree.bodies_acc1.zeroMem();
+
+  this->localTree.bodies_pos.h2d();
+  this->localTree.bodies_acc0.h2d();
+  this->localTree.bodies_vel.h2d();
+  this->localTree.bodies_time.h2d();
+  this->localTree.bodies_ids.h2d();
+
+  // Fill the predicted arrays
+  this->localTree.bodies_Ppos.copy(this->localTree.bodies_pos, localTree.n);
+  this->localTree.bodies_Pvel.copy(this->localTree.bodies_pos, localTree.n);
+
+  resetEnergy();
+}
+
+void octree::removeGalaxy(int user_id)
+{
+  // Get particle data back to the host so we can add our new data
+  this->localTree.bodies_pos.d2h();
+  this->localTree.bodies_vel.d2h();
+  this->localTree.bodies_ids.d2h();
+  this->localTree.bodies_acc0.d2h();
+  this->localTree.bodies_time.d2h();
+  this->localTree.bodies_Ppos.d2h();
+  this->localTree.bodies_Pvel.d2h();
+
+  vector<real4> new_pos;
+  vector<real4> new_vel;
+  vector<ullong> new_ids;
+  int old_nb_particles = this->localTree.n;
+  int new_nb_particles = 0;
+
+  for (int i(0); i != old_nb_particles; ++i)
+  {
+	if (this->localTree.bodies_ids[i] % 10 == user_id) continue;
+    new_pos.push_back(this->localTree.bodies_pos[i]);
+    new_vel.push_back(this->localTree.bodies_vel[i]);
+    new_ids.push_back(this->localTree.bodies_ids[i]);
+    ++new_nb_particles;
+  }
+
+  // Set new size of the buffers
+  this->localTree.setN(new_nb_particles);
+
+  // Resize preserves original data
+  this->reallocateParticleMemory(this->localTree);
+
+  // Copy back to host storage
+  memcpy(&this->localTree.bodies_pos[0], &new_pos[0], sizeof(real4) * new_nb_particles);
+  memcpy(&this->localTree.bodies_vel[0], &new_vel[0], sizeof(real4) * new_nb_particles);
+  memcpy(&this->localTree.bodies_ids[0], &new_ids[0], sizeof(ullong) * new_nb_particles);
+
+  float2 curTime = this->localTree.bodies_time[0];
+  for(int i=0; i < this->localTree.n; i++)
+    this->localTree.bodies_time[i] = curTime;
+  this->localTree.bodies_acc1.zeroMem();
+
+  this->localTree.bodies_pos.h2d();
+  this->localTree.bodies_acc0.h2d();
+  this->localTree.bodies_vel.h2d();
+  this->localTree.bodies_time.h2d();
+  this->localTree.bodies_ids.h2d();
+
+  // Fill the predicted arrays
+  this->localTree.bodies_Ppos.copy(this->localTree.bodies_pos, localTree.n);
+  this->localTree.bodies_Pvel.copy(this->localTree.bodies_pos, localTree.n);
+
+  resetEnergy();
+}
+
+void octree::removeParticles(real deletion_radius_square, my_dev::dev_mem<uint> &user_particles, int number_of_users)
+{
+#if defined WAR_OF_GALAXIES && defined USE_THRUST
+
+  user_particles.h2d();
+  remove_particles(this->localTree, deletion_radius_square, user_particles, number_of_users);
+  user_particles.d2h();
+
+  // Resize preserves original data
+  this->reallocateParticleMemory(this->localTree);
+
+#else
+
+  // Get particle data back to the host so we can add our new data
+  this->localTree.bodies_pos.d2h();
+  this->localTree.bodies_vel.d2h();
+  this->localTree.bodies_ids.d2h();
+  this->localTree.bodies_acc0.d2h();
+  this->localTree.bodies_time.d2h();
+  this->localTree.bodies_Ppos.d2h();
+  this->localTree.bodies_Pvel.d2h();
+
+  vector<real4> new_pos;
+  vector<real4> new_vel;
+  vector<ullong> new_ids;
+  int old_nb_particles = this->localTree.n;
+  int new_nb_particles = 0;
+
+  for (int i(0); i != old_nb_particles; ++i)
+  {
+    real4 position = this->localTree.bodies_pos[i];
+	if (position.x * position.x + position.y * position.y + position.z * position.z > deletion_radius_square
+	    and this->localTree.bodies_ids[i] % 10 != 9)
+	{
+	  --user_particles[this->localTree.bodies_ids[i] % 10];
+      continue;
+	}
+    new_pos.push_back(this->localTree.bodies_pos[i]);
+    new_vel.push_back(this->localTree.bodies_vel[i]);
+    new_ids.push_back(this->localTree.bodies_ids[i]);
+    ++new_nb_particles;
+  }
+
+  // Set new size of the buffers
+  this->localTree.setN(new_nb_particles);
+
+  // Resize preserves original data
+  this->reallocateParticleMemory(this->localTree);
+
+  // Copy back to host storage
+  memcpy(&this->localTree.bodies_pos[0], &new_pos[0], sizeof(real4) * new_nb_particles);
+  memcpy(&this->localTree.bodies_vel[0], &new_vel[0], sizeof(real4) * new_nb_particles);
+  memcpy(&this->localTree.bodies_ids[0], &new_ids[0], sizeof(ullong) * new_nb_particles);
+
+  float2 curTime = this->localTree.bodies_time[0];
+  for(int i=0; i < this->localTree.n; i++)
+    this->localTree.bodies_time[i] = curTime;
+  this->localTree.bodies_acc1.zeroMem();
+
+  this->localTree.bodies_pos.h2d();
+  this->localTree.bodies_acc0.h2d();
+  this->localTree.bodies_vel.h2d();
+  this->localTree.bodies_time.h2d();
+  this->localTree.bodies_ids.h2d();
+
+  // Fill the predicted arrays
+  this->localTree.bodies_Ppos.copy(this->localTree.bodies_pos, localTree.n);
+  this->localTree.bodies_Pvel.copy(this->localTree.bodies_pos, localTree.n);
+
+#endif
+
+  resetEnergy();
 }
 
 // returns true if this iteration is the last (t_current >= t_end), false otherwise
@@ -389,7 +584,7 @@ bool octree::iterate_once(IterationData &idata) {
       }
     }
 
-
+#ifndef WAR_OF_GALAXIES
     if (iter >= iterEnd) return true;
 
     if(t_current >= tEnd)
@@ -401,6 +596,7 @@ bool octree::iterate_once(IterationData &idata) {
       return true;
     }
     iter++; 
+#endif
 
     return false;
 }
@@ -963,7 +1159,7 @@ double octree::compute_energies(tree_structure &tree)
   
   if(mpiGetRank() == 0)
   {
-#if 0
+#ifdef WAR_OF_GALAXIES
   LOG("iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n",
 		  iter, this->t_current, Etot, Ekin, Epot, de, de_max, dde, dde_max, get_time() - tinit);  
   LOGF(stderr, "iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n", 
