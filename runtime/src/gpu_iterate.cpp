@@ -1,4 +1,3 @@
-#undef NDEBUG
 #include "octree.h"
 #include  "postProcessModules.h"
 
@@ -383,6 +382,7 @@ bool octree::iterate_once(IterationData &idata) {
 
         localTree.bodies_pos.d2h(localTree.n, ioSharedData.Pos);
         localTree.bodies_vel.d2h(localTree.n, ioSharedData.Vel);
+        localTree.bodies_acc1.d2h(localTree.n, ioSharedData.Acc); // GL TBD whether acc1 or acc0 should be used
         localTree.bodies_ids.d2h(localTree.n, ioSharedData.IDs);
         ioSharedData.writingFinished = false;
         if(nProcs <= 16) while (!ioSharedData.writingFinished);

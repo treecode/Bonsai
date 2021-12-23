@@ -417,7 +417,7 @@ void octree::dumpData()
 
     /*
      *
-     * Functions to read the MPI-IO based file format
+     * Functions to read the MPI-IO based file format     [GL ignoring this for accelerations]
      *
      *
      */

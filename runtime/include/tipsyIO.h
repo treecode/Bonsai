@@ -76,6 +76,8 @@ private:
         Real mass;
         Real pos[MAXDIM];
         Real vel[MAXDIM];
+        Real acc[MAXDIM];
+        Real epot;
         Real eps;
         int phi ;
     public:
@@ -87,6 +89,8 @@ private:
         Real mass;
         Real pos[MAXDIM];
         Real vel[MAXDIM];
+        Real acc[MAXDIM];
+        Real epot;
         Real metals ;
         Real tform ;
         Real eps;
@@ -104,6 +108,8 @@ private:
         Real mass;
         Real pos[MAXDIM];
         Real vel[MAXDIM];
+        Real acc[MAXDIM];
+        Real epot;
       private:
         int _ID[2]; //replaces phi and eps
       public:
@@ -116,6 +122,8 @@ private:
         Real mass;
         Real pos[MAXDIM];
         Real vel[MAXDIM];
+        Real acc[MAXDIM];
+        Real epot;
         Real metals ;
         Real tform ;
     private:
@@ -153,8 +161,8 @@ private:
 
 
 
-    void ICSend(int destination, real4 *bodyPositions, real4 *bodyVelocities,  ullong *bodiesIDs, int toSend, const MPI_Comm &mpiCommWorld);
-    void ICRecv(int recvFrom, int procId, std::vector<real4> &bodyPositions, std::vector<real4> &bodyVelocities,  std::vector<ullong> &bodiesIDs, const MPI_Comm &mpiCommWorld);
+    void ICSend(int destination, real4 *bodyPositions, real4 *bodyVelocities, real4 *bodyAccelerations,  ullong *bodiesIDs, int toSend, const MPI_Comm &mpiCommWorld);
+    void ICRecv(int recvFrom, int procId, std::vector<real4> &bodyPositions, std::vector<real4> &bodyVelocities, std::vector<real4> &bodyAccelerations,  std::vector<ullong> &bodiesIDs, const MPI_Comm &mpiCommWorld);
 
 
 public:
@@ -170,6 +178,7 @@ public:
  */
 void writeFile(real4 *bodyPositions,
                                real4 *bodyVelocities,
+                               real4 *bodyAccelerations,
                                ullong* bodyIds,
                                int n,
                                std::string fileName,
@@ -189,6 +198,7 @@ void writeFile(real4 *bodyPositions,
 void readFile(const MPI_Comm &mpiCommWorld,
                               std::vector<real4> &bodyPositions,
                               std::vector<real4> &bodyVelocities,
+                              std::vector<real4> &bodyAccelerations,
                               std::vector<ullong> &bodiesIDs,
                               std::string fileName,
                               int rank,

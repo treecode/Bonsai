@@ -24,6 +24,7 @@ struct BonsaiSharedData
   IDType ID;
   float x,y,z,mass;
   float vx,vy,vz,vw;
+  float ax,ay,az,epot;
   float rho,h;
 };
 

@@ -173,6 +173,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 
   vector<real4>   bodyPositions;
   vector<real4>   bodyVelocities;
+  vector<real4>   bodyAccelerations;
   vector<ullong>  bodyIDs;
 
  
@@ -436,7 +437,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
         //Use 32768*7 for nProcs to create independent seeds for all processes we use
         //do not scale until we know the number of processors
         generateGalacticsModel(procId, 32768*7, galSeed, nMilkyWay, nMWfork,
-                               false, bodyPositions, bodyVelocities,
+                               false, bodyPositions, bodyVelocities, // GL assume no generation of accelerations
                                bodyIDs);
         tEndModel   = get_time_main();
     #else
@@ -691,7 +692,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     float tCurrent = 0;
     tree->lReadBonsaiFile(
         bodyPositions, 
-        bodyVelocities,
+        bodyVelocities, // GL assume no reading of accelerations
         bodyIDs,
         tCurrent,
         bonsaiFileName,
@@ -707,7 +708,8 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   else if ((nPlummer == -1 && nSphere == -1  && nCube == -1 && !diskmode && nMilkyWay == -1) || restartSim)
   {
     float sTime = 0;
-    tree->fileIO->readFile(mpiCommWorld, bodyPositions, bodyVelocities, bodyIDs, fileName,
+    tree->fileIO->readFile(mpiCommWorld, bodyPositions, bodyVelocities, bodyAccelerations,
+                           bodyIDs, fileName,
                            procId, nProcs, sTime, reduce_bodies_factor, restartSim);
     tree->set_t_current((float) sTime);
     #if USE_MPI
@@ -725,7 +727,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
           tStartModel   = get_time_main();
 
           generateGalacticsModel(procId, nProcs, galSeed, nMilkyWay, nMWfork,
-                                 true, bodyPositions, bodyVelocities, bodyIDs);
+                                 true, bodyPositions, bodyVelocities, bodyIDs); // GL assume no generation of accelerations
           tEndModel   = get_time_main();
         }
         else
@@ -741,19 +743,19 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
   }
   else if(nPlummer >= 0)
   {
-    generatePlummerModel(bodyPositions, bodyVelocities, bodyIDs, procId, nProcs, nPlummer);
+    generatePlummerModel(bodyPositions, bodyVelocities, bodyIDs, procId, nProcs, nPlummer);  // GL assume no generation of accelerations
   }
   else if (nSphere >= 0)
   {
-    generateSphereModel(bodyPositions, bodyVelocities, bodyIDs, procId, nProcs, nSphere);
+    generateSphereModel(bodyPositions, bodyVelocities, bodyIDs, procId, nProcs, nSphere);  // GL assume no generation of accelerations
   }//else
   else if (nCube >= 0)
   {
-    generateCubeModel(bodyPositions, bodyVelocities, bodyIDs, procId, nProcs, nCube);
+    generateCubeModel(bodyPositions, bodyVelocities, bodyIDs, procId, nProcs, nCube);  // GL assume no generation of accelerations
   }//else
   else if (diskmode)
   {
-    generateShuffledDiskModel(bodyPositions, bodyVelocities, bodyIDs, procId, nProcs, fileName);
+    generateShuffledDiskModel(bodyPositions, bodyVelocities, bodyIDs, procId, nProcs, fileName);  // GL assume no generation of accelerations
   }
   else
     assert(0);
@@ -785,14 +787,15 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
     tree->localTree.bodies_pos[i]  = bodyPositions[i];
     tree->localTree.bodies_Ppos[i] = bodyPositions[i];
     tree->localTree.bodies_vel[i]  = bodyVelocities[i];
-    tree->localTree.bodies_Pvel[i] = bodyVelocities[i];
+    tree->localTree.bodies_Pvel[i] = bodyVelocities[i];  // GL assume no pushing of accelerations to device, will be calculated there.
+                                                        //  must make sure it does not expect them there, i.c. can deal with non instantiated vectors
     tree->localTree.bodies_ids[i]  = bodyIDs[i];
     tree->localTree.bodies_time[i] = make_float2(tree->get_t_current(), tree->get_t_current());
   }
 
   tree->localTree.bodies_time.h2d();
   tree->localTree.bodies_pos. h2d();
-  tree->localTree.bodies_vel. h2d();
+  tree->localTree.bodies_vel. h2d();  // GL question: MUST accelerations be expicitly pushed h2d even if not initialized? assume not
   tree->localTree.bodies_Ppos.h2d();
   tree->localTree.bodies_Pvel.h2d();
   tree->localTree.bodies_ids. h2d();
@@ -869,7 +872,7 @@ int main(int argc, char** argv, MPI_Comm comm, int shrMemPID)
 //              sprintf(&fileName[0], "%s_%010.4f", snapshotFile.c_str(), t_current);
           }
 
-          tree->fileIO->writeFile(ioSharedData.Pos, ioSharedData.Vel,
+          tree->fileIO->writeFile(ioSharedData.Pos, ioSharedData.Vel, ioSharedData.Acc,
                                   ioSharedData.IDs, ioSharedData.nBodies,
                                   fileName.c_str(), t_current,
                                   procId, nProcs, mpiCommWorld, distributed) ;

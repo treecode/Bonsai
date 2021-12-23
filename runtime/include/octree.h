@@ -594,8 +594,8 @@ public:
   //Functions for domain division
   void mpiSumParticleCount(int numberOfParticles);
 
-  void ICRecv(int procId, vector<real4> &bodyPositions, vector<real4> &bodyVelocities,  vector<ullong> &bodiesIDs);
-  void ICSend(int destination, real4 *bodyPositions, real4 *bodyVelocities,  ullong *bodiesIDs, int size);
+  void ICRecv(int procId, vector<real4> &bodyPositions, vector<real4> &bodyVelocities, vector<real4> &bodyAccelerations,  vector<ullong> &bodiesIDs);
+  void ICSend(int destination, real4 *bodyPositions, real4 *bodyVelocities,  real4 *bodyAccelerations, ullong *bodiesIDs, int size);
 
 
   void sendCurrentRadiusInfo(real4 &rmin, real4 &rmax);

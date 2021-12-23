@@ -9,7 +9,7 @@
 
 
 
-void tipsyIO::ICSend(int destination, real4 *bodyPositions, real4 *bodyVelocities,  ullong *bodiesIDs,
+void tipsyIO::ICSend(int destination, real4 *bodyPositions, real4 *bodyVelocities, real4 *bodyAccelerations,  ullong *bodiesIDs,
                      int toSend, const MPI_Comm &mpiCommWorld)
 {
 #ifdef USE_MPI
@@ -19,11 +19,13 @@ void tipsyIO::ICSend(int destination, real4 *bodyPositions, real4 *bodyVelocitie
   //Send the positions, velocities and ids
   MPI_Send( bodyPositions,  toSend*sizeof(real)*4, MPI_BYTE, destination, destination*2+1, mpiCommWorld);
   MPI_Send( bodyVelocities, toSend*sizeof(real)*4, MPI_BYTE, destination, destination*2+2, mpiCommWorld);
+  MPI_Send( bodyAccelerations, toSend*sizeof(real)*4, MPI_BYTE, destination, destination*2+2, mpiCommWorld);
   MPI_Send( bodiesIDs,      toSend*sizeof(ullong), MPI_BYTE, destination, destination*2+3, mpiCommWorld);
 #endif
 }
 
 void tipsyIO::ICRecv(int recvFrom, int procId, std::vector<real4> &bodyPositions, std::vector<real4> &bodyVelocities,
+                     std::vector<real4> &bodyAccelerations,
                      std::vector<ullong> &bodiesIDs, const MPI_Comm &mpiCommWorld)
 {
 #ifdef USE_MPI
@@ -35,16 +37,18 @@ void tipsyIO::ICRecv(int recvFrom, int procId, std::vector<real4> &bodyPositions
 
   bodyPositions.resize(nreceive);
   bodyVelocities.resize(nreceive);
+  bodyAccelerations.resize(nreceive);
   bodiesIDs.resize(nreceive);
 
   //Receive the positions, velocities and ids
   MPI_Recv( (real*  )&bodyPositions[0],  nreceive*sizeof(real)*4, MPI_BYTE, recvFrom, procId*2+1, mpiCommWorld,&status);
   MPI_Recv( (real*  )&bodyVelocities[0], nreceive*sizeof(real)*4, MPI_BYTE, recvFrom, procId*2+2, mpiCommWorld,&status);
+  MPI_Recv( (real*  )&bodyAccelerations[0], nreceive*sizeof(real)*4, MPI_BYTE, recvFrom, procId*2+2, mpiCommWorld,&status);
   MPI_Recv( (ullong*)&bodiesIDs[0],      nreceive*sizeof(ullong), MPI_BYTE, recvFrom, procId*2+3, mpiCommWorld,&status);
 #endif
 }
 
-void tipsyIO::writeFile(real4 *bodyPositions, real4 *bodyVelocities, ullong* bodyIds,
+void tipsyIO::writeFile(real4 *bodyPositions, real4 *bodyVelocities, real4 *bodyAccelerations, ullong* bodyIds,
                         int n, std::string fileName, float time,
                         const int rank, const int nProcs, const MPI_Comm &mpiCommWorld,
                         bool perProcess)
@@ -52,7 +56,7 @@ void tipsyIO::writeFile(real4 *bodyPositions, real4 *bodyVelocities, ullong* bod
     if(!perProcess && rank != 0)
     {
       //Send data to process 0 and that's it for us
-      ICSend(0,  bodyPositions, bodyVelocities,  bodyIds, n, mpiCommWorld);
+      ICSend(0,  bodyPositions, bodyVelocities, bodyAccelerations, bodyIds, n, mpiCommWorld);
       return;
     }
 
@@ -67,10 +71,12 @@ void tipsyIO::writeFile(real4 *bodyPositions, real4 *bodyVelocities, ullong* bod
     //Buffer to store complete snapshot
     std::vector<real4>   allPositions;
     std::vector<real4>   allVelocities;
+    std::vector<real4>   allAccelerations;
     std::vector<ullong>  allIds;
 
     allPositions. insert(allPositions.begin(),  &bodyPositions[0],  &bodyPositions[n]);
     allVelocities.insert(allVelocities.begin(), &bodyVelocities[0], &bodyVelocities[n]);
+    allAccelerations.insert(allAccelerations.begin(), &bodyAccelerations[0], &bodyAccelerations[n]);
     allIds.       insert(allIds.begin(),        &bodyIds[0],        &bodyIds[n]);
 
     if(!perProcess)
@@ -78,13 +84,15 @@ void tipsyIO::writeFile(real4 *bodyPositions, real4 *bodyVelocities, ullong* bod
         //Now receive the data from the other processes
         std::vector<real4>   extPositions;
         std::vector<real4>   extVelocities;
+        std::vector<real4>   extAccelerations;
         std::vector<ullong>  extIds;
 
         for(int recvFrom=1; recvFrom < nProcs; recvFrom++)
         {
-          ICRecv(recvFrom, rank, extPositions, extVelocities,  extIds, mpiCommWorld);
+          ICRecv(recvFrom, rank, extPositions, extVelocities, extAccelerations, extIds, mpiCommWorld);
           allPositions.insert(allPositions.end(), extPositions.begin(), extPositions.end());
           allVelocities.insert(allVelocities.end(), extVelocities.begin(), extVelocities.end());
+          allAccelerations.insert(allAccelerations.end(), extAccelerations.begin(), extAccelerations.end());
           allIds.insert(allIds.end(), extIds.begin(), extIds.end());
         }
     }
@@ -105,7 +113,7 @@ void tipsyIO::writeFile(real4 *bodyPositions, real4 *bodyVelocities, ullong* bod
     h.ndark   = NDM;
     h.nstar   = NStar;
     h.nsph    = 0;
-    h.version = 2;
+    h.version = 6; // GL 6 as 2 | 4, 2 because original, 4 because it includes acceleration
     outputFile.write((char*)&h, sizeof(h));
 
     //First write the dark matter particles
@@ -122,6 +130,10 @@ void tipsyIO::writeFile(real4 *bodyPositions, real4 *bodyVelocities, ullong* bod
         d.vel[0] = allVelocities[i].x;
         d.vel[1] = allVelocities[i].y;
         d.vel[2] = allVelocities[i].z;
+        d.acc[0] = allAccelerations[i].x;
+        d.acc[1] = allAccelerations[i].y;
+        d.acc[2] = allAccelerations[i].z;
+        d.epot   = allAccelerations[i].w;
         d.setID(allIds[i]);
         outputFile.write((char*)&d, sizeof(d));
       } //end if
@@ -142,6 +154,10 @@ void tipsyIO::writeFile(real4 *bodyPositions, real4 *bodyVelocities, ullong* bod
         s.vel[0] = allVelocities[i].x;
         s.vel[1] = allVelocities[i].y;
         s.vel[2] = allVelocities[i].z;
+        s.acc[0] = allAccelerations[i].x;
+        s.acc[1] = allAccelerations[i].y;
+        s.acc[2] = allAccelerations[i].z;
+        s.epot   = allAccelerations[i].w;
         s.setID(allIds[i]);
         s.metals = 0;
         s.tform = 0;
@@ -151,10 +167,14 @@ void tipsyIO::writeFile(real4 *bodyPositions, real4 *bodyVelocities, ullong* bod
     outputFile.close();
 }
 
-
+// GL: todo check whether we can try to read tipsy files with or without accelerations
+// proposal: add new fileFormatVersion+=4 to indicate accelerations are included.
+//           if fileformatVersion ==4 ==> original format=0 with accelerations
+//           if fileformatVersion ==6 ==> original format=2 with accelerations
 void tipsyIO::readFile(const MPI_Comm &mpiCommWorld,
                        std::vector<real4> &bodyPositions,
                        std::vector<real4> &bodyVelocities,
+                       std::vector<real4> &bodyAccelerations,  // GL may be NULL, then assume it is not include din the file not read
                        std::vector<ullong> &bodiesIDs,
                        std::string fileName,
                        int rank,
@@ -172,11 +192,14 @@ void tipsyIO::readFile(const MPI_Comm &mpiCommWorld,
 
     Read in our custom version of the Tipsy file format, the most important change is that we store
     particle id on the location where previously the potential was stored.
+    
+    GL: next change, if (version & 4) accelerations + potential energies are stored as well
+    
   */
 
   if(!restart && rank > 0)
   {
-      ICRecv(0, rank, bodyPositions, bodyVelocities,  bodiesIDs, mpiCommWorld);
+      ICRecv(0, rank, bodyPositions, bodyVelocities,  bodyAccelerations, bodiesIDs, mpiCommWorld);
   }
   else
   {
@@ -204,12 +227,15 @@ void tipsyIO::readFile(const MPI_Comm &mpiCommWorld,
       assert(NTotal == (NDMparticles+NStarparticles));
 
       if(rank == 0) printf("File version: %d \n", h.version);
-      int                fileFormatVersion = 0;
-      if(h.version == 2) fileFormatVersion = 2;
+      int               fileFormatVersion = 0;
+      if(h.version & 2) fileFormatVersion = 2;
+      int               hasAcceleration = 0;
+      if(h.version & 4) hasAcceleration = 1;
 
       ullong idummy;
       real4  positions;
       real4  velocity;
+      real4  acceleration;
 
 
       //Rough divide
@@ -217,6 +243,7 @@ void tipsyIO::readFile(const MPI_Comm &mpiCommWorld,
       if(restart) perProc =  NTotal          /reduce_bodies_factor; //don't subdivide when using restart
       bodyPositions.reserve(perProc+10);
       bodyVelocities.reserve(perProc+10);
+      bodyAccelerations.reserve(perProc+10);
       bodiesIDs.reserve(perProc+10);
       perProc -= 1;
 
