@@ -35,7 +35,7 @@ PROF_MODULE(dev_approximate_gravity);
 /***** DENSITY   ******************/
 
 static __device__ __forceinline__ void computeDensityAndNgb(
-    const float r2, const float hinv2, const float mass, 
+    const float r2, const float hinv2, const float mass,
     float &density, float &nb)
 {
 #if 0  /* full kernel for reference */
@@ -199,26 +199,6 @@ __forceinline__ static __device__ int ringAddr(const int i)
   return (i & ((CELL_LIST_MEM_PER_WARP<<SHIFT) - 1));
 }
 
-texture<float4, 1, cudaReadModeElementType> texNodeSize;
-texture<float4, 1, cudaReadModeElementType> texNodeCenter;
-texture<float4, 1, cudaReadModeElementType> texMultipole;
-texture<float4, 1, cudaReadModeElementType> texBody;
-
-//This function is called from the my_cuda_rt file. I could not get the
-// references extern since g++ did not accept the texture objects
-const void* getTexturePointer(const char* name)
-{
-  if(strcmp(name, "texNodeSize") == 0)
-    return &texNodeSize;
-  if(strcmp(name, "texNodeCenter") == 0)
-    return &texNodeCenter;
-  if(strcmp(name, "texMultipole") == 0)
-    return &texMultipole;
-  if(strcmp(name, "texBody") == 0)
-    return &texBody;
-  return NULL;
-}
-
 
 /*********** Forces *************/
 
@@ -228,7 +208,7 @@ static __device__ __forceinline__ float4 add_acc(
     const float eps2,
     float2 &density)
 {
-#if 1  // to test performance of a tree-walk 
+#if 1  // to test performance of a tree-walk
   const float3 dr = make_float3(posj.x - pos.x, posj.y - pos.y, posj.z - pos.z);
 
   const float r2     = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
@@ -250,13 +230,14 @@ static __device__ __forceinline__ float4 add_acc(
 }
 template<int NI, bool FULL>
 static __device__ __forceinline__ void directAcc(
-    float4 acc_i[NI], 
+    float4 acc_i[NI],
     const float4 pos_i[NI],
     const int ptclIdx,
     const float eps2,
-    float2 density_i[NI])
+    float2 density_i[NI],
+    const real4  *body_pos)
 {
-  const float4 M0 = (FULL || ptclIdx >= 0) ? tex1Dfetch(texBody, ptclIdx) : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+  const float4 M0 = (FULL || ptclIdx >= 0) ? body_pos[ptclIdx] : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
 
 //#pragma unroll
   for (int j = 0; j < WARP_SIZE; j++)
@@ -275,13 +256,13 @@ static __device__ __forceinline__ void directAcc(
 #ifdef _QUADRUPOLE_
 
 static __device__ __forceinline__ float4 add_acc(
-    float4 acc, 
+    float4 acc,
     const float4 pos,
     const float mass, const float3 com,
     const float4 Q0,  const float4 Q1, float eps2,
-    float2 &density) 
+    float2 &density)
 {
-#if 1 
+#if 1
   const float3 dr = make_float3(pos.x - com.x, pos.y - com.y, pos.z - com.z);
   const float  r2 = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z + eps2;
 
@@ -289,7 +270,7 @@ static __device__ __forceinline__ float4 add_acc(
   const float rinv2 = rinv *rinv;
   const float mrinv  =  mass*rinv;
   const float mrinv3 = rinv2*mrinv;
-  const float mrinv5 = rinv2*mrinv3; 
+  const float mrinv5 = rinv2*mrinv3;
   const float mrinv7 = rinv2*mrinv5;   // 16
 
   float  D0  =  mrinv;
@@ -317,7 +298,7 @@ static __device__ __forceinline__ float4 add_acc(
   acc.y  += C*dr.y + D2*qR.y;
   acc.z  += C*dr.z + D2*qR.z;               // 23
 
-// total: 16 + 3 + 22 + 23 = 64 flops 
+// total: 16 + 3 + 22 + 23 = 64 flops
 
   return acc;
 #endif
@@ -325,19 +306,20 @@ static __device__ __forceinline__ float4 add_acc(
 
 template<int NI, bool FULL>
 static __device__ __forceinline__ void approxAcc(
-    float4 acc_i[NI], 
+    float4 acc_i[NI],
     const float4 pos_i[NI],
     float2 dens_i[NI],
     const int cellIdx,
-    const float eps2)
+    const float eps2,
+    const real4 *multipole_data)
 {
   const int cellAddr = cellIdx + cellIdx + cellIdx;
   float4 M0, Q0, Q1;
   if (FULL || cellIdx >= 0)
   {
-    M0 = tex1Dfetch(texMultipole, cellAddr);
-    Q0 = tex1Dfetch(texMultipole, cellAddr + 1);
-    Q1 = tex1Dfetch(texMultipole, cellAddr + 2);
+    M0 = multipole_data[cellAddr];
+    Q0 = multipole_data[cellAddr + 1];
+    Q1 = multipole_data[cellAddr + 2];
   }
   else
     M0 = Q0 = Q1 = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
@@ -368,8 +350,8 @@ static __device__ __forceinline__ void approxAcc(
 
 //Improved Barnes Hut criterium
 static __device__ bool split_node_grav_impbh(
-    const float4 nodeCOM, 
-    const float4 groupCenter, 
+    const float4 nodeCOM,
+    const float4 groupCenter,
     const float4 groupSize)
 {
   //Compute the distance between the group and the cell
@@ -417,7 +399,7 @@ __device__ bool split_node_grav_md(
 #define TEXTURES
 
 template<int SHIFT, int BLOCKDIM2, int NI, bool INTCOUNT>
-static __device__ 
+static __device__
 uint2 approximate_gravity(
     float4 acc_i[NI],
     const float4 _pos_i[NI],
@@ -427,7 +409,11 @@ uint2 approximate_gravity(
     int *shmem,
     int *cellList,
     const float4 groupSize,
-    float2 dens_i[NI])
+    float2 dens_i[NI],
+    const real4 *body_pos,
+    const real4 *multipole_data,
+    const float4  *boxSizeInfo,
+    const float4  *boxCenterInfo)
 {
   const int laneIdx = threadIdx.x & (WARP_SIZE-1);
 
@@ -473,11 +459,12 @@ uint2 approximate_gravity(
     cellListBlock += min(WARP_SIZE, nCells - cellListBlock);
 
     /* read from gmem cell's info */
-    const float4 cellSize = tex1Dfetch(texNodeSize,   cellIdx);
-    const float4 cellPos  = tex1Dfetch(texNodeCenter, cellIdx);
-
+    // Multiply with useCell  to prevent out of bound access, out of bound becomes idx '0'.
+    // Previous texture lookup would allow out of bound look up as it would bound it to texture size.
+    const float4 cellSize = boxSizeInfo[cellIdx*useCell];
+    const float4 cellPos  = boxCenterInfo[cellIdx*useCell];
 #if 1
-    const float4 cellCOM  = tex1Dfetch(texMultipole,  cellIdx+cellIdx+cellIdx);
+    const float4 cellCOM = multipole_data[useCell*(cellIdx+cellIdx+cellIdx)];
 
     /* check if cell opening condition is satisfied */
     const float4 cellCOM1 = make_float4(cellCOM.x, cellCOM.y, cellCOM.z, cellPos.w);
@@ -490,7 +477,7 @@ uint2 approximate_gravity(
     const int cellData = __float_as_int(cellSize.w);
     const int firstChild =  cellData & 0x0FFFFFFF;
     const int nChildren  = (cellData & 0xF0000000) >> 28;
-    
+
     if(cellData == 0xFFFFFFFF)
       splitCell = false;
 
@@ -563,7 +550,7 @@ uint2 approximate_gravity(
       if (approxCounter >= WARP_SIZE)
       {
         /* evalute cells stored in shmem */
-        approxAcc<NI,true>(acc_i, pos_i, dens_i, tmpList[laneIdx], eps2);
+        approxAcc<NI,true>(acc_i, pos_i, dens_i, tmpList[laneIdx], eps2, multipole_data);
 
         approxCounter -= WARP_SIZE;
         const int scatterIdx = approxCounter + approxScatter.x - approxScatter.y;
@@ -607,13 +594,13 @@ uint2 approximate_gravity(
 
         if (nParticle >= WARP_SIZE)
         {
-          directAcc<NI,true>(acc_i, pos_i, ptclIdx, eps2, dens_i);
+          directAcc<NI,true>(acc_i, pos_i, ptclIdx, eps2, dens_i, body_pos);
           nParticle  -= WARP_SIZE;
           nProcessed += WARP_SIZE;
           if (INTCOUNT)
             interactionCounters.y += WARP_SIZE*NI;
         }
-        else 
+        else
         {
           const int scatterIdx = directCounter + laneIdx;
           tmpList[laneIdx] = directPtclIdx;
@@ -625,7 +612,7 @@ uint2 approximate_gravity(
           if (directCounter >= WARP_SIZE)
           {
             /* evalute cells stored in shmem */
-            directAcc<NI,true>(acc_i, pos_i, tmpList[laneIdx], eps2, dens_i);
+            directAcc<NI,true>(acc_i, pos_i, tmpList[laneIdx], eps2, dens_i, body_pos);
             directCounter -= WARP_SIZE;
             const int scatterIdx = directCounter + laneIdx - nParticle;
             if (scatterIdx >= 0)
@@ -654,7 +641,7 @@ uint2 approximate_gravity(
 
   if (approxCounter > 0)
   {
-    approxAcc<NI,false>(acc_i, pos_i, dens_i, laneIdx < approxCounter ? approxCellIdx : -1, eps2);
+    approxAcc<NI,false>(acc_i, pos_i, dens_i, laneIdx < approxCounter ? approxCellIdx : -1, eps2, multipole_data);
     if (INTCOUNT)
       interactionCounters.x += approxCounter * NI;
     approxCounter = 0;
@@ -662,7 +649,7 @@ uint2 approximate_gravity(
 
   if (directCounter > 0)
   {
-    directAcc<NI,false>(acc_i, pos_i, laneIdx < directCounter ? directPtclIdx : -1, eps2, dens_i);
+    directAcc<NI,false>(acc_i, pos_i, laneIdx < directCounter ? directPtclIdx : -1, eps2, dens_i, body_pos);
     if (INTCOUNT)
       interactionCounters.y += directCounter * NI;
     directCounter = 0;
@@ -672,13 +659,13 @@ uint2 approximate_gravity(
 }
 
 template<int SHIFT2, int BLOCKDIM2, bool ACCUMULATE>
-static __device__ 
+static __device__
 bool treewalk(
     const int bid,
     const float eps2,
     const uint2 node_begend,
     const int    *active_groups,
-    const real4  *group_body_pos,        
+    const real4  *group_body_pos,
     const float4  *groupSizeInfo,
     const float4  *groupCenterInfo,
     int *shmem,
@@ -688,7 +675,11 @@ bool treewalk(
     int    *ngb_out,
     int    *active_inout,
     float  *body_h,
-    float2 *body_dens_out)
+    float2 *body_dens_out,
+    const real4  *body_pos,
+    const real4 *multipole_data,
+    const float4  *boxSizeInfo,
+    const float4  *boxCenterInfo)
 {
 
   /*********** set necessary thread constants **********/
@@ -715,14 +706,14 @@ bool treewalk(
 
   float4 pos_i[2];
   float4 acc_i[2];
-  float2 dens_i[2];  
+  float2 dens_i[2];
 
   pos_i[0]   = group_body_pos[body_i[0]];
   pos_i[0].w = 1.0f/body_h[body_i[0]];
   pos_i[0].w *= pos_i[0].w;  /* .w stores 1/h^2 to speed up computations */
   if(ni > 1){       //Only read if we actually have ni == 2
     pos_i[1]   = group_body_pos[body_i[1]];
-    pos_i[1].w = 1.0f/body_h[body_i[1]];  
+    pos_i[1].w = 1.0f/body_h[body_i[1]];
     pos_i[1].w *= pos_i[1].w;  /* .w stores 1/h^2 to speed up computations */
   }
 
@@ -742,23 +733,31 @@ bool treewalk(
           acc_i,
           pos_i,
           group_pos,
-          eps2, 
+          eps2,
           node_begend,
-          shmem, 
-          lmem, 
+          shmem,
+          lmem,
           curGroupSize,
-          dens_i);
+          dens_i,
+          body_pos,
+          multipole_data,
+          boxSizeInfo,
+          boxCenterInfo);
     else
       counters = approximate_gravity<SHIFT2, BLOCKDIM2, 2,INTCOUNT>(
           acc_i,
           pos_i,
           group_pos,
-          eps2, 
+          eps2,
           node_begend,
-          shmem, 
-          lmem, 
+          shmem,
+          lmem,
           curGroupSize,
-          dens_i);
+          dens_i,
+          body_pos,
+          multipole_data,
+          boxSizeInfo,
+          boxCenterInfo);
   }
   if(counters.x == 0xFFFFFFFF && counters.y == 0xFFFFFFFF)
     return false;
@@ -775,7 +774,7 @@ bool treewalk(
   }
 #endif
 
-  if (laneId < nb_i) 
+  if (laneId < nb_i)
   {
     const int addr = body_i[0];
     {
@@ -800,7 +799,7 @@ bool treewalk(
       body_dens_out[addr] = dens_i[0];
     }
     //       ngb_out     [addr] = ngb_i;
-    ngb_out     [addr] = addr; //JB Fixed this for demo 
+    ngb_out     [addr] = addr; //JB Fixed this for demo
     active_inout[addr] = 1;
     if (ACCUMULATE)
     {
@@ -826,7 +825,7 @@ bool treewalk(
         acc_out     [addr].y += acc_i[1].y;
         acc_out     [addr].z += acc_i[1].z;
         acc_out     [addr].w += acc_i[1].w;
-      
+
         body_dens_out[addr].x += dens_i[1].x;
       	body_dens_out[addr].y += dens_i[1].y;
       }
@@ -834,22 +833,22 @@ bool treewalk(
       {
         acc_out      [addr] =  acc_i[1];
         body_dens_out[addr] = dens_i[1];
-      
+
 //	body_h[addr] = adjustH(body_h[addr], dens_i[1].y);
       }
 
       //         ngb_out     [addr] = ngb_i;
-      ngb_out     [addr] = addr; //JB Fixed this for demo 
-      active_inout[addr] = 1;     
+      ngb_out     [addr] = addr; //JB Fixed this for demo
+      active_inout[addr] = 1;
       if (ACCUMULATE)
       {
-        interactions[addr].x += counters.x / ni; 
-        interactions[addr].y += counters.y / ni; 
+        interactions[addr].x += counters.x / ni;
+        interactions[addr].y += counters.y / ni;
       }
       else
       {
-        interactions[addr].x = counters.x / ni; 
-        interactions[addr].y = counters.y / ni; 
+        interactions[addr].x = counters.x / ni;
+        interactions[addr].y = counters.y / ni;
       }
     }
   }
@@ -879,7 +878,7 @@ void approximate_gravity_main(
     real4   *body_vel,
     int     *MEM_BUF,
     float   *body_h,
-    float2  *body_dens) 
+    float2  *body_dens)
 {
   const int blockDim2 = BLOCKDIM2;
   const int shMemSize = 1 * (1 << blockDim2);
@@ -926,7 +925,7 @@ void approximate_gravity_main(
 
     int *lmem = &MEM_BUF[(CELL_LIST_MEM_PER_WARP<<nWarps2)*blockIdx.x + CELL_LIST_MEM_PER_WARP*warpId];
     const bool success = treewalk<0,blockDim2,ACCUMULATE>(
-        bid, 
+        bid,
         eps2,
         node_begend,
         active_groups,
@@ -940,7 +939,11 @@ void approximate_gravity_main(
         ngb_out,
         active_inout,
         body_h,
-        body_dens);
+        body_dens,
+        body_pos,
+        multipole_data,
+        boxSizeInfo,
+        boxCenterInfo);
 
 #if 0
     if (bid % 10 == 0)
@@ -963,7 +966,7 @@ void approximate_gravity_main(
         for (int it = 0; it < n; it++)
         {
           const bool success = treewalk<nWarp2,blockDim2,ACCUMULATE>(
-              failedList[it], 
+              failedList[it],
               eps2,
               node_begend,
               active_groups,
@@ -978,7 +981,7 @@ void approximate_gravity_main(
               active_inout);
           assert(success);
         }
-      }    
+      }
       __syncthreads();
     }
 
@@ -999,13 +1002,13 @@ void approximate_gravity_main(
 
           //Test again
           shmem[0] = waitCounter;
-          res = atomicExch(&active_inout[n_bodies+1], 1); 
+          res = atomicExch(&active_inout[n_bodies+1], 1);
         }
       }
 
       int *lmem1 = &MEM_BUF[gridDim.x*(CELL_LIST_MEM_PER_WARP<<nWarps2)];
       const bool success = treewalk<8,blockDim2,ACCUMULATE>(
-          bid, 
+          bid,
           eps2,
           node_begend,
           active_groups,
@@ -1019,7 +1022,11 @@ void approximate_gravity_main(
           ngb_out,
           active_inout,
           body_h,
-          body_dens);
+          body_dens,
+          body_pos,
+          multipole_data,
+          boxSizeInfo,
+          boxCenterInfo);
       assert(success);
 
       if(laneId == 0)
@@ -1054,7 +1061,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
       real4   *body_vel,
       int     *MEM_BUF,
       float   *body_h,
-      float2  *body_dens) 
+      float2  *body_dens)
 {
   approximate_gravity_main<false, NTHREAD2>(
       n_active_groups,
@@ -1103,7 +1110,7 @@ __launch_bounds__(NTHREAD,1024/NTHREAD)
       real4   *body_vel,
       int     *MEM_BUF,
       float   *body_h,
-      float2  *body_dens) 
+      float2  *body_dens)
 {
   approximate_gravity_main<true, NTHREAD2>(
       n_active_groups,

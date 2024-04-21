@@ -8,7 +8,7 @@
 using namespace std;
 
 static double de_max  = 0;
-static double dde_max = 0;  
+static double dde_max = 0;
 
 
 cudaEvent_t startLocalGrav;
@@ -31,7 +31,7 @@ void octree::makeLET()
   localTree.multipole.d2h    (3*localTree.n_nodes, false, LETDataToHostStream->s());
   localTree.boxSizeInfo.waitForCopyEvent();
   localTree.boxCenterInfo.waitForCopyEvent();
-  
+
   double t10 = get_time();
   //Exchange domain grpTrees, while memory copies take place
   this->sendCurrentInfoGrpTree();
@@ -55,7 +55,7 @@ void octree::makeLET()
                             copyTreeUpToLevel);
 
   letRunning = false;
-#endif  
+#endif
 }
 
 
@@ -132,7 +132,7 @@ bool octree::iterate_once(IterationData &idata) {
 
 
     LOG("At the start of iterate:\n");
-    
+
     bool forceTreeRebuild = false;
     bool needDomainUpdate = true;
 
@@ -182,7 +182,7 @@ bool octree::iterate_once(IterationData &idata) {
     else
     {
       //Build the tree using the predicted positions
-      // bool rebuild_tree = Nact_since_last_tree_rebuild > 4*this->localTree.n;   
+      // bool rebuild_tree = Nact_since_last_tree_rebuild > 4*this->localTree.n;
       bool rebuild_tree = true;
 
       rebuild_tree = ((iter % rebuild_tree_rate) == 0);
@@ -206,7 +206,7 @@ bool octree::iterate_once(IterationData &idata) {
         #endif
 
         idata.lastBuildTime   = get_time() - t1;
-        idata.totalBuildTime += idata.lastBuildTime;  
+        idata.totalBuildTime += idata.lastBuildTime;
       }
       else
       {
@@ -215,7 +215,7 @@ bool octree::iterate_once(IterationData &idata) {
           setActiveGrpsFunc(this->localTree);
           devContext->stopTiming("setActiveGrpsFunc", 10, execStream->s());
           idata.Nact_since_last_tree_rebuild = 0;
-        #endif        
+        #endif
         //Don't rebuild only update the current boxes
         this->compute_properties(this->localTree);
 
@@ -285,7 +285,7 @@ bool octree::iterate_once(IterationData &idata) {
 
     //Different options for basing the load balance on
     lastLocal = ms;
-    lastTotal = ms + msLET;    
+    lastTotal = ms + msLET;
 
     //Corrector
     tTempTime = get_time();
@@ -295,7 +295,7 @@ bool octree::iterate_once(IterationData &idata) {
     idata.totalPredCor += get_time() - tTempTime;
 
 
-    
+
     if(nProcs > 1)
     {
       #ifdef USE_MPI
@@ -312,7 +312,7 @@ bool octree::iterate_once(IterationData &idata) {
       idata.totalWaitTime += idata.lastWaitTime;
       #endif
     }
-    
+
     idata.Nact_since_last_tree_rebuild += this->localTree.n_active_particles;
 
     //Compute energies
@@ -360,7 +360,7 @@ bool octree::iterate_once(IterationData &idata) {
 #ifdef USE_MPI
       if (mpiRenderMode) dumpDataMPI(); //To renderer process
       else               dumpData();    //To disk
-#endif      
+#endif
     }
     else if (snapshotIter > 0)
     {
@@ -400,7 +400,7 @@ bool octree::iterate_once(IterationData &idata) {
       my_dev::base_mem::printMemUsage();
       return true;
     }
-    iter++; 
+    iter++;
 
     return false;
 }
@@ -460,7 +460,7 @@ void octree::iterate(bool amuse) {
 
     if(stopRun) break;
   } //end while
-  
+
   if(!amuse) iterate_teardown(idata);
 } //end iterate
 
@@ -532,7 +532,7 @@ void octree::direct_gravity(tree_structure &tree)
 }
 
 void octree::approximate_gravity(tree_structure &tree)
-{ 
+{
 
   uint2 node_begend;
   int level_start = tree.startLevelMin;
@@ -564,11 +564,6 @@ void octree::approximate_gravity(tree_structure &tree)
                          tree.bodies_h.p(),        //Per particle search radius
                          tree.bodies_dens.p());    //Per particle density (x) and nnb (y)
 
-  approxGrav.set_texture<real4>(0,  tree.boxSizeInfo,    "texNodeSize");
-  approxGrav.set_texture<real4>(1,  tree.boxCenterInfo,  "texNodeCenter");
-  approxGrav.set_texture<real4>(2,  tree.multipole,      "texMultipole");
-  approxGrav.set_texture<real4>(3,  tree.bodies_Ppos,   "texBody");
-
   approxGrav.setWork(-1, NTHREAD, nBlocksForTreeWalk);
   //approxGrav.setWork(-1, 32, 1);
 
@@ -599,7 +594,7 @@ if(firstIter0 == true || iter == 40){
 		fprintf(stderr, "DENS Iter: %d\t%d\t%f\t%f\t%f\tr: %f\th: %f\td: %f\tnnb: %f\t logs: %f %f  \n",
 			iter,
 			i, tree.bodies_pos[i].x, tree.bodies_pos[i].y, tree.bodies_pos[i].z,
-			r, 
+			r,
 			tree.bodies_h[i],
 			tree.bodies_dens[i].x, tree.bodies_dens[i].y,
 			log10(tree.bodies_dens[i].x), log2(tree.bodies_dens[i].x)
@@ -610,7 +605,7 @@ if(firstIter0 == true || iter == 40){
 		firstIter0 = false;
 		fprintf(stderr,"STATD Iter: %d\tMin: %d\tMax: %d\tAvg: %f\n", iter, nnbMin, nnbMax, nnbSum / (float)tree.n);
 //	exit(0);
-#endif  
+#endif
 
 
 
@@ -622,8 +617,8 @@ if(firstIter0 == true || iter == 40){
     long long apprSum = 0;
     long long directSum2 = 0;
     long long apprSum2 = 0;
-    
-    
+
+
     int maxDir = -1;
     int maxAppr = -1;
 
@@ -631,13 +626,13 @@ if(firstIter0 == true || iter == 40){
     {
       apprSum     += tree.interactions[i].x;
       directSum   += tree.interactions[i].y;
-      
+
       maxAppr = max(maxAppr,tree.interactions[i].x);
       maxDir  = max(maxDir,tree.interactions[i].y);
-      
+
       apprSum2     += tree.interactions[i].x*tree.interactions[i].x;
-      directSum2   += tree.interactions[i].y*tree.interactions[i].y;   
-      
+      directSum2   += tree.interactions[i].y*tree.interactions[i].y;
+
 //      if(i < 35)
 //      fprintf(stderr, "%d\t Direct: %d\tApprox: %d\t Group: %d \n",
 //              i, tree.interactions[i].y, tree.interactions[i].x,
@@ -645,29 +640,29 @@ if(firstIter0 == true || iter == 40){
     }
     cout << "Interaction at (rank= " << mpiGetRank() << " ) iter: " << iter << "\tdirect: " << directSum << "\tappr: " << apprSum << "\t";
     cout << "avg dir: " << directSum / tree.n << "\tavg appr: " << apprSum / tree.n << "\tMaxdir: " << maxDir << "\tmaxAppr: " << maxAppr <<  endl;
-    cout << "sigma dir: " << sqrt((directSum2  - directSum)/ tree.n) << "\tsigma appr: " << std::sqrt((apprSum2 - apprSum) / tree.n)  <<  endl;    
+    cout << "sigma dir: " << sqrt((directSum2  - directSum)/ tree.n) << "\tsigma appr: " << std::sqrt((apprSum2 - apprSum) / tree.n)  <<  endl;
 
   #endif
-  
-  
+
+
   if(mpiGetNProcs() == 1) //Only do it here if there is only one process
   {
    //#ifdef DO_BLOCK_TIMESTEP
   #if 0 //Demo mode
-      //Reduce the number of valid particles    
+      //Reduce the number of valid particles
       getNActive.set_arg<int>(0,    &tree.n);
       getNActive.set_arg<cl_mem>(1, tree.activePartlist.p());
       getNActive.set_arg<cl_mem>(2, this->nactive.p());
       getNActive.set_arg<int>(3,    NULL, 128); //Dynamic shared memory , equal to number of threads
       getNActive.setWork(-1, 128,   NBLOCK_REDUCE);
-      
+
       //JB Need a sync here This is required otherwise the gravity overlaps the reduction
-      //and we get incorrect numbers. 
+      //and we get incorrect numbers.
       //Note Disabled this whole function for demo!
-      gravStream->sync(); 
+      gravStream->sync();
       getNActive.execute(execStream->s());
-      
-      
+
+
 
       //Reduce the last parts on the host
       this->nactive.d2h();
@@ -688,17 +683,17 @@ if(firstIter0 == true || iter == 40){
 void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remoteTree, int bufferSize, bool doActiveParticles)
 {
   //Start and end node of the remote tree structure
-  uint2 node_begend;  
+  uint2 node_begend;
   node_begend.x =  0;
   node_begend.y =  remoteTree.remoteTreeStruct.w;
-  
+
   //The texture offset used:
   int nodeTexOffset     = remoteTree.remoteTreeStruct.z ;
-  
+
   //The start and end of the top nodes:
   node_begend.x = (remoteTree.remoteTreeStruct.w >> 16);
-  node_begend.y = (remoteTree.remoteTreeStruct.w & 0xFFFF);  
- 
+  node_begend.y = (remoteTree.remoteTreeStruct.w & 0xFFFF);
+
   //Number of particles and number of nodes in the remote tree
   int remoteP = remoteTree.remoteTreeStruct.x;
   int remoteN = remoteTree.remoteTreeStruct.y;
@@ -730,13 +725,9 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
                          tree.generalBuffer1.p(),  //The buffer to store the tree walks
                          tree.bodies_h.p(),        //Per particle search radius
                          tree.bodies_dens.p());    //Per particle density (x) and nnb (y)
-  approxGravLET.set_texture<real4>(0,  remoteTree.fullRemoteTree, "texNodeSize",  1*(remoteP), remoteN);
-  approxGravLET.set_texture<real4>(1,  remoteTree.fullRemoteTree, "texNodeCenter",1*(remoteP) + (remoteN + nodeTexOffset),     remoteN);
-  approxGravLET.set_texture<real4>(2,  remoteTree.fullRemoteTree, "texMultipole" ,1*(remoteP) + 2*(remoteN + nodeTexOffset), 3*remoteN);
-  approxGravLET.set_texture<real4>(3,  remoteTree.fullRemoteTree, "texBody"      ,0,                                           remoteP);
 
   approxGravLET.setWork(-1, NTHREAD, nBlocksForTreeWalk);
-  
+
   if(letRunning)
   {
     //don't want to overwrite the data of previous LET tree
@@ -747,7 +738,7 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
     CU_SAFE_CALL(cudaEventElapsedTime(&msLET,startRemoteGrav, endRemoteGrav));
     runningLETTimeSum += msLET;
   }
-  
+
   remoteTree.fullRemoteTree.h2d(bufferSize); //Only copy required data
   tree.activePartlist.zeroMemGPUAsync(gravStream->s()); //Resets atomics
 
@@ -761,52 +752,52 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
   #if 0
     tree.interactions.d2h();
 //     tree.body2group_list.d2h();
-    
+
     long long directSum = 0;
     long long apprSum = 0;
-    
+
     int maxDir = -1;
     int maxAppr = -1;
-    
+
     long long directSum2 = 0;
     long long apprSum2 = 0;
-    
-    
+
+
     for(int i=0; i < tree.n; i++)
     {
       apprSum     += tree.interactions[i].x;
       directSum   += tree.interactions[i].y;
-      
+
       maxAppr = max(maxAppr,tree.interactions[i].x);
       maxDir  = max(maxDir, tree.interactions[i].y);
-      
+
       apprSum2     += (tree.interactions[i].x*tree.interactions[i].x);
-      directSum2   += (tree.interactions[i].y*tree.interactions[i].y);    
+      directSum2   += (tree.interactions[i].y*tree.interactions[i].y);
     }
 
     cout << "Interaction (LET) at (rank= " << mpiGetRank() << " ) iter: " << iter << "\tdirect: " << directSum << "\tappr: " << apprSum << "\t";
     cout << "avg dir: " << directSum / tree.n << "\tavg appr: " << apprSum / tree.n  << "\tMaxdir: " << maxDir << "\tmaxAppr: " << maxAppr <<  endl;
     cout << "sigma dir: " << sqrt((directSum2  - directSum)/ tree.n) << "\tsigma appr: " << std::sqrt((apprSum2 - apprSum) / tree.n)  <<  endl;
   #endif
-    
+
   if(doActiveParticles) //Only do it here if there is only one process
   {
-   //#ifdef DO_BLOCK_TIMESTEP  
+   //#ifdef DO_BLOCK_TIMESTEP
   #if 0 //Demo mode
-      //Reduce the number of valid particles    
+      //Reduce the number of valid particles
       getNActive.set_arg<int>(0,    &tree.n);
       getNActive.set_arg<cl_mem>(1, tree.activePartlist.p());
       getNActive.set_arg<cl_mem>(2, this->nactive.p());
       getNActive.set_arg<int>(3,    NULL, 128); //Dynamic shared memory , equal to number of threads
       getNActive.setWork(-1, 128,   NBLOCK_REDUCE);
-      
+
       //JB Need a sync here This is required otherwise the gravity overlaps the reduction
-      //and we get incorrect numbers. 
+      //and we get incorrect numbers.
       //Note Disabled this whole function for demo!
-      gravStream->sync(); 
+      gravStream->sync();
       getNActive.execute(execStream->s());
-      
-      
+
+
 
       //Reduce the last parts on the host
       this->nactive.d2h();
@@ -819,14 +810,14 @@ void octree::approximate_gravity_let(tree_structure &tree, tree_structure &remot
       tree.n_active_particles = tree.n;
       LOG("Active particles: %d \n", tree.n_active_particles);
     #endif
-  }    
+  }
 }
 //end approximate
 
 
 
 void octree::correct(tree_structure &tree)
-{ 
+{
   //TODO this might be moved to the gravity call where we have that info anyway?
   tree.n_active_particles = tree.n;
   #ifdef DO_BLOCK_TIMESTEP
@@ -863,7 +854,7 @@ void octree::correct(tree_structure &tree)
                             real4Buffer1.p(), float2Buffer.p());
   correctParticles.setWork(tree.n, 128);
   correctParticles.execute2(execStream->s());
- 
+
   //Copy the shuffled items back to their original buffers
   tree.bodies_acc0.copy_devonly(real4Buffer1, tree.n);
   tree.bodies_time.copy_devonly(float2Buffer, float2Buffer.get_size());
@@ -916,7 +907,7 @@ double octree::compute_energies(tree_structure &tree)
   int blockSize = NBLOCK_REDUCE ;
   my_dev::dev_mem<double2>  energy;
   energy.cmalloc_copy(tree.generalBuffer1, blockSize, 0);
-  
+
   computeEnergy.set_args(sizeof(double)*128*2, &tree.n, tree.bodies_pos.p(), tree.bodies_vel.p(), tree.bodies_acc0.p(), energy.p());
   computeEnergy.setWork(-1, 128, blockSize);
   computeEnergy.execute2(execStream->s());
@@ -930,10 +921,10 @@ double octree::compute_energies(tree_structure &tree)
       Ekin += energy[i].x;
       Epot += energy[i].y;
   }
-  
+
   //Sum the values / energies of the system using MPI
   AllSum(Epot); AllSum(Ekin);
-  
+
   Etot = Epot + Ekin;
 
   if (store_energy_flag) {
@@ -947,7 +938,7 @@ double octree::compute_energies(tree_structure &tree)
     store_energy_flag = false;
   }
 
-  
+
   double de  = (Etot - Etot0)/Etot0;
   double dde = (Etot - Etot1)/Etot1;
 
@@ -955,24 +946,24 @@ double octree::compute_energies(tree_structure &tree)
   {
     de_max  = std::max( de_max, std::abs( de));
     dde_max = std::max(dde_max, std::abs(dde));
-  }  
-  
+  }
+
   Ekin1 = Ekin;
   Epot1 = Epot;
   Etot1 = Etot;
-  
+
   if(mpiGetRank() == 0)
   {
 #if 0
   LOG("iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n",
-		  iter, this->t_current, Etot, Ekin, Epot, de, de_max, dde, dde_max, get_time() - tinit);  
-  LOGF(stderr, "iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n", 
-		  iter, this->t_current, Etot, Ekin, Epot, de, de_max, dde, dde_max, get_time() - tinit);          
+		  iter, this->t_current, Etot, Ekin, Epot, de, de_max, dde, dde_max, get_time() - tinit);
+  LOGF(stderr, "iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n",
+		  iter, this->t_current, Etot, Ekin, Epot, de, de_max, dde, dde_max, get_time() - tinit);
 #else
   printf("iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n",
-		  iter, this->t_current, Etot, Ekin, Epot, de, de_max, dde, dde_max, get_time() - tinit);  
-  fprintf(stderr, "iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n", 
-		  iter, this->t_current, Etot, Ekin, Epot, de, de_max, dde, dde_max, get_time() - tinit);          
+		  iter, this->t_current, Etot, Ekin, Epot, de, de_max, dde, dde_max, get_time() - tinit);
+  fprintf(stderr, "iter=%d : time= %lg  Etot= %.10lg  Ekin= %lg   Epot= %lg : de= %lg ( %lg ) d(de)= %lg ( %lg ) t_sim=  %lg sec\n",
+		  iter, this->t_current, Etot, Ekin, Epot, de, de_max, dde, dde_max, get_time() - tinit);
 #endif
   }
 

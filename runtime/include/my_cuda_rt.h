@@ -7,7 +7,7 @@
 //#include <sys/time.h>
 
 #if defined(_WIN32) && !defined(_WIN64)
-  //Only use this on 32bit Windows builds  
+  //Only use this on 32bit Windows builds
   #include <typeinfo.h>
 #endif
 
@@ -37,58 +37,55 @@ typedef unsigned int uint;
 
 using namespace std;
 
-extern const void * getTexturePointer(const char*);
-
-
 #define cl_mem void*
 
 
 #  define CU_SAFE_CALL_KERNEL( call , kernel )       CU_SAFE_CALL(call);
 
-// This will output the proper CUDA error strings in the event that a CUDA host call returns an error                                      
-#define CU_SAFE_CALL(err)  __checkCudaErrors (err, __FILE__, __LINE__)                                                                  
-                                                                                                                                           
-inline void __checkCudaErrors(cudaError err, const char *file, const int line )                                                            
-{                                                                                                                                          
-    if(cudaSuccess != err)                                                                                                                 
-    {                                                                                                                                      
+// This will output the proper CUDA error strings in the event that a CUDA host call returns an error
+#define CU_SAFE_CALL(err)  __checkCudaErrors (err, __FILE__, __LINE__)
+
+inline void __checkCudaErrors(cudaError err, const char *file, const int line )
+{
+    if(cudaSuccess != err)
+    {
 //        fprintf(stderr, "%s(%i) : CUDA Runtime API error %d: %s.\n",file, line, (int)err, cudaGetErrorString( err ) );
       LOGF(stderr, "%s(%i) : CUDA Runtime API error %d: %s.\n",file, line, (int)err, cudaGetErrorString( err ) );
       fprintf(stderr, "%s(%i) : CUDA Runtime API error %d: %s.\n",file, line, (int)err, cudaGetErrorString( err ) );
       ::exit(-1);
-    }                                                                                                                                      
-}                                                                                                                                          
-                                                                                                                                           
-// This will output the proper error string when calling cudaGetLastError                                                                  
-#define getLastCudaError(msg)      __getLastCudaError (msg, __FILE__, __LINE__)                                                            
-                                                                                                                                           
-inline void __getLastCudaError(const char *errorMessage, const char *file, const int line )                                                
-{                                                                                                                                          
-    cudaError_t err = cudaGetLastError();                                                                                                  
-    if (cudaSuccess != err)                                                                                                                
-    {                                                                                                                                      
+    }
+}
+
+// This will output the proper error string when calling cudaGetLastError
+#define getLastCudaError(msg)      __getLastCudaError (msg, __FILE__, __LINE__)
+
+inline void __getLastCudaError(const char *errorMessage, const char *file, const int line )
+{
+    cudaError_t err = cudaGetLastError();
+    if (cudaSuccess != err)
+    {
 //        fprintf(stderr, "%s(%i) : getLastCudaError() CUDA error : %s : (%d) %s.\n", file, line, errorMessage, (int)err, cudaGetErrorString( err ) );
         LOGF(stderr, "%s(%i) : getLastCudaError() CUDA error : %s : (%d) %s.\n", file, line, errorMessage, (int)err, cudaGetErrorString( err ) );
         fprintf(stderr, "%s(%i) : getLastCudaError() CUDA error : %s : (%d) %s.\n", file, line, errorMessage, (int)err, cudaGetErrorString( err ) );
         ::exit(-1);
-    }                                                                                                                                      
-}                                                                                                                                          
-                                                                                                                                           
-// end of CUDA Helper Functions  
+    }
+}
+
+// end of CUDA Helper Functions
 
 
 
 //OpenCL to CUDA macro / functions
 __inline__ cudaError_t clFinish(int param)
 {
-  #if CUDART_VERSION >= 4000                                                                                                                 
-          return cudaDeviceSynchronize();                                                                                                    
-  #else                                                                                                                                      
-          return cudaThreadSynchronize();                                                                                                    
-  #endif  
+  #if CUDART_VERSION >= 4000
+          return cudaDeviceSynchronize();
+  #else
+          return cudaThreadSynchronize();
+  #endif
 }
 
-    
+
 static int getNumberOfCUDADevices()
 {
   // Get number of devices supporting CUDA
@@ -103,42 +100,42 @@ namespace my_dev {
   class context {
   protected:
     size_t dev;
-   
-    int ciDeviceCount;   
+
+    int ciDeviceCount;
 
     bool hContext_flag;
     bool hInit_flag;
     bool logfile_flag;
     bool disable_timing;
-    
+
     ostream *logFile;
-    
+
     int logID;  //Unique ID to every log line
-    
-    
+
+
     //Events:
     cudaEvent_t start, stop;
-    
+
     //Compute capability, important for default compilation mode
     int ccMajor;
     int ccMinor;
-    int defaultComputeMode;   
+    int defaultComputeMode;
 
 
     std::string logPrepend;
-    
-    
+
+
   public:
-    
+
      int multiProcessorCount;   //Required to configure parts of the code
 
     context() {
-      hContext_flag     = false;     
+      hContext_flag     = false;
       hInit_flag        = false;
       logfile_flag      = false;
       disable_timing    = false;
-      
-      hInit_flag        = true;                 
+
+      hInit_flag        = true;
     }
     ~context() {
       if (hContext_flag )
@@ -148,42 +145,42 @@ namespace my_dev {
     }
 
     int getComputeCapability() const { return 100 * ccMajor + 10 * ccMinor; }
-    int getComputeCapabilityMajor() const {return ccMajor;} 
+    int getComputeCapabilityMajor() const {return ccMajor;}
     int getComputeCapabilityMinor() const {return ccMajor;}
-     
-    
+
+
     int create(std::ostream &log, bool disableTiming = false)
     {
       disable_timing = disableTiming;
       logfile_flag   = true;
       logFile        = &log;
       logID          = 0;
-      return create(disable_timing); 
+      return create(disable_timing);
     }
 
 
     int create(bool disableT = false) {
-      assert(hInit_flag);     
-      
+      assert(hInit_flag);
+
       disable_timing = disableT;
-      
+
       LOG("Creating CUDA context \n");
-            
+
       // Get number of devices supporting CUDA
       ciDeviceCount = 0;
       CU_SAFE_CALL(cudaGetDeviceCount(&ciDeviceCount));
-            
+
       LOG("Found %d suitable devices: \n",ciDeviceCount);
       for(int i=0; i < ciDeviceCount; i++)
       {
-        cudaDeviceProp deviceProp;   
-        cudaGetDeviceProperties(&deviceProp, i);     
+        cudaDeviceProp deviceProp;
+        cudaGetDeviceProperties(&deviceProp, i);
         LOG(" %d: %s\n",i, deviceProp.name);
       }
       return ciDeviceCount;
     }
-    
-    void createQueue(size_t dev = 0, int ctxCreateFlags = 0) 
+
+    void createQueue(size_t dev = 0, int ctxCreateFlags = 0)
     {
       //use CU_CTX_MAP_HOST as flag for zero-copy memory
       //Here we finally create and assign the context to a device
@@ -191,7 +188,7 @@ namespace my_dev {
       assert(hInit_flag);
       this->dev = dev;
       assert((int)dev < ciDeviceCount);
-                  
+
       LOG("Trying to use device: %d ...", (int)dev);
       //Faster and async kernel launches when using large size arrays of local memory
       //ctxCreateFlags |= CU_CTX_LMEM_RESIZE_TO_MAX;
@@ -229,7 +226,7 @@ namespace my_dev {
         LOG("success!\n");
       }
 
-      cudaDeviceProp deviceProp;                                                                                                     
+      cudaDeviceProp deviceProp;
       CU_SAFE_CALL(cudaGetDeviceProperties(&deviceProp, (int)dev));
       //Get the number of multiprocessors of the device
       multiProcessorCount = deviceProp.multiProcessorCount;
@@ -242,32 +239,32 @@ namespace my_dev {
     void startTiming(cudaStream_t stream=0)
     {
       if(disable_timing) return;
-      int eventflags =  cudaEventDefault;      
-      CU_SAFE_CALL(cudaEventCreateWithFlags(&start, eventflags));  
+      int eventflags =  cudaEventDefault;
+      CU_SAFE_CALL(cudaEventCreateWithFlags(&start, eventflags));
       CU_SAFE_CALL(cudaEventCreateWithFlags(&stop, eventflags));
       CU_SAFE_CALL(cudaEventRecord(start, stream));
     }
-    
+
     //Text and ID to be printed with the log message on screen / in the file
     void stopTiming(const char *text, int type = -1, cudaStream_t stream=0)
     {
       if(disable_timing) return;
-      
+
       CU_SAFE_CALL(cudaEventRecord(stop, stream));
       CU_SAFE_CALL(cudaEventSynchronize(stop));
       float time;
-      CU_SAFE_CALL(cudaEventElapsedTime(&time, start, stop));      
+      CU_SAFE_CALL(cudaEventElapsedTime(&time, start, stop));
       CU_SAFE_CALL(cudaEventDestroy(start));
-      CU_SAFE_CALL(cudaEventDestroy(stop));      
-      
+      CU_SAFE_CALL(cudaEventDestroy(stop));
+
       LOG("%s took:\t%f\t millisecond\n", text, time);
-      
+
       if(logfile_flag)
       {
         (*logFile) << logPrepend << logID++ << "\t"  << type << "\t" << text << "\t" << time << endl;
       }
     }
-    
+
     void writeLogEvent(const char *text)
     {
       if(disable_timing) return;
@@ -290,131 +287,121 @@ namespace my_dev {
       return temp.str();
     }
   };
-  
-  
+
+
   ////////////////////////////////////////
-  
+
     //Class to handle streams / queues
-  
+
   class dev_stream
   {
     private:
       cudaStream_t stream;
-      
-    public:     
+
+    public:
       dev_stream(unsigned int flags = 0)
       {
         createStream(flags);
       }
-            
-      
+
+
       void createStream(unsigned int flags = 0)
       {
          CU_SAFE_CALL(cudaStreamCreate(&stream));
-      }   
-      
+      }
+
       void destroyStream()
       {
         CU_SAFE_CALL(cudaStreamDestroy(stream));
       }
-      
+
       void sync()
       {
-        CU_SAFE_CALL(cudaStreamSynchronize(stream));        
+        CU_SAFE_CALL(cudaStreamSynchronize(stream));
       }
-      
+
       bool isFinished()
       {
         cudaError_t res = cudaStreamQuery(stream);
         if(res == cudaSuccess) return true;
         if(res == cudaErrorNotReady) return false;
-        
+
         //Some other result
         CU_SAFE_CALL(res);
         return false;
       }
-      
+
       cudaStream_t s()
       {
         return stream;
       }
-      
-      
+
+
       ~dev_stream() {
       destroyStream();
     }
   };
-  
-    
+
+
   ///////////////////////
-  
+
   class base_mem
   {
-    public:     
+    public:
     //Memory usage counters
     static long long currentMemUsage;
-    static long long maxMemUsage;  
-    
+    static long long maxMemUsage;
+
     void increaseMemUsage(int bytes)
     {
-      currentMemUsage +=  bytes;   
-      
+      currentMemUsage +=  bytes;
+
       if(currentMemUsage > maxMemUsage)
         maxMemUsage = currentMemUsage;
     }
-    
+
     void decreaseMemUsage(int bytes)
     {
       currentMemUsage -=  bytes;
     }
-    
+
     static void printMemUsage()
-    {      
+    {
       LOG("Current usage: %lld bytes ( %lld MB) \n", currentMemUsage, currentMemUsage / (1024*1024));
       LOG("Maximum usage: %lld bytes ( %lld MB) \n", maxMemUsage, maxMemUsage / (1024*1024));
-      
+
       size_t free, total;
-      cudaMemGetInfo(&free, &total); 
+      cudaMemGetInfo(&free, &total);
       LOG("Build-in usage: free: %ld bytes ( %ld MB , total: %ld) \n", free, free / (1024*1024), total / (1024*1024));
-      
-    }  
-    
+
+    }
+
     static long long getMaxMemUsage()
-    {      
+    {
       return maxMemUsage;
-    }   
-    
+    }
+
   };
 
 
   template<class T>
   class dev_mem : base_mem {
   protected:
-    
-    typedef struct textureInfo
-    {
-      const struct textureReference *texture;
-      int      texOffset; //The possible extra offset when using textures and combined memory
-      int      texSize;
-    } textureInfo;        
-        
- 
-    vector<textureInfo> textures;
-    
+
     int size;
     T           *hDeviceMem;
     T           *host_ptr;
     void        *DeviceMemPtr;
 
     cudaEvent_t  asyncCopyEvent = nullptr;
-        
+
     bool pinned_mem, flags;
     bool hDeviceMem_flag;
     bool childMemory; //Indicates that this is a shared buffer that will be freed by a parent
-    
+
     bool eventSet;
-    
-    void cuda_free() {      
+
+    void cuda_free() {
       if(childMemory) //Only free if we are NOT a child
       {
         return;
@@ -425,7 +412,7 @@ namespace my_dev {
     	  assert(size > 0);
     	  (cudaFree(hDeviceMem));
     	  decreaseMemUsage(size*sizeof(T));
-        
+
     	  if(pinned_mem){
     		  (cudaFreeHost((void*)host_ptr));
     	  } else {
@@ -436,7 +423,7 @@ namespace my_dev {
     } //cuda_free
 
   public:
-    
+
 
     ///////// Constructors
 
@@ -457,31 +444,31 @@ namespace my_dev {
     }
 
     //////// Destructor
-    
+
     ~dev_mem() {
       if(eventSet) cudaEventDestroy(asyncCopyEvent);
       cuda_free();
     }
-    
+
 
 
     ///////////
-    //Return the number of elements (of type uint) to be padded 
+    //Return the number of elements (of type uint) to be padded
     //to get to the correct address boundary
     static int getGlobalMemAllignmentPadding(int n)
     {
-      const int allignBoundary = 128*sizeof(uint); //CC 2.X and 3.X ,128 bytes 
-      
+      const int allignBoundary = 128*sizeof(uint); //CC 2.X and 3.X ,128 bytes
+
       int offset = 0;
-      //Compute the number of bytes  
-      offset = n*sizeof(uint); 
-      //Compute number of allignBoundary byte blocks  
-      offset = (offset / allignBoundary) + (((offset % allignBoundary) > 0) ? 1 : 0); 
-      //Compute the number of bytes padded / offset 
-      offset = (offset * allignBoundary) - n*sizeof(uint); 
+      //Compute the number of bytes
+      offset = n*sizeof(uint);
+      //Compute number of allignBoundary byte blocks
+      offset = (offset / allignBoundary) + (((offset % allignBoundary) > 0) ? 1 : 0);
+      //Compute the number of bytes padded / offset
+      offset = (offset * allignBoundary) - n*sizeof(uint);
       //Back to the actual number of elements
-      offset = offset / sizeof(uint);   
-      
+      offset = offset / sizeof(uint);
+
       return offset;
     }
 
@@ -498,8 +485,8 @@ namespace my_dev {
       this->flags       = sourcemem.get_flags();
       this->childMemory = true;
       this->size 		= n;
-     
-      
+
+
       void* ParentHost_ptr = &sourcemem[offset];
       host_ptr = (T*) ((char*)ParentHost_ptr);
 
@@ -509,8 +496,8 @@ namespace my_dev {
       void *cudaMem     = sourcemem.get_devMem();
       hDeviceMem        = (T*)cudaMem + ((offset*sizeof(uint)) / sizeof(T));
       DeviceMemPtr      = (void*)(size_t)(hDeviceMem);
-      hDeviceMem_flag   = true;      
-      
+      hDeviceMem_flag   = true;
+
       //Compute the alignment
       int currentOffset = offset + ((n*sizeof(T)) / sizeof(uint));
       int padding       = getGlobalMemAllignmentPadding(currentOffset);
@@ -518,74 +505,72 @@ namespace my_dev {
       //TODO for safety we could add a check if we go outside the memory bounds of sourcemem
 
       return currentOffset + padding;
-    }    
-    
-    void cmalloc(int n, bool pinned = false, int flags = 0) 
+    }
+
+    void cmalloc(int n, bool pinned = false, int flags = 0)
     {
-      this->pinned_mem = pinned;      
+      this->pinned_mem = pinned;
       this->flags = (flags == 0) ? false : true;
       if (size > 0) cuda_free();
       size = n;
-            
-      if(pinned_mem){    
+
+      if(pinned_mem){
         CU_SAFE_CALL(cudaMallocHost((T**)&host_ptr, size*sizeof(T)));}
       else{
         host_ptr = (T*)malloc(size*sizeof(T));}
 
       //fprintf(stderr,"host ptr: %p new: %d \n",host_ptr, size);
-        
+
       CU_SAFE_CALL(cudaMalloc((T**)&hDeviceMem, size*sizeof(T)));
       increaseMemUsage(size*sizeof(T));
-      DeviceMemPtr = (void*)(size_t)hDeviceMem;    
+      DeviceMemPtr = (void*)(size_t)hDeviceMem;
 
       hDeviceMem_flag = true;
     }
 
     void ccalloc(int n, bool pinned = false, int flags = 0) {
-      this->pinned_mem = pinned;      
+      this->pinned_mem = pinned;
       this->flags = (flags == 0) ? false : true;
       if (size > 0) cuda_free();
       size = n;
-      
-      if(pinned_mem)      
+
+      if(pinned_mem)
         cudaMallocHost((T**)&host_ptr, size*sizeof(T));
       else
         host_ptr = (T*)calloc(size, sizeof(T));
-      
-      //fprintf(stderr,"host calloc ptr: %p new: %d \n",host_ptr, size);
 
-      CU_SAFE_CALL(cudaMalloc((T**)&hDeviceMem, size*sizeof(T)));           
-      
-      CU_SAFE_CALL(cudaMemset((void*)hDeviceMem, 0, size*sizeof(T)));     
+
+      CU_SAFE_CALL(cudaMalloc((T**)&hDeviceMem, size*sizeof(T)));
+      CU_SAFE_CALL(cudaMemset((void*)hDeviceMem, 0, size*sizeof(T)));
       increaseMemUsage(size*sizeof(T));
-      DeviceMemPtr = (void*)(size_t)hDeviceMem;    
-      
+      DeviceMemPtr = (void*)(size_t)hDeviceMem;
+
       hDeviceMem_flag = true;
     }
-    
+
      //Set reduce to false to not reduce the size, to speed up pinned memory buffers
-    void cresize(int n, bool reduce = true)     
+    void cresize(int n, bool reduce = true)
     {
       if(size == n)     //No need if we are already at the correct size
         return;
-      
+
       if(size > n && reduce == false) //Do not make the memory size smaller
       {
         return;
       }
-      
+
 //       d2h();    //Get datafrom the device
-   
+
       if(pinned_mem)
       {
         //No realloc function so do it by hand
-        T *tmp_ptr;            
-        CU_SAFE_CALL(cudaMallocHost((T**)&tmp_ptr, n*sizeof(T)));        
+        T *tmp_ptr;
+        CU_SAFE_CALL(cudaMallocHost((T**)&tmp_ptr, n*sizeof(T)));
         //Copy old content to newly allocated mem
         int tmpSize = min(size,n);
-               
+
         //Copy the old data to the new pointer and free the old location
-        memcpy (((void*) tmp_ptr), ((void*) host_ptr), tmpSize*sizeof(T)); 
+        memcpy (((void*) tmp_ptr), ((void*) host_ptr), tmpSize*sizeof(T));
         CU_SAFE_CALL(cudaFreeHost((void*)host_ptr));
         host_ptr = tmp_ptr;
       }
@@ -605,43 +590,22 @@ namespace my_dev {
             if(host_ptr == nullptr && count > 10) {fprintf(stderr,"Realloc failed too often, exit\n"); exit(0); }
         }
       }
-      
+
       //This version compared to the commented out one above, first allocates
       //new memory and then copies the old one in the new one and free's the old one
       T *hDeviceMemNew;
-      CU_SAFE_CALL(cudaMalloc((T**)&hDeviceMemNew, n*sizeof(T)));      
-      increaseMemUsage(n*sizeof(T));    
+      CU_SAFE_CALL(cudaMalloc((T**)&hDeviceMemNew, n*sizeof(T)));
+      increaseMemUsage(n*sizeof(T));
       int nToCopy = min(size, n); //Do not copy more than we have memory
       CU_SAFE_CALL(cudaMemcpy(hDeviceMemNew, hDeviceMem, nToCopy*sizeof(T), cudaMemcpyDeviceToDevice ));
       //Now free the old memory
       CU_SAFE_CALL(cudaFree(hDeviceMem));
-      decreaseMemUsage(size*sizeof(T));   
+      decreaseMemUsage(size*sizeof(T));
       hDeviceMem = hDeviceMemNew;
-      DeviceMemPtr = (void*)(size_t)hDeviceMem;    
+      DeviceMemPtr = (void*)(size_t)hDeviceMem;
       size = n;
-      
-      //Rebind the textures
-      for(unsigned int i = 0; i < textures.size(); i++)
-      { 
-        //Sometimes textures are only bound to a part of the total memory
-        //So check this
-        
-        cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<T>();
-        if(textures[i].texOffset < 0)
-        {       
-          CU_SAFE_CALL(cudaBindTexture (0, textures[i].texture, hDeviceMem, 
-                          &channelDesc,   n*sizeof(T)));          
-        }
-        else
-        {
-          void * tempPtr =  a(textures[i].texOffset);
-          CU_SAFE_CALL(cudaBindTexture (0, textures[i].texture, tempPtr, 
-                          &channelDesc, sizeof(T)*textures[i].texSize));                    
-        } 
-           
-      }      
     }
-    
+
     //Set reduce to false to not reduce the size, to speed up pinned memory buffers
     //This one does not copy/preserve memory, its just a free and realloc no memory cpy
    void cresize_nocpy(int n, bool reduce = true)
@@ -676,26 +640,6 @@ namespace my_dev {
 
      DeviceMemPtr = (void*)(size_t)hDeviceMem;
      size = n;
-
-     //Rebind the textures
-     for(unsigned int i = 0; i < textures.size(); i++)
-     {
-       //Sometimes textures are only bound to a part of the total memory
-       //So check this
-
-       cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<T>();
-       if(textures[i].texOffset < 0)
-       {
-         CU_SAFE_CALL(cudaBindTexture (0, textures[i].texture, hDeviceMem,
-                         &channelDesc,   n*sizeof(T)));
-       }
-       else
-       {
-         void * tempPtr =  a(textures[i].texOffset);
-         CU_SAFE_CALL(cudaBindTexture (0, textures[i].texture, tempPtr,
-                         &channelDesc, sizeof(T)*textures[i].texSize));
-       }
-     }
    }
 
 
@@ -703,7 +647,7 @@ namespace my_dev {
     void zeroMem()
     {
       assert(hDeviceMem_flag);
-            
+
       if(size > 0) {
         memset(host_ptr, 0, size*sizeof(T));
         CU_SAFE_CALL(cudaMemset((void*)hDeviceMem, 0, size*sizeof(T)));
@@ -715,24 +659,24 @@ namespace my_dev {
       assert(hDeviceMem_flag);
       CU_SAFE_CALL(cudaMemsetAsync((void*)hDeviceMem, 0, size*sizeof(T), stream));
     }
-   
+
     ///////////
 
     //////////////
 
 
-    void d2h(bool OCL_BLOCKING = true, cudaStream_t stream = 0)   {      
+    void d2h(bool OCL_BLOCKING = true, cudaStream_t stream = 0)   {
       d2h(size, OCL_BLOCKING, stream);
     }
 
     //D2h that only copies a certain number of items to the host
-    void d2h(int number, bool OCL_BLOCKING = true, cudaStream_t stream = 0)   {      
+    void d2h(int number, bool OCL_BLOCKING = true, cudaStream_t stream = 0)   {
       assert(hDeviceMem_flag);
-      
+
       if(number == 0) return;
-      
+
       assert(size > 0);
-      
+
       if(OCL_BLOCKING)
       {
         CU_SAFE_CALL(cudaMemcpy(&host_ptr[0], hDeviceMem, number*sizeof(T),cudaMemcpyDeviceToHost));
@@ -744,8 +688,8 @@ namespace my_dev {
         CU_SAFE_CALL(cudaMemcpyAsync(&host_ptr[0], hDeviceMem, number*sizeof(T),cudaMemcpyDeviceToHost, stream));
         CU_SAFE_CALL(cudaEventRecord(asyncCopyEvent, stream));
       }
-    }    
-    
+    }
+
     //Copy to a specified buffer
     void d2h(int number, void* dst, bool OCL_BLOCKING = true, cudaStream_t stream = 0)   {
       assert(hDeviceMem_flag);
@@ -781,18 +725,18 @@ namespace my_dev {
         //Async copy, ONLY works for page-locked memory therefore default parameter
         //is blocking.
         assert(pinned_mem);
-        CU_SAFE_CALL(cudaMemcpyAsync(hDeviceMem, host_ptr, size*sizeof(T),cudaMemcpyHostToDevice , stream));          
+        CU_SAFE_CALL(cudaMemcpyAsync(hDeviceMem, host_ptr, size*sizeof(T),cudaMemcpyHostToDevice , stream));
         CU_SAFE_CALL(cudaEventRecord(asyncCopyEvent, stream));
-      }        
+      }
     }
-    
+
     //D2h that only copies a certain number of items to the host
-    void h2d(int number, bool OCL_BLOCKING = true, cudaStream_t stream = 0)   {      
+    void h2d(int number, bool OCL_BLOCKING = true, cudaStream_t stream = 0)   {
       assert(hDeviceMem_flag);
       assert(size > 0);
-      
+
       if(number == 0) return;
-      
+
       if(OCL_BLOCKING)
       {
         CU_SAFE_CALL(cudaMemcpy(hDeviceMem, &host_ptr[0], number*sizeof(T),cudaMemcpyHostToDevice));
@@ -804,16 +748,16 @@ namespace my_dev {
         CU_SAFE_CALL(cudaMemcpyAsync(hDeviceMem, host_ptr, number*sizeof(T),cudaMemcpyHostToDevice, stream));
         CU_SAFE_CALL(cudaEventRecord(asyncCopyEvent, stream));
 
-      }      
-    }        
+      }
+    }
 
     void waitForCopyEvent() {
       CU_SAFE_CALL(cudaEventSynchronize(asyncCopyEvent));
-    }    
+    }
 
     void streamWaitForCopyEvent(my_dev::dev_stream &stream) {
       CU_SAFE_CALL(cudaStreamWaitEvent(stream.s(), asyncCopyEvent, 0));
-    }    
+    }
 
     //JB: Modified this so that it copies a device buffer to an other device
     //buffer, and the host buffer to the other host buffer
@@ -824,11 +768,11 @@ namespace my_dev {
         cmalloc(n, flags);
         size = n;
       }
-      
+
       //Copy on the device
       CU_SAFE_CALL(cudaMemcpy(hDeviceMem, src_buffer.d(), n*sizeof(T), cudaMemcpyDeviceToDevice));
       //Copy on the host
-      memcpy (((void*) &host_ptr[0]), ((void*) &src_buffer[0]), n*sizeof(T));                                          
+      memcpy (((void*) &host_ptr[0]), ((void*) &src_buffer[0]), n*sizeof(T));
     }
 
     void copy_devonly(dev_mem &src_buffer, int n, int offset = 0)
@@ -847,11 +791,11 @@ namespace my_dev {
 
 
 
-    
+
     /////////
-    
+
     T& operator[] (int i){ return host_ptr[i]; }
-    
+
     void*  get_devMem() {return (void*)hDeviceMem;}
     void*  d()          {return (void*)hDeviceMem;}
 
@@ -865,26 +809,13 @@ namespace my_dev {
 
     void*   p() {return &hDeviceMem;}
     void*   a(int offset)
-    {      
-      //Calculate the new memory offset           
+    {
+      //Calculate the new memory offset
       //This fails because pointer is of type T and not of type void :-)
       //return (void*)(size_t)(hDeviceMem + offset*sizeof(T));
       //This works
       return (void*)(size_t)(hDeviceMem + offset);
-    }     
-    
-    //Add a texture reference to the memory object
-    int      addTexture(const struct textureReference *texref, int offset, int texSize)
-    {
-      textureInfo temp;
-      temp.texture      = texref;
-      temp.texOffset    = offset;
-      temp.texSize      = texSize;
-      
-      textures.push_back(temp);
-      return (int)(textures.size()-1);
     }
-
 
     int  get_size(){return size;}
     bool get_pinned(){return pinned_mem;}
@@ -892,10 +823,10 @@ namespace my_dev {
   };     // end of class dev_mem
 
   ////////////////////
-  
+
 
   class kernel {
-  protected:    
+  protected:
     char       *hKernelFilename;
     char       *hKernelName;
 public:
@@ -903,10 +834,10 @@ public:
 protected:
     vector<size_t> hGlobalWork;
     vector<size_t> hLocalWork;
-    
+
     vector<void*> argumentList;
     vector<int> argumentOffset;
-    
+
     //Kernel argument stuff
     #define MAXKERNELARGUMENTS 128
     typedef struct kernelArg
@@ -915,22 +846,9 @@ protected:
       int sizeoftyp;    //Size of the variable type
       void* ptr;        //The pointer to the memory
       int size;         //The number of elements (incase of shared memory)
-      const struct textureReference *texture; //If the arguments is a texture
-      cudaChannelFormatDesc channelDesc;
-      int      texSize;
     } kernelArg;
 
-    typedef struct textureArg
-    {
-      void* ptr;        //The pointer to the memory
-      int size;         //The number of elements (incase of shared memory)
-      const struct textureReference *texture; //If the arguments is a texture
-      cudaChannelFormatDesc channelDesc;
-      int      texSize;
-    } textureArg;
-    
     std::vector<kernelArg>      kernelArguments;
-    std::map<int, textureArg>   textureArguments;
     std::vector<void*>          kArguments;
     int argSize=0;
 
@@ -938,10 +856,10 @@ protected:
     bool kernel_flag;
     bool program_flag;
     bool work_flag;
-    
+
     size_t sharedMemorySize;
     int paramOffset;
-    
+
   public:
 
     kernel() {
@@ -954,7 +872,7 @@ protected:
       kernel_flag  = false;
       program_flag = false;
       work_flag    = false;
-      
+
       sharedMemorySize = 0;
       paramOffset      = 0;
 
@@ -963,13 +881,13 @@ protected:
       //Kernel argument stuff
       kArguments.resize(MAXKERNELARGUMENTS);
       kernelArguments.resize(MAXKERNELARGUMENTS);
-      kernelArg argTemp; 
-      argTemp.alignment = -1;   argTemp.sizeoftyp = -1; 
+      kernelArg argTemp;
+      argTemp.alignment = -1;   argTemp.sizeoftyp = -1;
       argTemp.ptr       = NULL; argTemp.size      = -1;
-      kernelArguments.assign(MAXKERNELARGUMENTS, argTemp);         
-      
+      kernelArguments.assign(MAXKERNELARGUMENTS, argTemp);
+
     }
-    ~kernel() {      
+    ~kernel() {
       free(hKernelName);
       free(hKernelFilename);
     }
@@ -984,14 +902,14 @@ protected:
       kernel_flag  = false;
       program_flag = false;
       work_flag    = false;
-      
+
       //Kernel argument stuff
       kernelArguments.resize(MAXKERNELARGUMENTS);
-      kernelArg argTemp; 
-      argTemp.alignment = -1;   argTemp.sizeoftyp = -1; 
+      kernelArg argTemp;
+      argTemp.alignment = -1;   argTemp.sizeoftyp = -1;
       argTemp.ptr       = NULL; argTemp.size      = -1;
-      kernelArguments.assign(MAXKERNELARGUMENTS, argTemp);          
-      
+      kernelArguments.assign(MAXKERNELARGUMENTS, argTemp);
+
       sharedMemorySize = 0;
       paramOffset      = 0;
       setContext(c);
@@ -1001,29 +919,29 @@ protected:
 
     void setContext(class context &c) {
       assert(!context_flag);
-      context_flag     = true;      
+      context_flag     = true;
     }
 
     ////////////
-    
+
     void load_source(const char *fileName, string &ptx_source)
     {
       //Keep for compatibility
     }
-    
+
     void load_source(const char *kernel_name, const char *subfolder,
                      const char *compilerOptions = "",
                      int maxrregcount = -1,
                      int architecture = 0) {
       assert(context_flag);
       assert(!program_flag);
-  
+
       //In runtime kept for compatibility
-      
+
       //In cuda version we assume that the code is already compiled into ptx
       //so that the file loaded/specified is in fact a PTX file
       sprintf(hKernelFilename, "%s%s", subfolder, kernel_name);
-      
+
       LOG("Loading source: %s ...", hKernelFilename);
       LOG("done!\n");
 
@@ -1040,7 +958,7 @@ protected:
 
 
       sprintf(hKernelName, kernel_name,"");
-      
+
       LOG("Setting kernel: %s \n", kernel_name);
 
       hKernelPointer = funcPointer;
@@ -1055,68 +973,21 @@ protected:
       sharedMemorySize  = 0;
       //Loop over all set arguments and set them
       for(int i=0; i < MAXKERNELARGUMENTS; i++)
-      {      
+      {
         //First of all check if this argument has to be set or that we've finished already
         if(kernelArguments[i].size == -1)
           continue;
-        
+
         //Now, check if this is a shared memory argument
         if(kernelArguments[i].ptr == NULL && kernelArguments[i].size > 1)
-        { 
+        {
           //Increase the shared memory size
-          sharedMemorySize  += (size_t) (kernelArguments[i].size*kernelArguments[i].sizeoftyp);             
+          sharedMemorySize  += (size_t) (kernelArguments[i].size*kernelArguments[i].sizeoftyp);
         }
       }//end for
 
       if(sharedMemorySize > 0) { fprintf(stderr, "%s uses shared mem\n", hKernelName); }//exit(0);}
     }
-
-#if 0  
-    //NVIDIA macro
-    #define ALIGN_UP(offset, alignment) (offset) = ((offset) + (alignment) - 1) & ~((alignment) -1)
-    void completeArguments()
-    {
-      //Reset the parameter offset and amount of shared memory
-      paramOffset       = 0;
-      sharedMemorySize  = 0;
-      
-      //Loop over all set arguments and set them
-      for(int i=0; i < MAXKERNELARGUMENTS; i++)
-      {      
-        //First of all check if this argument has to be set or that we've finished already
-        if(kernelArguments[i].size == -1)
-          continue;
-        
-        if(kernelArguments[i].size == -2)
-        {
-          //This is a texture
-          cudaChannelFormatDesc channelDesc = kernelArguments[i].channelDesc;
-
-          CU_SAFE_CALL(cudaBindTexture(0, kernelArguments[i].texture,
-                                          kernelArguments[i].ptr, 
-                                          &channelDesc, 
-                                          kernelArguments[i].texSize));
-          
-          continue;
-        }
-      
-        //Now, check if this is a shared memory argument
-        if(kernelArguments[i].ptr == NULL && kernelArguments[i].size > 1)
-        { 
-          //Increase the shared memory size
-          sharedMemorySize  += (size_t) (kernelArguments[i].size*kernelArguments[i].sizeoftyp);             
-        }
-        else
-        {
-          //This is an actual argument that we have to set
-          ALIGN_UP(paramOffset, kernelArguments[i].alignment);  
-          CU_SAFE_CALL(cudaSetupArgument(kernelArguments[i].ptr, kernelArguments[i].sizeoftyp, paramOffset));  
-
-          paramOffset += kernelArguments[i].sizeoftyp;                                        
-        } //end if
-      }//end for
-    }//end completeArguments
-#endif
 
     //Overwrite one of the previous set arguments with a new value
     void reset_arg(const int idx, void *arg) {kArguments[idx] = arg; }
@@ -1155,19 +1026,17 @@ protected:
     //void set_arg(unsigned int arg, void* ptr, int size = 1)  {
     void set_arg(unsigned int arg, void* ptr, int size = 1)  {
       assert(kernel_flag);
-      
+
       //TODO have to check / think about if we want size default initialised
       //to 1 or to zero
-      
+
       kernelArg tempArg;
       tempArg.alignment = __alignof(T);
       tempArg.sizeoftyp = sizeof(T);
       tempArg.ptr       = ptr;
       tempArg.size      = size;
-      tempArg.texture   = 0;
-      tempArg.texSize   = -1;
 
-      /* jbedorf, on 32bit Windows float4 reports as being 
+      /* jbedorf, on 32bit Windows float4 reports as being
        * 4 byte aligned while it should be 16 byte. Force this
        * by manually setting alignment if the template argument
        * is a float4 . Note this is a first version work-around
@@ -1181,133 +1050,25 @@ protected:
       #endif
 
       kernelArguments[arg] = tempArg;
- 
-      return;
-    }
-
-    //Offset and mem_size should both be set if you want only part of an array
-    //bound to a texture
-    template<class T>
-    void set_arg(unsigned int arg, my_dev::dev_mem<T> &memobj,
-                 const char *textureName, int offset = -1, int mem_size = -1)  { //Texture
-      assert(kernel_flag);
-      
-
-      cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<T>();
-
-      void * tempPtr;
-      //Only configure the texture if this is the first call
-      if(kernelArguments[arg].size != -2)
-      { 
-        const struct textureReference *texref;
-        CU_SAFE_CALL(cudaGetTextureReference(&texref, getTexturePointer(textureName)));
-
-        int memSize = 0;
-
-        if(offset < 0) //Assign memory
-        {
-          tempPtr =  memobj.d();
-          memSize = sizeof(T)*memobj.get_size();
-        }
-        else
-        {
-          //Get the offset memory location
-          //Fail if mem_size is not set!
-          assert(mem_size >= 0);
-          tempPtr =  memobj.a(offset);
-          memSize = sizeof(T)*mem_size;
-        }
-        
-        
-        //Now store it in the calling memory object in case the memory is
-        //Reallocated and the texture reference has to be updated
-       
-        int idx = memobj.addTexture(texref, offset, mem_size);
-        
-        kernelArg tempArg;
-        tempArg.size          = -2;   //Texture
-        tempArg.texture       = texref;
-        tempArg.channelDesc   = channelDesc;
-        tempArg.texSize       = memSize;
-        tempArg.ptr           = tempPtr;
-        kernelArguments[arg]  = tempArg;     
-      }
-      else
-      {
-        //Assign memory, has to be done EVERY kernel call otherwise things mess up!!
-        //Change the offsets if needed
-        if(offset < 0)
-        {           
-          kernelArguments[arg].texSize  = sizeof(T)*memobj.get_size(); 
-          kernelArguments[arg].ptr = memobj.d();
-        }
-        else
-        {   
-          void * tempPtr =  memobj.a(offset);
-          kernelArguments[arg].texSize  = sizeof(T)*mem_size;         
-          kernelArguments[arg].ptr = tempPtr;          
-        }       
-      }
 
       return;
     }
-
-    template<class T>
-      void set_texture(const int arg, my_dev::dev_mem<T> &memobj,
-                       const char *textureName, int offset = 0, int mem_size = -1)
-    {
-        assert(kernel_flag);
-
-        int memSize = sizeof(T)*( mem_size < 0 ? memobj.get_size() : mem_size);
-
-        if(textureArguments.find(arg) == textureArguments.end())
-        {
-            //First call creates the texture references
-            const struct textureReference *texref;
-            CU_SAFE_CALL(cudaGetTextureReference(&texref, getTexturePointer(textureName)));
-
-
-            //Now store it in the calling memory object in case the memory is
-            //Reallocated and the texture reference has to be updated
-            memobj.addTexture(texref, offset, mem_size);
-
-            textureArguments[arg].channelDesc = cudaCreateChannelDesc<T>();
-            textureArguments[arg].texture     = texref;
-        }
-
-        textureArguments[arg].ptr     = memobj.a(offset);
-        textureArguments[arg].texSize = memSize;
-
-        return;
-    }
-
-    void bindTextures()
-    {
-        for (auto& tex : textureArguments)
-        {
-            CU_SAFE_CALL(cudaBindTexture(0,  tex.second.texture,
-                                             tex.second.ptr,
-                                            &tex.second.channelDesc,
-                                             tex.second.texSize));
-        }
-    }
-
 
     void setWork(int items, int n_threads, int blocks = -1)
     {
       //Sets the number of blocks and threads based on the number of items
       //and number of threads per block.
-      //TODO see if we can use the new kernel define for thread numbers?      
+      //TODO see if we can use the new kernel define for thread numbers?
       vector<size_t> localWork(2), globalWork(2);
-    
+
       int nx, ny;
-      
+
       if(blocks == -1)
-      {      
+      {
         //Calculate dynamic
         int ng = (items) / n_threads + 1;
         nx = (int)sqrt((double)ng);
-        ny = (ng -1)/nx +  1; 
+        ny = (ng -1)/nx +  1;
       }
       else
       {
@@ -1316,7 +1077,7 @@ protected:
         if(blocks >= 65536)
         {
           nx = (int)sqrt((double)blocks);
-          ny = (blocks -1)/nx +  1;           
+          ny = (blocks -1)/nx +  1;
         }
         else
         {
@@ -1324,36 +1085,36 @@ protected:
           ny = 1;
         }
       }
-    
+
       globalWork[0] = nx*n_threads;  globalWork[1] = ny*1;
-      localWork [0] = n_threads;     localWork[1]  = 1;   
+      localWork [0] = n_threads;     localWork[1]  = 1;
       setWork(globalWork, localWork);
     }
-    
-  
+
+
     void setWork(vector<size_t> global_work, vector<size_t> local_work) {
       assert(kernel_flag);
       assert(global_work.size() == local_work.size());
-      
+
       hGlobalWork.resize(3);
       hLocalWork. resize(3);
-      
+
       hLocalWork [0] = local_work[0];
       hLocalWork [1] = (local_work.size()  > 1) ? local_work[1] : 1;
       hLocalWork [2] = (local_work.size()  > 2) ? local_work[2] : 1;
 
       hGlobalWork[0] = global_work[0];
       hGlobalWork[1] = (global_work.size() > 1) ? global_work[1] : 1;
-      
+
       //Since the values between CUDA and OpenCL differ:
       //Cuda is specific size of each block, while OpenCL
       //is the combined size of the lower blocks and this block
       //we have to divide the values
-      
+
       hGlobalWork[0] /= hLocalWork[0];
       hGlobalWork[1] /= hLocalWork[1];
       hGlobalWork[2] /= hLocalWork[2];
-      
+
       work_flag = true;
     }
 
@@ -1368,8 +1129,6 @@ protected:
 
         if(blockDim.x == 0 || gridDim.x == 0)
           return;
-
-        bindTextures();
 
         CU_SAFE_CALL(cudaLaunchKernel (hKernelPointer, gridDim, blockDim, &kArguments[0], (size_t)sharedMemorySize,hStream));
 //        printf("Waiting on kernel: %s to finish...", hKernelName);
@@ -1390,28 +1149,27 @@ protected:
       printWorkSize("");
     }
 
-#if 0    
+#if 0
     void execute(cudaStream_t hStream = 0, int* event = NULL) {
       assert(kernel_flag);
       assert(work_flag);
-      
+
       dim3 gridDim;
-      dim3 blockDim; 
+      dim3 blockDim;
       hGlobalWork.resize(3);
       hLocalWork.resize(3);
       gridDim.x = (uint)hGlobalWork[0]; gridDim.y = (uint)hGlobalWork[1]; gridDim.z = 1;
       blockDim.x = (uint)hLocalWork[0]; blockDim.y = (uint)hLocalWork[1]; blockDim.z = (uint)hLocalWork[2];
-      
+
       if(blockDim.x == 0 || gridDim.x == 0)
         return;
-      
+
       computeSharedMemorySize();  //Has to be done before rest of arguments
       CU_SAFE_CALL(cudaConfigureCall(gridDim,
                                      blockDim,
                                      sharedMemorySize,
-                                     hStream));      
+                                     hStream));
       completeArguments();
-      bindTextures();
 
 
 //     LOGF(stderr,"Waiting on kernel: %s to finish... ", hKernelName );
@@ -1423,12 +1181,12 @@ protected:
       //CU_SAFE_CALL(cudaLaunch((const char*)hKernelPointer));
 #endif
 //      CU_SAFE_CALL(cudaDeviceSynchronize());       LOGF(stderr,"finished \n");
-      
+
     }
-#endif    
+#endif
     ////
   };
-   
+
 }     // end of namespace my_cuda
 
 

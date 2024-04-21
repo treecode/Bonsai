@@ -6,11 +6,11 @@ option(CUDA_VERBOSE_PTXAS
   "On to enable verbose output from the PTXAS assembler."
   OFF
   )
-  
+
 option(CUDA_DEVICE_DEBUGGING
   "On to enable debugging device code."
   OFF
-  )  
+  )
 
 option(USE_MPI
   "On to build support for MPI"
@@ -47,7 +47,7 @@ option(USE_CUB
     "On to use CUB sorting"
   ON
   )
-  
+
 option(COMPILE_SM35
   "On to enable SM35 compilation"
   ON
@@ -57,7 +57,7 @@ option(USE_DUST
   "On to enable dust rendering"
   OFF
   )
- 
+
 option(CUDA_KEEP_INTERMEDIATE_FILES
   "On to enable -keep"
   OFF
@@ -65,7 +65,7 @@ option(CUDA_KEEP_INTERMEDIATE_FILES
 
 FIND_PACKAGE(CUDA REQUIRED)
 
-add_definitions(-std=c++11)
+add_definitions(-std=c++14)
 set(EXTRA_MPI_LINK_FLAGS)
 if (USE_MPI)
   add_definitions(-DUSE_MPI)
@@ -110,9 +110,9 @@ set(CMAKE_DEBUG_POSTFIX "D")
 include_directories(${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/renderer)
 
 set (CCFILES
-  src/build.cpp 
-  src/compute_properties.cpp 
-  src/gpu_iterate.cpp 
+  src/build.cpp
+  src/compute_properties.cpp
+  src/gpu_iterate.cpp
   src/libraryInterface.cpp
   src/load_kernels.cpp
   src/main.cpp
@@ -148,18 +148,19 @@ set (CUFILES
   )
 
 if (COMPILE_SM35)
-  set (CUFILES 
+  set (CUFILES
     ${CUFILES}
-    CUDAkernels/dev_approximate_gravity_warp_new.cu  
+    CUDAkernels/dev_approximate_gravity_warp_new.cu
     )
   add_definitions("-DKEPLER")
-  set(GENCODE -gencode arch=compute_35,code=sm_35 -gencode arch=compute_35,code=compute_35 -Xptxas=-v -ftz=true -lineinfo)
+  set(GENCODE -Xptxas=-v -ftz=true -lineinfo)
+  #  set(GENCODE -gencode arch=compute_35,code=sm_35 -gencode arch=compute_35,code=compute_35 -Xptxas=-v -ftz=true -lineinfo)
   #  set(GENCODE -gencode arch=compute_35,code=sm_35 -gencode arch=compute_35,code=compute_35 -Xptxas=-v -ftz=true -lineinfo)
 
 else (COMPILE_SM35)
   set (CUFILES
     ${CUFILES}
-	CUDAkernels/dev_approximate_gravity_warp_fermi.cu  
+	CUDAkernels/dev_approximate_gravity_warp_fermi.cu
 	)
   set(GENCODE -gencode arch=compute_20,code=sm_20 -gencode arch=compute_20,code=compute_20)
 endif (COMPILE_SM35)
@@ -200,11 +201,11 @@ if (WIN32)
 endif (WIN32)
 
 
-if (USE_OPENGL) 
+if (USE_OPENGL)
   set(CCFILES ${CCFILES} src/renderloop.cpp src/render_particles.cpp)
   set(HFILES ${HFILES} include/renderloop.h include/render_particles.h)
-  
-  set (CCFILES ${CCFILES} 
+
+  set (CCFILES ${CCFILES}
   renderer/SmokeRenderer.cpp
   renderer/SmokeShaders.cpp
   renderer/paramgl.cpp
@@ -212,11 +213,11 @@ if (USE_OPENGL)
   renderer/GLSLProgram.cpp
   renderer/framebufferObject.cpp
   renderer/loadPPM.cpp
-  renderer/Cubemap.cpp  
+  renderer/Cubemap.cpp
   src/tr.c
   )
 
-  set (HFILES ${HFILES} 
+  set (HFILES ${HFILES}
   renderer/SmokeRenderer.h
   renderer/SmokeShaders.h
   renderer/paramgl.h
@@ -252,7 +253,7 @@ if (USE_OPENGL)
 	else (WIN32)
 		FIND_LIBRARY(FREEGLUT_LIBRARY NAMES glut PATHS ${LIB_PATH})
 	endif (WIN32)
-  
+
 
   #glew
   FIND_PATH(GLEW_INCUDE_DIR NAMES GL/glew.h PATHS ${CMAKE_SOURCE_DIR}/include)
@@ -261,7 +262,7 @@ if (USE_OPENGL)
 	else (WIN32)
 		FIND_LIBRARY(GLEW_LIBRARY NAMES ${GLEW_NAME} PATHS ${LIB_PATH})
 	endif (WIN32)
-  
+
   #glu
   if (WIN32)
     set(ALL_LIBRARIES ${FREEGLUT_LIBRARY} ${GLEW_LIBRARY})
@@ -272,8 +273,8 @@ if (USE_OPENGL)
 
   # Copy DLLs
 	if (WIN32)
-		file(COPY ${LIB_PATH}/freeglut.dll DESTINATION ${CMAKE_BINARY_DIR}) 
-		file(COPY ${LIB_PATH}/${GLEW_NAME}.dll DESTINATION ${CMAKE_BINARY_DIR}) 
+		file(COPY ${LIB_PATH}/freeglut.dll DESTINATION ${CMAKE_BINARY_DIR})
+		file(COPY ${LIB_PATH}/${GLEW_NAME}.dll DESTINATION ${CMAKE_BINARY_DIR})
 	endif (WIN32)
 
 endif (USE_OPENGL)
@@ -305,29 +306,29 @@ endif (WIN32)
 	#endif(USE_MPI)
 
 cuda_add_executable(${BINARY_NAME}
-  ${CCFILES} 
+  ${CCFILES}
   ${HFILES}
   ${CUFILES}
   ${PROFFILES}
-  OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING} ${KEEP} -Xcompiler="-fPIE" -std=c++11 
+  OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING} ${KEEP} -Xcompiler="-fPIE" -std=c++14
   )
 
 
 #For AMUSE we only build the library and should ignore the code in main.cpp
-set(lib_sources ${CCFILES})                                                                         
-list(REMOVE_ITEM lib_sources src/main.cpp)                                                          
-cuda_add_library(bonsai_amuse                                                                       
-  ${lib_sources}                                                                                    
-  ${HFILES}                                                                                         
-  ${CUFILES}                                                                                        
-  ${PROFFILES}                                                                                      
-  OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING} ${KEEP} -Xcompiler="-fPIE" -std=c++11        
-  )                                                                                                 
-                
+set(lib_sources ${CCFILES})
+list(REMOVE_ITEM lib_sources src/main.cpp)
+cuda_add_library(bonsai_amuse
+  ${lib_sources}
+  ${HFILES}
+  ${CUFILES}
+  ${PROFFILES}
+  OPTIONS ${GENCODE} ${VERBOSE_PTXAS} ${DEVICE_DEBUGGING} ${KEEP} -Xcompiler="-fPIE" -std=c++14
+  )
 
 
 
-if (USE_MPI)  
+
+if (USE_MPI)
     add_executable(${BINARY_CLR_NAME}
       ${CLR_CCFILES}
       )
